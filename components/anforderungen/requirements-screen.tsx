@@ -283,7 +283,11 @@ function RequirementRow({
         ) : (
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         )}
-        <MachineStatusBadge status={effectiveStatus} className="shrink-0" />
+        <MachineStatusBadge
+          status={effectiveStatus}
+          label={STATUS_LABEL[effectiveStatus]}
+          className="shrink-0"
+        />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">{row.title}</span>
           <span className="truncate text-xs text-muted-foreground">{row.reason}</span>
@@ -336,6 +340,34 @@ function RequirementRow({
             )
           })()}
 
+          {/* Human layer — always shown when expanded, visually separated */}
+          <div className="flex flex-wrap items-center gap-2 rounded-md border border-border bg-card px-3 py-2.5">
+            {row.humanCheck ? (
+              <HumanCheckMark check={row.humanCheck} />
+            ) : (
+              <>
+                <span className="mr-1 text-xs text-muted-foreground">Menschliche Prüfung:</span>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  className="h-8 gap-1.5 px-2.5 text-xs"
+                  onClick={() => onConfirm(row.id)}
+                >
+                  <CheckCheck className="size-3.5" />
+                  Bestätigen
+                </Button>
+                <button
+                  type="button"
+                  className="min-h-[32px] px-1.5 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  onClick={() => onOpenOverride(row.id)}
+                >
+                  <PenLine className="mr-1 inline size-3" />
+                  Korrigieren
+                </button>
+              </>
+            )}
+          </div>
+
           {/* Override record */}
           {row.override && (
             <div className="rounded-md border border-border bg-card px-3 py-2">
@@ -352,33 +384,6 @@ function RequirementRow({
               </details>
             </div>
           )}
-
-          {/* Human layer */}
-          <div className="flex flex-wrap items-center gap-2 border-t border-border pt-3">
-            {row.humanCheck ? (
-              <HumanCheckMark check={row.humanCheck} />
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="h-9 gap-1.5 px-3 text-xs"
-                  onClick={() => onConfirm(row.id)}
-                >
-                  <CheckCheck className="size-3.5" />
-                  Bestätigen
-                </Button>
-                <button
-                  type="button"
-                  className="min-h-[36px] px-2 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  onClick={() => onOpenOverride(row.id)}
-                >
-                  <PenLine className="mr-1 inline size-3" />
-                  Korrigieren
-                </button>
-              </>
-            )}
-          </div>
         </div>
       )}
     </div>
@@ -607,7 +612,7 @@ export function RequirementsScreen({ forceState }: RequirementsScreenProps) {
   return (
     <div className="flex min-h-full flex-col">
       {/* Scrollable content */}
-      <div className="flex-1 px-6 py-8">
+      <div className="flex-1 px-6 py-8 pb-32">
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
           {/* Page header */}
           <div className="flex flex-col gap-1">
@@ -714,14 +719,8 @@ export function RequirementsScreen({ forceState }: RequirementsScreenProps) {
       <footer className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-4">
           <p className="text-sm text-muted-foreground">
-            {openCount > 0 ? (
-              <>
-                <span className="font-medium text-foreground">{openCount} offene{openCount === 1 ? "r Punkt wird" : " Punkte werden"}</span>
-                {" "}ins Review übernommen.
-              </>
-            ) : (
-              "Alle Anforderungen erfüllt."
-            )}
+            <span className="font-medium text-foreground">{openCount} offene{openCount === 1 ? "r Punkt wird" : " Punkte werden"}</span>
+            {" "}ins Review übernommen.
           </p>
           <Button asChild>
             <a href="/editor">Weiter zum Entwurf</a>
