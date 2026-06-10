@@ -6,8 +6,10 @@
 
 @theme inline {
   --font-heading: var(--font-sans);
-  --font-sans: var(--font-geist-sans), 'Geist Fallback';
-  --font-mono: var(--font-geist-mono), 'Geist Mono Fallback';
+  --font-sans: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, 'Liberation Mono',
+    monospace;
   --color-status-fulfilled: var(--status-fulfilled);
   --color-status-fulfilled-foreground: var(--status-fulfilled-foreground);
   --color-status-partial: var(--status-partial);
