@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import {
   Info,
   Plus,
@@ -220,6 +221,7 @@ interface IntakeFormErrors {
 type SaveState = "idle" | "saving" | "error"
 
 export function IntakeForm() {
+  const router = useRouter()
   const [data, setData] = React.useState<IntakeFormData>({
     titel: "",
     projektidee: "",
@@ -295,13 +297,8 @@ export function IntakeForm() {
     setSaveState("saving")
     // Simulate async save — prototype only, no real call.
     await new Promise((r) => setTimeout(r, 1200))
-    // Simulate a 20% chance of error for demo.
-    if (Math.random() < 0.2) {
-      setSaveState("error")
-    } else {
-      setSaveState("idle")
-      // In a real app: router.push('/quellen') or show a success toast.
-    }
+    setSaveState("idle")
+    router.push("/quellen")
   }
 
   async function handleDraftSave() {
@@ -315,8 +312,9 @@ export function IntakeForm() {
   function handleCancelClick() {
     if (isDirty(data)) {
       setCancelDialogOpen(true)
+    } else {
+      router.push("/")
     }
-    // If not dirty, do nothing in prototype (no router).
   }
 
   // -------------------------------------------------------------------------
@@ -725,7 +723,10 @@ export function IntakeForm() {
             </Button>
             <Button
               variant="destructive"
-              onClick={() => setCancelDialogOpen(false)}
+              onClick={() => {
+                setCancelDialogOpen(false)
+                router.push("/")
+              }}
             >
               Verwerfen
             </Button>

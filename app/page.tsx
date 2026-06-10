@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter } from "next/navigation"
 import { Plus, RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { ProjectCard } from "@/components/dashboard/project-card"
@@ -20,7 +21,20 @@ type PageState = "loading" | "error" | "empty" | "default"
 // Set to true only during internal prototyping — never in the evaluation view.
 const showDebugControls = false
 
+// Where each next action takes the user in the guided workflow.
+const ACTION_ROUTES: Record<NextAction | "view_progress", string> = {
+  upload_sources: "/quellen",
+  start_analysis: "/quellen",
+  review_analysis: "/anforderungen",
+  continue_draft: "/editor",
+  approve_review: "/review",
+  create_export: "/export",
+  resume_analysis: "/quellen",
+  view_progress: "/quellen",
+}
+
 export default function DashboardPage() {
+  const router = useRouter()
   // Start in "loading" for one second to demo the skeleton state, then
   // switch to "default". In a real app this would be driven by a data fetch.
   const [pageState, setPageState] = React.useState<PageState>("loading")
@@ -30,8 +44,8 @@ export default function DashboardPage() {
     return () => clearTimeout(t)
   }, [])
 
-  function handleAction(_projectId: string, _action: NextAction | "view_progress") {
-    // Prototype — navigation would happen here.
+  function handleAction(_projectId: string, action: NextAction | "view_progress") {
+    router.push(ACTION_ROUTES[action])
   }
 
   return (
@@ -51,7 +65,7 @@ export default function DashboardPage() {
               Arbeitsbereich Innosuisse-Anträge (Dummy-Daten)
             </p>
           </div>
-          <Button>
+          <Button onClick={() => router.push("/intake")}>
             <Plus data-icon="inline-start" />
             Neuer Antrag
           </Button>
@@ -109,12 +123,13 @@ function LoadingGrid() {
 // Empty state
 // ---------------------------------------------------------------------------
 function EmptyState() {
+  const router = useRouter()
   return (
     <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
       <p className="text-sm text-muted-foreground">
         Noch keine Anträge. Starten Sie mit einem neuen Antrag.
       </p>
-      <Button>
+      <Button onClick={() => router.push("/intake")}>
         <Plus data-icon="inline-start" />
         Neuer Antrag
       </Button>
