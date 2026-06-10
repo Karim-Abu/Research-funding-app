@@ -177,3 +177,22 @@ export const evidenceAnchors: EvidenceAnchor[] = [
     status: "partial",
   },
 ]
+
+// Candidates offered in the "Beleg verknüpfen" sheet of the evidence panel:
+// two anchors already linked to the section plus two not yet linked.
+export const linkableEvidence: EvidenceAnchor[] = [
+  evidenceAnchors[1],
+  evidenceAnchors[3],
+  {
+    id: "e6",
+    sourceTitle: "Technologie-Roadmap Leichtbau (Dummy)",
+    location: "S. 17",
+    status: "verified",
+  },
+  {
+    id: "e7",
+    sourceTitle: "EU-Bericht Kreislaufwirtschaft (Dummy)",
+    location: "S. 21, Kap. 3",
+    status: "partial",
+  },
+]
