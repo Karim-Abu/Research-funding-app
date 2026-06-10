@@ -33,7 +33,7 @@ export const workflowSteps: WorkflowStep[] = [
     step: 7,
     label: "Abschluss",
     subLabel: "Freigabe",
-    href: "/review?tab=freigabe",
+    href: "/review",
   },
   { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
 ]

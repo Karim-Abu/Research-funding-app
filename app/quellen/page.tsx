@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useRouter, useSearchParams } from "next/navigation"
 import { Play, ChevronDown, ChevronRight } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
@@ -165,6 +166,37 @@ const quellenStepStatus = [
 const SHOW_DEBUG_CONTROLS = false
 
 export default function QuellenPage() {
+  // useSearchParams requires a Suspense boundary in the App Router.
+  return (
+    <React.Suspense fallback={null}>
+      <QuellenPageContent />
+    </React.Suspense>
+  )
+}
+
+type QuellenTab = "quellen" | "evidenz"
+
+function QuellenPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabFromUrl: QuellenTab =
+    searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
+
+  const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
+  // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
+  // this route, so follow URL changes after mount as well.
+  React.useEffect(() => {
+    setActiveTab(tabFromUrl)
+  }, [tabFromUrl])
+
+  function handleTabChange(value: unknown) {
+    const tab: QuellenTab = value === "evidenz" ? "evidenz" : "quellen"
+    setActiveTab(tab)
+    router.replace(tab === "evidenz" ? "/quellen?tab=evidenz" : "/quellen", {
+      scroll: false,
+    })
+  }
+
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [activeScenario, setActiveScenario] = React.useState<DialogScenario>(
     DIALOG_SCENARIOS[0]
@@ -250,7 +282,7 @@ export default function QuellenPage() {
         )}
 
         {/* Tabs */}
-        <Tabs defaultValue="quellen">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="mb-6">
             <TabsTrigger value="quellen">
               Quellen ({sourceCount})
