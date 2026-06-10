@@ -20,6 +20,9 @@ const stepStatus: StepStatus[] = [
   "current",
 ]
 
+// Set to true only during internal prototyping — never exposed in the Petra evaluation view.
+const showDebugControls = false
+
 export default function ExportPage() {
   const [scenario, setScenario] = React.useState<PageScenario>("default")
   const [showDebug, setShowDebug] = React.useState(false)
@@ -34,47 +37,49 @@ export default function ExportPage() {
     >
       <ExportScreen scenario={scenario} />
 
-      {/* Debug scenario switcher — collapsed by default */}
-      <div className="border-t border-border px-6 py-4">
-        <button
-          type="button"
-          onClick={() => setShowDebug((v) => !v)}
-          className={cn(
-            "flex items-center gap-1.5 rounded text-xs font-medium text-muted-foreground",
-            "outline-none transition-colors hover:text-foreground",
-            "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-          )}
-          aria-expanded={showDebug}
-        >
-          {showDebug ? (
-            <ChevronDown className="size-3.5" />
-          ) : (
-            <ChevronRight className="size-3.5" />
-          )}
-          Demo: Seitenzustände testen
-        </button>
+      {/* Debug scenario switcher — hidden from normal user-facing UI */}
+      {showDebugControls && (
+        <div className="border-t border-border px-6 py-4">
+          <button
+            type="button"
+            onClick={() => setShowDebug((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded text-xs font-medium text-muted-foreground",
+              "outline-none transition-colors hover:text-foreground",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+            aria-expanded={showDebug}
+          >
+            {showDebug ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+            Demo: Seitenzustände testen
+          </button>
 
-        {showDebug && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {PAGE_SCENARIOS.map((s) => (
-              <button
-                key={s.id}
-                type="button"
-                onClick={() => setScenario(s.id)}
-                className={cn(
-                  "inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                  scenario === s.id
-                    ? "border-foreground bg-foreground text-background"
-                    : "border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground"
-                )}
-              >
-                {s.label}
-              </button>
-            ))}
-          </div>
-        )}
-      </div>
+          {showDebug && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {PAGE_SCENARIOS.map((s) => (
+                <button
+                  key={s.id}
+                  type="button"
+                  onClick={() => setScenario(s.id)}
+                  className={cn(
+                    "inline-flex h-8 items-center rounded-full border px-3 text-xs font-medium transition-colors",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                    scenario === s.id
+                      ? "border-foreground bg-foreground text-background"
+                      : "border-border bg-card text-foreground hover:bg-accent hover:text-accent-foreground"
+                  )}
+                >
+                  {s.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
     </AppShell>
   )
 }

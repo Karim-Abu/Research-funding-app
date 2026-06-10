@@ -294,7 +294,13 @@ function ExportCardDownloadItem({
 // Prior exports list
 // ---------------------------------------------------------------------------
 
-function PriorExportsList({ exports }: { exports: PriorExport[] }) {
+function PriorExportsList({
+  exports,
+  approvalState,
+}: {
+  exports: PriorExport[]
+  approvalState: ApprovalBannerState
+}) {
   if (exports.length === 0) return null
 
   return (
@@ -306,34 +312,44 @@ function PriorExportsList({ exports }: { exports: PriorExport[] }) {
         Letzte Exporte
       </h2>
       <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
-        {exports.slice(0, 5).map((ex) => (
-          <li
-            key={ex.id}
-            className="flex min-h-[44px] items-center gap-3 px-4 py-3"
-          >
-            {kindIcon(ex.kind, "size-4 text-muted-foreground")}
-            <span className="flex-1 truncate text-sm text-foreground">
-              {ex.filename}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {KIND_LABEL[ex.kind]}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              {ex.timestamp}
-            </span>
-            <button
-              type="button"
-              aria-label={`${ex.filename} herunterladen`}
-              className={cn(
-                "flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground",
-                "transition-colors hover:bg-accent hover:text-foreground",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-              )}
+        {exports.slice(0, 5).map((ex) => {
+          // A row is a draft if the current session is not approved/stale,
+          // or if the file itself was originally exported as a draft.
+          const showDraftTag = ex.isDraft || approvalState !== "approved"
+          return (
+            <li
+              key={ex.id}
+              className="flex min-h-[44px] items-center gap-3 px-4 py-3"
             >
-              <Download className="size-4" />
-            </button>
-          </li>
-        ))}
+              {kindIcon(ex.kind, "size-4 text-muted-foreground")}
+              <span className="flex-1 truncate text-sm text-foreground">
+                {ex.filename}
+              </span>
+              {showDraftTag && (
+                <span className="shrink-0 rounded border border-status-partial/40 bg-status-partial/10 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wider text-status-partial">
+                  Entwurf
+                </span>
+              )}
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {KIND_LABEL[ex.kind]}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                {ex.timestamp}
+              </span>
+              <button
+                type="button"
+                aria-label={`${ex.filename} herunterladen`}
+                className={cn(
+                  "flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground",
+                  "transition-colors hover:bg-accent hover:text-foreground",
+                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                )}
+              >
+                <Download className="size-4" />
+              </button>
+            </li>
+          )
+        })}
       </ul>
     </section>
   )
@@ -422,7 +438,7 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
       <div className="flex flex-col gap-1">
         <h1 className="text-xl font-semibold text-foreground">Export</h1>
         <p className="text-sm text-muted-foreground">
-          Exportieren Sie den Antrag für die Abgabe im Innosuisse-Portal.
+          Exportieren Sie Arbeitsdokumente für die Weiterarbeit und den Übertrag ins Innosuisse-Portal.
         </p>
       </div>
 
@@ -472,7 +488,7 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
           </section>
 
           {/* Prior exports */}
-          <PriorExportsList exports={PRIOR_EXPORTS} />
+          <PriorExportsList exports={PRIOR_EXPORTS} approvalState={approvalState} />
         </>
       )}
 

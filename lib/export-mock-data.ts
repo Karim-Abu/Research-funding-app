@@ -83,14 +83,14 @@ export const PRIOR_EXPORTS: PriorExport[] = [
     filename: "KI-Materialentwicklung_Zusammenfassung.md",
     kind: "markdown",
     timestamp: "gestern, 17:42",
-    isDraft: false,
+    isDraft: true,
   },
   {
     id: "pe3",
     filename: "KI-Materialentwicklung_Nachweis.json",
     kind: "json_audit",
     timestamp: "gestern, 17:43",
-    isDraft: false,
+    isDraft: true,
   },
 ]
 
