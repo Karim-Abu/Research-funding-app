@@ -21,10 +21,16 @@ export function WorkflowStepper({
   variant = "full",
   className,
 }: WorkflowStepperProps) {
+  // Mini variant: a compact row of dots + current step summary
   if (variant === "mini") {
     const current = workflowSteps.find((s) => s.step === currentStep)
     return (
-      <div className={cn("flex items-center gap-2", className)}>
+      <div
+        className={cn(
+          "flex h-10 items-center gap-3 border-b border-border bg-card px-4",
+          className
+        )}
+      >
         <div className="flex items-center gap-1" aria-hidden>
           {workflowSteps.map((s) => {
             const status = stepStatus[s.step - 1] ?? "upcoming"
@@ -41,71 +47,66 @@ export function WorkflowStepper({
             )
           })}
         </div>
-        <span className="text-xs font-medium text-muted-foreground">
-          {`Schritt ${currentStep} von 8: ${current?.label ?? ""}`}
+        <span className="text-xs text-muted-foreground">
+          <span className="font-medium text-foreground">
+            {`Schritt ${currentStep} von 8`}
+          </span>
+          {current && ` — ${current.label}: ${current.subLabel}`}
         </span>
       </div>
     )
   }
 
+  // Full variant: compact horizontal step strip that fits 1280 px without scrolling.
+  // Each step shows number-badge + short label only; sub-label is in a tooltip.
   return (
     <nav
       aria-label="Arbeitsschritte"
       className={cn(
-        "flex w-full items-stretch overflow-x-auto border-b border-border bg-card px-4",
+        "flex w-full items-stretch border-b border-border bg-card",
         className
       )}
     >
-      <ol className="flex min-w-max items-stretch">
+      <ol className="flex w-full items-stretch">
         {workflowSteps.map((s, i) => {
           const status = stepStatus[s.step - 1] ?? "upcoming"
           const isLast = i === workflowSteps.length - 1
           return (
-            <li key={s.step} className="flex items-stretch">
+            <li key={s.step} className="flex min-w-0 flex-1 items-stretch">
               <Link
                 href={s.href}
                 aria-current={status === "current" ? "step" : undefined}
-                className="flex min-h-[44px] items-center gap-3 rounded-md px-3 py-2.5 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring"
+                title={s.subLabel}
+                className={cn(
+                  "flex min-h-[44px] w-full min-w-0 items-center gap-2 px-2 py-2 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring",
+                  status === "current" && "bg-accent/60"
+                )}
               >
                 <span
                   className={cn(
-                    "flex size-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
-                    status === "done" &&
-                      "bg-primary/15 text-primary",
-                    status === "current" &&
-                      "bg-primary text-primary-foreground",
+                    "flex size-6 shrink-0 items-center justify-center rounded-full text-xs font-semibold",
+                    status === "done" && "bg-primary/15 text-primary",
+                    status === "current" && "bg-primary text-primary-foreground",
                     status === "upcoming" &&
                       "border border-border bg-muted text-muted-foreground"
                   )}
                 >
-                  {status === "done" ? (
-                    <Check className="size-4" />
-                  ) : (
-                    s.step
-                  )}
+                  {status === "done" ? <Check className="size-3.5" /> : s.step}
                 </span>
-                <span className="flex flex-col leading-tight">
-                  <span
-                    className={cn(
-                      "text-sm font-medium",
-                      status === "upcoming"
-                        ? "text-muted-foreground"
-                        : "text-foreground"
-                    )}
-                  >
-                    {s.label}
-                  </span>
-                  <span className="text-xs text-muted-foreground">
-                    {s.subLabel}
-                  </span>
+                <span
+                  className={cn(
+                    "truncate text-xs font-medium leading-tight",
+                    status === "upcoming"
+                      ? "text-muted-foreground"
+                      : "text-foreground"
+                  )}
+                >
+                  {s.label}
                 </span>
               </Link>
               {!isLast && (
-                <div
-                  aria-hidden
-                  className="mx-1 flex items-center"
-                >
-                  <span className="h-px w-4 bg-border" />
+                <div aria-hidden className="flex shrink-0 items-center">
+                  <span className="h-px w-3 bg-border" />
                 </div>
               )}
             </li>

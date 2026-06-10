@@ -10,9 +10,11 @@ interface AppShellProps {
   user: User
   projects: Project[]
   activeProjectId: string
-  /** When provided, renders the full WorkflowStepper under the topbar. */
+  /** When provided, renders the WorkflowStepper under the topbar. */
   currentStep?: number
   stepStatus?: StepStatus[]
+  /** "full" renders the horizontal step nav; "mini" renders the compact summary line. Defaults to "full". */
+  stepperVariant?: "full" | "mini"
   children: React.ReactNode
 }
 
@@ -22,6 +24,7 @@ export function AppShell({
   activeProjectId,
   currentStep,
   stepStatus,
+  stepperVariant = "full",
   children,
 }: AppShellProps) {
   const [collapsed, setCollapsed] = React.useState(false)
@@ -45,7 +48,7 @@ export function AppShell({
           <WorkflowStepper
             currentStep={currentStep}
             stepStatus={stepStatus}
-            variant="full"
+            variant={stepperVariant}
           />
         )}
         <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>

@@ -322,7 +322,7 @@ function CompactBody({
           className={`size-2 rounded-full ${available ? "bg-status-fulfilled" : "bg-muted-foreground/40"}`}
         />
         <span className="text-muted-foreground">
-          {available ? "KI-Dienst verfügbar" : "Dienst aktuell nicht verfügbar"}
+          {available ? "KI-Unterstützung verfügbar" : "Dienst aktuell nicht verfügbar"}
         </span>
       </span>
       <div className="rounded-md border border-border bg-muted/40 p-3">

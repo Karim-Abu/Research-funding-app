@@ -6,7 +6,6 @@ import {
   SelectGroup,
   SelectItem,
   SelectTrigger,
-  SelectValue,
 } from "@/components/ui/select"
 import type { Project } from "@/lib/types"
 
@@ -26,7 +25,9 @@ export function ProjectSelector({
       <span className="text-xs font-medium text-muted-foreground">Projekt</span>
       <Select value={activeProjectId} onValueChange={onChange}>
         <SelectTrigger className="h-9 w-[280px]" aria-label="Projekt auswählen">
-          <SelectValue />
+          <span className="truncate">
+            {projects.find((p) => p.id === activeProjectId)?.title ?? activeProjectId}
+          </span>
         </SelectTrigger>
         <SelectContent>
           <SelectGroup>

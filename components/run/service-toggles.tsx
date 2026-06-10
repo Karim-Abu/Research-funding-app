@@ -62,7 +62,7 @@ export function LLMToggle(props: Omit<ServiceToggleProps, "title" | "subtitle">)
       {...props}
       title="KI-Unterstützung"
       subtitle="Erstellt Textvorschläge und Analysen"
-      availableLabel="KI-Dienst verfügbar"
+      availableLabel="KI-Unterstützung verfügbar"
     />
   )
 }

@@ -1,14 +1,12 @@
 "use client"
 
 import { AppShell } from "@/components/shell/app-shell"
-import { WorkflowStepper } from "@/components/shell/workflow-stepper"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import {
   Card,
   CardContent,
   CardHeader,
   CardTitle,
-  CardDescription,
 } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 
@@ -29,6 +27,9 @@ export default function DashboardPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
+      currentStep={4}
+      stepStatus={[...stepStatus]}
+      stepperVariant="mini"
     >
       <div className="mx-auto max-w-5xl px-6 py-8">
         <div className="mb-6 flex flex-col gap-1">
@@ -40,22 +41,6 @@ export default function DashboardPage() {
             (Dummy-Daten).
           </p>
         </div>
-
-        <Card className="mb-6">
-          <CardHeader>
-            <CardTitle className="text-base">Arbeitsablauf</CardTitle>
-            <CardDescription>
-              Acht Schritte von der Aufnahme bis zur Abgabe.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <WorkflowStepper
-              currentStep={4}
-              stepStatus={[...stepStatus]}
-              variant="full"
-            />
-          </CardContent>
-        </Card>
 
         <div className="grid grid-cols-3 gap-4">
           <Card>
