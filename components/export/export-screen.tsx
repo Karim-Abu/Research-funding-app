@@ -1,0 +1,487 @@
+"use client"
+
+import * as React from "react"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Download,
+  FileJson,
+  FileText,
+  FileType2,
+  Loader2,
+  RotateCcw,
+} from "lucide-react"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
+import { cn } from "@/lib/utils"
+import {
+  EXPORT_CARDS,
+  KIND_LABEL,
+  PAGE_SCENARIOS,
+  PRIOR_EXPORTS,
+  type ApprovalBannerState,
+  type ExportCard,
+  type ExportCardStatus,
+  type ExportKind,
+  type PageScenario,
+  type PriorExport,
+} from "@/lib/export-mock-data"
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+function kindIcon(kind: ExportKind, className?: string) {
+  const cls = cn("shrink-0", className)
+  if (kind === "word") return <FileType2 className={cls} />
+  if (kind === "markdown") return <FileText className={cls} />
+  return <FileJson className={cls} />
+}
+
+// ---------------------------------------------------------------------------
+// Approval banner
+// ---------------------------------------------------------------------------
+
+function ApprovalBanner({ state }: { state: ApprovalBannerState }) {
+  if (state === "approved") {
+    return (
+      <div
+        role="status"
+        className="flex items-center gap-2.5 rounded-md border border-human/30 bg-human/8 px-4 py-3"
+      >
+        <CheckCircle2 className="size-4 shrink-0 text-human" />
+        <p className="text-sm text-foreground">
+          <span className="font-medium text-human">Review freigegeben</span>
+          {" durch Anna Keller am 12. Juni — "}
+          <span className="text-muted-foreground">
+            Dies ist keine Einreichfreigabe.
+          </span>
+        </p>
+      </div>
+    )
+  }
+
+  if (state === "stale") {
+    return (
+      <div
+        role="status"
+        className="flex items-center gap-2.5 rounded-md border border-status-partial/30 bg-status-partial/8 px-4 py-3"
+      >
+        <AlertTriangle className="size-4 shrink-0 text-status-partial" />
+        <p className="text-sm text-foreground">
+          <span className="font-medium text-status-partial">
+            Freigabe veraltet — seitdem geändert.
+          </span>{" "}
+          Exporte werden als Entwurf gekennzeichnet.
+        </p>
+      </div>
+    )
+  }
+
+  // not_approved
+  return (
+    <div
+      role="status"
+      className="flex items-center gap-2.5 rounded-md border border-border bg-muted/40 px-4 py-3"
+    >
+      <Clock className="size-4 shrink-0 text-muted-foreground" />
+      <p className="text-sm text-foreground">
+        Noch nicht freigegeben — Exporte werden als Entwurf gekennzeichnet.
+      </p>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Export card
+// ---------------------------------------------------------------------------
+
+interface ExportCardProps {
+  card: ExportCard
+  approvalState: ApprovalBannerState
+  disabled: boolean
+  onGenerate: (id: string) => void
+  onDownload: (id: string) => void
+  onRetry: (id: string) => void
+}
+
+function ExportCardItem({
+  card,
+  approvalState,
+  disabled,
+  onGenerate,
+  onDownload,
+  onRetry,
+}: ExportCardProps) {
+  const isDraft = approvalState !== "approved"
+  const isLeading = card.leading
+
+  return (
+    <div
+      className={cn(
+        "flex flex-1 flex-col gap-4 rounded-lg border bg-card p-5",
+        isLeading
+          ? "border-foreground/20 shadow-sm ring-1 ring-foreground/10"
+          : "border-border"
+      )}
+    >
+      {/* Icon + title */}
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-md border",
+            isLeading
+              ? "border-foreground/15 bg-foreground/5"
+              : "border-border bg-muted/40"
+          )}
+        >
+          {kindIcon(card.kind, "size-5 text-foreground")}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold leading-snug text-foreground">
+            {card.title}
+          </h3>
+          <p className="text-xs text-muted-foreground">{card.subtitle}</p>
+        </div>
+      </div>
+
+      {/* ENTWURF tag */}
+      {isDraft && (
+        <span className="inline-flex w-fit items-center rounded border border-status-partial/40 bg-status-partial/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-status-partial">
+          Entwurf
+        </span>
+      )}
+
+      {/* Status */}
+      <div className="flex-1">
+        {card.status === "generating" && (
+          <div className="flex items-center gap-2 text-sm text-muted-foreground">
+            <Loader2 className="size-4 animate-spin" />
+            Wird erstellt…
+          </div>
+        )}
+        {card.status === "error" && (
+          <div className="flex flex-col gap-2">
+            <p className="text-sm text-status-blocker">
+              Export fehlgeschlagen. Bitte erneut versuchen.
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Action button */}
+      <div className="mt-auto">
+        {disabled ? (
+          <span
+            role="button"
+            aria-disabled="true"
+            className="inline-flex h-9 w-full cursor-not-allowed select-none items-center justify-center rounded-md border border-border bg-muted px-4 text-sm font-medium text-muted-foreground opacity-60"
+          >
+            Erstellen
+          </span>
+        ) : card.status === "error" ? (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onRetry(card.id)}
+          >
+            <RotateCcw className="mr-1.5 size-4" />
+            Erneut versuchen
+          </Button>
+        ) : card.status === "generating" ? (
+          <Button disabled className="w-full cursor-not-allowed opacity-60">
+            <Loader2 className="mr-1.5 size-4 animate-spin" />
+            Wird erstellt…
+          </Button>
+        ) : card.status === "ready" ? (
+          // After generation, show Download; before first generation show Erstellen
+          isLeading ? (
+            <Button className="w-full" onClick={() => onGenerate(card.id)}>
+              Erstellen
+            </Button>
+          ) : (
+            <Button
+              variant="outline"
+              className="w-full"
+              onClick={() => onGenerate(card.id)}
+            >
+              Erstellen
+            </Button>
+          )
+        ) : null}
+      </div>
+    </div>
+  )
+}
+
+// Download button variant after a card has been generated
+function ExportCardDownloadItem({
+  card,
+  approvalState,
+  onDownload,
+}: {
+  card: ExportCard
+  approvalState: ApprovalBannerState
+  onDownload: (id: string) => void
+}) {
+  const isDraft = approvalState !== "approved"
+  const isLeading = card.leading
+
+  return (
+    <div
+      className={cn(
+        "flex flex-1 flex-col gap-4 rounded-lg border bg-card p-5",
+        isLeading
+          ? "border-foreground/20 shadow-sm ring-1 ring-foreground/10"
+          : "border-border"
+      )}
+    >
+      <div className="flex items-start gap-3">
+        <div
+          className={cn(
+            "flex size-10 shrink-0 items-center justify-center rounded-md border",
+            isLeading
+              ? "border-foreground/15 bg-foreground/5"
+              : "border-border bg-muted/40"
+          )}
+        >
+          {kindIcon(card.kind, "size-5 text-foreground")}
+        </div>
+        <div className="flex flex-col gap-0.5">
+          <h3 className="text-sm font-semibold leading-snug text-foreground">
+            {card.title}
+          </h3>
+          <p className="text-xs text-muted-foreground">{card.subtitle}</p>
+        </div>
+      </div>
+
+      {isDraft && (
+        <span className="inline-flex w-fit items-center rounded border border-status-partial/40 bg-status-partial/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-status-partial">
+          Entwurf
+        </span>
+      )}
+
+      <div className="flex-1">
+        <div className="flex items-center gap-1.5 text-sm text-human">
+          <CheckCircle2 className="size-4" />
+          Bereit zum Herunterladen
+        </div>
+      </div>
+
+      <div className="mt-auto">
+        {isLeading ? (
+          <Button className="w-full" onClick={() => onDownload(card.id)}>
+            <Download className="mr-1.5 size-4" />
+            Herunterladen
+          </Button>
+        ) : (
+          <Button
+            variant="outline"
+            className="w-full"
+            onClick={() => onDownload(card.id)}
+          >
+            <Download className="mr-1.5 size-4" />
+            Herunterladen
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Prior exports list
+// ---------------------------------------------------------------------------
+
+function PriorExportsList({ exports }: { exports: PriorExport[] }) {
+  if (exports.length === 0) return null
+
+  return (
+    <section aria-labelledby="prior-exports-heading">
+      <h2
+        id="prior-exports-heading"
+        className="mb-3 text-sm font-semibold text-foreground"
+      >
+        Letzte Exporte
+      </h2>
+      <ul className="flex flex-col divide-y divide-border rounded-lg border border-border bg-card">
+        {exports.slice(0, 5).map((ex) => (
+          <li
+            key={ex.id}
+            className="flex min-h-[44px] items-center gap-3 px-4 py-3"
+          >
+            {kindIcon(ex.kind, "size-4 text-muted-foreground")}
+            <span className="flex-1 truncate text-sm text-foreground">
+              {ex.filename}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {KIND_LABEL[ex.kind]}
+            </span>
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {ex.timestamp}
+            </span>
+            <button
+              type="button"
+              aria-label={`${ex.filename} herunterladen`}
+              className={cn(
+                "flex size-8 shrink-0 items-center justify-center rounded text-muted-foreground",
+                "transition-colors hover:bg-accent hover:text-foreground",
+                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+              )}
+            >
+              <Download className="size-4" />
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Loading skeleton
+// ---------------------------------------------------------------------------
+
+function LoadingSkeleton() {
+  return (
+    <div className="flex flex-col gap-6 px-6 py-8">
+      <Skeleton className="h-12 w-full rounded-md" />
+      <div className="grid grid-cols-3 gap-4">
+        {[0, 1, 2].map((i) => (
+          <div key={i} className="flex flex-col gap-3 rounded-lg border border-border p-5">
+            <div className="flex items-start gap-3">
+              <Skeleton className="size-10 rounded-md" />
+              <div className="flex flex-col gap-1.5 flex-1">
+                <Skeleton className="h-4 w-3/4" />
+                <Skeleton className="h-3 w-full" />
+              </div>
+            </div>
+            <Skeleton className="h-9 w-full rounded-md mt-auto" />
+          </div>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Main screen
+// ---------------------------------------------------------------------------
+
+export interface ExportScreenProps {
+  scenario?: PageScenario
+}
+
+export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
+  // Derive approval banner state from scenario
+  const approvalState: ApprovalBannerState =
+    scenario === "approved"
+      ? "approved"
+      : scenario === "stale"
+        ? "stale"
+        : "not_approved"
+
+  const nothingToExport = scenario === "nothing_to_export"
+  const isLoading = false // no loading state needed for prototype; skeleton shown via scenario switcher
+
+  // Per-card generated state (optimistic)
+  const [generatedIds, setGeneratedIds] = React.useState<Set<string>>(
+    new Set()
+  )
+
+  // Build card state: in "generating" scenario, word card is generating
+  const cards: ExportCard[] = EXPORT_CARDS.map((c) => {
+    if (scenario === "generating" && c.id === "word") {
+      return { ...c, status: "generating" as ExportCardStatus }
+    }
+    if (scenario === "error" && c.id === "word") {
+      return { ...c, status: "error" as ExportCardStatus }
+    }
+    return c
+  })
+
+  function handleGenerate(id: string) {
+    // Optimistic: immediately mark as generated (ready to download)
+    setGeneratedIds((prev) => new Set([...prev, id]))
+  }
+
+  function handleDownload(_id: string) {
+    // Prototype: no actual download
+  }
+
+  function handleRetry(id: string) {
+    setGeneratedIds((prev) => new Set([...prev, id]))
+  }
+
+  if (isLoading) return <LoadingSkeleton />
+
+  return (
+    <div className="flex min-h-full flex-col gap-8 px-6 py-8">
+      {/* Page header */}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-xl font-semibold text-foreground">Export</h1>
+        <p className="text-sm text-muted-foreground">
+          Exportieren Sie den Antrag für die Abgabe im Innosuisse-Portal.
+        </p>
+      </div>
+
+      {/* Approval banner */}
+      <ApprovalBanner state={approvalState} />
+
+      {/* Nothing to export state */}
+      {nothingToExport ? (
+        <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border py-16 text-center">
+          <FileText className="size-10 text-muted-foreground/40" />
+          <p className="text-sm font-medium text-muted-foreground">
+            Es gibt noch keine Inhalte zu exportieren.
+          </p>
+          <p className="text-xs text-muted-foreground">
+            Schliessen Sie zuerst die vorherigen Schritte ab.
+          </p>
+        </div>
+      ) : (
+        <>
+          {/* Export cards — 3 columns */}
+          <section aria-labelledby="export-cards-heading">
+            <h2 id="export-cards-heading" className="sr-only">
+              Exportformate
+            </h2>
+            <div className="grid grid-cols-3 gap-4">
+              {cards.map((card) =>
+                generatedIds.has(card.id) ? (
+                  <ExportCardDownloadItem
+                    key={card.id}
+                    card={card}
+                    approvalState={approvalState}
+                    onDownload={handleDownload}
+                  />
+                ) : (
+                  <ExportCardItem
+                    key={card.id}
+                    card={card}
+                    approvalState={approvalState}
+                    disabled={false}
+                    onGenerate={handleGenerate}
+                    onDownload={handleDownload}
+                    onRetry={handleRetry}
+                  />
+                )
+              )}
+            </div>
+          </section>
+
+          {/* Prior exports */}
+          <PriorExportsList exports={PRIOR_EXPORTS} />
+        </>
+      )}
+
+      {/* Sticky bottom disclaimer — stays in flow inside the scrollable main */}
+      <div className="sticky bottom-0 -mx-6 mt-auto border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm">
+        <p className="text-xs text-muted-foreground">
+          Die Einreichung erfolgt durch Sie im Innosuisse-Portal. Diese Plattform reicht nichts automatisch ein.
+        </p>
+      </div>
+    </div>
+  )
+}
