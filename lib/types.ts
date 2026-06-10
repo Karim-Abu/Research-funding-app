@@ -87,7 +87,23 @@ export interface DashboardProject {
 }
 
 
-export interface AnalyseSettings {
+// Intake form -------------------------------------------------------
+
+export interface IntakePartner {
+  id: string
+  name: string
+  type: "Forschungspartner" | "Umsetzungspartner"
+}
+
+export interface IntakeFormData {
+  titel: string
+  projektidee: string
+  innovationsfeld: string
+  budgetrahmen: string
+  vertraulichkeit: DataClass | ""
+  partner: IntakePartner[]
+}
+
   ki: boolean
   web: boolean
   localOnly: boolean
