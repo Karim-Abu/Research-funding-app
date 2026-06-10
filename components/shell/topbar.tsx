@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { HelpCircle } from "lucide-react"
 import { ProjectSelector } from "./project-selector"
 import { UserMenu } from "./user-menu"
@@ -29,13 +30,13 @@ export function Topbar({
 
       {/* Right: Hilfe link + user menu. Nothing else — no search, no notifications. */}
       <div className="flex items-center gap-2">
-        <a
-          href="#"
+        <Link
+          href="/hilfe"
           className="flex min-h-[44px] items-center gap-2 rounded-md px-3 text-sm font-medium text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
         >
           <HelpCircle className="size-4" />
           Hilfe
-        </a>
+        </Link>
         <UserMenu user={user} />
       </div>
     </header>
