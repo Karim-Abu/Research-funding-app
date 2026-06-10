@@ -326,11 +326,11 @@ function RunDrawer({
             <dl className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm">
               <dt className="text-muted-foreground">KI-Unterstützung</dt>
               <dd className="font-medium text-foreground">
-                {run.kiEnabled ? "An" : "Aus"}
+                {run.kiEnabled ? "Ein" : "Aus"}
               </dd>
               <dt className="text-muted-foreground">Webrecherche</dt>
               <dd className="font-medium text-foreground">
-                {run.webEnabled ? "An" : "Aus"}
+                {run.webEnabled ? "Ein" : "Aus"}
               </dd>
               <dt className="text-muted-foreground">KI-Modell</dt>
               <dd className="font-medium text-foreground">{run.model}</dd>
@@ -406,8 +406,8 @@ function RunsSection() {
                 <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   KI
                 </th>
-                <th className="px-4 py-3 text-center text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                  Web
+                <th className="px-4 py-3 text-center text-xs font-medium text-muted-foreground">
+                  Webrecherche
                 </th>
                 <th className="px-4 py-3 text-right text-xs font-medium uppercase tracking-wide text-muted-foreground">
                   ~Kosten
@@ -515,6 +515,9 @@ function ServiceRow({ svc }: { svc: ServiceRow }) {
     <div className="flex min-h-[56px] items-center gap-4 px-5 py-3">
       <div className="flex-1">
         <span className="text-sm font-medium text-foreground">{svc.name}</span>
+        {svc.subtitle && (
+          <p className="text-xs text-muted-foreground">{svc.subtitle}</p>
+        )}
       </div>
 
       {/* Status badge */}

@@ -27,6 +27,7 @@ export interface Run {
 export interface ServiceRow {
   id: string
   name: string
+  subtitle?: string
   configured: boolean
 }
 
@@ -161,5 +162,5 @@ export const RUNS: Run[] = [
 export const SERVICES: ServiceRow[] = [
   { id: "svc-claude", name: "Claude", configured: true },
   { id: "svc-openai", name: "OpenAI", configured: true },
-  { id: "svc-web", name: "Webrecherche (Firecrawl)", configured: false },
+  { id: "svc-web", name: "Webrecherche", subtitle: "Dienst: Firecrawl", configured: false },
 ]
