@@ -1,6 +1,5 @@
 "use client"
 
-import { Check, Circle } from "lucide-react"
 import {
   Select,
   SelectContent,
@@ -17,6 +16,8 @@ interface SectionHeaderCardProps {
   section: PortalSection
   sections: PortalSection[]
   onSectionChange: (id: string) => void
+  /** Live character count from the draft textarea (overrides section.charCount). */
+  liveCharCount?: number
 }
 
 function formatThousands(n: number) {
@@ -27,9 +28,11 @@ export function SectionHeaderCard({
   section,
   sections,
   onSectionChange,
+  liveCharCount,
 }: SectionHeaderCardProps) {
-  const over = section.charCount > section.charLimit
-  const pct = Math.min((section.charCount / section.charLimit) * 100, 100)
+  const charCount = liveCharCount ?? section.charCount
+  const over = charCount > section.charLimit
+  const pct = Math.min((charCount / section.charLimit) * 100, 100)
 
   return (
     <div className="flex flex-col gap-4 border-b border-border bg-card px-6 py-4">
@@ -60,7 +63,17 @@ export function SectionHeaderCard({
         {/* Section switcher with small status dots */}
         <Select value={section.id} onValueChange={onSectionChange}>
           <SelectTrigger className="h-9 w-[300px] shrink-0" aria-label="Abschnitt wechseln">
-            <SelectValue />
+            <span className="flex items-center gap-2 truncate">
+              <span
+                className={cn(
+                  "size-2 shrink-0 rounded-full",
+                  section.status === "fulfilled"
+                    ? "bg-status-fulfilled"
+                    : "bg-status-partial"
+                )}
+              />
+              <span className="truncate">{section.name}</span>
+            </span>
           </SelectTrigger>
           <SelectContent>
             <SelectGroup>
@@ -97,7 +110,7 @@ export function SectionHeaderCard({
             over ? "text-destructive" : "text-muted-foreground"
           )}
         >
-          {`${formatThousands(section.charCount)} / ${formatThousands(section.charLimit)}`}
+          {`${formatThousands(charCount)} / ${formatThousands(section.charLimit)}`}
         </span>
         <span className="text-xs text-muted-foreground">
           Automatisch gespeichert

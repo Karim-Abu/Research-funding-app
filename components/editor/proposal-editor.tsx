@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Sparkles, RefreshCw, AlertCircle } from "lucide-react"
+import { Sparkles, RefreshCw, AlertCircle, ChevronDown, ChevronRight } from "lucide-react"
 import {
   Tabs,
   TabsContent,
@@ -40,12 +40,21 @@ export function ProposalEditor({
   suggestionState = "list",
 }: ProposalEditorProps) {
   const [sectionId, setSectionId] = React.useState(portalSections[0].id)
-  const [draft, setDraft] = React.useState(initialDraft)
+  // Keep a draft per section so switching doesn't lose work.
+  const [drafts, setDrafts] = React.useState<Record<string, string>>({
+    [portalSections[0].id]: initialDraft,
+  })
   const [diffOpen, setDiffOpen] = React.useState(false)
   const [pending, setPending] = React.useState<AISuggestion | null>(null)
   const [showOlder, setShowOlder] = React.useState(false)
 
   const section = portalSections.find((s) => s.id === sectionId)!
+  const draft = drafts[sectionId] ?? ""
+  const setDraft = (value: string) =>
+    setDrafts((prev) => ({ ...prev, [sectionId]: value }))
+
+  // Live char count: count UTF-16 code units, excluding trailing newlines.
+  const liveCharCount = draft.trimEnd().length
   const visibleSuggestions = aiSuggestions.slice(0, 3)
   const olderSuggestions = aiSuggestions.slice(3)
 
@@ -71,6 +80,7 @@ export function ProposalEditor({
       <SectionHeaderCard
         section={section}
         sections={portalSections}
+        liveCharCount={liveCharCount}
         onSectionChange={setSectionId}
       />
 
@@ -88,16 +98,19 @@ export function ProposalEditor({
 
             <TabsContent value="entwurf" className="mt-4">
               {draft.trim().length === 0 ? (
-                <div className="flex flex-col gap-3 rounded-md border border-dashed border-border bg-muted/30 p-6">
-                  <p className="text-sm text-muted-foreground">
-                    {section.guidance}
-                  </p>
-                  <button
-                    type="button"
-                    className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline"
-                  >
-                    1 KI-Vorschlag verfügbar
-                  </button>
+                <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-2 rounded-md border border-dashed border-border bg-muted/30 px-5 py-4">
+                    <p className="text-sm text-muted-foreground">
+                      {section.guidance}
+                    </p>
+                    <button
+                      type="button"
+                      className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                      onClick={() => {/* switch to KI tab or expand first suggestion */}}
+                    >
+                      1 KI-Vorschlag verfügbar
+                    </button>
+                  </div>
                   <DraftEditor draftText={draft} onChange={setDraft} />
                 </div>
               ) : (
@@ -231,8 +244,13 @@ function SuggestionTab({
           <button
             type="button"
             onClick={onToggleOlder}
-            className="self-start text-sm font-medium text-muted-foreground underline-offset-2 hover:underline"
+            className="flex items-center gap-1.5 self-start rounded text-sm font-medium text-muted-foreground underline-offset-2 outline-none hover:text-foreground hover:underline focus-visible:ring-2 focus-visible:ring-ring"
           >
+            {showOlder ? (
+              <ChevronDown className="size-4" />
+            ) : (
+              <ChevronRight className="size-4" />
+            )}
             {`Ältere Vorschläge (${olderCount})`}
           </button>
           {showOlder &&
