@@ -98,8 +98,8 @@ export function AnalyseEinstellungenDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-[560px]">
-        <DialogHeader>
+      <DialogContent className="flex max-h-[90dvh] max-w-[560px] flex-col overflow-hidden">
+        <DialogHeader className="shrink-0">
           <DialogTitle>Analyse-Einstellungen</DialogTitle>
           <DialogDescription>
             Konfigurieren Sie diesen Durchlauf, bevor Sie ihn starten.
@@ -117,7 +117,7 @@ export function AnalyseEinstellungenDialog({
             }}
           />
         ) : (
-          <div className="flex flex-col gap-5">
+          <div className="flex flex-col gap-5 overflow-y-auto py-1 pr-1">
             {/* Local-only class banner */}
             {isLocalOnlyClass && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
@@ -249,7 +249,7 @@ export function AnalyseEinstellungenDialog({
         )}
 
         {!hasActiveRun && (
-          <DialogFooter>
+          <DialogFooter className="shrink-0">
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
