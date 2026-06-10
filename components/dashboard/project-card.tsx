@@ -110,7 +110,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
         {analysisRunning && (
           <div className="flex items-center gap-2 text-xs text-muted-foreground">
             <Loader2 className="size-3.5 animate-spin text-primary" aria-hidden />
-            <span>{"Analyse läuft\u2026"}</span>
+            <span>Analyse läuft…</span>
           </div>
         )}
 
