@@ -75,6 +75,7 @@ export function WebSearchToggle(
       {...props}
       title="Webrecherche"
       subtitle="Sucht öffentliche Informationen, z. B. zu Markt und Partnern"
+      availableLabel="Webrecherche verfügbar"
     />
   )
 }
