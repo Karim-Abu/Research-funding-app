@@ -25,18 +25,13 @@ export const activeProjectId = "p1"
 export const workflowSteps: WorkflowStep[] = [
   { step: 1, label: "Intake", subLabel: "Projekt & Daten", href: "/intake" },
   { step: 2, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
-  {
-    step: 3,
-    label: "Anforderungen",
-    subLabel: "Fördervoraussetzungen",
-    href: "/anforderungen",
-  },
+  { step: 3, label: "Anforderung", shortLabel: "Anforder.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
   { step: 4, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
   { step: 5, label: "Entwurf", subLabel: "Antragstext", href: "/editor" },
   { step: 6, label: "Review", subLabel: "Qualitätsprüfung", href: "/review" },
   {
     step: 7,
-    label: "Finalisierung",
+    label: "Abschluss",
     subLabel: "Freigabe",
     href: "/review?tab=freigabe",
   },

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Settings2 } from "lucide-react"
+import { Settings2, ChevronDown, ChevronRight, FileText, Link2 } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
@@ -10,8 +10,7 @@ import { cn } from "@/lib/utils"
 import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
-// Scenario definitions — each maps to a distinct dialog state.
-// Labels are German (user-visible); ids are English (code-only).
+// Scenario definitions — code-only identifiers; labels are German.
 // ---------------------------------------------------------------------------
 type EstimateState = "ready" | "loading" | "unavailable"
 
@@ -118,7 +117,7 @@ const SCENARIOS: Scenario[] = [
   },
   {
     id: "estimate-unavailable",
-    label: "Schätzung n/v",
+    label: "Schätzung nicht verfügbar",
     role: "lead_admin",
     dataClass: "public_synthetic",
     kiAvailable: true,
@@ -159,6 +158,8 @@ export default function QuellenPage() {
   const [lastSettings, setLastSettings] = React.useState<AnalyseSettings | null>(
     null
   )
+  // Debug controls are hidden by default.
+  const [showDebugControls, setShowDebugControls] = React.useState(false)
 
   function openWith(scenario: Scenario) {
     setActiveScenario(scenario)
@@ -174,12 +175,15 @@ export default function QuellenPage() {
       stepStatus={[...quellenStepStatus]}
     >
       <div className="mx-auto max-w-4xl px-6 py-8">
+
+        {/* Page header */}
         <div className="mb-6 flex flex-col gap-1">
-          <h1 className="text-2xl font-semibold text-foreground text-balance">
+          <h1 className="text-balance text-2xl font-semibold text-foreground">
             Quellen &amp; Evidenz
           </h1>
           <p className="text-sm text-muted-foreground">
-            Starten Sie eine Analyse Ihrer hochgeladenen Unterlagen.
+            Laden Sie Unterlagen hoch und starten Sie eine Analyse, um
+            Evidenz für Ihren Antrag zu gewinnen.
           </p>
         </div>
 
@@ -189,34 +193,75 @@ export default function QuellenPage() {
           Analyse-Einstellungen
         </Button>
 
-        {/* Scenario switcher — lets reviewers open each dialog variant */}
-        <div className="mt-8 flex flex-col gap-3">
-          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            Weitere Dialogvarianten
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {SCENARIOS.slice(1).map((scenario) => (
-              <button
-                key={scenario.id}
-                type="button"
-                onClick={() => openWith(scenario)}
-                className={cn(
-                  "inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors",
-                  "hover:bg-accent hover:text-accent-foreground",
-                  "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                )}
-              >
-                {scenario.label}
-              </button>
-            ))}
-          </div>
-        </div>
-
         {lastSettings && (
-          <p className="mt-6 text-sm text-muted-foreground">
+          <p className="mt-4 text-sm text-muted-foreground">
             Analyse gestartet (Dummy-Bestätigung).
           </p>
         )}
+
+        {/* Content placeholders */}
+        <div className="mt-10 grid gap-4 sm:grid-cols-2">
+          <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-5">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <FileText className="size-4 shrink-0 text-muted-foreground" />
+              Hochgeladene Unterlagen
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Dieser Bereich zeigt die hochgeladenen Quelldokumente des
+              Projekts. Noch nicht implementiert.
+            </p>
+          </div>
+          <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border bg-muted/30 p-5">
+            <div className="flex items-center gap-2 text-sm font-medium text-foreground">
+              <Link2 className="size-4 shrink-0 text-muted-foreground" />
+              Evidenz-Übersicht
+            </div>
+            <p className="text-xs text-muted-foreground">
+              Hier erscheinen die aus der Analyse gewonnenen Belege,
+              geordnet nach Abschnitt. Noch nicht implementiert.
+            </p>
+          </div>
+        </div>
+
+        {/* Debug: collapsible dialog-variant switcher — hidden by default */}
+        <div className="mt-10 border-t border-border pt-6">
+          <button
+            type="button"
+            onClick={() => setShowDebugControls((v) => !v)}
+            className={cn(
+              "flex items-center gap-1.5 rounded text-xs font-medium text-muted-foreground",
+              "outline-none transition-colors hover:text-foreground",
+              "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+            )}
+            aria-expanded={showDebugControls}
+          >
+            {showDebugControls ? (
+              <ChevronDown className="size-3.5" />
+            ) : (
+              <ChevronRight className="size-3.5" />
+            )}
+            Demo: Dialogvarianten testen
+          </button>
+
+          {showDebugControls && (
+            <div className="mt-3 flex flex-wrap gap-2">
+              {SCENARIOS.slice(1).map((scenario) => (
+                <button
+                  key={scenario.id}
+                  type="button"
+                  onClick={() => openWith(scenario)}
+                  className={cn(
+                    "inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors",
+                    "hover:bg-accent hover:text-accent-foreground",
+                    "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
+                  )}
+                >
+                  {scenario.label}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       <AnalyseEinstellungenDialog

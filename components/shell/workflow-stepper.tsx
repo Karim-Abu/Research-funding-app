@@ -101,7 +101,7 @@ export function WorkflowStepper({
                       : "text-foreground"
                   )}
                 >
-                  {s.label}
+                  {s.shortLabel ?? s.label}
                 </span>
               </Link>
               {!isLast && (

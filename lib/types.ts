@@ -22,6 +22,8 @@ export interface WorkflowStep {
   /** 1-based step number */
   step: number
   label: string
+  /** Shorter version used in the full stepper strip when the label would truncate. */
+  shortLabel?: string
   subLabel: string
   /** Route the step links to (8 steps map onto 6 screens). */
   href: string
