@@ -248,6 +248,7 @@ interface ApprovalCardProps {
   onApprove: () => void
   onRequestChanges: (comment: string) => void
   onReApprove: () => void
+  findingsRef: React.RefObject<HTMLElement | null>
 }
 
 function ApprovalCard({
@@ -256,6 +257,7 @@ function ApprovalCard({
   onApprove,
   onRequestChanges,
   onReApprove,
+  findingsRef,
 }: ApprovalCardProps) {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [comment, setComment] = React.useState("")
@@ -270,6 +272,17 @@ function ApprovalCard({
       setDialogOpen(false)
       setComment("")
     }, 600)
+  }
+
+  function scrollToBlockers() {
+    if (!findingsRef.current) return
+    findingsRef.current.scrollIntoView({ behavior: "smooth", block: "start" })
+    // Briefly highlight the section heading
+    const el = findingsRef.current
+    el.classList.add("ring-2", "ring-status-blocker", "ring-offset-2", "rounded-md")
+    setTimeout(() => {
+      el.classList.remove("ring-2", "ring-status-blocker", "ring-offset-2", "rounded-md")
+    }, 2000)
   }
 
   const isBlocked = approval.state === "blocked" || blockerCount > 0
@@ -342,13 +355,25 @@ function ApprovalCard({
             )}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Button
-                disabled={isBlocked}
-                onClick={onApprove}
-                className="shrink-0"
-              >
-                Review freigeben
-              </Button>
+              {/* Blocked: visually disabled with cursor-not-allowed but still renders reason */}
+              {isBlocked ? (
+                <span
+                  role="button"
+                  aria-disabled="true"
+                  className={cn(
+                    "inline-flex h-9 shrink-0 items-center justify-center rounded-md px-4 py-2",
+                    "text-sm font-medium",
+                    "border border-border bg-muted text-muted-foreground",
+                    "cursor-not-allowed select-none opacity-60"
+                  )}
+                >
+                  Review freigeben
+                </span>
+              ) : (
+                <Button onClick={onApprove} className="shrink-0">
+                  Review freigeben
+                </Button>
+              )}
               {!isBlocked && (
                 <Button
                   variant="outline"
@@ -367,13 +392,13 @@ function ApprovalCard({
                   {blockerCount} blockierende{" "}
                   {blockerCount === 1 ? "Punkt" : "Punkte"} offen.
                 </span>{" "}
-                <a
-                  href="#blockers"
-                  onClick={(e) => e.preventDefault()}
-                  className="underline underline-offset-2 hover:no-underline"
+                <button
+                  type="button"
+                  onClick={scrollToBlockers}
+                  className="underline underline-offset-2 hover:no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-1"
                 >
                   Zu den Hinweisen
-                </a>
+                </button>
               </p>
             )}
           </div>
@@ -459,6 +484,9 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
 
   // Findings: start with mock, allow optimistic mark-resolved
   const [findings, setFindings] = React.useState(FINDINGS)
+
+  // Ref for the Hinweise section — used by "Zu den Hinweisen" scroll
+  const findingsRef = React.useRef<HTMLElement | null>(null)
 
   function markFindingResolved(id: string) {
     setFindings((prev) =>
@@ -597,7 +625,7 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
             <Separator />
 
             {/* Hinweise */}
-            <section aria-labelledby="findings-heading" id="blockers">
+            <section ref={findingsRef} aria-labelledby="findings-heading" id="blockers">
               <h2
                 id="findings-heading"
                 className="mb-4 text-base font-semibold text-foreground"
@@ -680,6 +708,7 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
               <ApprovalCard
                 approval={approval}
                 blockerCount={openBlockers}
+                findingsRef={findingsRef}
                 onApprove={() =>
                   setApproval({
                     state: "approved",

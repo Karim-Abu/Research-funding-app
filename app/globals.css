@@ -95,7 +95,7 @@
   /* Machine status colors (green fulfilled, orange partial, gray/red open/blocker) */
   --status-fulfilled: oklch(0.62 0.17 149);
   --status-fulfilled-foreground: oklch(0.99 0 0);
-  --status-partial: oklch(0.65 0.19 47);
+  --status-partial: oklch(0.52 0.19 47);
   --status-partial-foreground: oklch(0.99 0 0);
   --status-open: oklch(0.55 0.015 264);
   --status-open-foreground: oklch(0.99 0 0);
