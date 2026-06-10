@@ -35,12 +35,12 @@ const ACTION_ROUTES: Record<NextAction | "view_progress", string> = {
 
 export default function DashboardPage() {
   const router = useRouter()
-  // Start in "loading" for one second to demo the skeleton state, then
-  // switch to "default". In a real app this would be driven by a data fetch.
+  // Start in "loading" briefly to demo the skeleton state, then switch to
+  // "default". In a real app this would be driven by a data fetch.
   const [pageState, setPageState] = React.useState<PageState>("loading")
 
   React.useEffect(() => {
-    const t = setTimeout(() => setPageState("default"), 1000)
+    const t = setTimeout(() => setPageState("default"), 400)
     return () => clearTimeout(t)
   }, [])
 
