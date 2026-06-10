@@ -56,7 +56,36 @@ export interface ServiceAvailability {
   web: boolean
 }
 
-// Run / analysis settings ------------------------------------------------
+// Dashboard project cards -----------------------------------------------
+
+/** Typed next-action union — maps to German button labels in the card. */
+export type NextAction =
+  | "upload_sources"
+  | "start_analysis"
+  | "review_analysis"
+  | "continue_draft"
+  | "approve_review"
+  | "create_export"
+  | "resume_analysis"
+
+/** Optional warning badge — at most one per card. */
+export type WarningBadge = "durchlauf_gestoppt" | "freigabe_offen"
+
+export interface DashboardProject {
+  id: string
+  title: string
+  profileLabel: string
+  deadline: string
+  progressPercent: number
+  /** 1-based current step number (1–8). */
+  currentStep: number
+  lastEditedLabel: string
+  nextAction: NextAction
+  warningBadge?: WarningBadge
+  /** When true, the card shows a spinner + "Analyse läuft…" and the next-action button becomes "Fortschritt ansehen". */
+  analysisRunning?: boolean
+}
+
 
 export interface AnalyseSettings {
   ki: boolean

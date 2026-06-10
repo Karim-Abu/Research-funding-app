@@ -1,5 +1,5 @@
 // Dummy-Daten für den Prototyp. Keine echten Daten, keine Backend-Aufrufe.
-import type { Project, User, WorkflowStep } from "./types"
+import type { DashboardProject, Project, User, WorkflowStep } from "./types"
 
 export const currentUser: User = {
   name: "Anna Keller",
@@ -36,4 +36,51 @@ export const workflowSteps: WorkflowStep[] = [
     href: "/review?tab=freigabe",
   },
   { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
+]
+
+// Dashboard project cards — 4 dummy entries covering distinct states.
+export const dashboardProjects: DashboardProject[] = [
+  {
+    id: "dp1",
+    title: "KI-gestützte Materialentwicklung (Dummy)",
+    profileLabel: "Innosuisse Beta-Profil",
+    deadline: "Frist: 15. Mai 2025 (Dummy)",
+    progressPercent: 78,
+    currentStep: 5,
+    lastEditedLabel: "Zuletzt bearbeitet: heute, 09:42 von Anna Keller",
+    nextAction: "continue_draft",
+  },
+  {
+    id: "dp2",
+    title: "Sensorik-Plattform für Produktionsanlagen (Dummy)",
+    profileLabel: "Innosuisse Beta-Profil",
+    deadline: "Frist: 3. Juli 2025 (Dummy)",
+    progressPercent: 42,
+    currentStep: 4,
+    lastEditedLabel: "Zuletzt bearbeitet: gestern, 14:15 von Tobias Frei",
+    nextAction: "resume_analysis",
+    warningBadge: "durchlauf_gestoppt",
+  },
+  {
+    id: "dp3",
+    title: "Nachhaltige Kreislaufwirtschaft – Verpackungen (Dummy)",
+    profileLabel: "Innosuisse Beta-Profil",
+    deadline: "Frist: 22. August 2025 (Dummy)",
+    progressPercent: 61,
+    currentStep: 6,
+    lastEditedLabel: "Zuletzt bearbeitet: heute, 08:03 von Anna Keller",
+    nextAction: "review_analysis",
+    analysisRunning: true,
+  },
+  {
+    id: "dp4",
+    title: "Digitale Zwillinge in der Medizintechnik (Dummy)",
+    profileLabel: "Innosuisse Beta-Profil",
+    deadline: "Frist: 10. Oktober 2025 (Dummy)",
+    progressPercent: 91,
+    currentStep: 7,
+    lastEditedLabel: "Zuletzt bearbeitet: vorgestern, 11:30 von Anna Keller",
+    nextAction: "approve_review",
+    warningBadge: "freigabe_offen",
+  },
 ]
