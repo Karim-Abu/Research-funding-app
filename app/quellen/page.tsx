@@ -212,8 +212,7 @@ export default function QuellenPage() {
               Quellen &amp; Evidenz
             </h1>
             <p className="text-sm text-muted-foreground">
-              Laden Sie Unterlagen hoch und starten Sie eine Analyse, um
-              Belege für Ihren Antrag zu gewinnen.
+              Laden Sie Unterlagen hoch. Die Plattform erkennt daraus Anforderungen und passende Belege.
             </p>
           </div>
 

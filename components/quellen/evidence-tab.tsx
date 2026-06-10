@@ -175,14 +175,19 @@ function EvidenceDrawer({
             <blockquote className="rounded-md border-l-2 border-border bg-muted/30 px-4 py-3 text-sm leading-relaxed text-foreground">
               {card.fullPassage}
             </blockquote>
-            <a
-              href="#"
-              onClick={(e) => e.preventDefault()}
-              className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-            >
-              <ExternalLink className="size-3" />
-              Originalquelle öffnen
-            </a>
+            <div className="flex flex-col gap-0.5">
+              <a
+                href="#"
+                onClick={(e) => e.preventDefault()}
+                className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+              >
+                <ExternalLink className="size-3" />
+                Originalquelle öffnen
+              </a>
+              <span className="text-xs text-muted-foreground">
+                Öffnet die hochgeladene Quelle oder URL.
+              </span>
+            </div>
           </div>
 
           <Separator />
@@ -294,8 +299,8 @@ function EvidenceCardItem({
         {card.claimQuote}
       </p>
 
-      {/* Human check or ghost action */}
-      <div onClick={(e) => e.stopPropagation()}>
+      {/* Footer: human check or quick-mark + details affordance */}
+      <div className="flex items-center justify-between gap-2" onClick={(e) => e.stopPropagation()}>
         {card.humanCheck ? (
           <HumanCheckMark check={card.humanCheck} />
         ) : (
@@ -309,6 +314,9 @@ function EvidenceCardItem({
             Als geprüft markieren
           </Button>
         )}
+        <span className="shrink-0 text-xs text-muted-foreground">
+          Details anzeigen →
+        </span>
       </div>
     </article>
   )
@@ -339,9 +347,21 @@ export function EvidenceTab({ cards }: EvidenceTabProps) {
     setDrawerOpen(true)
   }
 
-  function openDrawerForCheck(id: string) {
-    const card = localCards.find((c) => c.id === id)
-    if (card) openDrawer(card)
+  function handleCardMarkChecked(id: string) {
+    // Immediately apply optimistic update — no drawer needed from the card.
+    setLocalCards((prev) =>
+      prev.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              humanCheck: {
+                name: "Anna Keller",
+                timestamp: "gerade eben",
+              },
+            }
+          : c
+      )
+    )
   }
 
   function handleMarkChecked(id: string, comment: string) {
@@ -413,7 +433,7 @@ export function EvidenceTab({ cards }: EvidenceTabProps) {
                     key={card.id}
                     card={card}
                     onClick={() => openDrawer(card)}
-                    onMarkChecked={openDrawerForCheck}
+                    onMarkChecked={handleCardMarkChecked}
                   />
                 ))}
               </div>
