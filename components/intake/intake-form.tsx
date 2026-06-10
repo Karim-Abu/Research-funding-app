@@ -104,14 +104,14 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
 
 const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
   public_synthetic:
-    "Öffentlich (synthetisch) gewählt: Cloud-KI möglich, Webrecherche nicht möglich.",
+    "Öffentlich (synthetisch) gewählt: Externe KI-Dienste möglich, Webrecherche nicht möglich.",
   public_external:
-    "Öffentlich (extern) gewählt: Cloud-KI möglich, Webrecherche möglich.",
+    "Öffentlich (extern) gewählt: Externe KI-Dienste möglich, Webrecherche möglich.",
   internal:
-    "Intern gewählt: Cloud-KI nur mit Bestätigung — Webrecherche nicht möglich.",
+    "Intern gewählt: Externe KI-Dienste nur mit Bestätigung — Webrecherche nicht möglich.",
   confidential:
-    "Vertraulich gewählt: Verarbeitung nur lokal — keine Cloud-KI, keine Webrecherche.",
-  nda: "NDA gewählt: Verarbeitung nur lokal — keine Cloud-KI, keine Webrecherche.",
+    "Vertraulich gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
+  nda: "NDA gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
 }
 
 // ---------------------------------------------------------------------------
@@ -231,6 +231,11 @@ export function IntakeForm() {
   const [errors, setErrors] = React.useState<IntakeFormErrors>({})
   const [saveState, setSaveState] = React.useState<SaveState>("idle")
   const [cancelDialogOpen, setCancelDialogOpen] = React.useState(false)
+  // Ref for the scrollable content area — used to ensure page opens at top.
+  const scrollRef = React.useRef<HTMLDivElement>(null)
+  React.useEffect(() => {
+    scrollRef.current?.scrollTo({ top: 0 })
+  }, [])
 
   // -- field helpers --------------------------------------------------------
 
@@ -320,6 +325,12 @@ export function IntakeForm() {
   const submitEnabled = isSubmitEnabled(data)
   const saving = saveState === "saving"
 
+  // Derive the list of missing required field names for the footer hint.
+  const missingFields: string[] = []
+  if (!data.titel.trim()) missingFields.push("Antragstitel")
+  if (!data.projektidee.trim()) missingFields.push("Projektidee")
+  if (!data.vertraulichkeit) missingFields.push("Vertraulichkeitsstufe")
+
   return (
     <>
       <form
@@ -328,7 +339,7 @@ export function IntakeForm() {
         className="flex min-h-full flex-col"
       >
         {/* Scrollable content area */}
-        <div className="flex-1 overflow-y-auto">
+        <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[720px] px-6 py-8">
 
             {/* Non-dismissible info box */}
@@ -612,7 +623,7 @@ export function IntakeForm() {
                         </span>
                         <div className="mt-1 flex flex-col gap-1">
                           <ConsequenceLine
-                            label="Cloud-KI"
+                            label="Externe KI-Dienste"
                             value={opt.ki}
                           />
                           <ConsequenceLine
@@ -643,7 +654,7 @@ export function IntakeForm() {
 
         {/* ── STICKY FOOTER ─────────────────────────────────────────── */}
         <div className="shrink-0 border-t border-border bg-card px-6 py-4">
-          <div className="mx-auto flex w-full max-w-[720px] items-center justify-between gap-4">
+          <div className="mx-auto flex w-full max-w-[720px] flex-wrap items-center justify-between gap-x-4 gap-y-2">
             <button
               type="button"
               onClick={handleCancelClick}
@@ -652,6 +663,16 @@ export function IntakeForm() {
             >
               Abbrechen
             </button>
+
+            {/* Missing-fields hint — only shown when primary button is disabled */}
+            {!submitEnabled && missingFields.length > 0 && (
+              <p className="order-last w-full text-xs text-muted-foreground sm:order-none sm:w-auto sm:flex-1 sm:text-right">
+                Noch offen:{" "}
+                <span className="font-medium text-foreground">
+                  {missingFields.join(", ")}
+                </span>
+              </p>
+            )}
 
             <div className="flex items-center gap-3">
               <Button
