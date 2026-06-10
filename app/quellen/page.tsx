@@ -161,6 +161,9 @@ const quellenStepStatus = [
 // Page
 // ---------------------------------------------------------------------------
 
+// Set to true only during internal prototyping — never in the evaluation view.
+const SHOW_DEBUG_CONTROLS = false
+
 export default function QuellenPage() {
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [activeScenario, setActiveScenario] = React.useState<DialogScenario>(
@@ -266,7 +269,8 @@ export default function QuellenPage() {
           </TabsContent>
         </Tabs>
 
-        {/* Debug: dialog-variant switcher (collapsed by default) */}
+        {/* Debug: dialog-variant switcher — hidden from normal user-facing UI */}
+        {SHOW_DEBUG_CONTROLS && (
         <div className="mt-10 border-t border-border pt-6">
           <button
             type="button"
@@ -344,6 +348,7 @@ export default function QuellenPage() {
             </div>
           )}
         </div>
+        )}
       </div>
 
       {/* Analyse-Einstellungen dialog */}

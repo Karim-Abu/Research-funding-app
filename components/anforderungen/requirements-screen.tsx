@@ -56,6 +56,9 @@ interface CounterBarProps {
   onFilterChange: (f: MachineStatus | "all") => void
 }
 
+// Set to true only during internal prototyping — never in the evaluation view.
+const SHOW_DEBUG_CONTROLS = false
+
 const STATUS_LABEL: Record<MachineStatus, string> = {
   verified: "Erfüllt",
   partial: "Teilweise",
@@ -674,44 +677,46 @@ export function RequirementsScreen({ forceState }: RequirementsScreenProps) {
             </>
           )}
 
-          {/* Debug: collapsed state switcher */}
-          <div className="border-t border-border pt-6">
-            <button
-              type="button"
-              onClick={() => setShowDebug((v) => !v)}
-              className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-              aria-expanded={showDebug}
-            >
-              {showDebug ? (
-                <ChevronDown className="size-3.5" />
-              ) : (
-                <ChevronRight className="size-3.5" />
+          {/* Debug: state switcher — hidden from normal user-facing UI */}
+          {SHOW_DEBUG_CONTROLS && (
+            <div className="border-t border-border pt-6">
+              <button
+                type="button"
+                onClick={() => setShowDebug((v) => !v)}
+                className="flex items-center gap-1.5 text-xs font-medium text-muted-foreground outline-none transition-colors hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                aria-expanded={showDebug}
+              >
+                {showDebug ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+                Demo: Seitenzustände testen
+              </button>
+              {showDebug && (
+                <div className="mt-3 flex flex-wrap gap-2">
+                  {(["default", "loading", "empty", "stopped"] as PageState[]).map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => setPageState(s)}
+                      className={cn(
+                        "inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors",
+                        "hover:bg-accent hover:text-accent-foreground",
+                        "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+                        pageState === s && "bg-accent text-accent-foreground"
+                      )}
+                    >
+                      {s === "default" && "Standard"}
+                      {s === "loading" && "Laden (Skeleton)"}
+                      {s === "empty" && "Leer"}
+                      {s === "stopped" && "Gestoppter Durchlauf"}
+                    </button>
+                  ))}
+                </div>
               )}
-              Demo: Seitenzustände testen
-            </button>
-            {showDebug && (
-              <div className="mt-3 flex flex-wrap gap-2">
-                {(["default", "loading", "empty", "stopped"] as PageState[]).map((s) => (
-                  <button
-                    key={s}
-                    type="button"
-                    onClick={() => setPageState(s)}
-                    className={cn(
-                      "inline-flex h-8 items-center rounded-full border border-border bg-card px-3 text-xs font-medium text-foreground transition-colors",
-                      "hover:bg-accent hover:text-accent-foreground",
-                      "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
-                      pageState === s && "bg-accent text-accent-foreground"
-                    )}
-                  >
-                    {s === "default" && "Standard"}
-                    {s === "loading" && "Laden (Skeleton)"}
-                    {s === "empty" && "Leer"}
-                    {s === "stopped" && "Gestoppter Durchlauf"}
-                  </button>
-                ))}
-              </div>
-            )}
-          </div>
+            </div>
+          )}
         </div>
       </div>
 

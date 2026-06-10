@@ -104,6 +104,7 @@ export interface IntakeFormData {
   partner: IntakePartner[]
 }
 
+export interface AnalyseSettings {
   ki: boolean
   web: boolean
   localOnly: boolean

@@ -263,9 +263,9 @@ function ExportCardDownloadItem({
       )}
 
       <div className="flex-1">
-        <div className="flex items-center gap-1.5 text-sm text-human">
-          <CheckCircle2 className="size-4" />
-          Bereit zum Herunterladen
+        <div className="flex items-center gap-1.5 text-sm text-foreground">
+          <CheckCircle2 className="size-4 text-muted-foreground" />
+          Download verfügbar
         </div>
       </div>
 

@@ -17,6 +17,9 @@ import type { NextAction } from "@/lib/types"
 // The dashboard has no active workflow step — no stepper rendered.
 type PageState = "loading" | "error" | "empty" | "default"
 
+// Set to true only during internal prototyping — never in the evaluation view.
+const showDebugControls = false
+
 export default function DashboardPage() {
   // Start in "loading" for one second to demo the skeleton state, then
   // switch to "default". In a real app this would be driven by a data fetch.
@@ -70,8 +73,10 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* State switcher — collapsed debug helper, not part of user flow */}
-        <DebugStateSwitcher current={pageState} onChange={setPageState} />
+        {/* State switcher — hidden from normal user-facing UI */}
+        {showDebugControls && (
+          <DebugStateSwitcher current={pageState} onChange={setPageState} />
+        )}
       </div>
     </AppShell>
   )

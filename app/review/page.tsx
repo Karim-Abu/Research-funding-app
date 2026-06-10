@@ -20,6 +20,9 @@ const stepStatus: StepStatus[] = [
   "upcoming",
 ]
 
+// Set to true only during internal prototyping — never in the evaluation view.
+const showDebugControls = false
+
 export default function ReviewPage() {
   const [scenario, setScenario] = React.useState<PageScenario>("default")
   const [showDebug, setShowDebug] = React.useState(false)
@@ -34,7 +37,8 @@ export default function ReviewPage() {
     >
       <ReviewScreen scenario={scenario} />
 
-      {/* Debug scenario switcher — collapsed by default */}
+      {/* Debug scenario switcher — hidden from normal user-facing UI */}
+      {showDebugControls && (
       <div className="border-t border-border px-6 py-4">
         <button
           type="button"
@@ -75,6 +79,7 @@ export default function ReviewPage() {
           </div>
         )}
       </div>
+      )}
     </AppShell>
   )
 }
