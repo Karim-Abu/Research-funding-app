@@ -471,14 +471,11 @@ export function IntakeForm() {
                 <div className="flex items-center gap-1.5">
                   <Label>Förderprofil</Label>
                   <Tooltip>
-                    <TooltipTrigger asChild>
-                      <button
-                        type="button"
-                        aria-label="Information zum Förderprofil"
-                        className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
-                      >
-                        <Info className="size-3.5" />
-                      </button>
+                    <TooltipTrigger
+                      aria-label="Information zum Förderprofil"
+                      className="inline-flex size-5 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <Info className="size-3.5" />
                     </TooltipTrigger>
                     <TooltipContent side="right" className="max-w-[260px] text-xs">
                       Die Beta arbeitet mit einem Standard-Profil. Es bildet

@@ -727,8 +727,8 @@ export function RequirementsScreen({ forceState }: RequirementsScreenProps) {
             <span className="font-medium text-foreground">{openCount} offene{openCount === 1 ? "r Punkt wird" : " Punkte werden"}</span>
             {" "}ins Review übernommen.
           </p>
-          <Button asChild>
-            <a href="/editor">Weiter zum Entwurf</a>
+          <Button render={<a href="/editor" />} nativeButton={false}>
+            Weiter zum Entwurf
           </Button>
         </div>
       </footer>
