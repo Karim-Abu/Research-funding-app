@@ -17,11 +17,11 @@ const stepStatus = [
   "done",
   "done",
   "current",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
 ] as const
 
 export default function AnforderungenPage() {

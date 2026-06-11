@@ -10,9 +10,9 @@ const editorStepStatus = [
   "done",
   "done",
   "current",
-  "todo",
-  "todo",
-  "todo",
+  "upcoming",
+  "upcoming",
+  "upcoming",
 ] as const
 
 export default function EditorPage() {

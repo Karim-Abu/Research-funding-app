@@ -160,12 +160,12 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
 const quellenStepStatus = [
   "done",
   "current",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
 ] as const
 
 // ---------------------------------------------------------------------------

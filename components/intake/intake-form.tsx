@@ -436,7 +436,7 @@ export function IntakeForm() {
                 <Label htmlFor="innovationsfeld">Innovationsfeld</Label>
                 <Select
                   value={data.innovationsfeld}
-                  onValueChange={(v) => set("innovationsfeld", v)}
+                  onValueChange={(v) => set("innovationsfeld", v ?? "")}
                   disabled={saving}
                 >
                   <SelectTrigger id="innovationsfeld" className="w-full">
