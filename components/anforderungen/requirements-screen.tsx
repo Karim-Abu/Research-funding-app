@@ -519,11 +519,18 @@ function EmptyState({ onStartAnalysis }: EmptyStateProps) {
 interface RequirementsScreenProps {
   /** Demo: override page state for testing. */
   forceState?: PageState
+  /** Initial rows; defaults to the local mock data when omitted. */
+  requirements?: Requirement[]
 }
 
-export function RequirementsScreen({ forceState }: RequirementsScreenProps) {
+export function RequirementsScreen({
+  forceState,
+  requirements,
+}: RequirementsScreenProps) {
   const [pageState, setPageState] = React.useState<PageState>(forceState ?? "default")
-  const [rows, setRows] = React.useState<Requirement[]>(initialRequirements)
+  const [rows, setRows] = React.useState<Requirement[]>(
+    requirements ?? initialRequirements
+  )
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set())
   const [statusFilter, setStatusFilter] = React.useState<MachineStatus | "all">("all")
 

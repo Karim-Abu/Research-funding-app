@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Play, ChevronDown, ChevronRight } from "lucide-react"
+import { Play, ChevronDown, ChevronRight, XCircle } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { SourceTable } from "@/components/quellen/source-table"
@@ -24,6 +24,14 @@ import {
   type AnalysisProgressStep,
   type PageAnalysisState,
 } from "@/lib/quellen-mock-data"
+import {
+  startRun,
+  getRun,
+  stopRun,
+  resumeRun,
+  ApiError,
+  BRIDGE_UNREACHABLE_MESSAGE,
+} from "@/lib/api"
 import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -207,32 +215,43 @@ function QuellenPageContent() {
     React.useState<PageAnalysisState>("idle")
   const [analysisSteps, setAnalysisSteps] =
     React.useState<AnalysisProgressStep[]>(dummyAnalysisSteps)
+  const [apiError, setApiError] = React.useState<string | null>(null)
   const [showDebugControls, setShowDebugControls] = React.useState(false)
 
-  // Demo progression: one timer per step (~1.2s); cleared on stop/unmount.
-  const stepTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(
+  // Run lifecycle: the page only starts a run and polls its status via the
+  // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
+  const runIdRef = React.useRef<string | null>(null)
+  const pollTimer = React.useRef<ReturnType<typeof setInterval> | undefined>(
     undefined
   )
-  React.useEffect(() => () => clearTimeout(stepTimer.current), [])
+  React.useEffect(() => () => clearInterval(pollTimer.current), [])
 
-  const scheduleStepTick = React.useCallback((index: number) => {
-    stepTimer.current = setTimeout(() => {
-      setAnalysisSteps((prev) =>
-        prev.map((s, i) =>
-          i === index
-            ? { ...s, state: "done" as const }
-            : i === index + 1
-              ? { ...s, state: "running" as const }
-              : s
-        )
-      )
-      if (index + 1 < dummyAnalysisSteps.length) {
-        scheduleStepTick(index + 1)
-      } else {
-        setAnalysisState("completed")
-      }
-    }, 1200)
+  const stopPolling = React.useCallback(() => {
+    clearInterval(pollTimer.current)
+    pollTimer.current = undefined
   }, [])
+
+  const startPolling = React.useCallback(() => {
+    stopPolling()
+    pollTimer.current = setInterval(async () => {
+      const runId = runIdRef.current
+      if (!runId) return
+      try {
+        const dto = await getRun(runId)
+        setAnalysisSteps(dto.steps)
+        if (dto.status === "completed") {
+          stopPolling()
+          setAnalysisState("completed")
+        }
+      } catch (e) {
+        stopPolling()
+        setAnalysisState("idle")
+        setApiError(
+          e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      }
+    }, 1000)
+  }, [stopPolling])
 
   // The active scenario's dataClass drives the local-only banner.
   const dataClass = activeScenario.dataClass
@@ -243,9 +262,9 @@ function QuellenPageContent() {
     setDialogOpen(true)
   }
 
-  function handleAnalysisStart(_settings: AnalyseSettings) {
+  async function handleAnalysisStart(settings: AnalyseSettings) {
     setDialogOpen(false)
-    clearTimeout(stepTimer.current)
+    setApiError(null)
     setAnalysisSteps(
       dummyAnalysisSteps.map((s, i) => ({
         ...s,
@@ -253,18 +272,37 @@ function QuellenPageContent() {
       }))
     )
     setAnalysisState("running")
-    scheduleStepTick(0)
+    try {
+      const { runId } = await startRun(settings)
+      runIdRef.current = runId
+      startPolling()
+    } catch (e) {
+      setAnalysisState("idle")
+      setApiError(
+        e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+      )
+    }
   }
 
   function handleAnalysisStop() {
-    clearTimeout(stepTimer.current)
+    stopPolling()
     setAnalysisState("stopped")
+    const runId = runIdRef.current
+    if (runId) void stopRun(runId).catch(() => {})
   }
 
   function handleAnalysisResume() {
+    const runId = runIdRef.current
+    if (!runId) return
     setAnalysisState("running")
-    const runningIndex = analysisSteps.findIndex((s) => s.state === "running")
-    scheduleStepTick(runningIndex === -1 ? 0 : runningIndex)
+    resumeRun(runId)
+      .then(startPolling)
+      .catch((e) => {
+        setAnalysisState("stopped")
+        setApiError(
+          e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      })
   }
 
   const sourceCount = dummySources.length
@@ -307,6 +345,17 @@ function QuellenPageContent() {
 
         {/* Confidentiality banner */}
         {isLocalOnly && <div className="mb-4"><LocalOnlyBanner /></div>}
+
+        {/* API error banner (German message from the error envelope) */}
+        {apiError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground"
+          >
+            <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+            {apiError}
+          </div>
+        )}
 
         {/* Analysis state banners */}
         {analysisState === "running" && (
