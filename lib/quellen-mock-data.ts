@@ -282,5 +282,5 @@ export const EVIDENCE_SECTIONS: EvidenceSection[] = [
 ]
 
 // Page-level state used by the demo toggles
-export type PageAnalysisState = "idle" | "running" | "stopped"
+export type PageAnalysisState = "idle" | "running" | "stopped" | "completed"
 export const defaultDataClass: DataClass = "public_synthetic"

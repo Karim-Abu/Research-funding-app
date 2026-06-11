@@ -13,9 +13,11 @@ export const memberUser: User = {
   role: "member",
 }
 
+// Topbar selector: only the active project. Switching projects without a
+// real project context would silently keep showing p1 data on every page —
+// a demo trap. Multi-project context is post-evaluation work.
 export const projects: Project[] = [
   { id: "p1", title: "KI-gestützte Materialentwicklung (Dummy)" },
-  { id: "p2", title: "Sensorik-Plattform (Dummy)" },
 ]
 
 export const activeProjectId = "p1"
@@ -33,7 +35,7 @@ export const workflowSteps: WorkflowStep[] = [
     step: 7,
     label: "Abschluss",
     subLabel: "Freigabe",
-    href: "/review?tab=freigabe",
+    href: "/review",
   },
   { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
 ]

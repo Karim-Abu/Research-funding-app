@@ -1,7 +1,8 @@
 "use client"
 
 import * as React from "react"
-import { Play, ChevronDown, ChevronRight } from "lucide-react"
+import { useRouter, useSearchParams } from "next/navigation"
+import { Play, ChevronDown, ChevronRight, XCircle } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { SourceTable } from "@/components/quellen/source-table"
@@ -9,6 +10,7 @@ import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
   StoppedAnalysisBanner,
+  CompletedAnalysisBanner,
   LocalOnlyBanner,
 } from "@/components/quellen/analysis-progress-banner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -19,8 +21,17 @@ import {
   dummySources,
   dummyEvidence,
   dummyAnalysisSteps,
+  type AnalysisProgressStep,
   type PageAnalysisState,
 } from "@/lib/quellen-mock-data"
+import {
+  startRun,
+  getRun,
+  stopRun,
+  resumeRun,
+  ApiError,
+  BRIDGE_UNREACHABLE_MESSAGE,
+} from "@/lib/api"
 import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -165,13 +176,82 @@ const quellenStepStatus = [
 const SHOW_DEBUG_CONTROLS = false
 
 export default function QuellenPage() {
+  // useSearchParams requires a Suspense boundary in the App Router.
+  return (
+    <React.Suspense fallback={null}>
+      <QuellenPageContent />
+    </React.Suspense>
+  )
+}
+
+type QuellenTab = "quellen" | "evidenz"
+
+function QuellenPageContent() {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const tabFromUrl: QuellenTab =
+    searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
+
+  const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
+  // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
+  // this route, so follow URL changes after mount as well.
+  React.useEffect(() => {
+    setActiveTab(tabFromUrl)
+  }, [tabFromUrl])
+
+  function handleTabChange(value: unknown) {
+    const tab: QuellenTab = value === "evidenz" ? "evidenz" : "quellen"
+    setActiveTab(tab)
+    router.replace(tab === "evidenz" ? "/quellen?tab=evidenz" : "/quellen", {
+      scroll: false,
+    })
+  }
+
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [activeScenario, setActiveScenario] = React.useState<DialogScenario>(
     DIALOG_SCENARIOS[0]
   )
   const [analysisState, setAnalysisState] =
     React.useState<PageAnalysisState>("idle")
+  const [analysisSteps, setAnalysisSteps] =
+    React.useState<AnalysisProgressStep[]>(dummyAnalysisSteps)
+  const [apiError, setApiError] = React.useState<string | null>(null)
   const [showDebugControls, setShowDebugControls] = React.useState(false)
+
+  // Run lifecycle: the page only starts a run and polls its status via the
+  // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
+  const runIdRef = React.useRef<string | null>(null)
+  const pollTimer = React.useRef<ReturnType<typeof setInterval> | undefined>(
+    undefined
+  )
+  React.useEffect(() => () => clearInterval(pollTimer.current), [])
+
+  const stopPolling = React.useCallback(() => {
+    clearInterval(pollTimer.current)
+    pollTimer.current = undefined
+  }, [])
+
+  const startPolling = React.useCallback(() => {
+    stopPolling()
+    pollTimer.current = setInterval(async () => {
+      const runId = runIdRef.current
+      if (!runId) return
+      try {
+        const dto = await getRun(runId)
+        setAnalysisSteps(dto.steps)
+        if (dto.status === "completed") {
+          stopPolling()
+          setAnalysisState("completed")
+        }
+      } catch (e) {
+        stopPolling()
+        setAnalysisState("idle")
+        setApiError(
+          e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      }
+    }, 1000)
+  }, [stopPolling])
 
   // The active scenario's dataClass drives the local-only banner.
   const dataClass = activeScenario.dataClass
@@ -182,17 +262,47 @@ export default function QuellenPage() {
     setDialogOpen(true)
   }
 
-  function handleAnalysisStart(_settings: AnalyseSettings) {
+  async function handleAnalysisStart(settings: AnalyseSettings) {
     setDialogOpen(false)
+    setApiError(null)
+    setAnalysisSteps(
+      dummyAnalysisSteps.map((s, i) => ({
+        ...s,
+        state: i === 0 ? ("running" as const) : ("pending" as const),
+      }))
+    )
     setAnalysisState("running")
+    try {
+      const { runId } = await startRun(settings)
+      runIdRef.current = runId
+      startPolling()
+    } catch (e) {
+      setAnalysisState("idle")
+      setApiError(
+        e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+      )
+    }
   }
 
   function handleAnalysisStop() {
+    stopPolling()
     setAnalysisState("stopped")
+    const runId = runIdRef.current
+    if (runId) void stopRun(runId).catch(() => {})
   }
 
   function handleAnalysisResume() {
+    const runId = runIdRef.current
+    if (!runId) return
     setAnalysisState("running")
+    resumeRun(runId)
+      .then(startPolling)
+      .catch((e) => {
+        setAnalysisState("stopped")
+        setApiError(
+          e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      })
   }
 
   const sourceCount = dummySources.length
@@ -226,7 +336,9 @@ export default function QuellenPage() {
               className="shrink-0"
             >
               <Play className="mr-1.5 size-4" />
-              Analyse starten
+              {analysisState === "completed"
+                ? "Analyse erneut starten"
+                : "Analyse starten"}
             </Button>
           )}
         </div>
@@ -234,11 +346,22 @@ export default function QuellenPage() {
         {/* Confidentiality banner */}
         {isLocalOnly && <div className="mb-4"><LocalOnlyBanner /></div>}
 
+        {/* API error banner (German message from the error envelope) */}
+        {apiError && (
+          <div
+            role="alert"
+            className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground"
+          >
+            <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+            {apiError}
+          </div>
+        )}
+
         {/* Analysis state banners */}
         {analysisState === "running" && (
           <div className="mb-4">
             <AnalysisProgressBanner
-              steps={dummyAnalysisSteps}
+              steps={analysisSteps}
               onStop={handleAnalysisStop}
             />
           </div>
@@ -248,9 +371,17 @@ export default function QuellenPage() {
             <StoppedAnalysisBanner onResume={handleAnalysisResume} />
           </div>
         )}
+        {analysisState === "completed" && (
+          <div className="mb-4">
+            <CompletedAnalysisBanner
+              onGoToRequirements={() => router.push("/anforderungen")}
+              onShowEvidence={() => handleTabChange("evidenz")}
+            />
+          </div>
+        )}
 
         {/* Tabs */}
-        <Tabs defaultValue="quellen">
+        <Tabs value={activeTab} onValueChange={handleTabChange}>
           <TabsList className="mb-6">
             <TabsTrigger value="quellen">
               Quellen ({sourceCount})

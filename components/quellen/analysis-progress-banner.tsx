@@ -123,6 +123,50 @@ export function StoppedAnalysisBanner({ onResume }: StoppedAnalysisBannerProps) 
 }
 
 // ---------------------------------------------------------------------------
+// Completed-analysis banner
+// ---------------------------------------------------------------------------
+
+interface CompletedAnalysisBannerProps {
+  /** Called when the user clicks "Zu den Anforderungen" */
+  onGoToRequirements?: () => void
+  /** Called when the user clicks "Belege ansehen" */
+  onShowEvidence?: () => void
+}
+
+export function CompletedAnalysisBanner({
+  onGoToRequirements,
+  onShowEvidence,
+}: CompletedAnalysisBannerProps) {
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-5 py-4"
+    >
+      <div className="flex items-start gap-2">
+        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-fulfilled" />
+        <p className="text-sm text-foreground">
+          Analyse abgeschlossen — 12 Belege gefunden, 19 Anforderungen erkannt
+          (Dummy)
+        </p>
+      </div>
+      <div className="flex items-center gap-2">
+        {onShowEvidence && (
+          <Button variant="ghost" size="sm" onClick={onShowEvidence}>
+            Belege ansehen
+          </Button>
+        )}
+        {onGoToRequirements && (
+          <Button size="sm" onClick={onGoToRequirements}>
+            Zu den Anforderungen
+          </Button>
+        )}
+      </div>
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Local-only confidentiality banner
 // ---------------------------------------------------------------------------
 

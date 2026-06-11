@@ -60,8 +60,15 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
 
   const warningConfig = warningBadge ? WARNING_BADGE_CONFIG[warningBadge] : null
 
+  // Whole card navigates to the same target as its next action; the button
+  // below stays the accessible/keyboard path and stops propagation.
+  const cardAction = analysisRunning ? "view_progress" : nextAction
+
   return (
-    <Card className="flex flex-col gap-0 overflow-hidden">
+    <Card
+      className="flex cursor-pointer flex-col gap-0 overflow-hidden transition-colors hover:border-primary/40"
+      onClick={() => onAction(id, cardAction)}
+    >
       <CardHeader className="pb-3">
         {/* Warning badge — at most one, never shown when analysis is running */}
         {warningConfig && !analysisRunning && (
@@ -118,9 +125,10 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
         <Button
           variant={analysisRunning ? "outline" : "default"}
           className="w-full"
-          onClick={() =>
-            onAction(id, analysisRunning ? "view_progress" : nextAction)
-          }
+          onClick={(e) => {
+            e.stopPropagation()
+            onAction(id, cardAction)
+          }}
         >
           {analysisRunning ? "Fortschritt ansehen" : NEXT_ACTION_LABELS[nextAction]}
         </Button>

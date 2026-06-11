@@ -18,10 +18,12 @@ import { AISuggestionCard } from "./ai-suggestion-card"
 import { DiffConfirmDialog } from "./diff-confirm-dialog"
 import { EvidencePanel } from "./evidence-panel"
 import { CostStatusBar, type CostStatus } from "./cost-status-bar"
+import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import {
   portalSections,
   aiSuggestions,
   evidenceAnchors,
+  linkableEvidence,
   draftText as initialDraft,
   type AISuggestion,
 } from "@/lib/editor-data"
@@ -44,9 +46,22 @@ export function ProposalEditor({
   const [drafts, setDrafts] = React.useState<Record<string, string>>({
     [portalSections[0].id]: initialDraft,
   })
+  const [activeTab, setActiveTab] = React.useState("entwurf")
   const [diffOpen, setDiffOpen] = React.useState(false)
   const [pending, setPending] = React.useState<AISuggestion | null>(null)
+  // After "Anpassen" the accepted text should be edited right away.
+  const [editAfterApply, setEditAfterApply] = React.useState(false)
   const [showOlder, setShowOlder] = React.useState(false)
+
+  // Suggestions are local demo state so a run can prepend a new entry.
+  const [sugState, setSugState] = React.useState<SuggestionState>(suggestionState)
+  const [suggestions, setSuggestions] = React.useState(aiSuggestions)
+  const [runDialogOpen, setRunDialogOpen] = React.useState(false)
+  const runPurpose = React.useRef<"regenerate" | "activate">("regenerate")
+  const runTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
+  const regenCount = React.useRef(0)
+
+  React.useEffect(() => () => clearTimeout(runTimer.current), [])
 
   const section = portalSections.find((s) => s.id === sectionId)!
   const draft = drafts[sectionId] ?? ""
@@ -55,24 +70,65 @@ export function ProposalEditor({
 
   // Live char count: count UTF-16 code units, excluding trailing newlines.
   const liveCharCount = draft.trimEnd().length
-  const visibleSuggestions = aiSuggestions.slice(0, 3)
-  const olderSuggestions = aiSuggestions.slice(3)
+  const visibleSuggestions = suggestions.slice(0, 3)
+  const olderSuggestions = suggestions.slice(3)
 
-  function handleAccept(suggestion: AISuggestion) {
-    const text = suggestion.text.join("\n\n")
+  function applySuggestion(suggestion: AISuggestion, editAfter: boolean) {
     if (draft.trim().length > 0) {
       // Existing text present -> always confirm via diff dialog.
       setPending(suggestion)
+      setEditAfterApply(editAfter)
       setDiffOpen(true)
     } else {
-      setDraft(text)
+      setDraft(suggestion.text.join("\n\n"))
+      if (editAfter) setActiveTab("entwurf")
     }
+  }
+
+  function handleAccept(suggestion: AISuggestion) {
+    applySuggestion(suggestion, false)
+  }
+
+  function handleAdjust(suggestion: AISuggestion) {
+    applySuggestion(suggestion, true)
   }
 
   function confirmReplace() {
     if (pending) setDraft(pending.text.join("\n\n"))
     setDiffOpen(false)
     setPending(null)
+    if (editAfterApply) {
+      setActiveTab("entwurf")
+      setEditAfterApply(false)
+    }
+  }
+
+  function openRunDialog(purpose: "regenerate" | "activate") {
+    runPurpose.current = purpose
+    setRunDialogOpen(true)
+  }
+
+  function handleRunStart() {
+    setRunDialogOpen(false)
+    setSugState("loading")
+    clearTimeout(runTimer.current)
+    runTimer.current = setTimeout(() => {
+      if (runPurpose.current === "regenerate") {
+        regenCount.current += 1
+        const fresh: AISuggestion = {
+          id: `s-neu-${regenCount.current}`,
+          text: [
+            "Neuer Vorschlag (Dummy): Die Marktposition lässt sich zusätzlich über regulatorische Treiber im europäischen Raum differenzieren, ohne die bestehende Kostenargumentation zu schwächen.",
+          ],
+          evidence: [
+            { label: "EU-Bericht (Dummy) · S. 21" },
+            { label: "Marktstudie (Dummy) · S. 4" },
+          ],
+        }
+        setSuggestions((prev) => [fresh, ...prev])
+      }
+      setSugState("list")
+    }, 1500)
   }
 
   return (
@@ -87,7 +143,11 @@ export function ProposalEditor({
       <div className="flex min-h-0 flex-1">
         {/* Main editor area (~60%) */}
         <div className="flex min-w-0 flex-1 flex-col overflow-y-auto p-6">
-          <Tabs defaultValue="entwurf" className="flex min-h-0 flex-1 flex-col">
+          <Tabs
+            value={activeTab}
+            onValueChange={(value) => setActiveTab(String(value))}
+            className="flex min-h-0 flex-1 flex-col"
+          >
             <TabsList>
               <TabsTrigger value="entwurf">Entwurf</TabsTrigger>
               <TabsTrigger value="ki">
@@ -106,7 +166,7 @@ export function ProposalEditor({
                     <button
                       type="button"
                       className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
-                      onClick={() => {/* switch to KI tab or expand first suggestion */}}
+                      onClick={() => setActiveTab("ki")}
                     >
                       1 KI-Vorschlag verfügbar
                     </button>
@@ -120,15 +180,16 @@ export function ProposalEditor({
 
             <TabsContent value="ki" className="mt-4">
               <SuggestionTab
-                state={suggestionState}
+                state={sugState}
                 suggestions={visibleSuggestions}
                 olderCount={olderSuggestions.length}
                 showOlder={showOlder}
                 onToggleOlder={() => setShowOlder((v) => !v)}
                 olderSuggestions={olderSuggestions}
                 onAccept={handleAccept}
-                onAdjust={() => {}}
-                onRegenerate={() => {}}
+                onAdjust={handleAdjust}
+                onRegenerate={() => openRunDialog("regenerate")}
+                onActivate={() => openRunDialog("activate")}
               />
             </TabsContent>
 
@@ -142,7 +203,11 @@ export function ProposalEditor({
         </div>
 
         {/* Right evidence panel */}
-        <EvidencePanel evidence={evidenceAnchors} unsupportedCount={2} />
+        <EvidencePanel
+          evidence={evidenceAnchors}
+          linkCandidates={linkableEvidence}
+          unsupportedCount={2}
+        />
       </div>
 
       <CostStatusBar status={costStatus} kiOn webOn={false} />
@@ -153,6 +218,17 @@ export function ProposalEditor({
         currentText={draft}
         suggestionText={pending?.text.join("\n\n") ?? ""}
         onConfirm={confirmReplace}
+      />
+
+      {/* Single-run settings dialog for "Neu erstellen" / one-off KI runs */}
+      <AnalyseEinstellungenDialog
+        open={runDialogOpen}
+        onOpenChange={setRunDialogOpen}
+        role="lead_admin"
+        dataClass="public_synthetic"
+        variant="compact"
+        onStart={handleRunStart}
+        onCancel={() => setRunDialogOpen(false)}
       />
     </div>
   )
@@ -168,6 +244,7 @@ interface SuggestionTabProps {
   onAccept: (s: AISuggestion) => void
   onAdjust: (s: AISuggestion) => void
   onRegenerate: (s: AISuggestion) => void
+  onActivate: () => void
 }
 
 function SuggestionTab({
@@ -180,6 +257,7 @@ function SuggestionTab({
   onAccept,
   onAdjust,
   onRegenerate,
+  onActivate,
 }: SuggestionTabProps) {
   if (state === "off") {
     return (
@@ -188,7 +266,7 @@ function SuggestionTab({
           KI-Unterstützung ist ausgeschaltet. Dieser Abschnitt enthält
           strukturierte Hinweise ohne KI-Vorschläge.
         </p>
-        <Button variant="outline" size="sm">
+        <Button variant="outline" size="sm" onClick={onActivate}>
           <Sparkles data-icon="inline-start" />
           KI für einen Durchlauf aktivieren
         </Button>
