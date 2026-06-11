@@ -10,6 +10,7 @@ import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
   StoppedAnalysisBanner,
+  CompletedAnalysisBanner,
   LocalOnlyBanner,
 } from "@/components/quellen/analysis-progress-banner"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -20,6 +21,7 @@ import {
   dummySources,
   dummyEvidence,
   dummyAnalysisSteps,
+  type AnalysisProgressStep,
   type PageAnalysisState,
 } from "@/lib/quellen-mock-data"
 import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
@@ -203,7 +205,34 @@ function QuellenPageContent() {
   )
   const [analysisState, setAnalysisState] =
     React.useState<PageAnalysisState>("idle")
+  const [analysisSteps, setAnalysisSteps] =
+    React.useState<AnalysisProgressStep[]>(dummyAnalysisSteps)
   const [showDebugControls, setShowDebugControls] = React.useState(false)
+
+  // Demo progression: one timer per step (~1.2s); cleared on stop/unmount.
+  const stepTimer = React.useRef<ReturnType<typeof setTimeout> | undefined>(
+    undefined
+  )
+  React.useEffect(() => () => clearTimeout(stepTimer.current), [])
+
+  const scheduleStepTick = React.useCallback((index: number) => {
+    stepTimer.current = setTimeout(() => {
+      setAnalysisSteps((prev) =>
+        prev.map((s, i) =>
+          i === index
+            ? { ...s, state: "done" as const }
+            : i === index + 1
+              ? { ...s, state: "running" as const }
+              : s
+        )
+      )
+      if (index + 1 < dummyAnalysisSteps.length) {
+        scheduleStepTick(index + 1)
+      } else {
+        setAnalysisState("completed")
+      }
+    }, 1200)
+  }, [])
 
   // The active scenario's dataClass drives the local-only banner.
   const dataClass = activeScenario.dataClass
@@ -216,15 +245,26 @@ function QuellenPageContent() {
 
   function handleAnalysisStart(_settings: AnalyseSettings) {
     setDialogOpen(false)
+    clearTimeout(stepTimer.current)
+    setAnalysisSteps(
+      dummyAnalysisSteps.map((s, i) => ({
+        ...s,
+        state: i === 0 ? ("running" as const) : ("pending" as const),
+      }))
+    )
     setAnalysisState("running")
+    scheduleStepTick(0)
   }
 
   function handleAnalysisStop() {
+    clearTimeout(stepTimer.current)
     setAnalysisState("stopped")
   }
 
   function handleAnalysisResume() {
     setAnalysisState("running")
+    const runningIndex = analysisSteps.findIndex((s) => s.state === "running")
+    scheduleStepTick(runningIndex === -1 ? 0 : runningIndex)
   }
 
   const sourceCount = dummySources.length
@@ -258,7 +298,9 @@ function QuellenPageContent() {
               className="shrink-0"
             >
               <Play className="mr-1.5 size-4" />
-              Analyse starten
+              {analysisState === "completed"
+                ? "Analyse erneut starten"
+                : "Analyse starten"}
             </Button>
           )}
         </div>
@@ -270,7 +312,7 @@ function QuellenPageContent() {
         {analysisState === "running" && (
           <div className="mb-4">
             <AnalysisProgressBanner
-              steps={dummyAnalysisSteps}
+              steps={analysisSteps}
               onStop={handleAnalysisStop}
             />
           </div>
@@ -278,6 +320,14 @@ function QuellenPageContent() {
         {analysisState === "stopped" && (
           <div className="mb-4">
             <StoppedAnalysisBanner onResume={handleAnalysisResume} />
+          </div>
+        )}
+        {analysisState === "completed" && (
+          <div className="mb-4">
+            <CompletedAnalysisBanner
+              onGoToRequirements={() => router.push("/anforderungen")}
+              onShowEvidence={() => handleTabChange("evidenz")}
+            />
           </div>
         )}
 
