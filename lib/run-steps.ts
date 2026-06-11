@@ -45,23 +45,41 @@ const NODE_TO_STEP_INDEX: Record<string, number> = {
 }
 
 /**
- * Derive the four banner steps from the backend's current node name.
- * Unknown nodes map to the last step so the banner never goes backwards.
+ * Fallback-Mapping, nur wenn die Bridge keine steps[] liefert.
+ * Bekannte Nodes werden auf die vier Klartext-Schritte gelegt; UNBEKANNTE
+ * Nodes werden nicht still einsortiert, sondern als sichtbarer technischer
+ * Schritt angehängt — die UI zeigt damit ehrlich einen unkartierten
+ * Backend-Schritt an.
  */
 export function stepsFromBackendNode(
   currentNode: string | null
 ): AnalysisProgressStep[] {
-  const runningIndex =
-    currentNode === null
-      ? RUN_STEP_TEMPLATE.length // finished -> everything done
-      : (NODE_TO_STEP_INDEX[currentNode] ?? RUN_STEP_TEMPLATE.length - 1)
+  const baseSteps = (runningIndex: number): AnalysisProgressStep[] =>
+    RUN_STEP_TEMPLATE.map((step, i) => ({
+      id: step.id,
+      label: step.label,
+      state:
+        i < runningIndex ? "done" : i === runningIndex ? "running" : "pending",
+    }))
 
-  return RUN_STEP_TEMPLATE.map((step, i) => ({
-    id: step.id,
-    label: step.label,
-    state:
-      i < runningIndex ? "done" : i === runningIndex ? "running" : "pending",
-  }))
+  if (currentNode === null) {
+    // finished -> everything done
+    return baseSteps(RUN_STEP_TEMPLATE.length)
+  }
+
+  const knownIndex = NODE_TO_STEP_INDEX[currentNode]
+  if (knownIndex !== undefined) {
+    return baseSteps(knownIndex)
+  }
+
+  return [
+    ...baseSteps(RUN_STEP_TEMPLATE.length),
+    {
+      id: "fallback",
+      label: `Technischer Schritt: ${currentNode}`,
+      state: "running",
+    },
+  ]
 }
 
 // ---------------------------------------------------------------------------

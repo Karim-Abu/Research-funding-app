@@ -238,7 +238,7 @@ function QuellenPageContent() {
       if (!runId) return
       try {
         const dto = await getRun(runId)
-        setAnalysisSteps(dto.steps)
+        if (dto.steps) setAnalysisSteps(dto.steps)
         if (dto.status === "completed") {
           stopPolling()
           setAnalysisState("completed")

@@ -6,13 +6,44 @@
 // nur der Server (app/api/* liest FASTAPI_BRIDGE_URL); der Client spricht
 // ausschließlich relative /api-Pfade an.
 
-import type { Source, AnalysisProgressStep } from "./quellen-mock-data"
+import type { Source } from "./quellen-mock-data"
 import {
   requirements as mockRequirements,
   type Requirement,
 } from "./anforderungen-mock-data"
-import { RUN_STEP_TEMPLATE } from "./run-steps"
+import { portalSections, draftText } from "./editor-data"
+import { RUN_STEP_TEMPLATE, stepsFromBackendNode } from "./run-steps"
 import type { AnalyseSettings } from "./types"
+import type {
+  EvidenceAnchorDto,
+  ExportDto,
+  ExportKind,
+  FeedbackDto,
+  IssueDto,
+  PortalFieldDraftDto,
+  ReviewDecisionDto,
+  RunFieldsDto,
+  RunStatusDto,
+} from "./backend-contract"
+
+// Der DTO-Contract lebt in lib/backend-contract.ts; bestehende Importe aus
+// "@/lib/api" bleiben über diese Re-Exports gültig.
+export type {
+  EvidenceAnchorDto,
+  ExportDto,
+  ExportKind,
+  FeedbackDto,
+  FieldDraftStatus,
+  IssueDto,
+  IssueSeverity,
+  PortalFieldDraftDto,
+  ReviewDecisionDto,
+  RunFieldsDto,
+  RunStatus,
+  RunStatusDto,
+  RunStepDto,
+  RunCostDto,
+} from "./backend-contract"
 
 /**
  * Einziger Schalter: true = App läuft vollständig auf Mock-Daten (Demo-Modus).
@@ -63,26 +94,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 // ---------------------------------------------------------------------------
-// DTOs (UI-seitig; Steps tragen bereits deutsche Labels)
+// UI-seitige DTOs (nicht Teil des Bridge-Contracts)
 // ---------------------------------------------------------------------------
-
-export type RunStatus = "running" | "completed" | "stopped" | "failed"
-
-export interface RunStatusDto {
-  runId: string
-  status: RunStatus
-  steps: AnalysisProgressStep[]
-}
 
 export interface ProjectStateDto {
   projectId: string
   requirements: Requirement[]
 }
 
-export interface ExportDto {
-  exportId: string
-  status: "generating" | "ready" | "error"
-  filename?: string
+/**
+ * Normalisierung für das Fortschritts-Banner: liefert die Bridge `steps[]`,
+ * werden sie direkt verwendet; nur als Fallback wird aus `currentNode`
+ * gemappt (unbekannte Nodes erscheinen sichtbar als technischer Schritt).
+ */
+export function normalizeRunStatus(dto: RunStatusDto): RunStatusDto {
+  if (dto.steps && dto.steps.length > 0) return dto
+  return { ...dto, steps: stepsFromBackendNode(dto.currentNode ?? null) }
 }
 
 // ---------------------------------------------------------------------------
@@ -92,6 +119,8 @@ export interface ExportDto {
 // ---------------------------------------------------------------------------
 
 const MOCK_STEP_MS = 1200
+/** Simulierte Kosten pro abgeschlossenem Schritt (CHF). */
+const MOCK_COST_PER_STEP = 3.1
 
 interface MockRun {
   /** Anzahl abgeschlossener Schritte (0..4). */
@@ -99,6 +128,8 @@ interface MockRun {
   paused: boolean
   /** Zeitpunkt, ab dem der nächste Schritt-Fortschritt gerechnet wird. */
   lastAdvance: number
+  /** Kostenlimit aus den Analyse-Einstellungen. */
+  costLimit: number
 }
 
 const mockRuns = new Map<string, MockRun>()
@@ -118,6 +149,8 @@ function advanceMockRun(run: MockRun) {
 
 function mockRunDto(runId: string, run: MockRun): RunStatusDto {
   const finished = run.completed >= RUN_STEP_TEMPLATE.length
+  const usedChf =
+    Math.round(run.completed * MOCK_COST_PER_STEP * 100) / 100
   return {
     runId,
     status: finished ? "completed" : run.paused ? "stopped" : "running",
@@ -131,6 +164,14 @@ function mockRunDto(runId: string, run: MockRun): RunStatusDto {
             ? "running"
             : "pending",
     })),
+    cost: {
+      usedChf: Math.min(usedChf, run.costLimit),
+      limitChf: run.costLimit,
+      estimated: true,
+    },
+    ...(run.paused && !finished
+      ? { stopReason: "cost_limit" as const, canResume: true }
+      : {}),
   }
 }
 
@@ -147,7 +188,12 @@ export async function startRun(
     await mockDelay()
     mockRunCounter += 1
     const runId = `mock-run-${mockRunCounter}`
-    mockRuns.set(runId, { completed: 0, paused: false, lastAdvance: Date.now() })
+    mockRuns.set(runId, {
+      completed: 0,
+      paused: false,
+      lastAdvance: Date.now(),
+      costLimit: settings.costLimit > 0 ? settings.costLimit : 20,
+    })
     return { runId }
   }
   return request<{ runId: string }>("/api/runs", {
@@ -166,21 +212,21 @@ export async function getRun(runId: string): Promise<RunStatusDto> {
     advanceMockRun(run)
     return mockRunDto(runId, run)
   }
-  return request<RunStatusDto>(`/api/runs/${encodeURIComponent(runId)}`)
+  const dto = await request<RunStatusDto>(
+    `/api/runs/${encodeURIComponent(runId)}`
+  )
+  return normalizeRunStatus(dto)
 }
 
-/**
- * Stop/Resume sind im Bridge-Contract noch nicht definiert (kein Endpoint);
- * im Mock-Modus pausiert/weckt das die lokale Run-Engine. Beim Umstieg auf
- * USE_MOCKS=false braucht der Contract einen Stop-Endpoint (offenes Risiko).
- */
 export async function stopRun(runId: string): Promise<void> {
   if (USE_MOCKS) {
     const run = mockRuns.get(runId)
     if (run) run.paused = true
     return
   }
-  throw new ApiError("not_implemented", BRIDGE_UNREACHABLE_MESSAGE)
+  await request(`/api/runs/${encodeURIComponent(runId)}/stop`, {
+    method: "POST",
+  })
 }
 
 export async function resumeRun(runId: string): Promise<void> {
@@ -192,7 +238,9 @@ export async function resumeRun(runId: string): Promise<void> {
     }
     return
   }
-  throw new ApiError("not_implemented", BRIDGE_UNREACHABLE_MESSAGE)
+  await request(`/api/runs/${encodeURIComponent(runId)}/resume`, {
+    method: "POST",
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -209,6 +257,294 @@ export async function getProjectState(
   return request<ProjectStateDto>(
     `/api/projects/${encodeURIComponent(projectId)}/state`
   )
+}
+
+// ---------------------------------------------------------------------------
+// Review: Feldentwürfe + Issues.
+// Mock-Singleton — wird von Review-Entscheidungen mutiert, damit Review und
+// Export denselben Stand sehen. Real: GET/POST /api/runs/{id}/fields|review.
+// ---------------------------------------------------------------------------
+
+/**
+ * Die Beta hat keinen Run-Kontext über Seiten hinweg; die Bridge löst diesen
+ * Alias serverseitig auf den letzten Durchlauf des Projekts auf.
+ */
+export const CURRENT_RUN_ID = "current"
+
+const MOCK_ANCHORS: Record<string, EvidenceAnchorDto> = {
+  a1: {
+    anchorId: "a1",
+    sourceTitle: "McKinsey Materials Report 2023 (Dummy)",
+    location: "S. 12, Abb. 4",
+    verified: true,
+  },
+  a2: {
+    anchorId: "a2",
+    sourceTitle: "Marktstudie Verbundwerkstoffe (Dummy)",
+    location: "S. 4",
+    verified: false,
+  },
+  a3: {
+    anchorId: "a3",
+    sourceTitle: "Interne Wirtschaftlichkeitsrechnung (Dummy)",
+    location: "S. 8, Tab. 2",
+    verified: true,
+  },
+  a4: {
+    anchorId: "a4",
+    sourceTitle: "Pilotbericht Industriekunde (Dummy)",
+    location: "Abschnitt 3",
+    verified: false,
+  },
+}
+
+const FIELD_TEXTS: Record<string, string> = {
+  "value-creation": draftText,
+  // Bewusst über dem Limit von 3000 Zeichen -> Zeichenlimit-Blocker (i1).
+  innovation:
+    "Die Innovation kombiniert recyclingfähige Matrixwerkstoffe mit einem datengetriebenen Prozessmodell und hebt sich damit vom Stand der Technik ab (Dummy). ".repeat(
+      20
+    ),
+  feasibility:
+    "Der Arbeitsplan umfasst vier Arbeitspakete über 18 Monate mit klaren Meilensteinen und definierten Abbruchkriterien (Dummy).",
+  team: "Das Kernteam vereint Werkstoffwissenschaft, Datenanalyse und industrielle Fertigung; die Projektleitung hat zwei vergleichbare Vorhaben geführt (Dummy).",
+  partners:
+    "Der Umsetzungspartner bringt eine Pilotlinie für Verbundwerkstoffe sowie Zugang zu Industriekunden ein (Dummy).",
+  budget:
+    "Die Mittel verteilen sich auf Personal, Material und Pilotversuche; die Eigenleistung trägt der Umsetzungspartner (Dummy).",
+  impact:
+    "Das Vorhaben reduziert Materialeinsatz und verbessert die Recyclingfähigkeit in der Zielbranche (Dummy).",
+}
+
+const FIELD_EVIDENCE: Record<string, EvidenceAnchorDto[]> = {
+  "value-creation": [MOCK_ANCHORS.a1, MOCK_ANCHORS.a2],
+  innovation: [MOCK_ANCHORS.a1],
+  feasibility: [MOCK_ANCHORS.a3],
+  team: [],
+  partners: [MOCK_ANCHORS.a4],
+  budget: [MOCK_ANCHORS.a3],
+  impact: [],
+}
+
+/** Issues, die der Mock-Re-Check automatisch gegen das Zeichenlimit prüft. */
+const CHAR_LIMIT_ISSUE_IDS = new Set(["i1"])
+
+function seedIssues(): IssueDto[] {
+  return [
+    {
+      id: "i1",
+      fieldId: "innovation",
+      severity: "blocker",
+      title: "Zeichenlimit überschritten",
+      description:
+        "Der Text überschreitet das Zeichenlimit des Portalfelds. Kürzen Sie den Text und wählen Sie danach „Änderungen prüfen“.",
+      state: "open",
+    },
+    {
+      id: "i2",
+      fieldId: "team",
+      severity: "blocker",
+      title: "Ethikvotum fehlt",
+      description:
+        "Für die geplanten Pilotversuche liegt kein Ethikvotum vor. Ohne Nachweis oder begründete Entscheidung ist das Feld blockiert (Dummy).",
+      evidence: [MOCK_ANCHORS.a4],
+      state: "open",
+    },
+    {
+      id: "i3",
+      fieldId: "feasibility",
+      severity: "warning",
+      title: "Beleg für Meilensteinplan fehlt",
+      description:
+        "Der Meilensteinplan ist beschrieben, aber nicht mit einem Beleg verknüpft (Dummy).",
+      evidence: [MOCK_ANCHORS.a3],
+      state: "open",
+    },
+    {
+      id: "i4",
+      fieldId: "partners",
+      severity: "warning",
+      title: "Partnerrolle unklar beschrieben",
+      description:
+        "Rolle und Beitrag des Umsetzungspartners sollten konkreter beschrieben werden (Dummy).",
+      evidence: [MOCK_ANCHORS.a4],
+      state: "open",
+    },
+    {
+      id: "i5",
+      fieldId: "value-creation",
+      severity: "warning",
+      title: "Marktgrösse ohne Quellenangabe",
+      description:
+        "Die genannte Marktgrösse ist nicht mit einer Quelle belegt (Dummy).",
+      evidence: [MOCK_ANCHORS.a1],
+      state: "open",
+    },
+    {
+      id: "i6",
+      fieldId: "value-creation",
+      severity: "info",
+      title: "Formulierung prüfen",
+      description:
+        "Der Einstiegssatz wiederholt den Feldtitel; eine direktere Formulierung wirkt stärker (Dummy).",
+      state: "open",
+    },
+    {
+      id: "i7",
+      fieldId: "budget",
+      severity: "info",
+      title: "Eigenleistung explizit ausweisen",
+      description:
+        "Die Eigenleistung des Partners könnte als eigener Satz ausgewiesen werden (Dummy).",
+      state: "open",
+    },
+  ]
+}
+
+interface MockReviewState {
+  fields: PortalFieldDraftDto[]
+  issues: IssueDto[]
+}
+
+let mockReview: MockReviewState | null = null
+
+function fieldStatusFor(
+  fieldId: string,
+  issues: IssueDto[]
+): PortalFieldDraftDto["status"] {
+  const open = issues.filter((i) => i.fieldId === fieldId && i.state === "open")
+  if (open.some((i) => i.severity === "blocker")) return "blocked"
+  if (open.some((i) => i.severity === "warning")) return "needs_review"
+  return "ready"
+}
+
+function recomputeFieldStatuses(state: MockReviewState) {
+  for (const field of state.fields) {
+    field.status = fieldStatusFor(field.fieldId, state.issues)
+  }
+}
+
+/** Mock-Re-Check: Zeichenlimit-Blocker lösen sich auf, wenn der Text passt. */
+function recheckCharLimits(state: MockReviewState) {
+  for (const issue of state.issues) {
+    if (!CHAR_LIMIT_ISSUE_IDS.has(issue.id) || issue.state !== "open") continue
+    const field = state.fields.find((f) => f.fieldId === issue.fieldId)
+    if (field && field.text.trimEnd().length <= field.charLimit) {
+      issue.state = "confirmed"
+    }
+  }
+}
+
+function ensureMockReview(): MockReviewState {
+  if (!mockReview) {
+    const issues = seedIssues()
+    const fields: PortalFieldDraftDto[] = portalSections.map((s) => ({
+      fieldId: s.id,
+      name: s.name,
+      text: FIELD_TEXTS[s.id] ?? "",
+      charLimit: s.charLimit,
+      status: fieldStatusFor(s.id, issues),
+      evidence: FIELD_EVIDENCE[s.id] ?? [],
+    }))
+    mockReview = { fields, issues }
+  }
+  return mockReview
+}
+
+function cloneReview(runId: string, state: MockReviewState): RunFieldsDto {
+  return structuredClone({ runId, fields: state.fields, issues: state.issues })
+}
+
+/** Offene, nicht überschriebene Blocker — Gating für Freigabe und Export. */
+export function countOpenBlockers(issues: IssueDto[]): number {
+  return issues.filter((i) => i.severity === "blocker" && i.state === "open")
+    .length
+}
+
+export async function getRunFields(runId: string): Promise<RunFieldsDto> {
+  if (USE_MOCKS) {
+    await mockDelay(250)
+    return cloneReview(runId, ensureMockReview())
+  }
+  return request<RunFieldsDto>(
+    `/api/runs/${encodeURIComponent(runId)}/fields`
+  )
+}
+
+export async function submitReview(
+  runId: string,
+  decision: ReviewDecisionDto
+): Promise<RunFieldsDto> {
+  if (USE_MOCKS) {
+    await mockDelay(800)
+    const state = ensureMockReview()
+    for (const edit of decision.fieldEdits ?? []) {
+      const field = state.fields.find((f) => f.fieldId === edit.fieldId)
+      if (field) field.text = edit.text
+    }
+    for (const d of decision.decisions) {
+      const issue = state.issues.find((i) => i.id === d.issueId)
+      if (!issue) continue
+      if (d.action === "confirm") {
+        issue.state = "confirmed"
+      } else {
+        issue.state = "overridden"
+        issue.overrideComment = d.comment
+        issue.overriddenBy = "Anna Keller"
+      }
+    }
+    recheckCharLimits(state)
+    recomputeFieldStatuses(state)
+    return cloneReview(runId, state)
+  }
+  return request<RunFieldsDto>(
+    `/api/runs/${encodeURIComponent(runId)}/review`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(decision),
+    }
+  )
+}
+
+export async function redraftField(
+  runId: string,
+  fieldId: string
+): Promise<RunFieldsDto> {
+  if (USE_MOCKS) {
+    await mockDelay(900)
+    const state = ensureMockReview()
+    const field = state.fields.find((f) => f.fieldId === fieldId)
+    if (field) {
+      field.text = `Neuer Entwurf (Dummy): ${FIELD_TEXTS[fieldId] ?? field.text}`
+      field.status = "needs_review"
+    }
+    return cloneReview(runId, state)
+  }
+  return request<RunFieldsDto>(
+    `/api/runs/${encodeURIComponent(runId)}/redraft`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fieldId }),
+    }
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Beta-Feedback (keine personenbezogenen Daten; Mock speichert nichts)
+// ---------------------------------------------------------------------------
+
+export async function submitFeedback(feedback: FeedbackDto): Promise<void> {
+  if (USE_MOCKS) {
+    await mockDelay(400)
+    return
+  }
+  await request("/api/feedback", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(feedback),
+  })
 }
 
 // ---------------------------------------------------------------------------
@@ -259,12 +595,21 @@ export async function acceptSuggestion(
   })
 }
 
-export async function createExport(
-  kind: "word" | "markdown" | "json_audit"
-): Promise<ExportDto> {
+const EXPORT_FILENAMES: Record<ExportKind, string> = {
+  word: "KI-Materialentwicklung_Antrag_ENTWURF.docx",
+  markdown: "KI-Materialentwicklung_Zusammenfassung_ENTWURF.md",
+  json_audit: "KI-Materialentwicklung_Nachweis_ENTWURF.json",
+}
+
+export async function createExport(kind: ExportKind): Promise<ExportDto> {
   if (USE_MOCKS) {
     await mockDelay(300)
-    return { exportId: `mock-export-${kind}`, status: "generating" }
+    return {
+      exportId: `mock-export-${kind}`,
+      kind,
+      status: "ready",
+      filename: EXPORT_FILENAMES[kind],
+    }
   }
   return request<ExportDto>("/api/exports", {
     method: "POST",
@@ -276,7 +621,19 @@ export async function createExport(
 export async function getExport(exportId: string): Promise<ExportDto> {
   if (USE_MOCKS) {
     await mockDelay()
-    return { exportId, status: "ready", filename: "Antrag_ENTWURF.docx (Dummy)" }
+    const kind =
+      (exportId.replace("mock-export-", "") as ExportKind) || "word"
+    return {
+      exportId,
+      kind,
+      status: "ready",
+      filename: EXPORT_FILENAMES[kind] ?? EXPORT_FILENAMES.word,
+    }
   }
   return request<ExportDto>(`/api/exports/${encodeURIComponent(exportId)}`)
+}
+
+/** Download-URL für den Binary-Export (Real-Modus: Anchor auf diese URL). */
+export function exportDownloadUrl(runId: string, kind: ExportKind): string {
+  return `/api/runs/${encodeURIComponent(runId)}/export?kind=${encodeURIComponent(kind)}`
 }
