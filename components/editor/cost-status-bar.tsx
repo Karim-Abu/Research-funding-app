@@ -74,7 +74,7 @@ function CostDetails({ className }: { className?: string }) {
       <PopoverContent align="end" className="w-72">
         <div className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold text-foreground">
-            ~CHF 12.40 von CHF 20.00 (Dummy)
+            ~CHF 0.60 von CHF 2.00 (Dummy)
           </span>
           <span className="text-xs leading-relaxed text-muted-foreground">
             Schätzung — der automatische Stopp schützt Ihr Limit.
