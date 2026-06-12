@@ -93,8 +93,8 @@ export default function HilfePage() {
               <span className="font-medium">Intern</span>
               {" — "}
               <span className="text-muted-foreground">
-                externe KI-Dienste nur mit Bestätigung, Webrecherche nicht
-                möglich.
+                Verarbeitung nur lokal — keine externen KI-Dienste, keine
+                Webrecherche.
               </span>
             </li>
             <li>

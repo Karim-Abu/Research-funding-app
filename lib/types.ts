@@ -49,6 +49,19 @@ export type DataClass =
   | "confidential"
   | "nda"
 
+// Beta-Policy (zentral — UI und API nutzen dieselben Regeln):
+// public_* -> Cloud-LLM erlaubt; internal/confidential/nda -> keine externen
+// KI- oder Webdienste, keine Provider-Auswahl. Lokale LLMs sind in der Beta
+// kein Runtime-Pfad.
+
+export function isCloudAllowed(dataClass: DataClass): boolean {
+  return dataClass === "public_synthetic" || dataClass === "public_external"
+}
+
+export function isWebAllowed(dataClass: DataClass): boolean {
+  return dataClass === "public_external"
+}
+
 // Service availability (booleans only — never expose provider info) ------
 
 export interface ServiceAvailability {

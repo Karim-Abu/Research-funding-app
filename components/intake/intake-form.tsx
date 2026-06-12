@@ -60,7 +60,7 @@ interface VertraulichkeitOption {
   value: DataClass
   title: string
   description: string
-  ki: "möglich" | "nur mit Bestätigung" | "nicht möglich"
+  ki: "möglich" | "nicht möglich"
   web: "möglich" | "nicht möglich"
 }
 
@@ -83,7 +83,7 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
     value: "internal",
     title: "Intern",
     description: "Interne Informationen, nicht für die Öffentlichkeit bestimmt.",
-    ki: "nur mit Bestätigung",
+    ki: "nicht möglich",
     web: "nicht möglich",
   },
   {
@@ -109,7 +109,7 @@ const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
   public_external:
     "Öffentlich (extern) gewählt: Externe KI-Dienste möglich, Webrecherche möglich.",
   internal:
-    "Intern gewählt: Externe KI-Dienste nur mit Bestätigung — Webrecherche nicht möglich.",
+    "Intern gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
   confidential:
     "Vertraulich gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
   nda: "NDA gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
@@ -178,13 +178,10 @@ function ConsequenceLine({
   value: string
 }) {
   const ok = value === "möglich"
-  const warn = value === "nur mit Bestätigung"
   return (
     <span className="flex items-center gap-1.5 text-xs">
       {ok ? (
         <CheckCircle2 className="size-3.5 shrink-0 text-status-fulfilled" />
-      ) : warn ? (
-        <Info className="size-3.5 shrink-0 text-status-partial" />
       ) : (
         <XCircle className="size-3.5 shrink-0 text-muted-foreground" />
       )}
@@ -193,11 +190,7 @@ function ConsequenceLine({
         <span
           className={cn(
             "font-medium",
-            ok
-              ? "text-status-fulfilled"
-              : warn
-                ? "text-status-partial"
-                : "text-foreground"
+            ok ? "text-status-fulfilled" : "text-foreground"
           )}
         >
           {value}

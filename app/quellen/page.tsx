@@ -32,7 +32,12 @@ import {
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
-import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
+import {
+  isCloudAllowed,
+  type AnalyseSettings,
+  type DataClass,
+  type Role,
+} from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Scenario types (dialog demo only — collapsed by default)
@@ -76,7 +81,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
   },
   {
     id: "internal",
-    label: "Intern (Bestätigung)",
+    label: "Intern",
     role: "lead_admin",
     dataClass: "internal",
     kiAvailable: true,
@@ -255,7 +260,7 @@ function QuellenPageContent() {
 
   // The active scenario's dataClass drives the local-only banner.
   const dataClass = activeScenario.dataClass
-  const isLocalOnly = dataClass === "confidential" || dataClass === "nda"
+  const isLocalOnly = !isCloudAllowed(dataClass)
 
   function openDialogWith(scenario: DialogScenario) {
     setActiveScenario(scenario)
