@@ -557,7 +557,7 @@ export async function uploadSource(file: File): Promise<Source> {
     return {
       id: `upload-${Date.now()}`,
       name: `${file.name} (Dummy)`,
-      type: "PDF",
+      type: "Text",
       status: "processing",
       addedBy: "Anna Keller",
       addedAt: "soeben",

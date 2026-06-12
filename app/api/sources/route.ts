@@ -1,6 +1,8 @@
-import { notImplemented } from "@/lib/bridge"
+import { proxyToBridge } from "@/lib/bridge"
 
-// POST /api/sources (multipart) — Datei-Upload. Späterer Slice.
-export async function POST() {
-  return notImplemented()
+// POST /api/sources — Datei-Upload (multipart) an die Bridge.
+// Beta: die UI lässt nur .txt/.md zu; die Bridge validiert serverseitig erneut.
+export async function POST(request: Request) {
+  const form = await request.formData()
+  return proxyToBridge("/sources", { method: "POST", body: form })
 }

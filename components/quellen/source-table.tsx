@@ -11,7 +11,6 @@ import {
   CheckCircle2,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
 import {
   Dialog,
   DialogContent,
@@ -21,7 +20,21 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import {
+  uploadSource,
+  USE_MOCKS,
+  ApiError,
+  BRIDGE_UNREACHABLE_MESSAGE,
+} from "@/lib/api"
 import type { Source, SourceStatus, SourceType } from "@/lib/quellen-mock-data"
+
+// Beta: nur Textformate — keine PDF-Pipeline, keine URL-/Text-Quellen.
+const ALLOWED_EXTENSIONS = [".txt", ".md"]
+
+function isAllowedFile(name: string): boolean {
+  const lower = name.toLowerCase()
+  return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
 
 // ---------------------------------------------------------------------------
 // Source status badge — neutral "technical state" styles (NOT approval colours)
@@ -91,16 +104,25 @@ function SourceTypePill({ type }: { type: SourceType }) {
 // ---------------------------------------------------------------------------
 
 interface UploadZoneProps {
-  onFileSelect?: () => void
-  onUrlAdd?: (url: string) => void
-  onTextInsert?: () => void
+  /** Erhält die ausgewählten/abgelegten Dateien (bereits gefiltert). */
+  onFiles: (files: File[]) => void
+  /** Anzahl abgelehnter Dateien (falscher Typ) beim letzten Versuch. */
+  onRejected: (count: number) => void
 }
 
-function UploadZone({ onFileSelect, onUrlAdd, onTextInsert }: UploadZoneProps) {
+// Beta-Upload: nur .txt/.md — keine URL-/Text-Quellen, keine PDF-Pipeline.
+function UploadZone({ onFiles, onRejected }: UploadZoneProps) {
   const [dragOver, setDragOver] = React.useState(false)
-  const [urlValue, setUrlValue] = React.useState("")
-  const [showUrlInput, setShowUrlInput] = React.useState(false)
-  const [urlError, setUrlError] = React.useState<string | null>(null)
+  const inputRef = React.useRef<HTMLInputElement>(null)
+
+  function acceptFiles(list: FileList | null) {
+    if (!list || list.length === 0) return
+    const files = Array.from(list)
+    const allowed = files.filter((f) => isAllowedFile(f.name))
+    const rejected = files.length - allowed.length
+    onRejected(rejected)
+    if (allowed.length > 0) onFiles(allowed)
+  }
 
   function handleDragOver(e: React.DragEvent) {
     e.preventDefault()
@@ -112,28 +134,27 @@ function UploadZone({ onFileSelect, onUrlAdd, onTextInsert }: UploadZoneProps) {
   function handleDrop(e: React.DragEvent) {
     e.preventDefault()
     setDragOver(false)
-    onFileSelect?.()
+    acceptFiles(e.dataTransfer.files)
   }
 
-  function handleUrlSubmit(e: React.FormEvent) {
-    e.preventDefault()
-    const trimmed = urlValue.trim()
-    if (!trimmed) return
-    // Simple URL reachability simulation: treat example.org as unreachable.
-    if (trimmed.includes("example.org")) {
-      setUrlError(
-        "URL nicht erreichbar — bitte prüfen Sie die Adresse und versuchen Sie es erneut."
-      )
-      return
-    }
-    setUrlError(null)
-    setUrlValue("")
-    setShowUrlInput(false)
-    onUrlAdd?.(trimmed)
+  function openPicker() {
+    inputRef.current?.click()
   }
 
   return (
     <div className="flex flex-col gap-3">
+      <input
+        ref={inputRef}
+        type="file"
+        accept={ALLOWED_EXTENSIONS.join(",")}
+        multiple
+        className="hidden"
+        onChange={(e) => {
+          acceptFiles(e.target.files)
+          e.target.value = ""
+        }}
+      />
+
       {/* Drop zone */}
       <div
         role="button"
@@ -142,8 +163,8 @@ function UploadZone({ onFileSelect, onUrlAdd, onTextInsert }: UploadZoneProps) {
         onDragOver={handleDragOver}
         onDragLeave={handleDragLeave}
         onDrop={handleDrop}
-        onKeyDown={(e) => e.key === "Enter" && onFileSelect?.()}
-        onClick={onFileSelect}
+        onKeyDown={(e) => e.key === "Enter" && openPicker()}
+        onClick={openPicker}
         className={cn(
           "flex min-h-[120px] cursor-pointer flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed transition-colors",
           "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
@@ -158,7 +179,7 @@ function UploadZone({ onFileSelect, onUrlAdd, onTextInsert }: UploadZoneProps) {
             Dateien hierher ziehen
           </p>
           <p className="text-xs text-muted-foreground">
-            oder per Schaltfläche auswählen
+            oder per Schaltfläche auswählen — Beta: nur .txt- und .md-Dateien
           </p>
         </div>
         <Button
@@ -167,86 +188,12 @@ function UploadZone({ onFileSelect, onUrlAdd, onTextInsert }: UploadZoneProps) {
           type="button"
           onClick={(e) => {
             e.stopPropagation()
-            onFileSelect?.()
+            openPicker()
           }}
         >
           Dateien wählen
         </Button>
       </div>
-
-      {/* Inline URL input */}
-      <div className="flex flex-wrap items-start gap-2">
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={() => {
-            setShowUrlInput((v) => !v)
-            setUrlError(null)
-          }}
-        >
-          <Link2 className="mr-1.5 size-3.5" />
-          URL hinzufügen
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          type="button"
-          onClick={onTextInsert}
-        >
-          <FileText className="mr-1.5 size-3.5" />
-          Text einfügen
-        </Button>
-      </div>
-
-      {showUrlInput && (
-        <form
-          onSubmit={handleUrlSubmit}
-          className="flex flex-col gap-2"
-          aria-label="URL hinzufügen"
-        >
-          <div className="flex gap-2">
-            <Input
-              type="url"
-              placeholder="https://…"
-              value={urlValue}
-              onChange={(e) => {
-                setUrlValue(e.target.value)
-                setUrlError(null)
-              }}
-              className={cn(urlError && "border-status-blocker")}
-              aria-invalid={!!urlError}
-              aria-describedby={urlError ? "url-error" : undefined}
-              autoFocus
-            />
-            <Button type="submit" size="sm">
-              Hinzufügen
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => {
-                setShowUrlInput(false)
-                setUrlError(null)
-                setUrlValue("")
-              }}
-            >
-              Abbrechen
-            </Button>
-          </div>
-          {urlError && (
-            <p
-              id="url-error"
-              role="alert"
-              className="flex items-center gap-1.5 text-xs text-status-blocker"
-            >
-              <AlertTriangle className="size-3.5 shrink-0" />
-              {urlError}
-            </p>
-          )}
-        </form>
-      )}
     </div>
   )
 }
@@ -262,8 +209,8 @@ interface SourceTableProps {
 
 export function SourceTable({ sources, onRemove }: SourceTableProps) {
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
-  const [localSources, setLocalSources] =
-    React.useState<Source[]>(sources)
+  const [localSources, setLocalSources] = React.useState<Source[]>(sources)
+  const [uploadError, setUploadError] = React.useState<string | null>(null)
 
   function handleRemoveConfirm() {
     if (!confirmId) return
@@ -272,19 +219,62 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
     setConfirmId(null)
   }
 
+  async function handleFiles(files: File[]) {
+    setUploadError(null)
+    for (const file of files) {
+      try {
+        const source = await uploadSource(file)
+        setLocalSources((prev) => [source, ...prev])
+        if (USE_MOCKS) {
+          // Demo: Verarbeitung schliesst nach kurzer Zeit ab.
+          setTimeout(() => {
+            setLocalSources((prev) =>
+              prev.map((s) =>
+                s.id === source.id
+                  ? { ...s, status: "processed" as const }
+                  : s
+              )
+            )
+          }, 1500)
+        }
+      } catch (e) {
+        setUploadError(
+          e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      }
+    }
+  }
+
+  function handleRejected(count: number) {
+    setUploadError(
+      count > 0
+        ? "Beta: Es können nur .txt- und .md-Dateien hochgeladen werden."
+        : null
+    )
+  }
+
   const pendingSource = localSources.find((s) => s.id === confirmId)
 
   return (
     <div className="flex flex-col gap-6">
-      <UploadZone />
+      <UploadZone onFiles={handleFiles} onRejected={handleRejected} />
+
+      {uploadError && (
+        <p
+          role="alert"
+          className="flex items-center gap-1.5 text-xs text-status-blocker"
+        >
+          <AlertTriangle className="size-3.5 shrink-0" />
+          {uploadError}
+        </p>
+      )}
 
       {localSources.length === 0 ? (
         <p
           role="status"
           className="py-8 text-center text-sm text-muted-foreground"
         >
-          Noch keine Quellen. Laden Sie Dokumente hoch oder fügen Sie eine URL
-          hinzu.
+          Noch keine Quellen. Laden Sie .txt- oder .md-Dateien hoch.
         </p>
       ) : (
         <div
