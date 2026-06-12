@@ -460,6 +460,14 @@ export function ReviewScreen({
   // Freigabe-Gating: offene, nicht überschriebene Blocker-Issues.
   const openBlockers = countOpenBlockers(issues)
 
+  // "blocked" leitet sich aus den tatsächlichen Blockern ab — sind alle
+  // entschieden, wird die Freigabe möglich ("open"), ohne das Szenario
+  // (approved/stale/changes_requested) zu überschreiben.
+  const effectiveApproval: ApprovalData =
+    approval.state === "blocked" && openBlockers === 0
+      ? { ...approval, state: "open" }
+      : approval
+
   // Header counters
   const totalRows = gates.length
   const passedCount = gates.filter((g) => g.status === "passed").length
@@ -593,7 +601,7 @@ export function ReviewScreen({
                 onDecide={(decisions) => applyDecision({ decisions })}
                 approvalSlot={
                   <ApprovalCard
-                    approval={approval}
+                    approval={effectiveApproval}
                     blockerCount={openBlockers}
                     findingsRef={findingsRef}
                     onApprove={() =>

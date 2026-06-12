@@ -480,20 +480,23 @@ export function ExportScreen({
   function handleDownload(id: string) {
     const card = EXPORT_CARDS.find((c) => c.id === id)
     if (!card) return
+    const a = document.createElement("a")
     if (USE_MOCKS) {
       const download = MOCK_DOWNLOADS[card.kind]
       const blob = new Blob([download.body], { type: download.mime })
-      const url = URL.createObjectURL(blob)
-      const a = document.createElement("a")
-      a.href = url
+      a.href = URL.createObjectURL(blob)
       a.download = download.filename
-      a.click()
-      URL.revokeObjectURL(url)
-      return
+    } else {
+      a.href = exportDownloadUrl(CURRENT_RUN_ID, card.kind)
     }
-    const a = document.createElement("a")
-    a.href = exportDownloadUrl(CURRENT_RUN_ID, card.kind)
+    document.body.appendChild(a)
     a.click()
+    a.remove()
+    if (USE_MOCKS) {
+      // Deferred: revoking synchronously can cancel the download.
+      const blobUrl = a.href
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)
+    }
   }
 
   function handleRetry(id: string) {
