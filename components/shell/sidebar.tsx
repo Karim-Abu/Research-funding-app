@@ -5,13 +5,10 @@ import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
-  FileText,
   Database,
   CheckSquare,
   Download,
   Wallet,
-  Users,
-  Settings,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -32,15 +29,14 @@ interface NavItem {
   requiredRole?: Role
 }
 
+// Beta-Navigation: bewusst minimal. Anträge, Partner & Rollen und Admin sind
+// Platzhalterseiten und bleiben als Routen erhalten, aber ohne Sidebar-Link.
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Anträge", href: "/antraege", icon: FileText },
   { label: "Quellen & Evidenz", href: "/quellen", icon: Database },
   { label: "Review", href: "/review", icon: CheckSquare },
   { label: "Export", href: "/export", icon: Download },
   { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
-  { label: "Partner & Rollen", href: "/partner", icon: Users },
-  { label: "Admin", href: "/admin", icon: Settings, requiredRole: "lead_admin" },
 ]
 
 interface SidebarProps {

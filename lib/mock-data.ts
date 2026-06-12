@@ -29,7 +29,9 @@ export const workflowSteps: WorkflowStep[] = [
   { step: 2, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
   { step: 3, label: "Anforderungen", shortLabel: "Anford.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
   { step: 4, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
-  { step: 5, label: "Entwurf", subLabel: "Antragstext", href: "/editor" },
+  // Beta: eine Editier-Oberfläche — der Entwurf wird im Review geprüft und
+  // bearbeitet; /editor ist aus der Navigation nicht erreichbar.
+  { step: 5, label: "Entwurf prüfen", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/review" },
   { step: 6, label: "Review", subLabel: "Qualitätsprüfung", href: "/review" },
   {
     step: 7,
