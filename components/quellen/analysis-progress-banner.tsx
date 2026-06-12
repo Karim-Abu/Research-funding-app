@@ -11,6 +11,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AnalysisProgressStep } from "@/lib/quellen-mock-data"
+import type { RunCostDto } from "@/lib/backend-contract"
 
 // ---------------------------------------------------------------------------
 // Running-analysis banner with plain-language progress steps
@@ -18,12 +19,15 @@ import type { AnalysisProgressStep } from "@/lib/quellen-mock-data"
 
 interface AnalysisProgressBannerProps {
   steps: AnalysisProgressStep[]
+  /** Laufende Kosten aus den Run-Daten (kein Dummy). */
+  cost?: RunCostDto
   /** Called when the user clicks "Analyse abbrechen" */
   onStop?: () => void
 }
 
 export function AnalysisProgressBanner({
   steps,
+  cost,
   onStop,
 }: AnalysisProgressBannerProps) {
   const runningStep = steps.find((s) => s.state === "running")
@@ -46,16 +50,23 @@ export function AnalysisProgressBanner({
             ) : null}
           </span>
         </div>
-        {onStop && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onStop}
-            className="h-8 px-3 text-xs"
-          >
-            Analyse abbrechen
-          </Button>
-        )}
+        <div className="flex items-center gap-3">
+          {cost && (
+            <span className="text-xs text-muted-foreground">
+              {`~CHF ${cost.usedChf.toFixed(2)} von CHF ${cost.limitChf.toFixed(2)}`}
+            </span>
+          )}
+          {onStop && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onStop}
+              className="h-8 px-3 text-xs"
+            >
+              Analyse abbrechen
+            </Button>
+          )}
+        </div>
       </div>
 
       <ol className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-x-6 sm:gap-y-1">
@@ -97,10 +108,15 @@ function ProgressStepIcon({ state }: { state: AnalysisProgressStep["state"] }) {
 // ---------------------------------------------------------------------------
 
 interface StoppedAnalysisBannerProps {
+  /** Fortsetzen-Button nur, wenn das Backend resume erlaubt. */
+  canResume?: boolean
   onResume?: () => void
 }
 
-export function StoppedAnalysisBanner({ onResume }: StoppedAnalysisBannerProps) {
+export function StoppedAnalysisBanner({
+  canResume = false,
+  onResume,
+}: StoppedAnalysisBannerProps) {
   return (
     <div
       role="alert"
@@ -113,7 +129,7 @@ export function StoppedAnalysisBanner({ onResume }: StoppedAnalysisBannerProps) 
           gespeichert.
         </p>
       </div>
-      {onResume && (
+      {canResume && onResume && (
         <Button variant="outline" size="sm" onClick={onResume}>
           Analyse fortsetzen
         </Button>
