@@ -28,12 +28,10 @@ import {
   type PageScenario,
   type PriorExport,
 } from "@/lib/export-mock-data"
-import {
-  createExport,
-  exportDownloadUrl,
-  USE_MOCKS,
-  CURRENT_RUN_ID,
-} from "@/lib/api"
+import { exportDownloadUrl, USE_MOCKS } from "@/lib/api"
+import { getCurrentRunId } from "@/lib/intake-store"
+import { DataClassBadge } from "@/components/status/data-class-badge"
+import type { DataClass } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -421,11 +419,14 @@ export interface ExportScreenProps {
   scenario?: PageScenario
   /** Offene, nicht überschriebene Blocker-Issues (Gating). */
   openBlockerCount?: number
+  /** Datenklasse des Laufs (Badge im Kopf). */
+  dataClass?: DataClass
 }
 
 export function ExportScreen({
   scenario = "default",
   openBlockerCount = 0,
+  dataClass,
 }: ExportScreenProps) {
   // Derive approval banner state from scenario
   const approvalState: ApprovalBannerState =
@@ -465,16 +466,13 @@ export function ExportScreen({
     return c
   })
 
-  async function handleGenerate(id: string) {
+  // Ein Export-Pfad: kein POST /api/exports — der Download läuft direkt über
+  // GET /api/runs/{id}/export. "Erstellen" ist nur ein kurzer UI-Übergang.
+  function handleGenerate(id: string) {
     const card = EXPORT_CARDS.find((c) => c.id === id)
     if (!card || blocked) return
     setCardState(id, "generating")
-    try {
-      await createExport(card.kind)
-      setCardState(id, "ready")
-    } catch {
-      setCardState(id, "error")
-    }
+    window.setTimeout(() => setCardState(id, "ready"), USE_MOCKS ? 300 : 0)
   }
 
   function handleDownload(id: string) {
@@ -487,7 +485,7 @@ export function ExportScreen({
       a.href = URL.createObjectURL(blob)
       a.download = download.filename
     } else {
-      a.href = exportDownloadUrl(CURRENT_RUN_ID, card.kind)
+      a.href = exportDownloadUrl(getCurrentRunId(), card.kind)
     }
     document.body.appendChild(a)
     a.click()
@@ -506,11 +504,12 @@ export function ExportScreen({
   return (
     <div className="flex min-h-full flex-col gap-8 px-6 py-8">
       {/* Page header */}
-      <div className="flex flex-col gap-1">
+      <div className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold text-foreground">Export</h1>
         <p className="text-sm text-muted-foreground">
           Exportieren Sie Arbeitsdokumente für die Weiterarbeit und den Übertrag ins Innosuisse-Portal.
         </p>
+        {dataClass && <DataClassBadge dataClass={dataClass} />}
       </div>
 
       {/* Approval banner */}

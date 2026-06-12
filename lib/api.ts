@@ -12,17 +12,18 @@ import {
   type Requirement,
 } from "./anforderungen-mock-data"
 import { portalSections, draftText } from "./editor-data"
+import { currentUser } from "./mock-data"
 import { RUN_STEP_TEMPLATE, stepsFromBackendNode } from "./run-steps"
-import type { AnalyseSettings } from "./types"
 import type {
   EvidenceAnchorDto,
-  ExportDto,
   ExportKind,
   FeedbackDto,
+  GateRowDto,
   IssueDto,
   PortalFieldDraftDto,
   ReviewDecisionDto,
   RunFieldsDto,
+  RunStartRequestDto,
   RunStatusDto,
 } from "./backend-contract"
 
@@ -30,15 +31,16 @@ import type {
 // "@/lib/api" bleiben über diese Re-Exports gültig.
 export type {
   EvidenceAnchorDto,
-  ExportDto,
   ExportKind,
   FeedbackDto,
   FieldDraftStatus,
+  GateRowDto,
   IssueDto,
   IssueSeverity,
   PortalFieldDraftDto,
   ReviewDecisionDto,
   RunFieldsDto,
+  RunStartRequestDto,
   RunStatus,
   RunStatusDto,
   RunStepDto,
@@ -119,8 +121,8 @@ export function normalizeRunStatus(dto: RunStatusDto): RunStatusDto {
 // ---------------------------------------------------------------------------
 
 const MOCK_STEP_MS = 1200
-/** Simulierte Kosten pro abgeschlossenem Schritt (CHF). */
-const MOCK_COST_PER_STEP = 3.1
+/** Simulierte Kosten pro Schritt (CHF) — realistisch: ~CHF 0.60 pro Lauf. */
+const MOCK_COST_PER_STEP = 0.15
 
 interface MockRun {
   /** Anzahl abgeschlossener Schritte (0..4). */
@@ -182,24 +184,25 @@ const mockDelay = (ms = 150) => new Promise((r) => setTimeout(r, ms))
 // ---------------------------------------------------------------------------
 
 export async function startRun(
-  settings: AnalyseSettings
+  startRequest: RunStartRequestDto
 ): Promise<{ runId: string }> {
   if (USE_MOCKS) {
     await mockDelay()
     mockRunCounter += 1
     const runId = `mock-run-${mockRunCounter}`
+    const { costLimit } = startRequest.settings
     mockRuns.set(runId, {
       completed: 0,
       paused: false,
       lastAdvance: Date.now(),
-      costLimit: settings.costLimit > 0 ? settings.costLimit : 20,
+      costLimit: costLimit > 0 ? costLimit : 2,
     })
     return { runId }
   }
   return request<{ runId: string }>("/api/runs", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(settings),
+    body: JSON.stringify(startRequest),
   })
 }
 
@@ -265,12 +268,6 @@ export async function getProjectState(
 // Export denselben Stand sehen. Real: GET/POST /api/runs/{id}/fields|review.
 // ---------------------------------------------------------------------------
 
-/**
- * Die Beta hat keinen Run-Kontext über Seiten hinweg; die Bridge löst diesen
- * Alias serverseitig auf den letzten Durchlauf des Projekts auf.
- */
-export const CURRENT_RUN_ID = "current"
-
 const MOCK_ANCHORS: Record<string, EvidenceAnchorDto> = {
   a1: {
     anchorId: "a1",
@@ -329,6 +326,8 @@ const FIELD_EVIDENCE: Record<string, EvidenceAnchorDto[]> = {
 /** Issues, die der Mock-Re-Check automatisch gegen das Zeichenlimit prüft. */
 const CHAR_LIMIT_ISSUE_IDS = new Set(["i1"])
 
+// Mock-Issues bilden echte Innosuisse-Innovationsprojekt-Regeln ab —
+// keine erfundenen Kriterien, die ein falsches mentales Modell lehren.
 function seedIssues(): IssueDto[] {
   return [
     {
@@ -342,42 +341,41 @@ function seedIssues(): IssueDto[] {
     },
     {
       id: "i2",
-      fieldId: "team",
+      fieldId: "budget",
       severity: "blocker",
-      title: "Ethikvotum fehlt",
+      title: "Cash Contribution unter 5 %",
       description:
-        "Für die geplanten Pilotversuche liegt kein Ethikvotum vor. Ohne Nachweis oder begründete Entscheidung ist das Feld blockiert (Dummy).",
-      evidence: [MOCK_ANCHORS.a4],
+        "Die geplante Barleistung des Umsetzungspartners liegt unter der erforderlichen Mindestquote von 5 % der Projektkosten (Dummy).",
+      evidence: [MOCK_ANCHORS.a3],
       state: "open",
     },
     {
       id: "i3",
-      fieldId: "feasibility",
+      fieldId: "partners",
       severity: "warning",
-      title: "Beleg für Meilensteinplan fehlt",
+      title: "Implementation Partner Contribution: 40–60-%-Quote prüfen",
       description:
-        "Der Meilensteinplan ist beschrieben, aber nicht mit einem Beleg verknüpft (Dummy).",
+        "Der ausgewiesene Beitrag des Umsetzungspartners liegt nahe der Bereichsgrenze von 40–60 % der Projektkosten — bitte Quote prüfen und belegen (Dummy).",
       evidence: [MOCK_ANCHORS.a3],
       state: "open",
     },
     {
       id: "i4",
-      fieldId: "partners",
+      fieldId: "value-creation",
       severity: "warning",
-      title: "Partnerrolle unklar beschrieben",
+      title: "Kernaussage ohne Beleg",
       description:
-        "Rolle und Beitrag des Umsetzungspartners sollten konkreter beschrieben werden (Dummy).",
-      evidence: [MOCK_ANCHORS.a4],
+        "Die Aussage zur Marktgrösse ist nicht mit einem Beleg verknüpft. Für dieses Feld werden Belege erwartet (Dummy).",
+      evidence: [MOCK_ANCHORS.a1],
       state: "open",
     },
     {
       id: "i5",
-      fieldId: "value-creation",
+      fieldId: "impact",
       severity: "warning",
-      title: "Marktgrösse ohne Quellenangabe",
+      title: "Innovationsnutzen zu forschungslastig formuliert",
       description:
-        "Die genannte Marktgrösse ist nicht mit einer Quelle belegt (Dummy).",
-      evidence: [MOCK_ANCHORS.a1],
+        "Der Abschnitt betont den Forschungsbeitrag; Innosuisse erwartet den wirtschaftlichen Nutzen der Innovation im Vordergrund (Dummy).",
       state: "open",
     },
     {
@@ -393,9 +391,9 @@ function seedIssues(): IssueDto[] {
       id: "i7",
       fieldId: "budget",
       severity: "info",
-      title: "Eigenleistung explizit ausweisen",
+      title: "Abkürzung einführen",
       description:
-        "Die Eigenleistung des Partners könnte als eigener Satz ausgewiesen werden (Dummy).",
+        "Die Abkürzung „F&E“ wird verwendet, ohne sie beim ersten Auftreten auszuschreiben (Dummy).",
       state: "open",
     },
   ]
@@ -429,7 +427,11 @@ function recheckCharLimits(state: MockReviewState) {
   for (const issue of state.issues) {
     if (!CHAR_LIMIT_ISSUE_IDS.has(issue.id) || issue.state !== "open") continue
     const field = state.fields.find((f) => f.fieldId === issue.fieldId)
-    if (field && field.text.trimEnd().length <= field.charLimit) {
+    if (
+      field &&
+      field.charLimit !== null &&
+      field.text.trimEnd().length <= field.charLimit
+    ) {
       issue.state = "confirmed"
     }
   }
@@ -451,8 +453,78 @@ function ensureMockReview(): MockReviewState {
   return mockReview
 }
 
+/**
+ * Qualitätsprüfungen aus dem aktuellen Issue-Stand ableiten. Wird vom Mock
+ * verwendet UND von der UI als Fallback, wenn die Bridge keine gates[]
+ * liefert — so stehen nie erfundene Gate-Ergebnisse neben echten Feldern.
+ */
+export function deriveGatesFromIssues(issues: IssueDto[]): GateRowDto[] {
+  const open = (filter: (i: IssueDto) => boolean) =>
+    issues.some((i) => i.state === "open" && filter(i))
+  const overridden = (filter: (i: IssueDto) => boolean) =>
+    issues.some((i) => i.state === "overridden" && filter(i))
+
+  const isCharLimit = (i: IssueDto) => CHAR_LIMIT_ISSUE_IDS.has(i.id)
+  const isBudgetBlocker = (i: IssueDto) =>
+    i.severity === "blocker" && i.fieldId === "budget"
+  const isEvidenceWarning = (i: IssueDto) =>
+    i.severity === "warning" && (i.evidence?.length ?? 0) > 0
+
+  return [
+    {
+      id: "g1",
+      label: "Alle Pflichtfelder ausgefüllt",
+      status: "passed",
+      result: "Alle Pflichtfelder enthalten Text.",
+      detail:
+        "Jedes Pflichtfeld des Beta-Profils enthält einen Entwurfstext (Dummy).",
+    },
+    {
+      id: "g2",
+      label: "Zeichenlimits eingehalten",
+      status: open(isCharLimit) ? "failed" : "passed",
+      result: open(isCharLimit)
+        ? "Ein Feld überschreitet das Zeichenlimit."
+        : "Alle Felder liegen innerhalb der Zeichenlimits.",
+      detail:
+        "Die Plattform prüft die Textlänge jedes Felds gegen das Portallimit (Dummy).",
+    },
+    {
+      id: "g3",
+      label: "Budget im Rahmen",
+      status: open(isBudgetBlocker)
+        ? "failed"
+        : overridden(isBudgetBlocker)
+          ? "partial"
+          : "passed",
+      result: open(isBudgetBlocker)
+        ? "Eine Budgetregel ist verletzt."
+        : overridden(isBudgetBlocker)
+          ? "Budgetregel mit Kommentar überschrieben."
+          : "Budgetregeln sind eingehalten.",
+      detail:
+        "Geprüft werden u. a. die Cash Contribution (mind. 5 %) und die Partner-Quote (Dummy).",
+    },
+    {
+      id: "g4",
+      label: "Belege für Kernaussagen vorhanden",
+      status: open(isEvidenceWarning) ? "partial" : "passed",
+      result: open(isEvidenceWarning)
+        ? "Kernaussagen ohne verknüpften Beleg vorhanden."
+        : "Kernaussagen sind mit Belegen verknüpft.",
+      detail:
+        "Felder mit Belegpflicht müssen ihre zentralen Aussagen mit Quellen verknüpfen (Dummy).",
+    },
+  ]
+}
+
 function cloneReview(runId: string, state: MockReviewState): RunFieldsDto {
-  return structuredClone({ runId, fields: state.fields, issues: state.issues })
+  return structuredClone({
+    runId,
+    fields: state.fields,
+    issues: state.issues,
+    gates: deriveGatesFromIssues(state.issues),
+  })
 }
 
 /** Offene, nicht überschriebene Blocker — Gating für Freigabe und Export. */
@@ -490,7 +562,9 @@ export async function submitReview(
       } else {
         issue.state = "overridden"
         issue.overrideComment = d.comment
-        issue.overriddenBy = "Anna Keller"
+        // Mock-only: im Real-Modus liefert das Backend den Namen oder
+        // lässt das Feld weg.
+        issue.overriddenBy = currentUser.name
       }
     }
     recheckCharLimits(state)
@@ -559,7 +633,8 @@ export async function uploadSource(file: File): Promise<Source> {
       name: `${file.name} (Dummy)`,
       type: "Text",
       status: "processing",
-      addedBy: "Anna Keller",
+      // Mock-only: im Real-Modus liefert das Backend die Person.
+      addedBy: currentUser.name,
       addedAt: "soeben",
     }
   }
@@ -595,44 +670,8 @@ export async function acceptSuggestion(
   })
 }
 
-const EXPORT_FILENAMES: Record<ExportKind, string> = {
-  word: "KI-Materialentwicklung_Antrag_ENTWURF.docx",
-  markdown: "KI-Materialentwicklung_Zusammenfassung_ENTWURF.md",
-  json_audit: "KI-Materialentwicklung_Nachweis_ENTWURF.json",
-}
-
-export async function createExport(kind: ExportKind): Promise<ExportDto> {
-  if (USE_MOCKS) {
-    await mockDelay(300)
-    return {
-      exportId: `mock-export-${kind}`,
-      kind,
-      status: "ready",
-      filename: EXPORT_FILENAMES[kind],
-    }
-  }
-  return request<ExportDto>("/api/exports", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ kind }),
-  })
-}
-
-export async function getExport(exportId: string): Promise<ExportDto> {
-  if (USE_MOCKS) {
-    await mockDelay()
-    const kind =
-      (exportId.replace("mock-export-", "") as ExportKind) || "word"
-    return {
-      exportId,
-      kind,
-      status: "ready",
-      filename: EXPORT_FILENAMES[kind] ?? EXPORT_FILENAMES.word,
-    }
-  }
-  return request<ExportDto>(`/api/exports/${encodeURIComponent(exportId)}`)
-}
-
+// Ein Export-Pfad: GET /api/runs/{id}/export liefert das Binary direkt —
+// es gibt bewusst kein POST /api/exports und keinen Generating-Status.
 /** Download-URL für den Binary-Export (Real-Modus: Anchor auf diese URL). */
 export function exportDownloadUrl(runId: string, kind: ExportKind): string {
   return `/api/runs/${encodeURIComponent(runId)}/export?kind=${encodeURIComponent(kind)}`

@@ -11,10 +11,10 @@ import { PAGE_SCENARIOS, type PageScenario } from "@/lib/export-mock-data"
 import {
   getRunFields,
   countOpenBlockers,
-  CURRENT_RUN_ID,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
+import { getCurrentRunId, loadIntake } from "@/lib/intake-store"
 import { cn } from "@/lib/utils"
 import type { StepStatus } from "@/lib/types"
 
@@ -42,7 +42,7 @@ export default function ExportPage() {
     let cancelled = false
     setError(null)
     setBlockerCount(null)
-    getRunFields(CURRENT_RUN_ID)
+    getRunFields(getCurrentRunId())
       .then((dto) => {
         if (!cancelled) setBlockerCount(countOpenBlockers(dto.issues))
       })
@@ -87,7 +87,11 @@ export default function ExportPage() {
           </div>
         </div>
       ) : (
-        <ExportScreen scenario={scenario} openBlockerCount={blockerCount} />
+        <ExportScreen
+          scenario={scenario}
+          openBlockerCount={blockerCount}
+          dataClass={loadIntake()?.vertraulichkeit || undefined}
+        />
       )}
 
       {/* Debug scenario switcher — hidden from normal user-facing UI */}

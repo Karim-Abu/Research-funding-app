@@ -62,6 +62,37 @@ export function isWebAllowed(dataClass: DataClass): boolean {
   return dataClass === "public_external"
 }
 
+export const DATA_CLASS_LABELS: Record<DataClass, string> = {
+  public_synthetic: "Öffentlich (synthetisch)",
+  public_external: "Öffentlich (extern)",
+  internal: "Intern",
+  confidential: "Vertraulich",
+  nda: "NDA",
+}
+
+// Restriktivität aufsteigend — Index = Rang.
+const DATA_CLASS_ORDER: DataClass[] = [
+  "public_synthetic",
+  "public_external",
+  "internal",
+  "confidential",
+  "nda",
+]
+
+/**
+ * Effektive Datenklasse eines Laufs = restriktivste aus Projekt + Quellen.
+ * Eine weniger restriktive Kombination darf nie Cloud-Aufrufe freischalten.
+ */
+export function mostRestrictiveDataClass(classes: DataClass[]): DataClass {
+  let result: DataClass = "public_synthetic"
+  for (const dc of classes) {
+    if (DATA_CLASS_ORDER.indexOf(dc) > DATA_CLASS_ORDER.indexOf(result)) {
+      result = dc
+    }
+  }
+  return result
+}
+
 // Service availability (booleans only — never expose provider info) ------
 
 export interface ServiceAvailability {
@@ -120,7 +151,8 @@ export interface IntakeFormData {
 export interface AnalyseSettings {
   ki: boolean
   web: boolean
-  localOnly: boolean
+  /** Nur vorbereitete/hochgeladene Quellen verwenden (keine Aussage über lokale LLMs). */
+  localSourcesOnly: boolean
   costLimit: number
   model: "auto" | "claude" | "openai"
   maxTextLength?: number

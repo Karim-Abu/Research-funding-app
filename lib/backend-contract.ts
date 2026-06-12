@@ -4,9 +4,22 @@
 // Änderungen hier sind Contract-Änderungen und müssen mit der Bridge
 // abgestimmt werden.
 
+import type { AnalyseSettings, DataClass, IntakeFormData } from "./types"
+
 // ---------------------------------------------------------------------------
 // Runs
 // ---------------------------------------------------------------------------
+
+/**
+ * Body von POST /runs: Der komplette Projektkontext reist mit dem Run —
+ * die Beta ist zustandsarm, das Backend setzt die Datenklasse pro Lauf
+ * unveränderlich und erzwingt die Policy serverseitig erneut.
+ */
+export interface RunStartRequestDto {
+  intake: IntakeFormData
+  settings: AnalyseSettings
+  effectiveDataClass: DataClass
+}
 
 export interface RunStepDto {
   id: string
@@ -30,7 +43,13 @@ export interface IssueCountsDto {
   info: number
 }
 
-export type RunStatus = "running" | "completed" | "stopped" | "failed"
+export type RunStatus =
+  | "queued"
+  | "running"
+  | "needs_review"
+  | "stopped"
+  | "completed"
+  | "failed"
 
 export interface RunStatusDto {
   runId: string
@@ -44,6 +63,8 @@ export interface RunStatusDto {
   /** Nur wenn true zeigt die UI einen Fortsetzen-Button. */
   canResume?: boolean
   issueCounts?: IssueCountsDto
+  /** Vom Backend berechnete effektive Datenklasse des Laufs. */
+  effectiveDataClass?: DataClass
 }
 
 // ---------------------------------------------------------------------------
@@ -78,15 +99,30 @@ export interface PortalFieldDraftDto {
   fieldId: string
   name: string
   text: string
-  charLimit: number
+  /** null = kein Portallimit für dieses Feld ("Kein Limit"). */
+  charLimit: number | null
   status: FieldDraftStatus
   evidence: EvidenceAnchorDto[]
+}
+
+export interface GateRowDto {
+  id: string
+  label: string
+  status: "passed" | "partial" | "failed"
+  /** Kurzes Ergebnis in Klartext. */
+  result: string
+  /** Erklärtext im aufgeklappten Zustand. */
+  detail: string
+  /** true, wenn das Ergebnis aus einem unvollständigen Durchlauf stammt. */
+  stale?: boolean
 }
 
 export interface RunFieldsDto {
   runId: string
   fields: PortalFieldDraftDto[]
   issues: IssueDto[]
+  /** Qualitätsprüfungen; fehlt das Feld, leitet die UI sie aus den Issues ab. */
+  gates?: GateRowDto[]
 }
 
 // ---------------------------------------------------------------------------
@@ -104,17 +140,12 @@ export interface ReviewDecisionDto {
 }
 
 // ---------------------------------------------------------------------------
-// Export
+// Export — ein Pfad: GET /runs/{id}/export?kind= liefert das Binary direkt
+// (Content-Disposition gesetzt). Es gibt kein POST /exports und kein
+// Export-Status-Objekt im Contract.
 // ---------------------------------------------------------------------------
 
 export type ExportKind = "word" | "markdown" | "json_audit"
-
-export interface ExportDto {
-  exportId: string
-  kind: ExportKind
-  status: "generating" | "ready" | "error"
-  filename?: string
-}
 
 // ---------------------------------------------------------------------------
 // Beta-Feedback (keine personenbezogenen Daten)

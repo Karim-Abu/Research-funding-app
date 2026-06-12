@@ -138,7 +138,9 @@ export function FieldReview({
 
   const draftText = drafts[activeField.fieldId] ?? activeField.text
   const charCount = draftText.trimEnd().length
-  const overLimit = charCount > activeField.charLimit
+  // charLimit === null -> "Kein Limit", nie rotes Styling.
+  const overLimit =
+    activeField.charLimit !== null && charCount > activeField.charLimit
   const isDirty = draftText !== activeField.text
 
   const openBlockers = issues.filter(
@@ -240,7 +242,9 @@ export function FieldReview({
                 : "text-muted-foreground"
             )}
           >
-            {`${charCount.toLocaleString("de-CH")} / ${activeField.charLimit.toLocaleString("de-CH")}`}
+            {activeField.charLimit === null
+              ? `${charCount.toLocaleString("de-CH")} · Kein Limit`
+              : `${charCount.toLocaleString("de-CH")} / ${activeField.charLimit.toLocaleString("de-CH")}`}
           </span>
         </div>
 
