@@ -49,11 +49,15 @@ export async function proxyToBridge(
     return NextResponse.json(BRIDGE_UNREACHABLE, { status: 502 })
   }
 
-  const body = await res.text()
-  return new NextResponse(body, {
-    status: res.status,
-    headers: {
-      "Content-Type": res.headers.get("Content-Type") ?? "application/json",
-    },
-  })
+  // Stream the body through unchanged — also carries binary payloads
+  // (e.g. the DOCX export); Content-Disposition is forwarded for downloads.
+  const headers = new Headers()
+  headers.set(
+    "Content-Type",
+    res.headers.get("Content-Type") ?? "application/json"
+  )
+  const disposition = res.headers.get("Content-Disposition")
+  if (disposition) headers.set("Content-Disposition", disposition)
+
+  return new NextResponse(res.body, { status: res.status, headers })
 }

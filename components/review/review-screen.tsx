@@ -23,21 +23,32 @@ import {
   DialogFooter,
 } from "@/components/ui/dialog"
 import { MachineStatusBadge } from "@/components/status/machine-status-badge"
+import { FieldReview } from "@/components/review/field-review"
 import { cn } from "@/lib/utils"
 import type { MachineStatus } from "@/lib/types"
 import {
   GATE_ROWS,
-  FINDINGS,
   DEFAULT_APPROVAL,
   PAGE_SCENARIOS,
   type GateRow,
   type GateStatus,
-  type Finding,
-  type FindingSeverity,
   type ApprovalData,
   type ApprovalState,
   type PageScenario,
 } from "@/lib/review-mock-data"
+import {
+  submitReview,
+  countOpenBlockers,
+  CURRENT_RUN_ID,
+  ApiError,
+  BRIDGE_UNREACHABLE_MESSAGE,
+} from "@/lib/api"
+import type {
+  IssueDto,
+  PortalFieldDraftDto,
+  ReviewDecisionDto,
+  RunFieldsDto,
+} from "@/lib/backend-contract"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -53,27 +64,6 @@ function gateLabel(s: GateStatus) {
   if (s === "passed") return "Bestanden"
   if (s === "partial") return "Teilweise"
   return "Nicht bestanden"
-}
-
-const SEVERITY_CONFIG: Record<
-  FindingSeverity,
-  { label: string; className: string; icon: React.ElementType }
-> = {
-  blocker: {
-    label: "Blockierend",
-    className: "bg-status-blocker/12 text-status-blocker",
-    icon: XCircle,
-  },
-  important: {
-    label: "Wichtig",
-    className: "bg-status-partial/12 text-status-partial",
-    icon: AlertTriangle,
-  },
-  hint: {
-    label: "Hinweis",
-    className: "bg-muted text-muted-foreground",
-    icon: ChevronRight,
-  },
 }
 
 // ---------------------------------------------------------------------------
@@ -176,64 +166,6 @@ function GateRowItem({ row }: { row: GateRow }) {
           </a>
         </div>
       )}
-    </div>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Finding row
-// ---------------------------------------------------------------------------
-
-interface FindingRowProps {
-  finding: Finding
-  onMarkResolved: (id: string) => void
-}
-
-function FindingRow({ finding, onMarkResolved }: FindingRowProps) {
-  const cfg = SEVERITY_CONFIG[finding.severity]
-  const Icon = cfg.icon
-
-  return (
-    <div
-      className={cn(
-        "flex min-h-[52px] flex-col gap-1 rounded-md border border-border bg-card px-4 py-3",
-        finding.state === "resolved" && "opacity-60"
-      )}
-    >
-      <div className="flex flex-wrap items-start gap-2">
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-            cfg.className
-          )}
-        >
-          <Icon className="size-3.5" />
-          {cfg.label}
-        </span>
-        <span className="text-sm font-medium text-foreground">{finding.title}</span>
-      </div>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        {finding.description}
-      </p>
-      <div className="mt-1 flex items-center gap-3">
-        <a
-          href="#"
-          onClick={(e) => e.preventDefault()}
-          className="inline-flex items-center gap-1 text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-        >
-          <ArrowRight className="size-3" />
-          Zum Abschnitt: {finding.jumpSection}
-        </a>
-        {finding.state === "open" && (
-          <button
-            type="button"
-            onClick={() => onMarkResolved(finding.id)}
-            className="text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-          >
-            Als erledigt markieren
-          </button>
-        )}
-      </div>
     </div>
   )
 }
@@ -476,23 +408,45 @@ function ReviewSkeleton() {
 export interface ReviewScreenProps {
   /** Scenario override for the debug panel. Defaults to "default". */
   scenario?: PageScenario
+  /** Feldentwürfe + Issues (von api.getRunFields geladen). */
+  initialData?: RunFieldsDto
 }
 
-export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
+export function ReviewScreen({
+  scenario = "default",
+  initialData,
+}: ReviewScreenProps) {
   // Gate rows (local state so "resolved" markings persist)
   const [gates] = React.useState(GATE_ROWS)
 
-  // Findings: start with mock, allow optimistic mark-resolved
-  const [findings, setFindings] = React.useState(FINDINGS)
+  // Feldentwürfe + Issues — Mutationen laufen über api.submitReview.
+  const [fields, setFields] = React.useState<PortalFieldDraftDto[]>(
+    initialData?.fields ?? []
+  )
+  const [issues, setIssues] = React.useState<IssueDto[]>(
+    initialData?.issues ?? []
+  )
+  const [reviewBusy, setReviewBusy] = React.useState(false)
+  const [reviewError, setReviewError] = React.useState<string | null>(null)
 
-  // Ref for the Hinweise section — used by "Zu den Hinweisen" scroll
-  const findingsRef = React.useRef<HTMLElement | null>(null)
-
-  function markFindingResolved(id: string) {
-    setFindings((prev) =>
-      prev.map((f) => (f.id === id ? { ...f, state: "resolved" as const } : f))
-    )
+  async function applyDecision(decision: ReviewDecisionDto) {
+    setReviewBusy(true)
+    setReviewError(null)
+    try {
+      const dto = await submitReview(CURRENT_RUN_ID, decision)
+      setFields(dto.fields)
+      setIssues(dto.issues)
+    } catch (e) {
+      setReviewError(
+        e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+      )
+    } finally {
+      setReviewBusy(false)
+    }
   }
+
+  // Ref for the Feldentwürfe section — used by "Zu den Hinweisen" scroll
+  const findingsRef = React.useRef<HTMLElement | null>(null)
 
   // Approval state (driven by scenario)
   const [approval, setApproval] = React.useState<ApprovalData>(() =>
@@ -501,20 +455,18 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
   // Re-sync when scenario changes (debug switcher)
   React.useEffect(() => {
     setApproval(scenarioToApproval(scenario))
-    setFindings(FINDINGS)
   }, [scenario])
 
-  // Derived counts
-  const openBlockers = findings.filter(
-    (f) => f.severity === "blocker" && f.state === "open"
-  ).length
-  const openFindings = findings.filter(
-    (f) => f.severity !== "blocker" && f.state === "open"
-  )
-  const resolvedFindings = findings.filter((f) => f.state === "resolved")
-  const visibleOpen = openFindings.slice(0, 5)
-  const hiddenOpen = openFindings.slice(5)
-  const [showMore, setShowMore] = React.useState(false)
+  // Freigabe-Gating: offene, nicht überschriebene Blocker-Issues.
+  const openBlockers = countOpenBlockers(issues)
+
+  // "blocked" leitet sich aus den tatsächlichen Blockern ab — sind alle
+  // entschieden, wird die Freigabe möglich ("open"), ohne das Szenario
+  // (approved/stale/changes_requested) zu überschreiben.
+  const effectiveApproval: ApprovalData =
+    approval.state === "blocked" && openBlockers === 0
+      ? { ...approval, state: "open" }
+      : approval
 
   // Header counters
   const totalRows = gates.length
@@ -552,7 +504,7 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
         </div>
       )}
 
-      <div className="mx-auto w-full max-w-5xl px-6 py-8">
+      <div className="mx-auto w-full max-w-6xl px-6 py-8">
         {/* Page header */}
         <div className="mb-8 flex flex-col gap-1">
           <h1 className="text-balance text-2xl font-semibold text-foreground">
@@ -563,11 +515,7 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
           </p>
         </div>
 
-        {/* Two-column layout: main left, approval card right */}
-        <div className="flex gap-8">
-          {/* Main column */}
-          <div className="flex min-w-0 flex-1 flex-col gap-10">
-
+        <div className="flex min-w-0 flex-col gap-10">
             {/* Progress summary */}
             <section aria-labelledby="progress-heading">
               <div className="flex items-center gap-5">
@@ -624,115 +572,63 @@ export function ReviewScreen({ scenario = "default" }: ReviewScreenProps) {
 
             <Separator />
 
-            {/* Hinweise */}
-            <section ref={findingsRef} aria-labelledby="findings-heading" id="blockers">
+            {/* Feldentwürfe — 3 Spalten: Felder / Text / Issues + Freigabe */}
+            <section ref={findingsRef} aria-labelledby="fields-heading" id="blockers">
               <h2
-                id="findings-heading"
+                id="fields-heading"
                 className="mb-4 text-base font-semibold text-foreground"
               >
-                Hinweise
+                Feldentwürfe
               </h2>
-              <div className="flex flex-col gap-2">
-                {/* Blockers — always at top, always visible */}
-                {findings
-                  .filter((f) => f.severity === "blocker" && f.state === "open")
-                  .map((f) => (
-                    <FindingRow
-                      key={f.id}
-                      finding={f}
-                      onMarkResolved={markFindingResolved}
-                    />
-                  ))}
 
-                {/* Divider between blockers and open */}
-                {openBlockers > 0 && openFindings.length > 0 && (
-                  <Separator className="my-1" />
-                )}
+              {reviewError && (
+                <div
+                  role="alert"
+                  className="mb-4 flex items-start gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm text-foreground"
+                >
+                  <XCircle className="mt-0.5 size-4 shrink-0 text-destructive" />
+                  {reviewError}
+                </div>
+              )}
 
-                {/* First 5 open non-blocker findings */}
-                {visibleOpen.map((f) => (
-                  <FindingRow
-                    key={f.id}
-                    finding={f}
-                    onMarkResolved={markFindingResolved}
+              <FieldReview
+                fields={fields}
+                issues={issues}
+                busy={reviewBusy}
+                onRecheck={(fieldId, text) =>
+                  applyDecision({ decisions: [], fieldEdits: [{ fieldId, text }] })
+                }
+                onDecide={(decisions) => applyDecision({ decisions })}
+                approvalSlot={
+                  <ApprovalCard
+                    approval={effectiveApproval}
+                    blockerCount={openBlockers}
+                    findingsRef={findingsRef}
+                    onApprove={() =>
+                      setApproval({
+                        state: "approved",
+                        approvedBy: "Anna Keller",
+                        approvedAt: "heute, 11:02",
+                      })
+                    }
+                    onRequestChanges={(comment) =>
+                      setApproval({
+                        state: "changes_requested",
+                        changesRequestedBy: "Anna Keller",
+                        changesRequestedComment: comment,
+                      })
+                    }
+                    onReApprove={() =>
+                      setApproval({
+                        state: "approved",
+                        approvedBy: "Anna Keller",
+                        approvedAt: "heute, 11:02",
+                      })
+                    }
                   />
-                ))}
-
-                {/* "Weitere Hinweise anzeigen" */}
-                {hiddenOpen.length > 0 && (
-                  <>
-                    {showMore &&
-                      hiddenOpen.map((f) => (
-                        <FindingRow
-                          key={f.id}
-                          finding={f}
-                          onMarkResolved={markFindingResolved}
-                        />
-                      ))}
-                    <button
-                      type="button"
-                      onClick={() => setShowMore((v) => !v)}
-                      className="self-start text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                    >
-                      {showMore
-                        ? "Weniger anzeigen"
-                        : `Weitere Hinweise anzeigen (${hiddenOpen.length})`}
-                    </button>
-                  </>
-                )}
-
-                {/* Resolved findings — collapsed */}
-                {resolvedFindings.length > 0 && (
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-sm text-muted-foreground underline-offset-2 hover:text-foreground hover:underline">
-                      Erledigt ({resolvedFindings.length})
-                    </summary>
-                    <div className="mt-2 flex flex-col gap-2">
-                      {resolvedFindings.map((f) => (
-                        <FindingRow
-                          key={f.id}
-                          finding={f}
-                          onMarkResolved={markFindingResolved}
-                        />
-                      ))}
-                    </div>
-                  </details>
-                )}
-              </div>
-            </section>
-          </div>
-
-          {/* Approval card — sticky right column */}
-          <div className="w-72 shrink-0">
-            <div className="sticky top-6">
-              <ApprovalCard
-                approval={approval}
-                blockerCount={openBlockers}
-                findingsRef={findingsRef}
-                onApprove={() =>
-                  setApproval({
-                    state: "approved",
-                    approvedBy: "Anna Keller",
-                    approvedAt: "heute, 11:02",
-                  })
-                }
-                onRequestChanges={(comment) =>
-                  setApproval({
-                    state: "changes_requested",
-                    changesRequestedBy: "Anna Keller",
-                    changesRequestedComment: comment,
-                  })
-                }
-                onReApprove={() =>
-                  setApproval({
-                    state: "approved",
-                    approvedBy: "Anna Keller",
-                    approvedAt: "heute, 11:02",
-                  })
                 }
               />
-            </div>
-          </div>
+            </section>
         </div>
       </div>
     </div>

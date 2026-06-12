@@ -23,12 +23,13 @@ import { Separator } from "@/components/ui/separator"
 import { LLMToggle, WebSearchToggle } from "./service-toggles"
 import { ModelSelector } from "./model-selector"
 import { UsageEstimateBanner } from "./usage-estimate-banner"
-import { DataClassWarning } from "./data-class-warning"
-import type {
-  AnalyseSettings,
-  DataClass,
-  Role,
-  ServiceAvailability,
+import {
+  isCloudAllowed,
+  isWebAllowed,
+  type AnalyseSettings,
+  type DataClass,
+  type Role,
+  type ServiceAvailability,
 } from "@/lib/types"
 
 interface AnalyseEinstellungenDialogProps {
@@ -64,22 +65,18 @@ export function AnalyseEinstellungenDialog({
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  const isLocalOnlyClass = dataClass === "confidential" || dataClass === "nda"
-  const isInternal = dataClass === "internal"
+  // Beta-Policy: internal/confidential/nda sind hart lokal — keine Cloud-KI,
+  // keine Webrecherche, keine Provider-Auswahl, keine Bestätigungs-Ausnahme.
+  const isLocalOnlyClass = !isCloudAllowed(dataClass)
 
   const [ki, setKi] = React.useState(!isLocalOnlyClass)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [localOnly, setLocalOnly] = React.useState(false)
   const [costLimit, setCostLimit] = React.useState("20.00")
   const [model, setModel] = React.useState<"auto" | "claude" | "openai">("auto")
-  const [confirmed, setConfirmed] = React.useState(false)
 
-  const webDisabled = localOnly || isLocalOnlyClass
+  const webDisabled = localOnly || !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
-
-  // Internal + (KI on OR Web on) requires explicit confirmation.
-  const requiresConfirm = isInternal && (ki || effectiveWeb)
-  const startDisabled = requiresConfirm && !confirmed
 
   function handleStart() {
     onStart?.({
@@ -122,8 +119,8 @@ export function AnalyseEinstellungenDialog({
             {isLocalOnlyClass && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                Nur lokale Verarbeitung: Cloud-KI und Webrecherche sind für diese
-                Stufe deaktiviert.
+                Für diese Datenklasse werden keine externen KI- oder Webdienste
+                verwendet.
               </div>
             )}
 
@@ -137,7 +134,7 @@ export function AnalyseEinstellungenDialog({
               id="web-toggle"
               checked={effectiveWeb}
               onCheckedChange={setWeb}
-              available={serviceAvailability.web && !isLocalOnlyClass}
+              available={serviceAvailability.web && isWebAllowed(dataClass)}
               disabled={webDisabled}
             />
 
@@ -203,13 +200,6 @@ export function AnalyseEinstellungenDialog({
               </div>
             </div>
 
-            {requiresConfirm && (
-              <DataClassWarning
-                confirmed={confirmed}
-                onConfirmedChange={setConfirmed}
-              />
-            )}
-
             <UsageEstimateBanner state={estimateState} />
 
             {/* Tier 2 — only for lead_admin */}
@@ -221,7 +211,10 @@ export function AnalyseEinstellungenDialog({
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="flex flex-col gap-4 pt-1">
-                      <ModelSelector value={model} onChange={setModel} />
+                      {/* Keine Provider-Auswahl für lokale Datenklassen. */}
+                      {!isLocalOnlyClass && (
+                        <ModelSelector value={model} onChange={setModel} />
+                      )}
                       <NumberField
                         label="Max. Textumfang"
                         helper="begrenzt die Länge der KI-Antworten"
@@ -253,13 +246,7 @@ export function AnalyseEinstellungenDialog({
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
-            <Button
-              variant={requiresConfirm ? "destructive" : "default"}
-              disabled={startDisabled}
-              onClick={handleStart}
-            >
-              {requiresConfirm ? "Analyse trotzdem starten" : "Analyse starten"}
-            </Button>
+            <Button onClick={handleStart}>Analyse starten</Button>
           </DialogFooter>
         )}
       </DialogContent>

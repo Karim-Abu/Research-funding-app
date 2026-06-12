@@ -31,8 +31,14 @@ import {
   resumeRun,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
+  type RunCostDto,
 } from "@/lib/api"
-import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
+import {
+  isCloudAllowed,
+  type AnalyseSettings,
+  type DataClass,
+  type Role,
+} from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Scenario types (dialog demo only — collapsed by default)
@@ -76,7 +82,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
   },
   {
     id: "internal",
-    label: "Intern (Bestätigung)",
+    label: "Intern",
     role: "lead_admin",
     dataClass: "internal",
     kiAvailable: true,
@@ -160,12 +166,12 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
 const quellenStepStatus = [
   "done",
   "current",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
-  "todo",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
 ] as const
 
 // ---------------------------------------------------------------------------
@@ -215,6 +221,8 @@ function QuellenPageContent() {
     React.useState<PageAnalysisState>("idle")
   const [analysisSteps, setAnalysisSteps] =
     React.useState<AnalysisProgressStep[]>(dummyAnalysisSteps)
+  const [runCost, setRunCost] = React.useState<RunCostDto | undefined>(undefined)
+  const [canResume, setCanResume] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
   const [showDebugControls, setShowDebugControls] = React.useState(false)
 
@@ -238,10 +246,16 @@ function QuellenPageContent() {
       if (!runId) return
       try {
         const dto = await getRun(runId)
-        setAnalysisSteps(dto.steps)
+        if (dto.steps) setAnalysisSteps(dto.steps)
+        setRunCost(dto.cost)
+        setCanResume(dto.canResume ?? false)
         if (dto.status === "completed") {
           stopPolling()
           setAnalysisState("completed")
+        } else if (dto.status === "stopped") {
+          // Backend-initiated stop (e.g. cost limit reached).
+          stopPolling()
+          setAnalysisState("stopped")
         }
       } catch (e) {
         stopPolling()
@@ -255,7 +269,7 @@ function QuellenPageContent() {
 
   // The active scenario's dataClass drives the local-only banner.
   const dataClass = activeScenario.dataClass
-  const isLocalOnly = dataClass === "confidential" || dataClass === "nda"
+  const isLocalOnly = !isCloudAllowed(dataClass)
 
   function openDialogWith(scenario: DialogScenario) {
     setActiveScenario(scenario)
@@ -288,7 +302,15 @@ function QuellenPageContent() {
     stopPolling()
     setAnalysisState("stopped")
     const runId = runIdRef.current
-    if (runId) void stopRun(runId).catch(() => {})
+    if (!runId) return
+    // Refresh canResume/cost once from the stopped run.
+    void stopRun(runId)
+      .then(() => getRun(runId))
+      .then((dto) => {
+        setCanResume(dto.canResume ?? false)
+        setRunCost(dto.cost)
+      })
+      .catch(() => setCanResume(false))
   }
 
   function handleAnalysisResume() {
@@ -362,13 +384,17 @@ function QuellenPageContent() {
           <div className="mb-4">
             <AnalysisProgressBanner
               steps={analysisSteps}
+              cost={runCost}
               onStop={handleAnalysisStop}
             />
           </div>
         )}
         {analysisState === "stopped" && (
           <div className="mb-4">
-            <StoppedAnalysisBanner onResume={handleAnalysisResume} />
+            <StoppedAnalysisBanner
+              canResume={canResume}
+              onResume={handleAnalysisResume}
+            />
           </div>
         )}
         {analysisState === "completed" && (

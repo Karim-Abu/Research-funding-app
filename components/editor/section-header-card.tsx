@@ -61,7 +61,12 @@ export function SectionHeaderCard({
         </div>
 
         {/* Section switcher with small status dots */}
-        <Select value={section.id} onValueChange={onSectionChange}>
+        <Select
+          value={section.id}
+          onValueChange={(v) => {
+            if (v !== null) onSectionChange(v)
+          }}
+        >
           <SelectTrigger className="h-9 w-[300px] shrink-0" aria-label="Abschnitt wechseln">
             <span className="flex items-center gap-2 truncate">
               <span

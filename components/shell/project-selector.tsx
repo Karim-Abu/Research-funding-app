@@ -23,7 +23,12 @@ export function ProjectSelector({
   return (
     <div className="flex items-center gap-2">
       <span className="text-xs font-medium text-muted-foreground">Projekt</span>
-      <Select value={activeProjectId} onValueChange={onChange}>
+      <Select
+        value={activeProjectId}
+        onValueChange={(v) => {
+          if (v !== null) onChange?.(v)
+        }}
+      >
         <SelectTrigger className="h-9 w-[280px]" aria-label="Projekt auswählen">
           <span className="truncate">
             {projects.find((p) => p.id === activeProjectId)?.title ?? activeProjectId}
