@@ -14,6 +14,7 @@ import {
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { FeedbackDialog } from "@/components/export/feedback-dialog"
 import { cn } from "@/lib/utils"
 import {
   EXPORT_CARDS,
@@ -27,6 +28,12 @@ import {
   type PageScenario,
   type PriorExport,
 } from "@/lib/export-mock-data"
+import {
+  createExport,
+  exportDownloadUrl,
+  USE_MOCKS,
+  CURRENT_RUN_ID,
+} from "@/lib/api"
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -385,11 +392,41 @@ function LoadingSkeleton() {
 // Main screen
 // ---------------------------------------------------------------------------
 
-export interface ExportScreenProps {
-  scenario?: PageScenario
+// Mock-Downloads: echte Dateien mit ENTWURF-Kennzeichnung (Dummy-Inhalt).
+// Im Real-Modus liefert die Bridge das Binary über /api/runs/{id}/export.
+const MOCK_DOWNLOADS: Record<
+  ExportKind,
+  { filename: string; mime: string; body: string }
+> = {
+  word: {
+    filename: "KI-Materialentwicklung_Antrag_ENTWURF_Platzhalter.txt",
+    mime: "text/plain;charset=utf-8",
+    body: "ENTWURF — nicht eingereicht (Dummy)\n\nWord-Arbeitsdokument: Platzhalter aus dem Demo-Modus. Die Einreichung erfolgt durch Sie im Innosuisse-Portal.",
+  },
+  markdown: {
+    filename: "KI-Materialentwicklung_Zusammenfassung_ENTWURF.md",
+    mime: "text/markdown;charset=utf-8",
+    body: "# Antrag — ENTWURF (Dummy)\n\nMarkdown-Zusammenfassung aus dem Demo-Modus. Nicht eingereicht.",
+  },
+  json_audit: {
+    filename: "KI-Materialentwicklung_Nachweis_ENTWURF.json",
+    mime: "application/json",
+    body: JSON.stringify({ entwurf: true, dummy: true, hinweis: "Demo-Modus" }, null, 2),
+  },
 }
 
-export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
+type LocalCardState = "idle" | "generating" | "ready" | "error"
+
+export interface ExportScreenProps {
+  scenario?: PageScenario
+  /** Offene, nicht überschriebene Blocker-Issues (Gating). */
+  openBlockerCount?: number
+}
+
+export function ExportScreen({
+  scenario = "default",
+  openBlockerCount = 0,
+}: ExportScreenProps) {
   // Derive approval banner state from scenario
   const approvalState: ApprovalBannerState =
     scenario === "approved"
@@ -399,14 +436,18 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
         : "not_approved"
 
   const nothingToExport = scenario === "nothing_to_export"
-  const isLoading = false // no loading state needed for prototype; skeleton shown via scenario switcher
+  const blocked = openBlockerCount > 0
 
-  // Per-card generated state (optimistic)
-  const [generatedIds, setGeneratedIds] = React.useState<Set<string>>(
-    new Set()
-  )
+  const [cardStates, setCardStates] = React.useState<
+    Record<string, LocalCardState>
+  >({})
+  const [feedbackOpen, setFeedbackOpen] = React.useState(false)
 
-  // Build card state: in "generating" scenario, word card is generating
+  function setCardState(id: string, state: LocalCardState) {
+    setCardStates((prev) => ({ ...prev, [id]: state }))
+  }
+
+  // Build card state: scenario overrides (debug) > local API-driven state
   const cards: ExportCard[] = EXPORT_CARDS.map((c) => {
     if (scenario === "generating" && c.id === "word") {
       return { ...c, status: "generating" as ExportCardStatus }
@@ -414,23 +455,50 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
     if (scenario === "error" && c.id === "word") {
       return { ...c, status: "error" as ExportCardStatus }
     }
+    const local = cardStates[c.id]
+    if (local === "generating") {
+      return { ...c, status: "generating" as ExportCardStatus }
+    }
+    if (local === "error") {
+      return { ...c, status: "error" as ExportCardStatus }
+    }
     return c
   })
 
-  function handleGenerate(id: string) {
-    // Optimistic: immediately mark as generated (ready to download)
-    setGeneratedIds((prev) => new Set([...prev, id]))
+  async function handleGenerate(id: string) {
+    const card = EXPORT_CARDS.find((c) => c.id === id)
+    if (!card || blocked) return
+    setCardState(id, "generating")
+    try {
+      await createExport(card.kind)
+      setCardState(id, "ready")
+    } catch {
+      setCardState(id, "error")
+    }
   }
 
-  function handleDownload(_id: string) {
-    // Prototype: no actual download
+  function handleDownload(id: string) {
+    const card = EXPORT_CARDS.find((c) => c.id === id)
+    if (!card) return
+    if (USE_MOCKS) {
+      const download = MOCK_DOWNLOADS[card.kind]
+      const blob = new Blob([download.body], { type: download.mime })
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement("a")
+      a.href = url
+      a.download = download.filename
+      a.click()
+      URL.revokeObjectURL(url)
+      return
+    }
+    const a = document.createElement("a")
+    a.href = exportDownloadUrl(CURRENT_RUN_ID, card.kind)
+    a.click()
   }
 
   function handleRetry(id: string) {
-    setGeneratedIds((prev) => new Set([...prev, id]))
+    void handleGenerate(id)
   }
-
-  if (isLoading) return <LoadingSkeleton />
 
   return (
     <div className="flex min-h-full flex-col gap-8 px-6 py-8">
@@ -458,6 +526,19 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
         </div>
       ) : (
         <>
+          {/* Blocker gating — export only after blockers are decided */}
+          {blocked && (
+            <div
+              role="alert"
+              className="flex items-start gap-2 rounded-md border border-status-blocker/30 bg-status-blocker/5 px-4 py-3"
+            >
+              <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-blocker" />
+              <p className="text-sm text-foreground">
+                {`Export nicht möglich: ${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Punkt" : "Punkte"} offen — im Review entscheiden.`}
+              </p>
+            </div>
+          )}
+
           {/* Export cards — 3 columns */}
           <section aria-labelledby="export-cards-heading">
             <h2 id="export-cards-heading" className="sr-only">
@@ -465,7 +546,7 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
             </h2>
             <div className="grid grid-cols-3 gap-4">
               {cards.map((card) =>
-                generatedIds.has(card.id) ? (
+                cardStates[card.id] === "ready" ? (
                   <ExportCardDownloadItem
                     key={card.id}
                     card={card}
@@ -477,7 +558,7 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
                     key={card.id}
                     card={card}
                     approvalState={approvalState}
-                    disabled={false}
+                    disabled={blocked}
                     onGenerate={handleGenerate}
                     onDownload={handleDownload}
                     onRetry={handleRetry}
@@ -494,10 +575,22 @@ export function ExportScreen({ scenario = "default" }: ExportScreenProps) {
 
       {/* Sticky bottom disclaimer — stays in flow inside the scrollable main */}
       <div className="sticky bottom-0 -mx-6 mt-auto border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm">
-        <p className="text-xs text-muted-foreground">
-          Die Einreichung erfolgt durch Sie im Innosuisse-Portal. Diese Plattform reicht nichts automatisch ein.
-        </p>
+        <div className="flex items-center justify-between gap-4">
+          <p className="text-xs text-muted-foreground">
+            Die Einreichung erfolgt durch Sie im Innosuisse-Portal. Diese Plattform reicht nichts automatisch ein.
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="shrink-0"
+            onClick={() => setFeedbackOpen(true)}
+          >
+            Beta-Feedback geben
+          </Button>
+        </div>
       </div>
+
+      <FeedbackDialog open={feedbackOpen} onOpenChange={setFeedbackOpen} />
     </div>
   )
 }

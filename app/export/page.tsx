@@ -1,11 +1,20 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronRight } from "lucide-react"
+import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { ExportScreen } from "@/components/export/export-screen"
+import { Button } from "@/components/ui/button"
+import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import { PAGE_SCENARIOS, type PageScenario } from "@/lib/export-mock-data"
+import {
+  getRunFields,
+  countOpenBlockers,
+  CURRENT_RUN_ID,
+  ApiError,
+  BRIDGE_UNREACHABLE_MESSAGE,
+} from "@/lib/api"
 import { cn } from "@/lib/utils"
 import type { StepStatus } from "@/lib/types"
 
@@ -26,6 +35,29 @@ const showDebugControls = false
 export default function ExportPage() {
   const [scenario, setScenario] = React.useState<PageScenario>("default")
   const [showDebug, setShowDebug] = React.useState(false)
+  const [blockerCount, setBlockerCount] = React.useState<number | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+
+  const load = React.useCallback(() => {
+    let cancelled = false
+    setError(null)
+    setBlockerCount(null)
+    getRunFields(CURRENT_RUN_ID)
+      .then((dto) => {
+        if (!cancelled) setBlockerCount(countOpenBlockers(dto.issues))
+      })
+      .catch((e) => {
+        if (!cancelled)
+          setError(
+            e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+          )
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [])
+
+  React.useEffect(() => load(), [load])
 
   return (
     <AppShell
@@ -35,7 +67,28 @@ export default function ExportPage() {
       currentStep={8}
       stepStatus={stepStatus}
     >
-      <ExportScreen scenario={scenario} />
+      {error ? (
+        <div className="mx-auto max-w-4xl px-6 py-10">
+          <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
+            <p className="text-sm text-muted-foreground">{error}</p>
+            <Button variant="outline" onClick={load}>
+              <RefreshCw data-icon="inline-start" />
+              Erneut versuchen
+            </Button>
+          </div>
+        </div>
+      ) : blockerCount === null ? (
+        <div className="flex flex-col gap-4 px-6 py-8">
+          <Skeleton className="h-12 w-full rounded-md" />
+          <div className="grid grid-cols-3 gap-4">
+            {[0, 1, 2].map((i) => (
+              <Skeleton key={i} className="h-48 rounded-lg" />
+            ))}
+          </div>
+        </div>
+      ) : (
+        <ExportScreen scenario={scenario} openBlockerCount={blockerCount} />
+      )}
 
       {/* Debug scenario switcher — hidden from normal user-facing UI */}
       {showDebugControls && (
