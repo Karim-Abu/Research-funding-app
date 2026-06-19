@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
@@ -66,14 +67,13 @@ export function Sidebar({ role, collapsed, onToggle }: SidebarProps) {
         )}
       >
         <Link href="/" className="flex items-center gap-2 outline-none">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-            EP
+          <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
+            <Image src="/icon.png" alt="Logo" fill className="object-cover" />
           </span>
           {!collapsed && (
             <span className="text-sm font-semibold leading-tight text-sidebar-foreground">
-              Proposal-
-              <br />
-              Unterstützung
+              Multi-Agent-Workflow  <br />
+              
             </span>
           )}
         </Link>
