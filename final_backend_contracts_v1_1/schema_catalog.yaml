@@ -1,0 +1,1013 @@
+schema_version: 1.0.0
+catalog_id: contracts.internal
+title: Internal Agent and Tool Schema Catalog
+status: ready_for_implementation
+last_updated: '2026-06-21'
+rules:
+- Every schema reference in agents.yaml and tools.yaml must resolve to exactly one catalog entry.
+- Fields marked required must be validated by Pydantic before invocation or persistence.
+- Unknown fields are rejected unless a schema explicitly allows extensions.
+- Domain record types referenced by fields map to canonical Pydantic domain views defined from Domain Model v4.
+schemas:
+- schema_id: ProjectFactExtractionInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    fragment_ids:
+      type: array
+      required: true
+      items: string
+    versioned_user_input_ids:
+      type: array
+      required: false
+      items: string
+    active_requirement_ids:
+      type: array
+      required: true
+      items: string
+    active_field_ids:
+      type: array
+      required: true
+      items: string
+    data_classification:
+      type: DataClassificationRef
+      required: true
+- schema_id: ProjectFactExtractionResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    facts:
+      type: array
+      required: true
+      items: ExtractedFactRecord
+    conflicts:
+      type: array
+      required: true
+      items: FactConflictRecord
+    missing_information:
+      type: array
+      required: true
+      items: MissingInformationRecord
+    source_instruction_warnings:
+      type: array
+      required: false
+      items: string
+- schema_id: EvidenceCandidateMappingInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    facts:
+      type: array
+      required: true
+      items: ExtractedFactRef
+    fragment_ids:
+      type: array
+      required: true
+      items: string
+    target_requirement_ids:
+      type: array
+      required: true
+      items: string
+    target_field_ids:
+      type: array
+      required: true
+      items: string
+- schema_id: EvidenceCandidateMappingResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    candidates:
+      type: array
+      required: true
+      items: EvidenceCandidateRecord
+    unmapped_targets:
+      type: array
+      required: true
+      items: TargetRef
+    conflicts:
+      type: array
+      required: false
+      items: EvidenceConflictRecord
+- schema_id: PublicCompetenceResearchInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    research_task_id:
+      type: string
+      required: true
+    project_id:
+      type: string
+      required: true
+    research_result_source_version_ids:
+      type: array
+      required: true
+      items: string
+    requested_partner_roles:
+      type: array
+      required: true
+      items: string
+    competence_needs:
+      type: array
+      required: true
+      items: string
+- schema_id: PublicCompetenceResearchResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    professional_evidence:
+      type: array
+      required: true
+      items: ProfessionalEvidenceRecord
+    partner_role_suggestions:
+      type: array
+      required: true
+      items: PartnerRoleSuggestionRecord
+    unresolved_identity_matches:
+      type: array
+      required: false
+      items: IdentityMatchRecord
+    warnings:
+      type: array
+      required: false
+      items: string
+- schema_id: FieldDraftingInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    profile_id:
+      type: string
+      required: true
+    field_profiles:
+      type: array
+      required: true
+      items: PortalFieldProfileView
+    confirmed_facts:
+      type: array
+      required: true
+      items: ExtractedFactRecord
+    verified_evidence:
+      type: array
+      required: true
+      items: EvidenceLinkRecord
+    structured_project_data:
+      type: StructuredProjectDataResult
+      required: true
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+    language:
+      type: string
+      required: true
+- schema_id: PortalFieldDraftBundle@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    draft_candidates:
+      type: array
+      required: true
+      items: DraftCandidateRecord
+    placeholders:
+      type: array
+      required: true
+      items: PlaceholderRecord
+    field_level_warnings:
+      type: array
+      required: false
+      items: OpenIssueRecord
+- schema_id: CriticReviewInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    profile_ids:
+      type: array
+      required: true
+      items: string
+    current_drafts:
+      type: array
+      required: true
+      items: DraftVersionRecord
+    requirements:
+      type: array
+      required: true
+      items: RequirementAssessmentRecord
+    rule_results:
+      type: array
+      required: true
+      items: RuleResultRecord
+    evidence_links:
+      type: array
+      required: true
+      items: EvidenceLinkRecord
+    confirmed_facts:
+      type: array
+      required: true
+      items: ExtractedFactRecord
+    structured_project_data:
+      type: StructuredProjectDataResult
+      required: true
+- schema_id: ReviewFindingBundle@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    findings:
+      type: array
+      required: true
+      items: ReviewFindingRecord
+    profile_summaries:
+      type: array
+      required: true
+      items: ProfileReviewSummaryRecord
+    overall_limitations:
+      type: array
+      required: false
+      items: string
+- schema_id: FinalQualityReviewInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    review_package_version:
+      type: string
+      required: true
+    drafts:
+      type: array
+      required: true
+      items: DraftVersionRecord
+    requirements:
+      type: array
+      required: true
+      items: RequirementAssessmentRecord
+    findings:
+      type: array
+      required: true
+      items: ReviewFindingRecord
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+- schema_id: SourceFileIngestRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    original_filename:
+      type: string
+      required: true
+    content_type:
+      type: string
+      required: true
+    storage_upload_ref:
+      type: string
+      required: true
+    data_classification:
+      type: DataClassificationRef
+      required: true
+- schema_id: SourceTextIngestRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    name:
+      type: string
+      required: true
+    text:
+      type: string
+      required: true
+    data_classification:
+      type: DataClassificationRef
+      required: true
+- schema_id: SourceDocumentRef@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    source_id:
+      type: string
+      required: true
+    source_version_id:
+      type: string
+      required: false
+      nullable: true
+    status:
+      type: string
+      required: true
+    content_hash:
+      type: string
+      required: false
+      nullable: true
+- schema_id: SourceNormalizationRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    source_id:
+      type: string
+      required: true
+    source_version_id:
+      type: string
+      required: true
+    parser_id:
+      type: string
+      required: true
+    parser_version:
+      type: string
+      required: true
+    normalizer_version:
+      type: string
+      required: true
+- schema_id: SourceNormalizationResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    source_version_id:
+      type: string
+      required: true
+    status:
+      type: string
+      required: true
+    fragment_ids:
+      type: array
+      required: true
+      items: string
+    warnings:
+      type: array
+      required: false
+      items: string
+    normalized_content_hash:
+      type: string
+      required: false
+      nullable: true
+- schema_id: ValidatedPublicUrlFetchRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    url:
+      type: string
+      required: true
+    research_purpose:
+      type: string
+      required: true
+    data_classification:
+      type: DataClassificationRef
+      required: true
+    internal_public_confirmation_id:
+      type: string
+      required: false
+      nullable: true
+- schema_id: PublicWebSourceResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    source_document:
+      type: SourceDocumentRef
+      required: true
+    final_url:
+      type: string
+      required: true
+    accessed_at:
+      type: datetime
+      required: true
+    content_hash:
+      type: string
+      required: true
+    redirect_chain:
+      type: array
+      required: false
+      items: string
+    credits_used:
+      type: number
+      required: false
+- schema_id: ProfessionalSourceSearchRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    query:
+      type: string
+      required: true
+    purpose:
+      type: string
+      required: true
+    requested_result_count:
+      type: integer
+      required: true
+    data_classification:
+      type: DataClassificationRef
+      required: true
+    internal_public_confirmation_id:
+      type: string
+      required: false
+      nullable: true
+- schema_id: ProfessionalSourceSearchResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    research_task_id:
+      type: string
+      required: true
+    candidates:
+      type: array
+      required: true
+      items: PublicSourceCandidateRecord
+    query_hash:
+      type: string
+      required: true
+    warnings:
+      type: array
+      required: false
+      items: string
+- schema_id: FragmentRetrievalRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    query:
+      type: string
+      required: false
+      nullable: true
+    source_version_ids:
+      type: array
+      required: false
+      items: string
+    field_ids:
+      type: array
+      required: false
+      items: string
+    max_fragments:
+      type: integer
+      required: true
+- schema_id: FragmentRetrievalResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    fragments:
+      type: array
+      required: true
+      items: SourceFragmentView
+    retrieval_method:
+      type: string
+      required: true
+    snapshot_scope_verified:
+      type: boolean
+      required: true
+- schema_id: RequirementLookupRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    profile_id:
+      type: string
+      required: true
+    requirement_ids:
+      type: array
+      required: false
+      items: string
+    field_ids:
+      type: array
+      required: false
+      items: string
+    active_only:
+      type: boolean
+      required: true
+- schema_id: RequirementDefinitionView@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    requirements:
+      type: array
+      required: true
+      items: RequirementDefinitionRecord
+    registry_version:
+      type: string
+      required: true
+- schema_id: PortalFieldLookupRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    profile_id:
+      type: string
+      required: true
+    field_ids:
+      type: array
+      required: false
+      items: string
+    agent_writable_only:
+      type: boolean
+      required: false
+- schema_id: PortalFieldProfileView@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    fields:
+      type: array
+      required: true
+      items: PortalFieldProfileRecord
+    registry_version:
+      type: string
+      required: true
+- schema_id: ProjectFactQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    fact_types:
+      type: array
+      required: false
+      items: string
+    statuses:
+      type: array
+      required: false
+      items: string
+- schema_id: ProjectFactResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    facts:
+      type: array
+      required: true
+      items: ExtractedFactRecord
+    excluded_counts:
+      type: object
+      required: false
+- schema_id: VerifiedEvidenceQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    target_ids:
+      type: array
+      required: false
+      items: string
+    field_ids:
+      type: array
+      required: false
+      items: string
+    verification_statuses:
+      type: array
+      required: false
+      items: string
+- schema_id: VerifiedEvidenceResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    anchors:
+      type: array
+      required: true
+      items: EvidenceAnchorRecord
+    links:
+      type: array
+      required: true
+      items: EvidenceLinkRecord
+- schema_id: EvidenceQuoteVerificationRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    candidate_id:
+      type: string
+      required: true
+    source_version_id:
+      type: string
+      required: true
+    fragment_id:
+      type: string
+      required: true
+    proposed_quote:
+      type: string
+      required: true
+    normalizer_version:
+      type: string
+      required: true
+- schema_id: EvidenceQuoteVerificationResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    candidate_id:
+      type: string
+      required: true
+    verification_status:
+      type: string
+      required: true
+    match_type:
+      type: string
+      required: true
+    match_score:
+      type: number
+      required: false
+      nullable: true
+    coverage:
+      type: number
+      required: false
+      nullable: true
+    start_offset:
+      type: integer
+      required: false
+      nullable: true
+    end_offset:
+      type: integer
+      required: false
+      nullable: true
+    reason:
+      type: string
+      required: true
+- schema_id: RuleExecutionRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    rule_ids:
+      type: array
+      required: true
+      items: string
+    structured_project_data_version_id:
+      type: string
+      required: true
+    fact_ids:
+      type: array
+      required: false
+      items: string
+    changed_target_refs:
+      type: array
+      required: false
+      items: TargetRef
+- schema_id: RuleExecutionResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    rule_results:
+      type: array
+      required: true
+      items: RuleResultRecord
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+    requirements_to_refresh:
+      type: array
+      required: false
+      items: string
+- schema_id: RuleResultQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    rule_ids:
+      type: array
+      required: false
+      items: string
+    statuses:
+      type: array
+      required: false
+      items: string
+- schema_id: RuleResultQueryResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    results:
+      type: array
+      required: true
+      items: RuleResultRecord
+    registry_version:
+      type: string
+      required: true
+- schema_id: DraftQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    field_ids:
+      type: array
+      required: false
+      items: string
+    include_stale:
+      type: boolean
+      required: false
+- schema_id: DraftQueryResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    drafts:
+      type: array
+      required: true
+      items: PortalFieldDraftRecord
+    draft_versions:
+      type: array
+      required: true
+      items: DraftVersionRecord
+- schema_id: ExportArtifactRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    format:
+      type: string
+      required: true
+      enum:
+      - docx
+      - markdown
+      - technical_evidence
+    expected_approval_scope_hash:
+      type: string
+      required: false
+      nullable: true
+    requested_by_user_id:
+      type: string
+      required: true
+- schema_id: ExportArtifactResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    export_id:
+      type: string
+      required: true
+    status:
+      type: string
+      required: true
+    draft_marking:
+      type: boolean
+      required: true
+    file_ref:
+      type: string
+      required: true
+    content_hash:
+      type: string
+      required: true
+    effective_classification:
+      type: DataClassificationRef
+      required: true
+- schema_id: ResearchResultQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    research_task_id:
+      type: string
+      required: false
+      nullable: true
+    statuses:
+      type: array
+      required: false
+      items: string
+- schema_id: ResearchResultQueryResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    results:
+      type: array
+      required: true
+      items: ResearchResultRecord
+    professional_evidence:
+      type: array
+      required: true
+      items: ProfessionalEvidenceRecord
+- schema_id: StructuredProjectDataQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    project_id:
+      type: string
+      required: true
+    run_id:
+      type: string
+      required: false
+      nullable: true
+    sections:
+      type: array
+      required: false
+      items: string
+- schema_id: StructuredProjectDataResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    version_id:
+      type: string
+      required: true
+    project_dates:
+      type: ProjectDatesRecord
+      required: false
+      nullable: true
+    partners:
+      type: array
+      required: true
+      items: PartnerRecord
+    work_packages:
+      type: array
+      required: true
+      items: WorkPackageRecord
+    milestones:
+      type: array
+      required: true
+      items: MilestoneRecord
+    planned_hours:
+      type: PlannedHoursRecord
+      required: false
+      nullable: true
+    budget_plan:
+      type: BudgetPlanRecord
+      required: false
+      nullable: true
+    risk_register:
+      type: RiskRegisterRecord
+      required: false
+      nullable: true
+    portal_field_values:
+      type: array
+      required: true
+      items: PortalFieldValueRecord
+- schema_id: OpenIssueQuery@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    severities:
+      type: array
+      required: false
+      items: string
+    statuses:
+      type: array
+      required: false
+      items: string
+    target_refs:
+      type: array
+      required: false
+      items: TargetRef
+- schema_id: OpenIssueQueryResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+- schema_id: TargetedRecheckRequest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    changed_target_refs:
+      type: array
+      required: true
+      items: TargetRef
+    include_semantic_recheck:
+      type: boolean
+      required: true
+    requested_by_user_id:
+      type: string
+      required: true
+- schema_id: TargetedRecheckResult@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    review_package_version:
+      type: string
+      required: true
+    approval_scope_hash:
+      type: string
+      required: true
+    requirement_assessments:
+      type: array
+      required: true
+      items: RequirementAssessmentRecord
+    rule_results:
+      type: array
+      required: true
+      items: RuleResultRecord
+    findings_refreshed:
+      type: array
+      required: true
+      items: string
+    findings_marked_stale:
+      type: array
+      required: true
+      items: string
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+- schema_id: ControlResultRecord@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    control_result_id:
+      type: string
+      required: true
+    control_id:
+      type: string
+      required: true
+    run_id:
+      type: string
+      required: false
+      nullable: true
+    invocation_id:
+      type: string
+      required: false
+      nullable: true
+    status:
+      type: string
+      required: true
+      enum:
+      - passed
+      - warning
+      - blocked
+      - failed
+    reason_code:
+      type: string
+      required: true
+    reason:
+      type: string
+      required: true
+    control_version:
+      type: string
+      required: true
+    created_at:
+      type: datetime
+      required: true

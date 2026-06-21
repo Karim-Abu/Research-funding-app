@@ -1,0 +1,281 @@
+schema_version: 1.1.0
+contract_id: proposal-assistant-run-state
+status: ready_for_implementation
+last_updated: '2026-06-21'
+run_statuses:
+- created
+- running
+- paused_for_review
+- completed
+- stopped
+- failed
+- cancelled
+stages:
+- initialize
+- validate_source_snapshot
+- extract_facts_and_map_evidence
+- verify_evidence
+- evaluate_requirements_and_rules
+- draft_fields
+- create_template_drafts
+- critic_review
+- aggregate_review
+- human_review
+- targeted_recheck
+- finalize_run
+async_operation_statuses:
+- queued
+- running
+- succeeded
+- failed
+- cancelled
+state_fields:
+  identity:
+  - run_id
+  - project_id
+  - workspace_id
+  - created_by_user_id
+  snapshots:
+  - source_version_ids
+  - funding_instrument_profile_version
+  - portal_field_profile_version
+  - rule_registry_version
+  - data_policy_version
+  - tool_registry_version
+  - agent_registry_version
+  - prompt_versions
+  - model_ids
+  - parser_version
+  - normalizer_version
+  - requirement_registry_version
+  - control_registry_version
+  - schema_catalog_version
+  policy:
+  - effective_data_classification
+  - processing_mode
+  - run_policy_snapshot
+  - authorized_internal_cloud_confirmation_id
+  progress:
+  - status
+  - current_stage
+  - completed_stages
+  - stage_started_at
+  - progress_percent
+  - stop_reason
+  - last_error
+  - review_package_version
+  - recheck_required
+  - semantic_findings_stale
+  - approval_scope_hash
+  artifacts:
+  - extracted_fact_ids
+  - evidence_candidate_ids
+  - evidence_anchor_ids
+  - requirement_assessment_ids
+  - rule_result_ids
+  - portal_field_draft_ids
+  - review_finding_ids
+  - human_decision_ids
+  - review_approval_ids
+  - export_artifact_ids
+  operations:
+  - agent_invocation_ids
+  - tool_invocation_ids
+  - control_result_ids
+  - usage_record_ids
+  - audit_event_ids
+nodes:
+- node_id: initialize
+  type: orchestrator
+  purpose: Freeze configuration, source and policy snapshots; enforce one active run.
+  on_success: validate_source_snapshot
+  on_failure: failed
+- node_id: validate_source_snapshot
+  type: deterministic
+  purpose: Require usable normalized source versions and calculate effective classification.
+  on_success: extract_facts_and_map_evidence
+  on_failure_status: failed
+- node_id: extract_facts_and_map_evidence
+  type: agent_bundle
+  profiles:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  on_success: verify_evidence
+  on_policy_block:
+    target: evaluate_requirements_and_rules
+    actions:
+    - record_control_result
+    - create_open_issue
+  on_failure:
+    target: evaluate_requirements_and_rules
+    actions:
+    - record_failure
+    - create_open_issue
+- node_id: verify_evidence
+  type: deterministic
+  tools:
+  - verify_evidence_quote
+  on_success: evaluate_requirements_and_rules
+  on_failure:
+    target: evaluate_requirements_and_rules
+    actions:
+    - retain_unverified_anchors
+    - create_open_issue
+- node_id: evaluate_requirements_and_rules
+  type: deterministic
+  tools:
+  - run_deterministic_rules
+  on_success: draft_fields
+  on_failure: failed
+- node_id: draft_fields
+  type: agent_profiles
+  profiles:
+  - A2.introduction_public_summary
+  - A2.organisations_governance
+  - A2.value_creation_market_logic
+  - A2.solution_innovation
+  - A2.project_setup_workplan
+  on_success: critic_review
+  on_policy_block:
+    target: create_template_drafts
+    actions:
+    - record_control_result
+  on_failure:
+    target: create_template_drafts
+    actions:
+    - record_failure
+- node_id: create_template_drafts
+  type: deterministic
+  purpose: Create clearly marked template drafts when cloud drafting is unavailable or blocked.
+  on_success: critic_review
+  on_failure_status: failed
+- node_id: critic_review
+  type: agent_bundle
+  profiles:
+  - A3.evidence_consistency
+  - A3.fit_gap_partner_plausibility
+  - A3.risk_review_readiness
+  - A3.innovation_challenge
+  on_success: aggregate_review
+  on_policy_block:
+    target: aggregate_review
+    actions:
+    - retain_deterministic_findings
+    - create_warning
+  on_failure:
+    target: aggregate_review
+    actions:
+    - retain_deterministic_findings
+    - create_warning
+- node_id: aggregate_review
+  type: deterministic
+  purpose: Aggregate rule results, evidence gaps, open issues and findings; calculate counts and a new review package version/scope hash.
+  on_success: human_review
+- node_id: human_review
+  type: interrupt
+  run_status: paused_for_review
+  purpose: Pause for edits, human decisions, explicit recheck, approval and optional final quality review.
+  allowed_events:
+  - human_edit_saved
+  - human_decision_recorded
+  - recheck_requested
+  - review_approval_created
+  - final_quality_review_requested
+  - resume_requested
+  - cancel_requested
+  approval_guard: recheck_required_is_false_and_review_package_current_and_no_unresolved_blockers
+  resume_guard: valid_current_review_approval_and_recheck_required_is_false
+- node_id: targeted_recheck
+  type: orchestrator_plus_deterministic_and_optional_agent
+  purpose: Re-run affected deterministic rules and evidence checks; optionally refresh semantic findings; rebuild the review package before approval.
+  tools:
+  - run_targeted_rechecks
+  on_success: aggregate_review
+  on_failure:
+    target: human_review
+    status: paused_for_review
+    actions:
+    - record_failure
+    - create_open_issue
+    - keep_recheck_required_true
+- node_id: finalize_run
+  type: orchestrator
+  purpose: Validate current approval, seal run summary and mark analysis completed; exports remain separate resources.
+  on_success: completed
+  on_failure: failed
+external_events:
+- event: cancel_requested
+  allowed_statuses:
+  - created
+  - running
+  - paused_for_review
+  target_status: cancelled
+- event: cost_limit_reached
+  allowed_statuses:
+  - running
+  target_status: stopped
+- event: human_edit_saved
+  allowed_statuses:
+  - paused_for_review
+  effect: new_draft_version_mark_recheck_required_and_stale_dependent_evidence_findings_approval
+- event: human_decision_recorded
+  allowed_statuses:
+  - paused_for_review
+  effect: update_target_status_audit_and_mark_recheck_required_if_approval_scope_changes
+- event: recheck_requested
+  allowed_statuses:
+  - paused_for_review
+  preconditions:
+  - recheck_required_is_true
+  target_status: running
+  target_stage: targeted_recheck
+- event: review_approval_created
+  allowed_statuses:
+  - paused_for_review
+  preconditions:
+  - recheck_required_is_false
+  - review_package_current
+  - no_unresolved_blockers_or_documented_overrides
+  effect: persist_current_scope_approval
+- event: resume_requested
+  allowed_statuses:
+  - paused_for_review
+  preconditions:
+  - valid_current_approval
+  - recheck_required_is_false
+  target_status: running
+  target_stage: finalize_run
+- event: final_quality_review_requested
+  allowed_statuses:
+  - paused_for_review
+  effect: optional_A3_final_quality_operation_marks_new_findings_and_recheck_requirement_if_scope_changes
+checkpoint_policy:
+  backend: sqlite_for_beta
+  checkpoint_after_each_node: true
+  checkpoint_before_interrupt: true
+  state_schema_version_required: true
+  resume_requires_expected_checkpoint_version: true
+  idempotency_required_for:
+  - start_run
+  - redraft
+  - resume
+  - export
+  - research_task
+  - recheck
+concurrency:
+  max_active_runs_per_project: 1
+  draft_updates: optimistic_concurrency_with_base_version_id
+  conflict_http_status: 409
+failure_semantics:
+  stopped: controlled_policy_cost_or_user_stop_with_partial_results_preserved
+  failed: unrecoverable_technical_or_audit_failure
+  cancelled: user_or_admin_cancelled
+  provider_failure: fallback_or_partial_run_according_to_node_policy
+  audit_failure: fail_closed
+approval_semantics:
+  approval_before_recheck: forbidden
+  edits_or_scope_changes: set_recheck_required_true_and_stale_current_approval
+  deterministic_rechecks: always_required_after_relevant_edits
+  semantic_rechecks: required_when_affected_findings_are_blocker_or_marked_stale_by_profile_dependency
+  approval_creation: only_after_latest_recheck_succeeds
+  resume: finalization_only_after_valid_current_approval

@@ -1,0 +1,713 @@
+schema_version: 1.1.0
+registry_id: proposal-assistant-tool-registry
+title: Tool Registry – Agent and Orchestrator Tools
+status: ready_for_implementation
+last_updated: '2026-06-21'
+scope: Only controlled tools callable by A1/A2/A3 or LangGraph orchestrator. Internal repository/service functions are excluded.
+global_rules:
+- Unregistered tools are blocked.
+- Effective permission is the intersection of AgentProfile.allowed_tools and ToolDefinition.allowed_agent_profiles.
+- External network tools are orchestrator-only; LLM agents never receive direct network credentials or network access.
+- Every tool call passes canonical controls, schema validation, audit and configured limits.
+- Sources are untrusted data and cannot alter tool behavior.
+- Unknown control or schema references are startup-fatal.
+tools:
+- tool_id: source_ingest_file
+  name: Ingest file source
+  purpose: Store and register a user-uploaded PDF, DOCX, or TXT source before normalization.
+  category: source_ingestion
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: SourceFileIngestRequest@v1
+  output_schema: SourceDocumentRef@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_local_storage_and_database
+  network_access: none
+  authorization:
+  - project_write_access
+  limits:
+    max_file_size_mb: required_deployment_configuration
+    max_calls_per_run: 20
+    timeout_seconds: 30
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.FILE_SIZE
+  - CTRL.FILE_TYPE
+  - CTRL.MALWARE_SCAN
+  - CTRL.FILENAME_NORMALIZATION
+  - CTRL.PATH_TRAVERSAL
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_failed_source_status_without_silent_skip
+- tool_id: source_ingest_text
+  name: Ingest text source
+  purpose: Register user-provided plain text as a versioned project source.
+  category: source_ingestion
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: SourceTextIngestRequest@v1
+  output_schema: SourceDocumentRef@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_local_storage_and_database
+  network_access: none
+  authorization:
+  - project_write_access
+  limits:
+    max_characters: configured
+    max_calls_per_run: 20
+    timeout_seconds: 10
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.INPUT_SCHEMA
+  - CTRL.CONTENT_HASH
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: reject_invalid_input_preserve_user_text_in_client_until_retry
+- tool_id: source_normalize
+  name: Normalize source
+  purpose: Convert a stored source version into normalized text fragments with provenance metadata.
+  category: normalization
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: SourceNormalizationRequest@v1
+  output_schema: SourceNormalizationResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_source_version_and_fragments
+  network_access: none
+  authorization:
+  - project_write_access
+  limits:
+    max_calls_per_source_version: 1
+    timeout_seconds: 120
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.PARSER_ALLOWLIST
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.PROMPT_INJECTION
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: mark_failed_or_needs_manual_input
+- tool_id: fetch_validated_public_url
+  name: Fetch validated public URL
+  purpose: Fetch an explicitly supplied public HTTPS URL after public-access, SSRF, redirect and purpose controls, then cache a versioned source
+    locally.
+  category: public_web_research
+  status: beta_active_conditional
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: ValidatedPublicUrlFetchRequest@v1
+  output_schema: PublicWebSourceResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  allowed_processing_modes:
+  - cloud_assisted
+  side_effect: external_network_and_local_cache_write
+  network_access: firecrawl_cloud_or_future_approved_fetcher
+  authorization:
+  - project_write_access
+  - web_research_enabled
+  limits:
+    max_calls_per_run: 10
+    max_pages_per_call: 1
+    timeout_seconds: 60
+    retry_count: 1
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.PUBLIC_URL_VALIDATION
+  - CTRL.SSRF_PREVENTION
+  - CTRL.REDIRECT_REVALIDATION
+  - CTRL.INTERNAL_PUBLIC_QUERY_CONFIRMATION
+  - CTRL.COST_GUARD
+  - CTRL.PROMPT_INJECTION
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: true
+  failure_policy: return_open_issue_and_continue_without_web_source
+- tool_id: search_public_professional_sources
+  name: Search public professional sources
+  purpose: Search public professional profiles, publications, and public track-record sources for project-relevant competence evidence.
+  category: public_web_research
+  status: beta_active_conditional
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: ProfessionalSourceSearchRequest@v1
+  output_schema: ProfessionalSourceSearchResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  allowed_processing_modes:
+  - cloud_assisted
+  side_effect: external_network_and_local_cache_write
+  network_access: firecrawl_search_and_allowlisted_fetch
+  authorization:
+  - project_write_access
+  - web_research_enabled
+  limits:
+    max_calls_per_run: 5
+    max_results_per_call: 10
+    timeout_seconds: 60
+    retry_count: 1
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.PUBLIC_URL_VALIDATION
+  - CTRL.SSRF_PREVENTION
+  - CTRL.INTERNAL_PUBLIC_QUERY_CONFIRMATION
+  - CTRL.PROFESSIONAL_RESEARCH_PURPOSE
+  - CTRL.NO_SENSITIVE_PERSONAL_ATTRIBUTES
+  - CTRL.COST_GUARD
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: true
+  failure_policy: return_no_suggestion_and_open_issue; never infer missing professional evidence
+- tool_id: retrieve_source_fragments
+  name: Retrieve source fragments
+  purpose: Retrieve project source fragments within the current run snapshot using scoped lexical or semantic retrieval.
+  category: retrieval
+  status: beta_active
+  callers:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  input_schema: FragmentRetrievalRequest@v1
+  output_schema: FragmentRetrievalResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 10
+    max_fragments_per_call: 20
+    timeout_seconds: 5
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.RUN_SNAPSHOT_SCOPE
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_empty_result_with_reason
+- tool_id: lookup_requirement_definition
+  name: Lookup requirement definition
+  purpose: Read a versioned requirement from the active funding instrument profile.
+  category: configuration_lookup
+  status: beta_active
+  callers:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  input_schema: RequirementLookupRequest@v1
+  output_schema: RequirementDefinitionView@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - active_profile_access
+  limits:
+    max_calls_per_agent_invocation: 20
+    timeout_seconds: 2
+  required_controls:
+  - CTRL.VERSION_LOCK
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: fail_invocation_on_unknown_requirement_id
+- tool_id: lookup_portal_field_profile
+  name: Lookup portal field profile
+  purpose: Read field instructions, limits, evidence requirements, and writing profile for a known Innolink field.
+  category: configuration_lookup
+  status: beta_active
+  callers:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A1.project_fact_extraction
+  - A1.evidence_candidate_mapping
+  - A1.public_competence_research
+  - A2.*
+  - A3.*
+  input_schema: PortalFieldLookupRequest@v1
+  output_schema: PortalFieldProfileView@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - active_profile_access
+  limits:
+    max_calls_per_agent_invocation: 30
+    timeout_seconds: 2
+  required_controls:
+  - CTRL.VERSION_LOCK
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: fail_invocation_on_unknown_field_id
+- tool_id: retrieve_confirmed_project_facts
+  name: Retrieve confirmed project facts
+  purpose: Return confirmed or explicitly open facts from the current run for drafting and critique.
+  category: project_context
+  status: beta_active
+  callers:
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A2.*
+  - A3.*
+  input_schema: ProjectFactQuery@v1
+  output_schema: ProjectFactResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 10
+    timeout_seconds: 3
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.FACT_STATUS
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_open_fact_status_not_invented_value
+- tool_id: retrieve_verified_evidence
+  name: Retrieve verified evidence
+  purpose: Return evidence anchors and links allowed for a portal field or claim.
+  category: evidence
+  status: beta_active
+  callers:
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A2.*
+  - A3.*
+  input_schema: VerifiedEvidenceQuery@v1
+  output_schema: VerifiedEvidenceResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 15
+    max_anchors_per_call: 15
+    timeout_seconds: 3
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.EVIDENCE_VERIFICATION
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_empty_and_mark_claim_open
+- tool_id: verify_evidence_quote
+  name: Verify evidence quote
+  purpose: Verify that a proposed quote exists in the versioned normalized source and assign an evidence verification status.
+  category: evidence
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: EvidenceQuoteVerificationRequest@v1
+  output_schema: EvidenceQuoteVerificationResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_evidence_candidate_or_anchor_status
+  network_access: none
+  authorization:
+  - run_write_access
+  limits:
+    max_calls_per_run: 500
+    timeout_seconds: 2
+  required_controls:
+  - CTRL.VERSION_LOCK
+  - CTRL.EVIDENCE_VERIFICATION
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: leave_unverified_and_create_open_issue_when_required
+- tool_id: run_deterministic_rules
+  name: Run deterministic rules
+  purpose: Execute applicable code-ready rules from the active rule registry and produce versioned RuleResults.
+  category: rules
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: RuleExecutionRequest@v1
+  output_schema: RuleExecutionResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_rule_results_and_open_issues
+  network_access: none
+  authorization:
+  - run_write_access
+  limits:
+    max_calls_per_graph_step: 1
+    timeout_seconds: 15
+  required_controls:
+  - CTRL.VERSION_LOCK
+  - CTRL.INPUT_SCHEMA
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: fail_graph_step_on_registry_or_execution_error
+- tool_id: retrieve_rule_results
+  name: Retrieve rule results
+  purpose: Return deterministic rule results and open issues to A3 without allowing the model to redefine them.
+  category: rules
+  status: beta_active
+  callers:
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A3.*
+  input_schema: RuleResultQuery@v1
+  output_schema: RuleResultQueryResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 5
+    timeout_seconds: 3
+  required_controls:
+  - CTRL.VERSION_LOCK
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_empty_with_error_and_do_not_infer_rule_outcome
+- tool_id: retrieve_current_drafts
+  name: Retrieve current drafts
+  purpose: Return current immutable draft versions for cross-field critique.
+  category: drafting
+  status: beta_active
+  callers:
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A3.*
+  input_schema: DraftQuery@v1
+  output_schema: DraftQueryResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 5
+    timeout_seconds: 3
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.VERSION_LOCK
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: fail_critic_invocation_on_missing_required_draft
+- tool_id: create_export_artifact
+  name: Create export artifact
+  purpose: Generate a DOCX, Markdown, or technical evidence export from the approved or draft-marked run state.
+  category: export
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  input_schema: ExportArtifactRequest@v1
+  output_schema: ExportArtifactResult@v1
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  side_effect: writes_export_file_and_database_record
+  network_access: none
+  authorization:
+  - project_export_access
+  limits:
+    max_calls_per_run_and_format: 5
+    timeout_seconds: 60
+  required_controls:
+  - CTRL.EXPORT_CLASSIFICATION
+  - CTRL.APPROVAL_GATE
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.FILENAME_NORMALIZATION
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  failure_policy: return_export_failed_without_changing_review_state
+- tool_id: retrieve_research_results
+  name: Retrieve imported public research results
+  purpose: Read public research results and imported professional evidence for A1 synthesis within the current project/task scope.
+  category: retrieval
+  status: beta_active
+  callers:
+  - A1.public_competence_research
+  - orchestrator
+  allowed_agent_profiles:
+  - A1.public_competence_research
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  allowed_sensitivity:
+  - public
+  - internal
+  input_schema: ResearchResultQuery@v1
+  output_schema: ResearchResultQueryResult@v1
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - project_read_access
+  - research_task_scope
+  limits:
+    max_calls_per_agent_invocation: 5
+    max_results_per_call: 50
+    timeout_seconds: 5
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.RUN_SNAPSHOT_SCOPE
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: false
+  failure_policy: return_empty_result_with_reason
+- tool_id: retrieve_structured_project_data
+  name: Retrieve structured project data
+  purpose: Read typed partner, schedule, work-package, milestone, hours, budget, risk and portal-value data for the current project/run snapshot.
+  category: retrieval
+  status: beta_active
+  callers:
+  - A1.*
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A1.*
+  - A2.*
+  - A3.*
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  input_schema: StructuredProjectDataQuery@v1
+  output_schema: StructuredProjectDataResult@v1
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - project_read_access
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 5
+    timeout_seconds: 5
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.RUN_SNAPSHOT_SCOPE
+  - CTRL.LEAST_CONTEXT
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: false
+  failure_policy: return_partial_result_with_missing_sections
+- tool_id: retrieve_open_issues
+  name: Retrieve open issues
+  purpose: Read current unresolved issues for critic, drafting and review preparation.
+  category: retrieval
+  status: beta_active
+  callers:
+  - A2.*
+  - A3.*
+  - orchestrator
+  allowed_agent_profiles:
+  - A2.*
+  - A3.*
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  input_schema: OpenIssueQuery@v1
+  output_schema: OpenIssueQueryResult@v1
+  side_effect: read_only
+  network_access: none
+  authorization:
+  - run_snapshot_access
+  limits:
+    max_calls_per_agent_invocation: 5
+    timeout_seconds: 5
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.RUN_SNAPSHOT_SCOPE
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: false
+  failure_policy: return_empty_result_with_reason
+- tool_id: run_targeted_rechecks
+  name: Run targeted rechecks
+  purpose: Execute deterministic rules and selected semantic rechecks after human edits before approval.
+  category: review_control
+  status: beta_active
+  callers:
+  - orchestrator
+  allowed_agent_profiles: []
+  allowed_processing_modes:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  allowed_sensitivity:
+  - public
+  - internal
+  - confidential
+  input_schema: TargetedRecheckRequest@v1
+  output_schema: TargetedRecheckResult@v1
+  side_effect: writes_rule_results_assessments_findings_and_open_issues
+  network_access: provider_only_when_semantic_recheck_requested_and_policy_allows
+  authorization:
+  - project_write_access
+  - run_paused_for_review
+  limits:
+    max_calls_per_recheck: 2
+    retry_count: 1
+    timeout_seconds: 180
+  required_controls:
+  - CTRL.DATA_POLICY
+  - CTRL.INPUT_SCHEMA
+  - CTRL.COST_GUARD
+  - CTRL.VERSION_LOCK
+  - CTRL.OUTPUT_SCHEMA
+  - CTRL.APPROVAL_GATE
+  - CTRL.AUDIT_WRITE
+  audit_required: true
+  usage_record_required: true
+  failure_policy: keep_review_paused_and_mark_recheck_failed
+control_registry: controls.yaml@1.0.0
+schema_catalog: schema_catalog.yaml@1.0.0
