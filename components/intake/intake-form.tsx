@@ -38,7 +38,8 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
-import { saveIntake } from "@/lib/intake-store"
+import { saveIntake, setActiveProjectId } from "@/lib/intake-store"
+import { createProjectFromIntake } from "@/lib/projects"
 import type { DataClass, IntakeFormData, IntakePartner } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -289,13 +290,17 @@ export function IntakeForm() {
     e.preventDefault()
     if (!validate()) return
     setSaveState("saving")
-    // Simulate async save — prototype only, no real call.
-    await new Promise((r) => setTimeout(r, 1200))
-    setSaveState("idle")
-    // Beta: Projektdaten in der Session halten; /quellen baut daraus den
-    // Run-Start-Payload (POST /runs erhält intake + settings + Datenklasse).
+    // Intake bleibt in der Session (für spätere Slices); in Live-Mode wird
+    // zusätzlich ein echtes Projekt angelegt und als aktives Projekt gemerkt.
     saveIntake(data)
-    router.push("/quellen")
+    try {
+      const project = await createProjectFromIntake(data)
+      setActiveProjectId(project.project_id)
+      setSaveState("idle")
+      router.push("/quellen")
+    } catch {
+      setSaveState("error")
+    }
   }
 
   async function handleDraftSave() {

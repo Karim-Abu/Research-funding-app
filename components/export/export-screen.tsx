@@ -28,7 +28,8 @@ import {
   type PageScenario,
   type PriorExport,
 } from "@/lib/export-mock-data"
-import { exportDownloadUrl, USE_MOCKS } from "@/lib/api"
+import { exportDownloadUrl } from "@/lib/api"
+import { isMock } from "@/lib/app-mode"
 import { getCurrentRunId } from "@/lib/intake-store"
 import { DataClassBadge } from "@/components/status/data-class-badge"
 import type { DataClass } from "@/lib/types"
@@ -472,14 +473,14 @@ export function ExportScreen({
     const card = EXPORT_CARDS.find((c) => c.id === id)
     if (!card || blocked) return
     setCardState(id, "generating")
-    window.setTimeout(() => setCardState(id, "ready"), USE_MOCKS ? 300 : 0)
+    window.setTimeout(() => setCardState(id, "ready"), isMock("legacy") ? 300 : 0)
   }
 
   function handleDownload(id: string) {
     const card = EXPORT_CARDS.find((c) => c.id === id)
     if (!card) return
     const a = document.createElement("a")
-    if (USE_MOCKS) {
+    if (isMock("legacy")) {
       const download = MOCK_DOWNLOADS[card.kind]
       const blob = new Blob([download.body], { type: download.mime })
       a.href = URL.createObjectURL(blob)
@@ -490,7 +491,7 @@ export function ExportScreen({
     document.body.appendChild(a)
     a.click()
     a.remove()
-    if (USE_MOCKS) {
+    if (isMock("legacy")) {
       // Deferred: revoking synchronously can cancel the download.
       const blobUrl = a.href
       setTimeout(() => URL.revokeObjectURL(blobUrl), 1000)

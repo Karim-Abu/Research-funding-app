@@ -7,6 +7,7 @@ import type { IntakeFormData } from "./types"
 
 const INTAKE_KEY = "rf_current_intake"
 const RUN_ID_KEY = "rf_current_run_id"
+const ACTIVE_PROJECT_KEY = "rf_active_project_id"
 
 /**
  * Alias, den die Bridge serverseitig auf den letzten Durchlauf des Projekts
@@ -45,4 +46,13 @@ export function setCurrentRunId(runId: string): void {
 /** Gespeicherte Run-ID oder der Bridge-Alias "current". */
 export function getCurrentRunId(): string {
   return storage()?.getItem(RUN_ID_KEY) ?? CURRENT_RUN_ID_FALLBACK
+}
+
+/** Aktives Projekt (real angelegtes Projekt aus dem Intake). */
+export function setActiveProjectId(projectId: string): void {
+  storage()?.setItem(ACTIVE_PROJECT_KEY, projectId)
+}
+
+export function getActiveProjectId(): string | null {
+  return storage()?.getItem(ACTIVE_PROJECT_KEY) ?? null
 }

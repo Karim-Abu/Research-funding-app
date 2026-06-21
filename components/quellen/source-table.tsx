@@ -22,10 +22,10 @@ import {
 import { cn } from "@/lib/utils"
 import {
   uploadSource,
-  USE_MOCKS,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
+import { isMock } from "@/lib/app-mode"
 import type { Source, SourceStatus, SourceType } from "@/lib/quellen-mock-data"
 
 // Beta: nur Textformate — keine PDF-Pipeline, keine URL-/Text-Quellen.
@@ -225,7 +225,7 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
       try {
         const source = await uploadSource(file)
         setLocalSources((prev) => [source, ...prev])
-        if (USE_MOCKS) {
+        if (isMock("legacy")) {
           // Demo: Verarbeitung schliesst nach kurzer Zeit ab.
           setTimeout(() => {
             setLocalSources((prev) =>

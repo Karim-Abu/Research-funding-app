@@ -1,5 +1,5 @@
 // Zentraler API-Layer der UI. Alle Datenzugriffe laufen über diese
-// Funktionen; USE_MOCKS schaltet pro Funktion zwischen Mock-Adapter
+// Funktionen; der App-Mode schaltet pro Funktion zwischen Mock-Adapter
 // (bestehende Dummy-Daten, simulierte Latenz) und fetch gegen /api/*.
 //
 // Sicherheitsregeln: keine Secrets/Env-Werte im Client. Die Bridge-URL kennt
@@ -14,6 +14,7 @@ import {
 import { portalSections, draftText } from "./editor-data"
 import { currentUser } from "./mock-data"
 import { RUN_STEP_TEMPLATE, stepsFromBackendNode } from "./run-steps"
+import { isMock } from "./app-mode"
 import type {
   EvidenceAnchorDto,
   ExportKind,
@@ -47,11 +48,10 @@ export type {
   RunCostDto,
 } from "./backend-contract"
 
-/**
- * Einziger Schalter: true = App läuft vollständig auf Mock-Daten (Demo-Modus).
- * Bewusst eine Code-Konstante, kein Env-Handling im Client.
- */
-export const USE_MOCKS = true
+// Mock vs. live wird zentral über den serverseitig gesteuerten App-Mode
+// entschieden (lib/app-mode.ts). Diese Slices sind in Milestone 1 noch nicht
+// live verdrahtet; `isMock("legacy")` ist daher stets true, bis ihr Backend
+// folgt. Es gibt bewusst keinen zweiten, unabhängigen USE_MOCKS-Schalter mehr.
 
 // ---------------------------------------------------------------------------
 // Fehler-Envelope { error: { code, message } } — message ist deutscher UI-Text.
@@ -186,7 +186,7 @@ const mockDelay = (ms = 150) => new Promise((r) => setTimeout(r, ms))
 export async function startRun(
   startRequest: RunStartRequestDto
 ): Promise<{ runId: string }> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay()
     mockRunCounter += 1
     const runId = `mock-run-${mockRunCounter}`
@@ -207,7 +207,7 @@ export async function startRun(
 }
 
 export async function getRun(runId: string): Promise<RunStatusDto> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     const run = mockRuns.get(runId)
     if (!run) {
       throw new ApiError("run_not_found", BRIDGE_UNREACHABLE_MESSAGE)
@@ -222,7 +222,7 @@ export async function getRun(runId: string): Promise<RunStatusDto> {
 }
 
 export async function stopRun(runId: string): Promise<void> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     const run = mockRuns.get(runId)
     if (run) run.paused = true
     return
@@ -233,7 +233,7 @@ export async function stopRun(runId: string): Promise<void> {
 }
 
 export async function resumeRun(runId: string): Promise<void> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     const run = mockRuns.get(runId)
     if (run) {
       run.paused = false
@@ -253,7 +253,7 @@ export async function resumeRun(runId: string): Promise<void> {
 export async function getProjectState(
   projectId: string
 ): Promise<ProjectStateDto> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay()
     return { projectId, requirements: mockRequirements }
   }
@@ -534,7 +534,7 @@ export function countOpenBlockers(issues: IssueDto[]): number {
 }
 
 export async function getRunFields(runId: string): Promise<RunFieldsDto> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay(250)
     return cloneReview(runId, ensureMockReview())
   }
@@ -547,7 +547,7 @@ export async function submitReview(
   runId: string,
   decision: ReviewDecisionDto
 ): Promise<RunFieldsDto> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay(800)
     const state = ensureMockReview()
     for (const edit of decision.fieldEdits ?? []) {
@@ -585,7 +585,7 @@ export async function redraftField(
   runId: string,
   fieldId: string
 ): Promise<RunFieldsDto> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay(900)
     const state = ensureMockReview()
     const field = state.fields.find((f) => f.fieldId === fieldId)
@@ -610,7 +610,7 @@ export async function redraftField(
 // ---------------------------------------------------------------------------
 
 export async function submitFeedback(feedback: FeedbackDto): Promise<void> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay(400)
     return
   }
@@ -626,7 +626,7 @@ export async function submitFeedback(feedback: FeedbackDto): Promise<void> {
 // ---------------------------------------------------------------------------
 
 export async function uploadSource(file: File): Promise<Source> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay(400)
     return {
       id: `upload-${Date.now()}`,
@@ -647,7 +647,7 @@ export async function patchSection(
   fieldId: string,
   text: string
 ): Promise<{ fieldId: string; charCount: number }> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay()
     return { fieldId, charCount: text.trimEnd().length }
   }
@@ -661,7 +661,7 @@ export async function patchSection(
 export async function acceptSuggestion(
   suggestionId: string
 ): Promise<{ suggestionId: string }> {
-  if (USE_MOCKS) {
+  if (isMock("legacy")) {
     await mockDelay()
     return { suggestionId }
   }

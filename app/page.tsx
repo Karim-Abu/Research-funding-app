@@ -11,9 +11,11 @@ import {
   projects,
   activeProjectId,
 } from "@/lib/mock-data"
+import { useSession } from "@/components/providers/app-providers"
+import { listProjects, toDashboardCard } from "@/lib/projects"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
-import type { NextAction } from "@/lib/types"
+import type { DashboardProject, NextAction } from "@/lib/types"
 
 // The dashboard has no active workflow step — no stepper rendered.
 type PageState = "loading" | "error" | "empty" | "default"
@@ -36,14 +38,37 @@ const ACTION_ROUTES: Record<NextAction | "view_progress", string> = {
 
 export default function DashboardPage() {
   const router = useRouter()
-  // Start in "loading" briefly to demo the skeleton state, then switch to
-  // "default". In a real app this would be driven by a data fetch.
+  const { mode, user } = useSession()
   const [pageState, setPageState] = React.useState<PageState>("loading")
+  const [liveCards, setLiveCards] = React.useState<DashboardProject[]>([])
+
+  const loadLive = React.useCallback(() => {
+    let active = true
+    setPageState("loading")
+    listProjects()
+      .then((items) => {
+        if (!active) return
+        setLiveCards(items.map(toDashboardCard))
+        setPageState(items.length > 0 ? "default" : "empty")
+      })
+      .catch(() => {
+        if (active) setPageState("error")
+      })
+    return () => {
+      active = false
+    }
+  }, [])
 
   React.useEffect(() => {
-    const t = setTimeout(() => setPageState("default"), 400)
-    return () => clearTimeout(t)
-  }, [])
+    // Mock mode: keep the brief skeleton demo. Live mode: fetch real projects.
+    if (mode === "mock") {
+      const t = setTimeout(() => setPageState("default"), 400)
+      return () => clearTimeout(t)
+    }
+    return loadLive()
+  }, [mode, loadLive])
+
+  const cards = mode === "live" ? liveCards : dashboardProjects
 
   function handleAction(_projectId: string, action: NextAction | "view_progress") {
     router.push(ACTION_ROUTES[action])
@@ -60,7 +85,7 @@ export default function DashboardPage() {
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold text-foreground text-balance">
-              {`Willkommen zurück, ${currentUser.name.split(" ")[0]}`}
+              {`Willkommen zurück, ${(user?.name ?? currentUser.name).split(" ")[0]}`}
             </h1>
             <p className="text-sm text-muted-foreground">
               Arbeitsbereich Innosuisse-Anträge (Dummy-Daten)
@@ -74,11 +99,15 @@ export default function DashboardPage() {
 
         {/* Content area — four states */}
         {pageState === "loading" && <LoadingGrid />}
-        {pageState === "error" && <ErrorState onRetry={() => setPageState("default")} />}
+        {pageState === "error" && (
+          <ErrorState
+            onRetry={mode === "live" ? loadLive : () => setPageState("default")}
+          />
+        )}
         {pageState === "empty" && <EmptyState />}
         {pageState === "default" && (
           <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3">
-            {dashboardProjects.map((project) => (
+            {cards.map((project) => (
               <ProjectCard
                 key={project.id}
                 project={project}
