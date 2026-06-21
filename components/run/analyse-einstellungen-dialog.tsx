@@ -21,7 +21,6 @@ import {
 } from "@/components/ui/accordion"
 import { Separator } from "@/components/ui/separator"
 import { LLMToggle, WebSearchToggle } from "./service-toggles"
-import { ModelSelector } from "./model-selector"
 import { UsageEstimateBanner } from "./usage-estimate-banner"
 import {
   isCloudAllowed,
@@ -71,20 +70,21 @@ export function AnalyseEinstellungenDialog({
 
   const [ki, setKi] = React.useState(!isLocalOnlyClass)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
-  const [localOnly, setLocalOnly] = React.useState(false)
-  const [costLimit, setCostLimit] = React.useState("20.00")
-  const [model, setModel] = React.useState<"auto" | "claude" | "openai">("auto")
+  const [localSourcesOnly, setLocalSourcesOnly] = React.useState(false)
+  const [costLimit, setCostLimit] = React.useState("2.00")
 
-  const webDisabled = localOnly || !isWebAllowed(dataClass)
+  const webDisabled = localSourcesOnly || !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
 
   function handleStart() {
     onStart?.({
       ki: ki && !isLocalOnlyClass,
       web: effectiveWeb,
-      localOnly,
+      localSourcesOnly,
       costLimit: Number.parseFloat(costLimit) || 0,
-      model,
+      // Beta: Modell-Routing ist eine Backend-/Config-Entscheidung —
+      // die Drafter/Critic-Trennung bleibt cross-provider.
+      model: "auto",
     })
   }
 
@@ -140,10 +140,10 @@ export function AnalyseEinstellungenDialog({
 
             <label className="flex items-start gap-2">
               <Checkbox
-                checked={localOnly}
+                checked={localSourcesOnly}
                 onCheckedChange={(c) => {
                   const v = c === true
-                  setLocalOnly(v)
+                  setLocalSourcesOnly(v)
                   if (v) setWeb(false)
                 }}
                 disabled={isLocalOnlyClass}
@@ -151,7 +151,7 @@ export function AnalyseEinstellungenDialog({
               />
               <span className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium text-foreground">
-                  Nur lokale Quellen verwenden
+                  Nur vorbereitete / hochgeladene Quellen verwenden
                 </span>
                 <span className="text-xs text-muted-foreground">
                   Es werden ausschließlich Ihre hochgeladenen Unterlagen
@@ -211,10 +211,10 @@ export function AnalyseEinstellungenDialog({
                   </AccordionTrigger>
                   <AccordionContent>
                     <div className="flex flex-col gap-4 pt-1">
-                      {/* Keine Provider-Auswahl für lokale Datenklassen. */}
-                      {!isLocalOnlyClass && (
-                        <ModelSelector value={model} onChange={setModel} />
-                      )}
+                      {/* Beta: keine Provider-Auswahl — Routing macht das System. */}
+                      <p className="text-sm text-muted-foreground">
+                        Modellwahl: automatisch durch System
+                      </p>
                       <NumberField
                         label="Max. Textumfang"
                         helper="begrenzt die Länge der KI-Antworten"
@@ -231,7 +231,7 @@ export function AnalyseEinstellungenDialog({
                         disabled={!effectiveWeb}
                       />
                       <p className="text-xs text-muted-foreground">
-                        Vorgaben des Admins: max. CHF 50 pro Durchlauf (Dummy)
+                        Vorgaben des Admins: max. CHF 5 pro Durchlauf (Dummy)
                       </p>
                     </div>
                   </AccordionContent>
@@ -314,7 +314,7 @@ function CompactBody({
       </span>
       <div className="rounded-md border border-border bg-muted/40 p-3">
         <span className="text-sm font-medium text-foreground">
-          ~CHF 7.60 von CHF 20.00 (Dummy)
+          ~CHF 0.45 von CHF 2.00 (Dummy)
         </span>
         <p className="text-xs text-muted-foreground">Verbleibendes Budget</p>
       </div>

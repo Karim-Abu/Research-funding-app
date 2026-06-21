@@ -26,7 +26,8 @@ const ACTION_ROUTES: Record<NextAction | "view_progress", string> = {
   upload_sources: "/quellen",
   start_analysis: "/quellen",
   review_analysis: "/anforderungen",
-  continue_draft: "/editor",
+  // Beta: Review ist die einzige Editier-Oberfläche.
+  continue_draft: "/review",
   approve_review: "/review",
   create_export: "/export",
   resume_analysis: "/quellen",

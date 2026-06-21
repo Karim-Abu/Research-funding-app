@@ -38,6 +38,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { saveIntake } from "@/lib/intake-store"
 import type { DataClass, IntakeFormData, IntakePartner } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -291,6 +292,9 @@ export function IntakeForm() {
     // Simulate async save — prototype only, no real call.
     await new Promise((r) => setTimeout(r, 1200))
     setSaveState("idle")
+    // Beta: Projektdaten in der Session halten; /quellen baut daraus den
+    // Run-Start-Payload (POST /runs erhält intake + settings + Datenklasse).
+    saveIntake(data)
     router.push("/quellen")
   }
 

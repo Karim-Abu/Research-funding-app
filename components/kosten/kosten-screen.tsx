@@ -102,8 +102,8 @@ function UsageSection({ role }: { role: Role }) {
 
   function handleSave() {
     const val = Number(limitValue)
-    if (isNaN(val) || val < 1 || val > 50) {
-      setError("Maximal CHF 50 pro Durchlauf — vom Admin festgelegt.")
+    if (isNaN(val) || val < 1 || val > 5) {
+      setError("Maximal CHF 5 pro Durchlauf — vom Admin festgelegt.")
       return
     }
     setError(null)
@@ -214,7 +214,7 @@ function UsageSection({ role }: { role: Role }) {
                 id="per-run-limit"
                 type="number"
                 min={1}
-                max={50}
+                max={5}
                 value={limitValue}
                 onChange={(e) => {
                   setLimitValue(e.target.value)

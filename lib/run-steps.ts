@@ -24,24 +24,35 @@ export const RUN_STEP_TEMPLATE: ReadonlyArray<{ id: string; label: string }> = [
   { id: "as4", label: "Qualität wird geprüft" },
 ]
 
-/** Backend node name -> index into RUN_STEP_TEMPLATE. */
+/**
+ * Backend node name -> index into RUN_STEP_TEMPLATE.
+ * Beta-Node-Set (laut beta_architecture); die alte 16-Agenten-Liste ist
+ * entfernt. Nur Fallback — die Bridge liefert bevorzugt steps[] direkt.
+ */
 const NODE_TO_STEP_INDEX: Record<string, number> = {
+  // Schritt 1: Quellen werden aufbereitet
+  intake: 0,
   intake_and_classification: 0,
-  normalization: 0,
-  external_competence_research: 0,
-  requirement_extraction: 1,
+  source_load: 0,
+  source_ingestion: 0,
+  // Schritt 2: Anforderungen werden erkannt
+  requirement_loader: 1,
+  requirement_mapper: 1,
+  rule_engine: 1,
+  budget_rule_engine: 1,
+  eligibility_rule_engine: 1,
+  // Schritt 3: Belege werden verknüpft
   evidence_anchor: 2,
-  budget_feasibility: 2,
-  fit_gap: 2,
-  portal_field_router: 2,
-  introduction_public_summary_agent: 2,
-  organisations_governance_eligibility_agent: 2,
-  value_creation_market_logic_agent: 2,
-  solution_innovation_argumentation_agent: 2,
-  project_setup_workplan_agent: 2,
-  summary_submission_readiness_agent: 2,
-  pre_review_gate_evaluation: 3,
-  human_review_gate: 3,
+  evidence_anchor_builder: 2,
+  portal_field_dispatcher: 2,
+  dispatcher: 2,
+  field_drafting_agent: 2,
+  critic_verifier_agent: 2,
+  innovation_challenger_profile: 2,
+  // Schritt 4: Qualität wird geprüft
+  hitl_review_gate: 3,
+  gates: 3,
+  export: 3,
 }
 
 /**

@@ -10,10 +10,10 @@ import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import { PAGE_SCENARIOS, type PageScenario } from "@/lib/review-mock-data"
 import {
   getRunFields,
-  CURRENT_RUN_ID,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
+import { getCurrentRunId, loadIntake } from "@/lib/intake-store"
 import type { RunFieldsDto } from "@/lib/backend-contract"
 import { cn } from "@/lib/utils"
 import type { StepStatus } from "@/lib/types"
@@ -42,7 +42,7 @@ export default function ReviewPage() {
     let cancelled = false
     setError(null)
     setData(null)
-    getRunFields(CURRENT_RUN_ID)
+    getRunFields(getCurrentRunId())
       .then((dto) => {
         if (!cancelled) setData(dto)
       })
@@ -85,7 +85,12 @@ export default function ReviewPage() {
           ))}
         </div>
       ) : (
-        <ReviewScreen key="loaded" scenario={scenario} initialData={data} />
+        <ReviewScreen
+          key="loaded"
+          scenario={scenario}
+          initialData={data}
+          dataClass={loadIntake()?.vertraulichkeit || undefined}
+        />
       )}
 
       {/* Debug scenario switcher — hidden from normal user-facing UI */}

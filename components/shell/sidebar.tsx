@@ -1,17 +1,15 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
   LayoutDashboard,
-  FileText,
   Database,
   CheckSquare,
   Download,
   Wallet,
-  Users,
-  Settings,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -32,15 +30,14 @@ interface NavItem {
   requiredRole?: Role
 }
 
+// Beta-Navigation: bewusst minimal. Anträge, Partner & Rollen und Admin sind
+// Platzhalterseiten und bleiben als Routen erhalten, aber ohne Sidebar-Link.
 const navItems: NavItem[] = [
   { label: "Dashboard", href: "/", icon: LayoutDashboard },
-  { label: "Anträge", href: "/antraege", icon: FileText },
   { label: "Quellen & Evidenz", href: "/quellen", icon: Database },
   { label: "Review", href: "/review", icon: CheckSquare },
   { label: "Export", href: "/export", icon: Download },
   { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
-  { label: "Partner & Rollen", href: "/partner", icon: Users },
-  { label: "Admin", href: "/admin", icon: Settings, requiredRole: "lead_admin" },
 ]
 
 interface SidebarProps {
@@ -70,14 +67,13 @@ export function Sidebar({ role, collapsed, onToggle }: SidebarProps) {
         )}
       >
         <Link href="/" className="flex items-center gap-2 outline-none">
-          <span className="flex size-8 shrink-0 items-center justify-center rounded-md bg-primary text-sm font-bold text-primary-foreground">
-            EP
+          <span className="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md">
+            <Image src="/icon.png" alt="Logo" fill className="object-cover" />
           </span>
           {!collapsed && (
             <span className="text-sm font-semibold leading-tight text-sidebar-foreground">
-              Proposal-
-              <br />
-              Unterstützung
+              Multi-Agent-Workflow  <br />
+              
             </span>
           )}
         </Link>

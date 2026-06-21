@@ -32,11 +32,16 @@ import {
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
   type RunCostDto,
+  type RunStartRequestDto,
 } from "@/lib/api"
+import { loadIntake, setCurrentRunId } from "@/lib/intake-store"
+import { DataClassBadge } from "@/components/status/data-class-badge"
 import {
   isCloudAllowed,
+  mostRestrictiveDataClass,
   type AnalyseSettings,
   type DataClass,
+  type IntakeFormData,
   type Role,
 } from "@/lib/types"
 
@@ -226,6 +231,26 @@ function QuellenPageContent() {
   const [apiError, setApiError] = React.useState<string | null>(null)
   const [showDebugControls, setShowDebugControls] = React.useState(false)
 
+  // Intake aus der Session: undefined = noch nicht geladen (Hydration),
+  // null = fehlt -> Warn-Banner + Start gesperrt.
+  const [intake, setIntake] = React.useState<IntakeFormData | null | undefined>(
+    undefined
+  )
+  React.useEffect(() => {
+    setIntake(loadIntake())
+  }, [])
+  // Vom Backend gemeldete effektive Klasse hat Vorrang vor dem Intake-Wert.
+  const [backendDataClass, setBackendDataClass] =
+    React.useState<DataClass | null>(null)
+
+  // Beta: Quellen tragen noch keine eigene Datenklasse — effektiv ist die
+  // restriktivste aus dem Projektkontext (derzeit nur das Intake).
+  const effectiveDataClass: DataClass | null =
+    backendDataClass ??
+    (intake
+      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public_synthetic"])
+      : null)
+
   // Run lifecycle: the page only starts a run and polls its status via the
   // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
   const runIdRef = React.useRef<string | null>(null)
@@ -249,14 +274,17 @@ function QuellenPageContent() {
         if (dto.steps) setAnalysisSteps(dto.steps)
         setRunCost(dto.cost)
         setCanResume(dto.canResume ?? false)
-        if (dto.status === "completed") {
+        if (dto.effectiveDataClass) setBackendDataClass(dto.effectiveDataClass)
+        if (dto.status === "completed" || dto.status === "needs_review") {
+          // needs_review = Analyse fertig, wartet auf die menschliche Prüfung.
           stopPolling()
           setAnalysisState("completed")
-        } else if (dto.status === "stopped") {
+        } else if (dto.status === "stopped" || dto.status === "failed") {
           // Backend-initiated stop (e.g. cost limit reached).
           stopPolling()
           setAnalysisState("stopped")
         }
+        // "queued" und "running" -> weiter pollen.
       } catch (e) {
         stopPolling()
         setAnalysisState("idle")
@@ -267,9 +295,10 @@ function QuellenPageContent() {
     }, 1000)
   }, [stopPolling])
 
-  // The active scenario's dataClass drives the local-only banner.
-  const dataClass = activeScenario.dataClass
-  const isLocalOnly = !isCloudAllowed(dataClass)
+  // Die effektive Datenklasse steuert Banner und Dialog; das Demo-Szenario
+  // greift nur, solange kein Intake vorliegt (Debug-Pfad).
+  const dialogDataClass = effectiveDataClass ?? activeScenario.dataClass
+  const isLocalOnly = !isCloudAllowed(dialogDataClass)
 
   function openDialogWith(scenario: DialogScenario) {
     setActiveScenario(scenario)
@@ -277,6 +306,7 @@ function QuellenPageContent() {
   }
 
   async function handleAnalysisStart(settings: AnalyseSettings) {
+    if (!intake || !effectiveDataClass) return
     setDialogOpen(false)
     setApiError(null)
     setAnalysisSteps(
@@ -287,8 +317,14 @@ function QuellenPageContent() {
     )
     setAnalysisState("running")
     try {
-      const { runId } = await startRun(settings)
+      const startRequest: RunStartRequestDto = {
+        intake,
+        settings,
+        effectiveDataClass,
+      }
+      const { runId } = await startRun(startRequest)
       runIdRef.current = runId
+      setCurrentRunId(runId)
       startPolling()
     } catch (e) {
       setAnalysisState("idle")
@@ -342,19 +378,23 @@ function QuellenPageContent() {
 
         {/* Page header */}
         <div className="mb-6 flex items-start justify-between gap-4">
-          <div className="flex flex-col gap-1">
+          <div className="flex flex-col gap-2">
             <h1 className="text-balance text-2xl font-semibold text-foreground">
               Quellen &amp; Evidenz
             </h1>
             <p className="text-sm text-muted-foreground">
               Laden Sie Unterlagen hoch. Die Plattform erkennt daraus Anforderungen und passende Belege.
             </p>
+            {effectiveDataClass && (
+              <DataClassBadge dataClass={effectiveDataClass} />
+            )}
           </div>
 
           {/* Primary action — only shown when no analysis is running */}
           {analysisState !== "running" && (
             <Button
               onClick={() => openDialogWith(DIALOG_SCENARIOS[0])}
+              disabled={!intake}
               className="shrink-0"
             >
               <Play className="mr-1.5 size-4" />
@@ -364,6 +404,26 @@ function QuellenPageContent() {
             </Button>
           )}
         </div>
+
+        {/* Missing intake — run start requires project data */}
+        {intake === null && (
+          <div
+            role="alert"
+            className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3"
+          >
+            <p className="text-sm text-foreground">
+              Noch keine Projektangaben vorhanden — bitte füllen Sie zuerst das
+              Intake aus.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => router.push("/intake")}
+            >
+              Zum Intake
+            </Button>
+          </div>
+        )}
 
         {/* Confidentiality banner */}
         {isLocalOnly && <div className="mb-4"><LocalOnlyBanner /></div>}
@@ -513,7 +573,7 @@ function QuellenPageContent() {
         open={dialogOpen}
         onOpenChange={setDialogOpen}
         role={activeScenario.role}
-        dataClass={activeScenario.dataClass}
+        dataClass={dialogDataClass}
         variant={activeScenario.variant}
         serviceAvailability={{
           ki: activeScenario.kiAvailable,

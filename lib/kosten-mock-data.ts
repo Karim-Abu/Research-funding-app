@@ -35,10 +35,11 @@ export interface ServiceRow {
 // Usage (Dummy)
 // -------------------------------------------------------------------------
 
+// Realistische Beta-Grössenordnung: ~CHF 0.60–1.10 pro normalem Durchlauf.
 export const USAGE = {
-  usedChf: 86,
-  limitChf: 200,
-  perRunLimitChf: 20,
+  usedChf: 4.2,
+  limitChf: 20,
+  perRunLimitChf: 2,
 } as const
 
 // -------------------------------------------------------------------------
@@ -53,7 +54,7 @@ export const RUNS: Run[] = [
     user: "Anna Keller",
     kiEnabled: true,
     webEnabled: true,
-    approximateCost: "~CHF 8.40",
+    approximateCost: "~CHF 0.85",
     status: "completed",
     model: "Claude (Dummy)",
     tokensUsed: "45'000 Tokens (Dummy)",
@@ -66,11 +67,11 @@ export const RUNS: Run[] = [
     user: "Tobias Frei",
     kiEnabled: true,
     webEnabled: false,
-    approximateCost: "~CHF 6.90",
+    approximateCost: "~CHF 2.00",
     status: "stopped_cost",
     model: "Claude (Dummy)",
     tokensUsed: "38'000 Tokens (Dummy)",
-    stopReason: "Kostenlimit von CHF 20 erreicht. Bisherige Ergebnisse sind gespeichert.",
+    stopReason: "Kostenlimit von CHF 2 erreicht. Bisherige Ergebnisse sind gespeichert.",
     auditRef: "AE-2030 (Dummy)",
   },
   {
@@ -80,7 +81,7 @@ export const RUNS: Run[] = [
     user: "Anna Keller",
     kiEnabled: true,
     webEnabled: false,
-    approximateCost: "~CHF 1.20",
+    approximateCost: "~CHF 0.30",
     status: "completed",
     model: "Claude (Dummy)",
     tokensUsed: "6'500 Tokens (Dummy)",
@@ -93,7 +94,7 @@ export const RUNS: Run[] = [
     user: "Anna Keller",
     kiEnabled: false,
     webEnabled: true,
-    approximateCost: "~CHF 0.80",
+    approximateCost: "~CHF 0.20",
     status: "completed",
     model: "— (Dummy)",
     tokensUsed: "— (Dummy)",
@@ -106,7 +107,7 @@ export const RUNS: Run[] = [
     user: "Tobias Frei",
     kiEnabled: true,
     webEnabled: true,
-    approximateCost: "~CHF 9.10",
+    approximateCost: "~CHF 0.40",
     status: "failed",
     model: "Claude (Dummy)",
     tokensUsed: "12'000 Tokens (Dummy)",
@@ -120,7 +121,7 @@ export const RUNS: Run[] = [
     user: "Anna Keller",
     kiEnabled: true,
     webEnabled: false,
-    approximateCost: "~CHF 1.60",
+    approximateCost: "~CHF 0.25",
     status: "cancelled",
     model: "OpenAI (Dummy)",
     tokensUsed: "8'200 Tokens (Dummy)",
@@ -134,7 +135,7 @@ export const RUNS: Run[] = [
     user: "Anna Keller",
     kiEnabled: true,
     webEnabled: true,
-    approximateCost: "~CHF 7.70",
+    approximateCost: "~CHF 1.10",
     status: "completed",
     model: "Claude (Dummy)",
     tokensUsed: "42'000 Tokens (Dummy)",
@@ -147,7 +148,7 @@ export const RUNS: Run[] = [
     user: "Tobias Frei",
     kiEnabled: true,
     webEnabled: false,
-    approximateCost: "~CHF 5.30",
+    approximateCost: "~CHF 0.70",
     status: "completed",
     model: "OpenAI (Dummy)",
     tokensUsed: "29'000 Tokens (Dummy)",

@@ -27,11 +27,8 @@ import { FieldReview } from "@/components/review/field-review"
 import { cn } from "@/lib/utils"
 import type { MachineStatus } from "@/lib/types"
 import {
-  GATE_ROWS,
   DEFAULT_APPROVAL,
   PAGE_SCENARIOS,
-  type GateRow,
-  type GateStatus,
   type ApprovalData,
   type ApprovalState,
   type PageScenario,
@@ -39,11 +36,15 @@ import {
 import {
   submitReview,
   countOpenBlockers,
-  CURRENT_RUN_ID,
+  deriveGatesFromIssues,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
+import { getCurrentRunId } from "@/lib/intake-store"
+import { DataClassBadge } from "@/components/status/data-class-badge"
+import type { DataClass } from "@/lib/types"
 import type {
+  GateRowDto,
   IssueDto,
   PortalFieldDraftDto,
   ReviewDecisionDto,
@@ -54,13 +55,13 @@ import type {
 // Helpers
 // ---------------------------------------------------------------------------
 
-function gateStatusToMachineStatus(s: GateStatus): MachineStatus {
+function gateStatusToMachineStatus(s: GateRowDto["status"]): MachineStatus {
   if (s === "passed") return "verified"
   if (s === "partial") return "partial"
   return "blocker"
 }
 
-function gateLabel(s: GateStatus) {
+function gateLabel(s: GateRowDto["status"]) {
   if (s === "passed") return "Bestanden"
   if (s === "partial") return "Teilweise"
   return "Nicht bestanden"
@@ -117,7 +118,7 @@ function DonutChart({ percent }: { percent: number }) {
 // Gate row
 // ---------------------------------------------------------------------------
 
-function GateRowItem({ row }: { row: GateRow }) {
+function GateRowItem({ row }: { row: GateRowDto }) {
   const [expanded, setExpanded] = React.useState(false)
   const machineStatus = gateStatusToMachineStatus(row.status)
 
@@ -154,16 +155,8 @@ function GateRowItem({ row }: { row: GateRow }) {
       </button>
 
       {expanded && (
-        <div className="border-t border-border bg-muted/20 px-4 pb-4 pt-3 flex flex-col gap-2">
+        <div className="border-t border-border bg-muted/20 px-4 pb-4 pt-3">
           <p className="text-sm leading-relaxed text-foreground">{row.detail}</p>
-          <a
-            href="#"
-            onClick={(e) => e.preventDefault()}
-            className="inline-flex items-center gap-1 self-start text-xs text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
-          >
-            <ArrowRight className="size-3" />
-            Zum Abschnitt: {row.jumpSection}
-          </a>
         </div>
       )}
     </div>
@@ -410,21 +403,26 @@ export interface ReviewScreenProps {
   scenario?: PageScenario
   /** Feldentwürfe + Issues (von api.getRunFields geladen). */
   initialData?: RunFieldsDto
+  /** Datenklasse des Laufs (Badge im Kopf). */
+  dataClass?: DataClass
 }
 
 export function ReviewScreen({
   scenario = "default",
   initialData,
+  dataClass,
 }: ReviewScreenProps) {
-  // Gate rows (local state so "resolved" markings persist)
-  const [gates] = React.useState(GATE_ROWS)
-
   // Feldentwürfe + Issues — Mutationen laufen über api.submitReview.
   const [fields, setFields] = React.useState<PortalFieldDraftDto[]>(
     initialData?.fields ?? []
   )
   const [issues, setIssues] = React.useState<IssueDto[]>(
     initialData?.issues ?? []
+  )
+  // Gates kommen aus dem Contract; liefert die Bridge keine, leiten wir sie
+  // aus den Issues ab — nie hartkodierte Gates neben echten Feldern.
+  const [gates, setGates] = React.useState<GateRowDto[]>(
+    initialData?.gates ?? deriveGatesFromIssues(initialData?.issues ?? [])
   )
   const [reviewBusy, setReviewBusy] = React.useState(false)
   const [reviewError, setReviewError] = React.useState<string | null>(null)
@@ -433,9 +431,10 @@ export function ReviewScreen({
     setReviewBusy(true)
     setReviewError(null)
     try {
-      const dto = await submitReview(CURRENT_RUN_ID, decision)
+      const dto = await submitReview(getCurrentRunId(), decision)
       setFields(dto.fields)
       setIssues(dto.issues)
+      setGates(dto.gates ?? deriveGatesFromIssues(dto.issues))
     } catch (e) {
       setReviewError(
         e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
@@ -506,13 +505,14 @@ export function ReviewScreen({
 
       <div className="mx-auto w-full max-w-6xl px-6 py-8">
         {/* Page header */}
-        <div className="mb-8 flex flex-col gap-1">
+        <div className="mb-8 flex flex-col gap-2">
           <h1 className="text-balance text-2xl font-semibold text-foreground">
             Review
           </h1>
           <p className="text-sm text-muted-foreground">
             Qualitätsprüfungen, Hinweise und Freigabe für diesen Antrag.
           </p>
+          {dataClass && <DataClassBadge dataClass={dataClass} />}
         </div>
 
         <div className="flex min-w-0 flex-col gap-10">
