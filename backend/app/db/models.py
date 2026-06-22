@@ -145,3 +145,122 @@ class IdempotencyRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Sources (Milestone 2): SourceDocument -> SourceVersion -> SourceFragment
+# ---------------------------------------------------------------------------
+
+
+class SourceDocument(Base):
+    __tablename__ = "source_documents"
+
+    source_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    # Display name / original filename — metadata only, never used in a path.
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: pdf | docx | txt | url
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: uploaded | processing | processed | needs_manual_input | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="uploaded")
+    # Effective DataClassification (5 fields) as JSON.
+    data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
+    current_source_version_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    error_message: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class SourceVersion(Base):
+    """Immutable once terminal. Rows are mutated only while processing
+    (status uploaded/processing); reprocessing creates a new version."""
+
+    __tablename__ = "source_versions"
+
+    source_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_document_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.source_id"), nullable=False, index=True
+    )
+    version_number: Mapped[int] = mapped_column(nullable=False, default=1)
+    original_content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    normalized_content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Full normalized source text; fragment offsets are relative to this.
+    normalized_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    parser_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    normalizer_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    chunker_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    parsing_warnings: Mapped[list | None] = mapped_column(JSON, nullable=True)
+    processing_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="uploaded"
+    )
+    # Effective DataClassification of this version (consistent with the document).
+    data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Storage key (never the bytes); resolved by SourceStorage.
+    storage_ref: Mapped[str] = mapped_column(String, nullable=False)
+    original_filename: Mapped[str] = mapped_column(String, nullable=False)
+    byte_size: Mapped[int] = mapped_column(nullable=False)
+    mime_type: Mapped[str] = mapped_column(String, nullable=False)
+    processing_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processing_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    processing_attempt: Mapped[int] = mapped_column(nullable=False, default=0)
+    last_error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class SourceFragment(Base):
+    __tablename__ = "source_fragments"
+
+    fragment_id: Mapped[str] = mapped_column(String, primary_key=True)
+    source_version_id: Mapped[str] = mapped_column(
+        ForeignKey("source_versions.source_version_id"), nullable=False, index=True
+    )
+    ordinal: Mapped[int] = mapped_column(nullable=False)
+    original_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_text: Mapped[str] = mapped_column(Text, nullable=False)
+    page: Mapped[int | None] = mapped_column(nullable=True)
+    section: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Offsets relative to SourceVersion.normalized_text.
+    start_offset: Mapped[int] = mapped_column(nullable=False)
+    end_offset: Mapped[int] = mapped_column(nullable=False)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Optional stricter override classification for this fragment.
+    classification: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ControlResult(Base):
+    """Minimal deterministic control outcomes (size, type, signature,
+    archive-safety, classification, path-safety, processing). Distinct from
+    AuditEvent — not a replacement."""
+
+    __tablename__ = "control_results"
+
+    control_result_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    source_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    control_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Data Policy control_results enum: passed | warning | blocked | failed
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )

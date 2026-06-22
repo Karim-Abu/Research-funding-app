@@ -39,8 +39,18 @@ class Settings(BaseSettings):
 
     # Capabilities -------------------------------------------------------
     polling_interval_seconds: int = 2
-    max_upload_bytes: int | None = 10 * 1024 * 1024
-    supported_source_types: list[str] = ["pdf", "docx", "txt", "url"]
+    # URL import is not implemented in this milestone (Firecrawl out of scope).
+    supported_source_types: list[str] = ["pdf", "docx", "txt"]
+    url_import_enabled: bool = False
+
+    # Source ingestion — deployment/technical limits (NOT funding rules) -----
+    source_storage_dir: str = "var/sources"
+    max_upload_bytes: int = 10 * 1024 * 1024
+    max_files_per_request: int = 10
+    max_total_request_bytes: int = 50 * 1024 * 1024
+    max_archive_entries: int = 256
+    max_expanded_archive_bytes: int = 50 * 1024 * 1024
+    max_parsing_concurrency: int = 2
 
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"

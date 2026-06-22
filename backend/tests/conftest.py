@@ -6,7 +6,9 @@ engine binds to the test database.
 from __future__ import annotations
 
 import os
+import shutil
 import tempfile
+import uuid
 from collections.abc import Iterator
 
 import pytest
@@ -15,8 +17,13 @@ import pytest
 _TMP_DB = os.path.join(tempfile.gettempdir(), "rf_test_app.db")
 if os.path.exists(_TMP_DB):
     os.remove(_TMP_DB)
+_TMP_STORAGE = os.path.join(tempfile.gettempdir(), "rf_test_sources")
+if os.path.isdir(_TMP_STORAGE):
+    shutil.rmtree(_TMP_STORAGE, ignore_errors=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB}"
 os.environ["COOKIE_SECURE"] = "false"
+os.environ["SOURCE_STORAGE_DIR"] = _TMP_STORAGE
+os.environ["MAX_UPLOAD_BYTES"] = "1048576"
 
 from fastapi.testclient import TestClient  # noqa: E402
 
@@ -114,3 +121,13 @@ def project_payload(title: str = "Test Project") -> dict:
         ),
         "data_classification": VALID_CLASSIFICATION,
     }
+
+
+def create_project(client, csrf: str, title: str = "Sources Project") -> str:
+    headers = unsafe_headers(csrf)
+    headers["Idempotency-Key"] = uuid.uuid4().hex
+    res = client.post(
+        "/api/v1/projects", json=project_payload(title), headers=headers
+    )
+    assert res.status_code == 201, res.text
+    return res.json()["project_id"]

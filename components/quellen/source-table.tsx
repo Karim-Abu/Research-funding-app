@@ -28,12 +28,12 @@ import {
 import { isMock } from "@/lib/app-mode"
 import type { Source, SourceStatus, SourceType } from "@/lib/quellen-mock-data"
 
-// Beta: nur Textformate — keine PDF-Pipeline, keine URL-/Text-Quellen.
+// Default (mock) accept list; live mode passes the contract-supported types.
 const ALLOWED_EXTENSIONS = [".txt", ".md"]
 
-function isAllowedFile(name: string): boolean {
+function isAllowedFile(name: string, accept: string[]): boolean {
   const lower = name.toLowerCase()
-  return ALLOWED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+  return accept.some((ext) => lower.endsWith(ext))
 }
 
 // ---------------------------------------------------------------------------
@@ -44,17 +44,27 @@ const SOURCE_STATUS_CONFIG: Record<
   SourceStatus,
   { label: string; className: string; icon: React.ElementType }
 > = {
-  processed: {
-    label: "Verarbeitet",
-    className: "bg-muted text-muted-foreground",
-    icon: CheckCircle2,
+  uploaded: {
+    label: "Hochgeladen",
+    className: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
+    icon: Loader2,
   },
   processing: {
     label: "In Verarbeitung",
     className: "bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300",
     icon: Loader2,
   },
-  error: {
+  processed: {
+    label: "Verarbeitet",
+    className: "bg-muted text-muted-foreground",
+    icon: CheckCircle2,
+  },
+  needs_manual_input: {
+    label: "Manuelle Prüfung nötig",
+    className: "bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300",
+    icon: AlertTriangle,
+  },
+  failed: {
     label: "Fehler",
     className: "bg-status-blocker/10 text-status-blocker",
     icon: AlertTriangle,
@@ -72,7 +82,10 @@ function SourceStatusBadge({ status }: { status: SourceStatus }) {
       )}
     >
       <Icon
-        className={cn("size-3", status === "processing" && "animate-spin")}
+        className={cn(
+          "size-3",
+          (status === "processing" || status === "uploaded") && "animate-spin"
+        )}
       />
       {c.label}
     </span>
@@ -85,6 +98,7 @@ function SourceStatusBadge({ status }: { status: SourceStatus }) {
 
 const SOURCE_TYPE_ICON: Record<SourceType, React.ElementType> = {
   PDF: FileText,
+  DOCX: FileText,
   URL: Link2,
   Text: FileText,
 }
@@ -108,17 +122,22 @@ interface UploadZoneProps {
   onFiles: (files: File[]) => void
   /** Anzahl abgelehnter Dateien (falscher Typ) beim letzten Versuch. */
   onRejected: (count: number) => void
+  /** Erlaubte Dateiendungen (Default: .txt/.md). */
+  accept?: string[]
 }
 
-// Beta-Upload: nur .txt/.md — keine URL-/Text-Quellen, keine PDF-Pipeline.
-function UploadZone({ onFiles, onRejected }: UploadZoneProps) {
+function UploadZone({
+  onFiles,
+  onRejected,
+  accept = ALLOWED_EXTENSIONS,
+}: UploadZoneProps) {
   const [dragOver, setDragOver] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement>(null)
 
   function acceptFiles(list: FileList | null) {
     if (!list || list.length === 0) return
     const files = Array.from(list)
-    const allowed = files.filter((f) => isAllowedFile(f.name))
+    const allowed = files.filter((f) => isAllowedFile(f.name, accept))
     const rejected = files.length - allowed.length
     onRejected(rejected)
     if (allowed.length > 0) onFiles(allowed)
@@ -146,7 +165,7 @@ function UploadZone({ onFiles, onRejected }: UploadZoneProps) {
       <input
         ref={inputRef}
         type="file"
-        accept={ALLOWED_EXTENSIONS.join(",")}
+        accept={accept.join(",")}
         multiple
         className="hidden"
         onChange={(e) => {
@@ -179,7 +198,7 @@ function UploadZone({ onFiles, onRejected }: UploadZoneProps) {
             Dateien hierher ziehen
           </p>
           <p className="text-xs text-muted-foreground">
-            oder per Schaltfläche auswählen — Beta: nur .txt- und .md-Dateien
+            {`oder per Schaltfläche auswählen — erlaubt: ${accept.join(", ")}`}
           </p>
         </div>
         <Button
@@ -205,22 +224,54 @@ function UploadZone({ onFiles, onRejected }: UploadZoneProps) {
 interface SourceTableProps {
   sources: Source[]
   onRemove?: (id: string) => void
+  /** Live mode: the page owns the list (polling); no local optimistic state. */
+  controlled?: boolean
+  /** Live upload handler — replaces the mock setTimeout demo path. */
+  onUploadFiles?: (files: File[]) => Promise<void> | void
+  /** Live delete handler. */
+  onDeleteSource?: (id: string) => void
+  /** Allowed upload extensions (Default: .txt/.md). */
+  acceptExtensions?: string[]
 }
 
-export function SourceTable({ sources, onRemove }: SourceTableProps) {
+export function SourceTable({
+  sources,
+  onRemove,
+  controlled = false,
+  onUploadFiles,
+  onDeleteSource,
+  acceptExtensions,
+}: SourceTableProps) {
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
   const [localSources, setLocalSources] = React.useState<Source[]>(sources)
   const [uploadError, setUploadError] = React.useState<string | null>(null)
 
+  // Live mode shows the page-owned list; mock mode keeps local optimistic state.
+  const displayed = controlled ? sources : localSources
+
   function handleRemoveConfirm() {
     if (!confirmId) return
-    setLocalSources((prev) => prev.filter((s) => s.id !== confirmId))
-    onRemove?.(confirmId)
+    if (onDeleteSource) {
+      onDeleteSource(confirmId)
+    } else {
+      setLocalSources((prev) => prev.filter((s) => s.id !== confirmId))
+      onRemove?.(confirmId)
+    }
     setConfirmId(null)
   }
 
   async function handleFiles(files: File[]) {
     setUploadError(null)
+    if (onUploadFiles) {
+      try {
+        await onUploadFiles(files)
+      } catch (e) {
+        setUploadError(
+          e instanceof Error ? e.message : BRIDGE_UNREACHABLE_MESSAGE
+        )
+      }
+      return
+    }
     for (const file of files) {
       try {
         const source = await uploadSource(file)
@@ -253,11 +304,15 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
     )
   }
 
-  const pendingSource = localSources.find((s) => s.id === confirmId)
+  const pendingSource = displayed.find((s) => s.id === confirmId)
 
   return (
     <div className="flex flex-col gap-6">
-      <UploadZone onFiles={handleFiles} onRejected={handleRejected} />
+      <UploadZone
+        onFiles={handleFiles}
+        onRejected={handleRejected}
+        accept={acceptExtensions}
+      />
 
       {uploadError && (
         <p
@@ -269,12 +324,12 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
         </p>
       )}
 
-      {localSources.length === 0 ? (
+      {displayed.length === 0 ? (
         <p
           role="status"
           className="py-8 text-center text-sm text-muted-foreground"
         >
-          Noch keine Quellen. Laden Sie .txt- oder .md-Dateien hoch.
+          Noch keine Quellen vorhanden.
         </p>
       ) : (
         <div
@@ -297,14 +352,16 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
           </div>
 
           {/* Rows */}
-          {localSources.map((source) => (
+          {displayed.map((source) => (
             <div key={source.id} className="flex flex-col">
               <div
                 role="row"
                 className={cn(
                   "grid grid-cols-[1fr_80px_110px_1fr_56px] items-center gap-x-4 px-4 py-3 text-sm",
                   "border-b border-border last:border-0",
-                  source.status === "error" && "bg-status-blocker/5"
+                  (source.status === "failed" ||
+                    source.status === "needs_manual_input") &&
+                    "bg-status-blocker/5"
                 )}
               >
                 <span
@@ -339,8 +396,10 @@ export function SourceTable({ sources, onRemove }: SourceTableProps) {
                 </span>
               </div>
 
-              {/* Error hint row */}
-              {source.status === "error" && source.errorHint && (
+              {/* Error / manual-input hint row */}
+              {(source.status === "failed" ||
+                source.status === "needs_manual_input") &&
+                source.errorHint && (
                 <div
                   role="row"
                   className="border-b border-border bg-status-blocker/5 px-4 pb-3 last:border-0"

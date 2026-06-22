@@ -10,6 +10,13 @@ from app.contracts.project import (
     ProjectList,
     ProjectPatch,
 )
+from app.contracts.source import (
+    SourceDocument,
+    SourceStatus,
+    SourceType,
+    TextSourceCreate,
+    UrlSourceCreate,
+)
 
 __all__ = [
     "Capabilities",
@@ -23,5 +30,10 @@ __all__ = [
     "ProjectList",
     "ProjectPatch",
     "SessionResponse",
+    "SourceDocument",
+    "SourceStatus",
+    "SourceType",
+    "TextSourceCreate",
+    "UrlSourceCreate",
     "User",
 ]

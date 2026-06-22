@@ -23,6 +23,7 @@ import {
   dummyAnalysisSteps,
   type AnalysisProgressStep,
   type PageAnalysisState,
+  type Source,
 } from "@/lib/quellen-mock-data"
 import {
   startRun,
@@ -34,7 +35,7 @@ import {
   type RunCostDto,
   type RunStartRequestDto,
 } from "@/lib/api"
-import { loadIntake, setCurrentRunId } from "@/lib/intake-store"
+import { loadIntake, setCurrentRunId, getActiveProjectId } from "@/lib/intake-store"
 import { DataClassBadge } from "@/components/status/data-class-badge"
 import {
   isCloudAllowed,
@@ -44,6 +45,144 @@ import {
   type IntakeFormData,
   type Role,
 } from "@/lib/types"
+import { useSession } from "@/components/providers/app-providers"
+import {
+  listSources,
+  uploadFiles,
+  createTextSource,
+  deleteSource,
+  type SourceDocumentDto,
+} from "@/lib/sources"
+import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import { dataClassificationFromFlat } from "@/lib/data-classification"
+import { Input } from "@/components/ui/input"
+import { Textarea } from "@/components/ui/textarea"
+import { Label } from "@/components/ui/label"
+
+// Map a live contract SourceDocument onto the existing table row shape.
+const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
+  pdf: "PDF",
+  docx: "DOCX",
+  txt: "Text",
+  url: "URL",
+}
+
+function toSourceRow(s: SourceDocumentDto): Source {
+  let errorHint: string | undefined
+  if (s.status === "failed") {
+    errorHint = s.error_message ?? "Die Datei konnte nicht verarbeitet werden."
+  } else if (s.status === "needs_manual_input") {
+    errorHint =
+      "Kein durchsuchbarer Text gefunden — bitte Datei prüfen oder Inhalt als Text erfassen."
+  }
+  return {
+    id: s.source_id,
+    name: s.name,
+    type: SOURCE_TYPE_LABEL[s.type] ?? "Text",
+    status: s.status,
+    addedBy: "—",
+    addedAt: s.created_at
+      ? new Date(s.created_at).toLocaleString("de-CH")
+      : "—",
+    errorHint,
+  }
+}
+
+// Minimal text-source form (live mode) — contract createTextSource.
+function TextSourceForm({
+  onAdd,
+  disabled,
+}: {
+  onAdd: (name: string, text: string) => Promise<void>
+  disabled?: boolean
+}) {
+  const [open, setOpen] = React.useState(false)
+  const [name, setName] = React.useState("")
+  const [text, setText] = React.useState("")
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  async function submit() {
+    if (!name.trim() || !text.trim()) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onAdd(name.trim(), text)
+      setName("")
+      setText("")
+      setOpen(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Hinzufügen fehlgeschlagen.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  if (!open) {
+    return (
+      <Button
+        type="button"
+        variant="outline"
+        size="sm"
+        className="self-start"
+        disabled={disabled}
+        onClick={() => setOpen(true)}
+      >
+        Text als Quelle hinzufügen
+      </Button>
+    )
+  }
+
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="text-source-name">Name</Label>
+        <Input
+          id="text-source-name"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="z. B. Gesprächsnotiz"
+          disabled={busy}
+        />
+      </div>
+      <div className="flex flex-col gap-1.5">
+        <Label htmlFor="text-source-text">Text</Label>
+        <Textarea
+          id="text-source-text"
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          rows={5}
+          placeholder="Inhalt der Textquelle…"
+          disabled={busy}
+        />
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-status-blocker">
+          {error}
+        </p>
+      )}
+      <div className="flex gap-2">
+        <Button
+          type="button"
+          size="sm"
+          onClick={submit}
+          disabled={busy || !name.trim() || !text.trim()}
+        >
+          Hinzufügen
+        </Button>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => setOpen(false)}
+          disabled={busy}
+        >
+          Abbrechen
+        </Button>
+      </div>
+    </div>
+  )
+}
 
 // ---------------------------------------------------------------------------
 // Scenario types (dialog demo only — collapsed by default)
@@ -363,7 +502,80 @@ function QuellenPageContent() {
       })
   }
 
-  const sourceCount = dummySources.length
+  // --- Live sources (Milestone 2) --------------------------------------------
+  const { mode } = useSession()
+  const liveMode = mode === "live"
+  const [projectId, setProjectId] = React.useState<string | null>(null)
+  const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
+  const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
+    null
+  )
+
+  React.useEffect(() => {
+    if (!liveMode) return
+    setProjectId(getActiveProjectId())
+    void getCapabilities().then(setCapabilities)
+  }, [liveMode])
+
+  const refreshSources = React.useCallback(async () => {
+    if (!liveMode || !projectId) return
+    try {
+      setLiveSources(await listSources(projectId))
+    } catch {
+      // keep the last known list on transient errors
+    }
+  }, [liveMode, projectId])
+
+  React.useEffect(() => {
+    void refreshSources()
+  }, [refreshSources])
+
+  // Poll while any source is still being processed.
+  React.useEffect(() => {
+    if (!liveMode || !projectId) return
+    const pending = liveSources.some(
+      (s) => s.status === "uploaded" || s.status === "processing"
+    )
+    if (!pending) return
+    const ms = (capabilities?.polling_interval_seconds ?? 2) * 1000
+    const timer = setInterval(() => void refreshSources(), ms)
+    return () => clearInterval(timer)
+  }, [liveMode, projectId, liveSources, capabilities, refreshSources])
+
+  const sourceClassification = React.useMemo(
+    () => dataClassificationFromFlat(effectiveDataClass ?? "public_synthetic"),
+    [effectiveDataClass]
+  )
+
+  const handleUploadSources = React.useCallback(
+    async (files: File[]) => {
+      if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
+      await uploadFiles(projectId, files, sourceClassification)
+      await refreshSources()
+    },
+    [projectId, sourceClassification, refreshSources]
+  )
+
+  const handleDeleteSource = React.useCallback(
+    (id: string) => {
+      void deleteSource(id).then(refreshSources).catch(() => undefined)
+    },
+    [refreshSources]
+  )
+
+  const handleAddTextSource = React.useCallback(
+    async (name: string, text: string) => {
+      if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
+      await createTextSource(projectId, name, text, sourceClassification)
+      await refreshSources()
+    },
+    [projectId, sourceClassification, refreshSources]
+  )
+
+  const sourceRows: Source[] = liveMode
+    ? liveSources.map(toSourceRow)
+    : dummySources
+  const sourceCount = sourceRows.length
   const evidenceCount = dummyEvidence.length
 
   return (
@@ -478,7 +690,32 @@ function QuellenPageContent() {
           </TabsList>
 
           <TabsContent value="quellen">
-            <SourceTable sources={dummySources} />
+            {liveMode ? (
+              <div className="flex flex-col gap-6">
+                {!projectId && (
+                  <p
+                    role="alert"
+                    className="rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3 text-sm text-foreground"
+                  >
+                    Kein aktives Projekt — bitte legen Sie zuerst im Intake ein
+                    Projekt an.
+                  </p>
+                )}
+                <SourceTable
+                  sources={sourceRows}
+                  controlled
+                  onUploadFiles={handleUploadSources}
+                  onDeleteSource={handleDeleteSource}
+                  acceptExtensions={[".pdf", ".docx", ".txt"]}
+                />
+                <TextSourceForm
+                  onAdd={handleAddTextSource}
+                  disabled={!projectId}
+                />
+              </div>
+            ) : (
+              <SourceTable sources={dummySources} />
+            )}
           </TabsContent>
 
           <TabsContent value="evidenz">

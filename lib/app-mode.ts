@@ -8,12 +8,13 @@
 
 export type BackendMode = "mock" | "live"
 
-// Resources wired to the real backend in this milestone.
+// Resources wired to the real backend (cumulative across milestones).
 const LIVE_RESOURCES: ReadonlySet<string> = new Set([
   "session",
   "me",
   "capabilities",
   "projects",
+  "sources",
 ])
 
 let currentMode: BackendMode = "mock"
