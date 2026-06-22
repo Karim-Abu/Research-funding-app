@@ -20,6 +20,10 @@ export const MOCK_CAPABILITIES: Capabilities = {
     sources: true,
     source_parsing: true,
     url_import: false,
+    runs: false,
+    review: false,
+    export: false,
+    web_research: false,
   },
 }
 

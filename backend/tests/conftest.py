@@ -20,10 +20,14 @@ if os.path.exists(_TMP_DB):
 _TMP_STORAGE = os.path.join(tempfile.gettempdir(), "rf_test_sources")
 if os.path.isdir(_TMP_STORAGE):
     shutil.rmtree(_TMP_STORAGE, ignore_errors=True)
+_TMP_CHECKPOINTS = os.path.join(tempfile.gettempdir(), "rf_test_checkpoints.db")
+if os.path.exists(_TMP_CHECKPOINTS):
+    os.remove(_TMP_CHECKPOINTS)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB}"
 os.environ["COOKIE_SECURE"] = "false"
 os.environ["SOURCE_STORAGE_DIR"] = _TMP_STORAGE
 os.environ["MAX_UPLOAD_BYTES"] = "1048576"
+os.environ["CHECKPOINT_DB_PATH"] = _TMP_CHECKPOINTS
 
 from fastapi.testclient import TestClient  # noqa: E402
 

@@ -350,8 +350,15 @@ def delete_source(
             status=409, code="SOURCE_PROCESSING", title="Conflict",
             detail="The source is still being processed.",
         )
-    # No run/evidence references exist in this milestone → SOURCE_IN_USE cannot
-    # occur yet; only unreferenced sources are physically deleted.
+    # A source frozen into an analysis-run snapshot must not be physically
+    # removed (run reproducibility / auditability).
+    from app.runs import snapshot as run_snapshot
+
+    if run_snapshot.is_source_referenced(db, source_id):
+        raise ProblemException(
+            status=409, code="SOURCE_IN_USE", title="Conflict",
+            detail="The source is referenced by an analysis run and cannot be deleted.",
+        )
     storage = get_storage()
     refs = sources_repo.physically_delete(db, doc)
     audit.record(

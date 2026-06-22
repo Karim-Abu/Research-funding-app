@@ -43,13 +43,16 @@ export interface IssueCountsDto {
   info: number
 }
 
+// Canonical contract RunStatus (run_state_v1_1.yaml). Presentational UI states
+// are mapped separately (see app/quellen/page.tsx).
 export type RunStatus =
-  | "queued"
+  | "created"
   | "running"
-  | "needs_review"
-  | "stopped"
+  | "paused_for_review"
   | "completed"
+  | "stopped"
   | "failed"
+  | "cancelled"
 
 export interface RunStatusDto {
   runId: string

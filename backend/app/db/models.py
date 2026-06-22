@@ -12,9 +12,11 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -261,6 +263,157 @@ class ControlResult(Base):
     # Data Policy control_results enum: passed | warning | blocked | failed
     status: Mapped[str] = mapped_column(String, nullable=False)
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Run orchestration (Milestone 3): AnalysisRun + AsyncOperation + snapshots
+# ---------------------------------------------------------------------------
+
+
+class AnalysisRun(Base):
+    __tablename__ = "analysis_runs"
+    __table_args__ = (
+        # At most one active run per project (SQLite partial unique index).
+        Index(
+            "uq_active_run_per_project",
+            "project_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('created','running','paused_for_review')"
+            ),
+        ),
+    )
+
+    run_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    # Contract RunStatus
+    status: Mapped[str] = mapped_column(String, nullable=False, default="created")
+    # Contract stage enum
+    current_stage: Mapped[str] = mapped_column(
+        String, nullable=False, default="initialize"
+    )
+    progress_percent: Mapped[int] = mapped_column(nullable=False, default=0)
+    processing_mode: Mapped[str] = mapped_column(String, nullable=False)
+    effective_data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
+    # Frozen contract/version snapshot (funding/rule/policy/tool/agent/parser/…).
+    snapshot_versions: Mapped[dict] = mapped_column(JSON, nullable=False)
+    recheck_required: Mapped[bool] = mapped_column(default=False, nullable=False)
+    semantic_findings_stale: Mapped[bool] = mapped_column(default=False, nullable=False)
+    review_package_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    approval_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    estimated_cost_chf: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    actual_cost_chf: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
+    stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Cooperative cancellation flag, checked by the executor between stages.
+    cancel_requested: Mapped[bool] = mapped_column(default=False, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class AsyncOperation(Base):
+    __tablename__ = "async_operations"
+
+    operation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    resource_type: Mapped[str] = mapped_column(String, nullable=False)
+    resource_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Contract AsyncOperation status
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    progress_percent: Mapped[int] = mapped_column(nullable=False, default=0)
+    result: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Serialized Problem (or null) — no raw stack traces.
+    error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    correlation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    idempotency_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    last_error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class RunSourceSnapshot(Base):
+    """Immutable run → SourceVersion association (the frozen input snapshot)."""
+
+    __tablename__ = "run_source_snapshots"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "source_version_id", name="uq_run_source_version"
+        ),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    source_version_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source_id: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class RunPolicySnapshot(Base):
+    """Immutable frozen runtime limits — execution reads this, never project limits."""
+
+    __tablename__ = "run_policy_snapshots"
+
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), primary_key=True
+    )
+    processing_mode: Mapped[str] = mapped_column(String, nullable=False)
+    max_cost_chf: Mapped[float] = mapped_column(Float, nullable=False)
+    max_llm_calls: Mapped[int] = mapped_column(nullable=False)
+    max_web_calls: Mapped[int] = mapped_column(nullable=False)
+    max_retries: Mapped[int] = mapped_column(nullable=False, default=1)
+    max_redrafts: Mapped[int] = mapped_column(nullable=False, default=2)
+    timeout_seconds: Mapped[int] = mapped_column(nullable=False, default=600)
+    allowed_routes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    policy_version: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class UsageRecord(Base):
+    __tablename__ = "usage_records"
+
+    usage_record_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model: Mapped[str | None] = mapped_column(String, nullable=True)
+    input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    cost_chf: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

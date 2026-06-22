@@ -9,7 +9,16 @@ from fastapi.exceptions import RequestValidationError
 from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from app.api import auth, capabilities, health, me, projects, sources
+from app.api import (
+    auth,
+    capabilities,
+    health,
+    me,
+    operations,
+    projects,
+    runs,
+    sources,
+)
 from app.api.errors import (
     ProblemException,
     http_exception_handler,
@@ -34,15 +43,17 @@ async def lifespan(_: FastAPI):
 
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
-    # Single-instance recovery: fail any source left mid-processing on restart.
+    # Single-instance recovery: fail anything left mid-processing on restart.
     from app.ingestion.pipeline import recover_interrupted
+    from app.runs.executor import recover_interrupted_runs
 
-    recovered = recover_interrupted()
+    recovered_sources = recover_interrupted()
+    recovered_runs = recover_interrupted_runs()
     logger.info(
-        "startup ok api_version=%s policy_version=%s recovered_interrupted=%d",
+        "startup ok api_version=%s recovered_sources=%d recovered_runs=%d",
         settings.api_version,
-        settings.policy_version,
-        recovered,
+        recovered_sources,
+        recovered_runs,
     )
     yield
 
@@ -58,5 +69,7 @@ app.add_exception_handler(RequestValidationError, validation_exception_handler)
 app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
-for module in (health, auth, me, capabilities, projects, sources):
+for module in (
+    health, auth, me, capabilities, projects, sources, runs, operations
+):
     app.include_router(module.router, prefix=API_PREFIX)

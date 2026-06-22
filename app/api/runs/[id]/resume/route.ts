@@ -1,12 +1,10 @@
-import { proxyToBridge } from "@/lib/bridge"
+import { forwardToBridge } from "@/lib/bridge"
 
-// POST /api/runs/{id}/resume — setzt einen gestoppten Durchlauf fort.
+// POST /api/runs/{id}/resume — Finalisierung nach Freigabe (v1.1).
 export async function POST(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  return proxyToBridge(`/runs/${encodeURIComponent(id)}/resume`, {
-    method: "POST",
-  })
+  return forwardToBridge(request, `/runs/${encodeURIComponent(id)}/resume`)
 }

@@ -1,10 +1,10 @@
-import { proxyToBridge } from "@/lib/bridge"
+import { forwardToBridge } from "@/lib/bridge"
 
-// GET /api/runs/{id} — Status eines Durchlaufs (Polling).
+// GET /api/runs/{id} — Run lesen (v1.1; Cookie/Session werden durchgereicht).
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  return proxyToBridge(`/runs/${encodeURIComponent(id)}`)
+  return forwardToBridge(request, `/runs/${encodeURIComponent(id)}`)
 }

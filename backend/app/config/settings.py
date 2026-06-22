@@ -52,6 +52,13 @@ class Settings(BaseSettings):
     max_expanded_archive_bytes: int = 50 * 1024 * 1024
     max_parsing_concurrency: int = 2
 
+    # Run orchestration (Milestone 3) ------------------------------------
+    checkpoint_db_path: str = "var/checkpoints.db"
+    max_run_concurrency: int = 2
+    run_default_max_retries: int = 1
+    run_default_max_redrafts: int = 2
+    run_default_timeout_seconds: int = 600
+
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"
     seed_workspace_name: str = "Demo Workspace"

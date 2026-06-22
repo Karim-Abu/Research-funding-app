@@ -414,16 +414,20 @@ function QuellenPageContent() {
         setRunCost(dto.cost)
         setCanResume(dto.canResume ?? false)
         if (dto.effectiveDataClass) setBackendDataClass(dto.effectiveDataClass)
-        if (dto.status === "completed" || dto.status === "needs_review") {
-          // needs_review = Analyse fertig, wartet auf die menschliche Prüfung.
+        if (dto.status === "completed" || dto.status === "paused_for_review") {
+          // paused_for_review = Analyse fertig, wartet auf die menschliche Prüfung.
           stopPolling()
           setAnalysisState("completed")
-        } else if (dto.status === "stopped" || dto.status === "failed") {
-          // Backend-initiated stop (e.g. cost limit reached).
+        } else if (
+          dto.status === "stopped" ||
+          dto.status === "failed" ||
+          dto.status === "cancelled"
+        ) {
+          // Backend-initiated stop (e.g. cost limit reached) / cancellation.
           stopPolling()
           setAnalysisState("stopped")
         }
-        // "queued" und "running" -> weiter pollen.
+        // "created" und "running" -> weiter pollen.
       } catch (e) {
         stopPolling()
         setAnalysisState("idle")
@@ -578,6 +582,10 @@ function QuellenPageContent() {
   const sourceCount = sourceRows.length
   const evidenceCount = dummyEvidence.length
 
+  // STEP 12: the live "Analyse starten" action stays disabled until the server
+  // capability (features.runs) enables it (Milestone 4). Mock mode is unaffected.
+  const runsEnabled = !liveMode || Boolean(capabilities?.features?.runs)
+
   return (
     <AppShell
       user={currentUser}
@@ -604,16 +612,22 @@ function QuellenPageContent() {
 
           {/* Primary action — only shown when no analysis is running */}
           {analysisState !== "running" && (
-            <Button
-              onClick={() => openDialogWith(DIALOG_SCENARIOS[0])}
-              disabled={!intake}
-              className="shrink-0"
-            >
-              <Play className="mr-1.5 size-4" />
-              {analysisState === "completed"
-                ? "Analyse erneut starten"
-                : "Analyse starten"}
-            </Button>
+            <div className="flex shrink-0 flex-col items-end gap-1">
+              <Button
+                onClick={() => openDialogWith(DIALOG_SCENARIOS[0])}
+                disabled={!intake || !runsEnabled}
+              >
+                <Play className="mr-1.5 size-4" />
+                {analysisState === "completed"
+                  ? "Analyse erneut starten"
+                  : "Analyse starten"}
+              </Button>
+              {liveMode && !runsEnabled && (
+                <span className="text-xs text-muted-foreground">
+                  Die Analyse wird in einer späteren Version verfügbar.
+                </span>
+              )}
+            </div>
           )}
         </div>
 
