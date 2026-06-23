@@ -27,6 +27,8 @@ def get_capabilities(
         "partners": True,
         "runs": True,
         "requirements": True,
+        # Milestone 5: deterministic evidence baseline (no AI/cloud).
+        "evidence": True,
         "review": False,
         "export": False,
         "web_research": False,

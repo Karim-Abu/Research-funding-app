@@ -1,22 +1,27 @@
 """Canonical run constants for the deterministic precheck workflow."""
 from __future__ import annotations
 
-# Subset of the 12 canonical contract stages used by the M4 graph. The
-# requirement/rule precheck stage sits between source validation and finalize;
-# the fact-extraction and drafting stages remain out of scope (M5+).
+# Subset of the 12 canonical contract stages. M5 adds the deterministic evidence
+# baseline (extract_facts_and_map_evidence with A1 disabled, then verify_evidence)
+# before requirement evaluation. Drafting/review stages remain out of scope.
 WORKFLOW_STAGES = [
     "initialize",
     "validate_source_snapshot",
+    "extract_facts_and_map_evidence",
+    "verify_evidence",
     "evaluate_requirements_and_rules",
     "finalize_run",
 ]
 
-# Technical progress per stage — covers the formal-eligibility precheck, NOT a
-# complete proposal analysis (no evidence, drafting, review or submission gate).
+# Technical progress per stage — covers the deterministic formal-eligibility
+# precheck + evidence baseline, NOT a complete proposal analysis (no AI
+# extraction, drafting, review or submission gate).
 STAGE_PROGRESS = {
-    "initialize": 25,
-    "validate_source_snapshot": 50,
-    "evaluate_requirements_and_rules": 75,
+    "initialize": 16,
+    "validate_source_snapshot": 33,
+    "extract_facts_and_map_evidence": 50,
+    "verify_evidence": 66,
+    "evaluate_requirements_and_rules": 83,
     "finalize_run": 100,
 }
 

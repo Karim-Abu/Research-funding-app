@@ -1,6 +1,8 @@
 // Requirements client (live v1.1 slice). listRequirements returns the
 // run-scoped RequirementAssessments produced by the deterministic precheck.
 
+import type { EvidenceLinkDto } from "./evidence"
+
 export type RequirementStatus =
   | "fulfilled"
   | "partial"
@@ -36,7 +38,7 @@ export interface RequirementAssessmentDto {
   basis: AssessmentBasis
   reasoning: string
   stale: boolean
-  evidence_links: unknown[]
+  evidence_links: EvidenceLinkDto[]
   open_issues: OpenIssueDto[]
 }
 

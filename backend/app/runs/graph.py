@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun, RunSourceSnapshot
 from app.db.session import SessionLocal
+from app.evidence import pipeline as evidence_pipeline
 from app.repositories import audit, controls
 from app.runs import evaluation
 from app.runs.constants import STAGE_PROGRESS
@@ -102,16 +103,55 @@ def node_validate_source_snapshot(state: RunState) -> RunState:
         db.close()
 
 
+def node_extract_facts_and_map_evidence(state: RunState) -> RunState:
+    """A1 is deferred — run the deterministic lexical evidence baseline only.
+    Creates EvidenceCandidates from requirements + frozen fragments; creates NO
+    ExtractedFacts and makes no LLM/network/embedding call."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        count = evidence_pipeline.run_discovery(db, run)
+        _set_stage(db, run, "extract_facts_and_map_evidence")
+        db.commit()
+        logger.info("evidence discovery candidates=%d run=%s", count, run.run_id)
+        return state
+    finally:
+        db.close()
+
+
+def node_verify_evidence(state: RunState) -> RunState:
+    """Deterministic exact-quote verification → EvidenceAnchors. Continues even
+    when individual candidates remain unverified or none were found."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        counts = evidence_pipeline.run_verification(db, run)
+        _set_stage(db, run, "verify_evidence")
+        db.commit()
+        logger.info("evidence verification %s run=%s", counts, run.run_id)
+        return state
+    finally:
+        db.close()
+
+
 def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
     """Deterministic formal-eligibility precheck: run the 12 official core rules
     against the frozen project+partner snapshot, persist RuleResults +
-    RequirementAssessments + OpenIssues. No LLM, no network, no source text."""
+    RequirementAssessments + OpenIssues; then materialize supplementary evidence
+    links. No LLM, no network, no source text."""
     db = SessionLocal()
     try:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
         counts = evaluation.evaluate_run(db, run.run_id)
+        # Link verified/unverified anchors to the assessments now that they
+        # exist. Supplementary only — never changes a deterministic status.
+        evidence_pipeline.materialize_links(db, run)
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="run.requirements_evaluated",
@@ -180,6 +220,11 @@ def get_graph():
         builder.add_node("initialize", node_initialize)
         builder.add_node("validate_source_snapshot", node_validate_source_snapshot)
         builder.add_node(
+            "extract_facts_and_map_evidence",
+            node_extract_facts_and_map_evidence,
+        )
+        builder.add_node("verify_evidence", node_verify_evidence)
+        builder.add_node(
             "evaluate_requirements_and_rules",
             node_evaluate_requirements_and_rules,
         )
@@ -187,8 +232,10 @@ def get_graph():
         builder.add_edge(START, "initialize")
         builder.add_edge("initialize", "validate_source_snapshot")
         builder.add_edge(
-            "validate_source_snapshot", "evaluate_requirements_and_rules"
+            "validate_source_snapshot", "extract_facts_and_map_evidence"
         )
+        builder.add_edge("extract_facts_and_map_evidence", "verify_evidence")
+        builder.add_edge("verify_evidence", "evaluate_requirements_and_rules")
         builder.add_edge("evaluate_requirements_and_rules", "finalize_run")
         builder.add_edge("finalize_run", END)
         _graph = builder.compile(checkpointer=get_checkpointer())

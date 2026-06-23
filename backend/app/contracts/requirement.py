@@ -6,6 +6,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict
 
+from app.contracts.evidence import EvidenceLink
+
 RequirementStatus = Literal["fulfilled", "partial", "open", "needs_input", "blocked"]
 AssessmentBasis = Literal[
     "deterministic_rule", "semantic_assessment", "hybrid", "human_override"
@@ -38,6 +40,6 @@ class RequirementAssessment(BaseModel):
     basis: AssessmentBasis
     reasoning: str
     stale: bool
-    # M4 produces no evidence links (no extraction/anchoring).
-    evidence_links: list[dict] = []
+    # Populated in M5 from the deterministic evidence baseline (anchor links).
+    evidence_links: list[EvidenceLink] = []
     open_issues: list[OpenIssue] = []

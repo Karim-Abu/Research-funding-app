@@ -54,6 +54,8 @@ import {
   type SourceDocumentDto,
 } from "@/lib/sources"
 import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import { listProjectRuns } from "@/lib/runs"
+import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -511,6 +513,7 @@ function QuellenPageContent() {
   const liveMode = mode === "live"
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
+  const [completedRunId, setCompletedRunId] = React.useState<string | null>(null)
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
   )
@@ -575,6 +578,27 @@ function QuellenPageContent() {
     },
     [projectId, sourceClassification, refreshSources]
   )
+
+  // Resolve the latest completed run so the Evidenz tab can show live evidence.
+  React.useEffect(() => {
+    if (!liveMode || !projectId) {
+      setCompletedRunId(null)
+      return
+    }
+    let cancelled = false
+    listProjectRuns(projectId)
+      .then((runs) => {
+        if (cancelled) return
+        const completed = runs.find((r) => r.status === "completed")
+        setCompletedRunId(completed?.run_id ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setCompletedRunId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liveMode, projectId, liveSources])
 
   const sourceRows: Source[] = liveMode
     ? liveSources.map(toSourceRow)
@@ -699,7 +723,7 @@ function QuellenPageContent() {
               Quellen ({sourceCount})
             </TabsTrigger>
             <TabsTrigger value="evidenz">
-              Evidenz ({evidenceCount})
+              {liveMode ? "Evidenz" : `Evidenz (${evidenceCount})`}
             </TabsTrigger>
           </TabsList>
 
@@ -733,7 +757,18 @@ function QuellenPageContent() {
           </TabsContent>
 
           <TabsContent value="evidenz">
-            <EvidenceTab cards={dummyEvidence} />
+            {liveMode ? (
+              completedRunId ? (
+                <LiveEvidence runId={completedRunId} />
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Noch keine abgeschlossene Analyse. Starten Sie die Analyse, um
+                  Belege zu erzeugen.
+                </p>
+              )
+            ) : (
+              <EvidenceTab cards={dummyEvidence} />
+            )}
           </TabsContent>
         </Tabs>
 

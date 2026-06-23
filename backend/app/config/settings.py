@@ -57,6 +57,9 @@ class Settings(BaseSettings):
     max_expanded_archive_bytes: int = 50 * 1024 * 1024
     max_parsing_concurrency: int = 2
 
+    # Deterministic evidence baseline (Milestone 5) ----------------------
+    evidence_max_candidates_per_requirement: int = 3
+
     # Run orchestration (Milestone 3) ------------------------------------
     checkpoint_db_path: str = "var/checkpoints.db"
     max_run_concurrency: int = 2

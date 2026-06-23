@@ -573,3 +573,144 @@ class OpenIssue(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic evidence baseline (Milestone 5): EvidenceCandidate ->
+# EvidenceAnchor -> EvidenceLink. No LLM/embeddings — exact lexical + verify.
+# ---------------------------------------------------------------------------
+
+
+class EvidenceCandidate(Base):
+    """Deterministic lexical evidence candidate (internal; not API-exposed).
+
+    A proposed exact span copied from a frozen SourceFragment that targets a
+    versioned RequirementDefinition. Stores the exact span position so the
+    verifier can validate the quote at its expected offset (never a global
+    first-match)."""
+
+    __tablename__ = "evidence_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "target_requirement_id", "fragment_id", "quote_hash",
+            name="uq_candidate_run_target_fragment_quote",
+        ),
+    )
+
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    target_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="requirement"
+    )
+    target_requirement_id: Mapped[str] = mapped_column(String, nullable=False)
+    fragment_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_id: Mapped[str] = mapped_column(String, nullable=False)
+    proposed_quote: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Exact span position within the fragment's normalized_text.
+    span_start_in_fragment: Mapped[int] = mapped_column(nullable=False)
+    span_end_in_fragment: Mapped[int] = mapped_column(nullable=False)
+    match_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="exact_normalized"
+    )
+    # Internal lexical relevance — NEVER surfaced as confidence; separate from
+    # source verification.
+    retrieval_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Domain Model: proposed | accepted | rejected | needs_human_review.
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    retrieval_algorithm_version: Mapped[str] = mapped_column(String, nullable=False)
+    # Set by the verify stage to the anchor produced for this candidate's quote.
+    anchor_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class EvidenceAnchor(Base):
+    """Versioned concrete found-passage (openapi EvidenceAnchor). Locked to the
+    exact SourceVersion + normalizer version. M5 never sets human_verified and
+    leaves match_score/coverage null."""
+
+    __tablename__ = "evidence_anchors"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "source_version_id", "start_offset", "end_offset",
+            "quote_hash", name="uq_anchor_run_version_offsets_quote",
+        ),
+    )
+
+    anchor_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_id: Mapped[str] = mapped_column(String, nullable=False)
+    source_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: pdf | docx | txt | url
+    source_type: Mapped[str] = mapped_column(String, nullable=False)
+    fragment_id: Mapped[str] = mapped_column(String, nullable=False)
+    quote: Mapped[str] = mapped_column(Text, nullable=False)
+    quote_hash: Mapped[str] = mapped_column(String, nullable=False)
+    page: Mapped[int | None] = mapped_column(nullable=True)
+    section: Mapped[str | None] = mapped_column(String, nullable=True)
+    start_offset: Mapped[int | None] = mapped_column(nullable=True)
+    end_offset: Mapped[int | None] = mapped_column(nullable=True)
+    # Contract enum: exact_normalized | fuzzy | semantic | manual
+    match_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="exact_normalized"
+    )
+    # NULL in M5 — semantics undefined by the contract for deterministic exactness.
+    match_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    coverage: Mapped[float | None] = mapped_column(Float, nullable=True)
+    normalizer_version: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: unverified | exact_verified | human_verified | rejected
+    verification_status: Mapped[str] = mapped_column(String, nullable=False)
+    human_checked_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    human_checked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_accessed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class EvidenceLink(Base):
+    """Target-specific link anchor -> assessment/draft/claim/finding/fact
+    (openapi EvidenceLink). M5 creates only active requirement_assessment links."""
+
+    __tablename__ = "evidence_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "anchor_id", "target_type", "target_id", name="uq_link_anchor_target"
+        ),
+    )
+
+    evidence_link_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    anchor_id: Mapped[str] = mapped_column(
+        ForeignKey("evidence_anchors.anchor_id"), nullable=False, index=True
+    )
+    # Contract enum: requirement_assessment | draft_version | draft_claim |
+    # review_finding | extracted_fact
+    target_type: Mapped[str] = mapped_column(
+        String, nullable=False, default="requirement_assessment"
+    )
+    target_id: Mapped[str] = mapped_column(String, nullable=False)
+    claim_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    claim_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Contract enum: active | stale | removed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="active")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )

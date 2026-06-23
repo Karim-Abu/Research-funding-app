@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.contracts.requirement import OpenIssue as OpenIssueSchema
 from app.contracts.requirement import RequirementAssessment as AssessmentSchema
 from app.db.models import OpenIssue, RequirementAssessment
+from app.repositories import evidence as evidence_repo
 
 
 def list_for_run(db: Session, run_id: str) -> list[RequirementAssessment]:
@@ -51,6 +52,7 @@ def to_contracts(
     db: Session, run_id: str, *, stale: bool
 ) -> list[AssessmentSchema]:
     issues = _issues_by_target(db, run_id)
+    links = evidence_repo.links_by_assessment(db, run_id)
     out: list[AssessmentSchema] = []
     for assessment in list_for_run(db, run_id):
         out.append(
@@ -63,7 +65,10 @@ def to_contracts(
                 reasoning=assessment.reasoning,
                 # Staleness reflects current project/partner inputs vs snapshot.
                 stale=stale or assessment.stale,
-                evidence_links=[],
+                evidence_links=[
+                    evidence_repo.to_link_contract(link)
+                    for link in links.get(assessment.assessment_id, [])
+                ],
                 open_issues=[
                     _issue_to_contract(i)
                     for i in issues.get(assessment.requirement_id, [])
