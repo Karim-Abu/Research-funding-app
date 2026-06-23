@@ -24,11 +24,12 @@ def _mut(csrf, key=None):
 
 
 def _text_source(client, project_id, csrf):
-    # ASCII text only — the run just needs one processed source; M4 evaluates
-    # partner/project structure, not source content.
+    # The run just needs one processed source; M4 evaluates partner/project
+    # structure, not source content. Non-ASCII text now ingests cleanly
+    # (Unicode ingestion fix, Milestone 4.1).
     res = client.post(
         f"/api/v1/projects/{project_id}/sources/text",
-        json={"name": "Notiz", "text": "Project source content for the run.",
+        json={"name": "Notiz", "text": "Quelle für die Prüfung der Förderfähigkeit.",
               "data_classification": VALID_CLASSIFICATION},
         headers=_mut(csrf),
     )
