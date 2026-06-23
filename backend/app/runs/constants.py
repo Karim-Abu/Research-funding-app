@@ -1,13 +1,22 @@
-"""Canonical run constants for the minimal M3 technical workflow."""
+"""Canonical run constants for the deterministic precheck workflow."""
 from __future__ import annotations
 
-# Subset of the 12 canonical contract stages used by the minimal M3 graph.
-M3_STAGES = ["initialize", "validate_source_snapshot", "finalize_run"]
+# Subset of the 12 canonical contract stages used by the M4 graph. The
+# requirement/rule precheck stage sits between source validation and finalize;
+# the fact-extraction and drafting stages remain out of scope (M5+).
+WORKFLOW_STAGES = [
+    "initialize",
+    "validate_source_snapshot",
+    "evaluate_requirements_and_rules",
+    "finalize_run",
+]
 
-# Technical progress per stage — NOT proposal-analysis progress.
+# Technical progress per stage — covers the formal-eligibility precheck, NOT a
+# complete proposal analysis (no evidence, drafting, review or submission gate).
 STAGE_PROGRESS = {
-    "initialize": 33,
-    "validate_source_snapshot": 66,
+    "initialize": 25,
+    "validate_source_snapshot": 50,
+    "evaluate_requirements_and_rules": 75,
     "finalize_run": 100,
 }
 

@@ -14,10 +14,12 @@ from app.contracts.run import AnalysisRun as AnalysisRunSchema
 from app.contracts.run import AsyncAccepted, RunCreate, RunList, ResumeRequest
 from app.db.models import AnalysisRun, AsyncOperation, UsageRecord
 from app.db.session import get_db
+from app.registry import get_registry
 from app.repositories import audit, controls, idempotency
 from app.repositories import operations as operations_repo
 from app.repositories import projects as projects_repo
 from app.repositories import runs as runs_repo
+from app.runs import project_snapshot
 from app.runs import snapshot as snapshot_service
 from app.runs.constants import SNAPSHOT_VERSIONS, TERMINAL_OPERATION_STATUSES, TERMINAL_RUN_STATUSES
 from app.runs.executor import run_executor
@@ -69,6 +71,7 @@ def create_run(
 ) -> AsyncAccepted:
     project = _require_project(db, project_id, context.user.workspace_id)
     validate_processing_mode(payload.settings.processing_mode)
+    registry = get_registry()  # fail-closed: corrupt registry raises before any run
 
     scope = f"{context.user.workspace_id}:{context.user.id}:POST:/runs"
     fingerprint = idempotency.fingerprint(
@@ -104,6 +107,8 @@ def create_run(
         snapshot_versions={
             **SNAPSHOT_VERSIONS,
             "source_version_ids": [v.source_version_id for v in versions],
+            "requirement_registry_version": registry.requirement_registry_version,
+            "rule_registry_version": registry.rule_registry_version,
         },
         recheck_required=False, semantic_findings_stale=False,
     )
@@ -118,6 +123,10 @@ def create_run(
         ) from exc
 
     snapshot_service.persist_snapshot(db, run_id, versions)
+    # Freeze the immutable project + partner input snapshot for this run.
+    project_snapshot.build_and_persist(
+        db, run_id=run_id, project=project, registry=registry
+    )
     db.add(build_policy_snapshot(run_id, payload.settings, settings))
     db.add(
         UsageRecord(

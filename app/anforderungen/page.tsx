@@ -4,8 +4,12 @@ import * as React from "react"
 import { RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { RequirementsScreen } from "@/components/anforderungen/requirements-screen"
+import { LiveRequirements } from "@/components/anforderungen/live-requirements"
 import { Button } from "@/components/ui/button"
+import { useSession } from "@/components/providers/app-providers"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
+import { getActiveProjectId } from "@/lib/intake-store"
+import { listProjectRuns } from "@/lib/runs"
 import {
   getProjectState,
   ApiError,
@@ -24,7 +28,50 @@ const stepStatus = [
   "upcoming",
 ] as const
 
-export default function AnforderungenPage() {
+// --- Live mode: render the run-scoped RequirementAssessments ----------------
+function LiveAnforderungen() {
+  const [runId, setRunId] = React.useState<string | null>(null)
+  const [resolved, setResolved] = React.useState(false)
+
+  React.useEffect(() => {
+    const projectId = getActiveProjectId()
+    if (!projectId) {
+      setResolved(true)
+      return
+    }
+    listProjectRuns(projectId)
+      .then((runs) => {
+        const completed = runs.find((r) => r.status === "completed")
+        setRunId(completed?.run_id ?? null)
+      })
+      .catch(() => setRunId(null))
+      .finally(() => setResolved(true))
+  }, [])
+
+  return (
+    <AppShell
+      user={currentUser}
+      projects={projects}
+      activeProjectId={activeProjectId}
+      currentStep={3}
+      stepStatus={[...stepStatus]}
+    >
+      {!resolved ? null : runId ? (
+        <LiveRequirements runId={runId} />
+      ) : (
+        <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+          <p className="text-sm text-muted-foreground">
+            Es liegt noch keine abgeschlossene Prüfung vor. Starten Sie zunächst
+            unter «Quellen» eine Analyse.
+          </p>
+        </div>
+      )}
+    </AppShell>
+  )
+}
+
+// --- Mock mode: unchanged elaborate mock screen -----------------------------
+function MockAnforderungen() {
   const [requirements, setRequirements] = React.useState<Requirement[] | null>(
     null
   )
@@ -70,11 +117,15 @@ export default function AnforderungenPage() {
           </div>
         </div>
       ) : requirements === null ? (
-        // Distinct keys: state initializers must re-run once data arrives.
         <RequirementsScreen key="loading" forceState="loading" />
       ) : (
         <RequirementsScreen key="loaded" requirements={requirements} />
       )}
     </AppShell>
   )
+}
+
+export default function AnforderungenPage() {
+  const { mode } = useSession()
+  return mode === "live" ? <LiveAnforderungen /> : <MockAnforderungen />
 }

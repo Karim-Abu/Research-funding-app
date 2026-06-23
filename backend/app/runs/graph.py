@@ -20,6 +20,7 @@ from app.config.settings import get_settings
 from app.db.models import AnalysisRun, RunSourceSnapshot
 from app.db.session import SessionLocal
 from app.repositories import audit, controls
+from app.runs import evaluation
 from app.runs.constants import STAGE_PROGRESS
 from app.runs.transitions import transition_run
 
@@ -101,6 +102,37 @@ def node_validate_source_snapshot(state: RunState) -> RunState:
         db.close()
 
 
+def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
+    """Deterministic formal-eligibility precheck: run the 12 official core rules
+    against the frozen project+partner snapshot, persist RuleResults +
+    RequirementAssessments + OpenIssues. No LLM, no network, no source text."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        counts = evaluation.evaluate_run(db, run.run_id)
+        controls.record(
+            db, workspace_id=run.workspace_id, project_id=run.project_id,
+            source_id=None, control_id="run.requirements_evaluated",
+            status="passed",
+            detail=(
+                f"blocker={counts['blocker']} warning={counts['warning']} "
+                f"info={counts['info']}"
+            ),
+        )
+        _set_stage(db, run, "evaluate_requirements_and_rules")
+        audit.record(
+            db, workspace_id=run.workspace_id, actor_user_id=None,
+            action="run.requirements_evaluated", target_type="run",
+            target_id=run.run_id, detail=counts,
+        )
+        db.commit()
+        return state
+    finally:
+        db.close()
+
+
 def node_finalize_run(state: RunState) -> RunState:
     db = SessionLocal()
     try:
@@ -147,10 +179,17 @@ def get_graph():
         builder = StateGraph(RunState)
         builder.add_node("initialize", node_initialize)
         builder.add_node("validate_source_snapshot", node_validate_source_snapshot)
+        builder.add_node(
+            "evaluate_requirements_and_rules",
+            node_evaluate_requirements_and_rules,
+        )
         builder.add_node("finalize_run", node_finalize_run)
         builder.add_edge(START, "initialize")
         builder.add_edge("initialize", "validate_source_snapshot")
-        builder.add_edge("validate_source_snapshot", "finalize_run")
+        builder.add_edge(
+            "validate_source_snapshot", "evaluate_requirements_and_rules"
+        )
+        builder.add_edge("evaluate_requirements_and_rules", "finalize_run")
         builder.add_edge("finalize_run", END)
         _graph = builder.compile(checkpointer=get_checkpointer())
     return _graph

@@ -23,7 +23,12 @@ class Settings(BaseSettings):
     policy_version: str = "1.1.0"
     agent_registry_version: str = "1.1.0"
     rule_registry_version: str = "1.1.0"
+    requirement_registry_version: str = "1.0.0"
     tool_registry_version: str = "1.1.0"
+
+    # Requirement / Rule registry (Milestone 4). Resolved relative to the repo
+    # root by the loader when unset; override for tests/alternate layouts.
+    contracts_dir: str | None = None
 
     # Session / cookie ---------------------------------------------------
     session_cookie_name: str = "rf_session"

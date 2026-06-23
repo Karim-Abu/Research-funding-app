@@ -117,7 +117,9 @@ describe("run client (live)", () => {
     }
   })
 
-  it("keeps live analysis capability-disabled (features.runs=false)", () => {
-    expect(MOCK_CAPABILITIES.features.runs).toBe(false)
+  it("enables live analysis in M4 (features.runs=true) while review/export stay off", () => {
+    expect(MOCK_CAPABILITIES.features.runs).toBe(true)
+    expect(MOCK_CAPABILITIES.features.review).toBe(false)
+    expect(MOCK_CAPABILITIES.features.export).toBe(false)
   })
 })

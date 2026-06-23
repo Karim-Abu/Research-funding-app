@@ -417,3 +417,159 @@ class UsageRecord(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Requirements, rules & partner eligibility (Milestone 4)
+# ---------------------------------------------------------------------------
+
+
+class Partner(Base):
+    """Structured project partner (openapi Partner schema). The eligibility /
+    independence fields feed the deterministic partner rules."""
+
+    __tablename__ = "partners"
+
+    partner_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: research_partner | implementation_partner | other
+    partner_type: Mapped[str] = mapped_column(String, nullable=False)
+    project_role: Mapped[str | None] = mapped_column(String, nullable=True)
+    country: Mapped[str | None] = mapped_column(String, nullable=True)
+    location: Mapped[str | None] = mapped_column(String, nullable=True)
+    contribution: Mapped[str | None] = mapped_column(String, nullable=True)
+    uid: Mapped[str | None] = mapped_column(String, nullable=True)
+    industry: Mapped[str | None] = mapped_column(String, nullable=True)
+    fte: Mapped[float | None] = mapped_column(Float, nullable=True)
+    startup_status: Mapped[bool | None] = mapped_column(nullable=True)
+    swiss_value_creation: Mapped[bool | None] = mapped_column(nullable=True)
+    # Contract enum: eligible | not_eligible | needs_verification | null
+    research_partner_eligibility_status: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    official_representative: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # Contract enum: confirmed | exception | needs_input | null
+    personnel_independence_status: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    financial_independence_status: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class RunProjectSnapshot(Base):
+    """Immutable frozen copy of the structured project + partner inputs at run
+    creation. Staleness is detected by comparing the current inputs hash to
+    ``content_hash`` — the run is never re-evaluated against changed data."""
+
+    __tablename__ = "run_project_snapshots"
+
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), primary_key=True
+    )
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    partners_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    requirement_registry_version: Mapped[str] = mapped_column(String, nullable=False)
+    rule_registry_version: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class RuleResult(Base):
+    """Deterministic outcome of one rule for one run (Domain Model RuleResult).
+    Status enum: passed | failed | needs_input | not_applicable."""
+
+    __tablename__ = "rule_results"
+
+    rule_result_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    rule_id: Mapped[str] = mapped_column(String, nullable=False)
+    rule_version: Mapped[str] = mapped_column(String, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    # Richer registry result_mapping label (e.g. warning, human_decision_required).
+    outcome_label: Mapped[str] = mapped_column(String, nullable=False)
+    mapping_key: Mapped[str] = mapped_column(String, nullable=False)
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    execution_mode: Mapped[str] = mapped_column(String, nullable=False)
+    # Observed structured values + expected condition (NO raw source text).
+    observed: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class RequirementAssessment(Base):
+    """Aggregated requirement outcome for one run (openapi RequirementAssessment).
+    Status: fulfilled | partial | open | needs_input | blocked."""
+
+    __tablename__ = "requirement_assessments"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "requirement_id", name="uq_run_requirement"
+        ),
+    )
+
+    assessment_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    requirement_id: Mapped[str] = mapped_column(String, nullable=False)
+    requirement_version: Mapped[str] = mapped_column(String, nullable=False)
+    title: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    # Basis enum: deterministic_rule | semantic_assessment | hybrid | human_override
+    basis: Mapped[str] = mapped_column(String, nullable=False)
+    reasoning: Mapped[str] = mapped_column(Text, nullable=False)
+    stale: Mapped[bool] = mapped_column(default=False, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class OpenIssue(Base):
+    """Open question / gap / conflict tied to a requirement (openapi OpenIssue).
+    Status: open | resolved | overridden | dismissed."""
+
+    __tablename__ = "open_issues"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "target_type", "target_id", name="uq_run_issue_target"
+        ),
+    )
+
+    issue_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    issue_type: Mapped[str] = mapped_column(String, nullable=False)
+    # Severity enum: blocker | warning | info
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    target_type: Mapped[str] = mapped_column(String, nullable=False)
+    target_id: Mapped[str] = mapped_column(String, nullable=False)
+    recommended_next_action: Mapped[str] = mapped_column(Text, nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open")
+    responsible_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
