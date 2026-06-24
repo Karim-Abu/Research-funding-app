@@ -138,8 +138,52 @@ Post-implementation final verification:
 - P0: none found.
 - P1: none found.
 
+## Verify-and-close-gaps pass (2026-06-24)
+
+A dedicated verification pass against the full spec + the 8 binding verification
+additions. **No production code required changes** — the committed implementation
+(`3e5a6b0`) already routes seeded draft edits + evidence links through the same
+services as the API (`drafts_repo.apply_update`, `fields_service.create_draft_evidence_link`),
+so character-limit, `base_version_id` currency, immutable `DraftVersion`,
+`recheck_required` and audit invariants are identical to normal user actions.
+The only change is **5 new safety tests** added to `backend/tests/test_demo_seed.py`.
+
+Results (all green):
+- **Full suites:** backend `pytest` **144 passed** (139 + 5 new); frontend
+  `pnpm test` **62 passed**; `pnpm lint` / `pnpm build` / `tsc --noEmit` exit 0;
+  `pnpm exec playwright test` **7 passed** (incl. `demo-dataset.spec.ts`).
+- **Isolated seed run** (fully separate temp `DATABASE_URL` + `CHECKPOINT_DB_PATH`
+  + `SOURCE_STORAGE_DIR`; all artifacts removed afterward, binding #1):
+  - **Migration chain** (#3): `upgrade head → downgrade base → upgrade head` clean.
+  - **Idempotent**: first seed → `projects=2 manifest=21 sources=6 completed_runs=2`;
+    re-seed → identical counts (no duplicates); `--reset` → reseeds clean.
+  - **Production fail-closed** (#5): `APP_ENV=production python -m app.demo.seed`
+    exits non-zero and creates **no project, manifest row, source or storage file**.
+- **New tests** (binding #2/#4/#5/#6/#7): no-network-during-seed (all sockets
+  blocked → seed still succeeds, proving no provider/OpenAI/Anthropic/Firecrawl/HTTP
+  call); partial-failure safety (a mid-seed run failure leaves no draft-ready
+  dashboard for the aborted project); production-guard-creates-nothing;
+  capabilities (`review`/`export`/`web_research` stay false, no cloud capability)
+  unchanged after seeding; seeded edits/links satisfy user-action invariants
+  (`created_by` template→user chaining, within character limit, `recheck_required`).
+- **Conformance audit** (persisted artifacts, not fixtures): Project A — 12
+  RuleResults, requirement assessments, exact-verified anchors, ≥2 user
+  DraftVersions, ≥2 active draft EvidenceLinks, a retained placeholder + untouched
+  templates, `recheck_required` truthful, never reviewed/approved; Project B —
+  `REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE` blocker + OpenIssue produced by the
+  real Rule Engine. `main.py` lifespan does not auto-seed. Dashboard summaries are
+  derived: A → `continue_draft` / step 5 (Entwurf), B → `review_analysis` / step 3
+  (Anforderungen).
+
+**Cosmetic deviation (non-functional, left as implemented):** the demo partner
+locations/FTE (`Aarau` / 42 FTE; research partner `Windisch`) differ from the spec's
+example values (`Winterthur` / 68; `Brugg`). These are intentional synthetic values
+and do not affect any rule, assessment, evidence or dashboard outcome.
+
 ## Readiness Verdict
 
-M6.1 is ready for review. The deterministic demo seed, live dashboard states,
-draft continuation path, open requirements path, reset isolation, and automated
-verification are in place.
+M6.1 is ready for review and **verified**. The deterministic demo seed, live
+dashboard states, draft continuation path, open requirements path, reset
+isolation, production fail-closed guard, migration chain, no-network guarantee and
+partial-failure safety are all confirmed by automated tests + an isolated end-to-end
+seed run. Ready for **Milestone 7 (Review, Recheck, Approval)**.
