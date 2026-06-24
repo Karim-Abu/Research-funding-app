@@ -118,6 +118,7 @@ export interface DashboardProject {
   warningBadge?: WarningBadge
   /** When true, the card shows a spinner + "Analyse läuft…" and the next-action button becomes "Fortschritt ansehen". */
   analysisRunning?: boolean
+  isDemo?: boolean
 }
 
 

@@ -6,7 +6,7 @@ inheritance so the created fields stay in sync.
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Literal
+from typing import Literal
 
 from pydantic import BaseModel, Field
 
@@ -29,6 +29,24 @@ class ProjectPatch(BaseModel):
     budget_framework_chf: float | None = Field(default=None, ge=0)
 
 
+class WorkflowSummary(BaseModel):
+    bearbeitungsstand_percent: int = Field(ge=0, le=100)
+    current_step: int = Field(ge=1, le=8)
+    current_step_label: str | None = None
+    next_action: Literal[
+        "upload_sources",
+        "start_analysis",
+        "review_analysis",
+        "continue_draft",
+        "approve_review",
+        "create_export",
+        "resume_analysis",
+        "view_progress",
+    ]
+    warning_badge: Literal["run_stopped"] | None = None
+    latest_run_id: str | None = None
+
+
 class Project(ProjectCreate):
     project_id: str
     workspace_id: str
@@ -36,8 +54,7 @@ class Project(ProjectCreate):
     created_at: datetime
     updated_at: datetime
     active_run_id: str | None = None
-    # WorkflowSummary is optional in the contract; null in Milestone 1.
-    workflow_summary: dict[str, Any] | None = None
+    workflow_summary: WorkflowSummary | None = None
 
 
 class ProjectList(BaseModel):

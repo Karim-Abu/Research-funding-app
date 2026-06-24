@@ -149,6 +149,34 @@ class IdempotencyRecord(Base):
     )
 
 
+class DemoSeedManifest(Base):
+    """Internal ownership ledger for explicit demo seeds.
+
+    This table is not API-exposed. Reset uses it to delete only objects and
+    storage refs that were created by the deterministic demo seed.
+    """
+
+    __tablename__ = "demo_seed_manifest"
+    __table_args__ = (
+        UniqueConstraint(
+            "seed_version", "object_type", "object_id",
+            name="uq_demo_seed_manifest_object",
+        ),
+    )
+
+    manifest_id: Mapped[str] = mapped_column(String, primary_key=True)
+    seed_version: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    object_type: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    object_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    storage_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    label: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
 # ---------------------------------------------------------------------------
 # Sources (Milestone 2): SourceDocument -> SourceVersion -> SourceFragment
 # ---------------------------------------------------------------------------

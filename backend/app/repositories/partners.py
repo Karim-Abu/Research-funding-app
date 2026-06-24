@@ -68,9 +68,10 @@ def create(
     workspace_id: str,
     created_by: str,
     data: PartnerCreate,
+    partner_id: str | None = None,
 ) -> Partner:
     partner = Partner(
-        partner_id=str(uuid.uuid4()),
+        partner_id=partner_id or str(uuid.uuid4()),
         project_id=project_id,
         workspace_id=workspace_id,
         created_by=created_by,

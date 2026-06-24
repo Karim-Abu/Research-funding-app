@@ -20,9 +20,10 @@ def create_document(
     source_type: str,
     classification: dict,
     status: str = "uploaded",
+    source_id: str | None = None,
 ) -> SourceDocument:
     document = SourceDocument(
-        source_id=str(uuid.uuid4()),
+        source_id=source_id or str(uuid.uuid4()),
         project_id=project_id,
         workspace_id=workspace_id,
         name=name,
@@ -47,9 +48,10 @@ def create_version(
     byte_size: int,
     mime_type: str,
     status: str = "uploaded",
+    source_version_id: str | None = None,
 ) -> SourceVersion:
     version = SourceVersion(
-        source_version_id=str(uuid.uuid4()),
+        source_version_id=source_version_id or str(uuid.uuid4()),
         source_document_id=document.source_id,
         version_number=1,
         original_content_hash=original_content_hash,

@@ -19,7 +19,10 @@ def list_projects(
     db: Session = Depends(get_db),
 ) -> ProjectList:
     rows = projects.list_by_workspace(db, context.user.workspace_id)
-    return ProjectList(items=[projects.to_contract(p) for p in rows], next_cursor=None)
+    return ProjectList(
+        items=[projects.to_contract(db, p) for p in rows],
+        next_cursor=None,
+    )
 
 
 @router.post("/projects", response_model=Project, status_code=201)
@@ -55,7 +58,7 @@ def create_project(
         created_by=context.user.id,
         data=payload,
     )
-    body = projects.to_contract(project).model_dump(mode="json")
+    body = projects.to_contract(db, project).model_dump(mode="json")
     idempotency.save(
         db,
         scope=scope,
@@ -74,7 +77,7 @@ def create_project(
         target_id=project.project_id,
     )
     db.commit()
-    return projects.to_contract(project)
+    return projects.to_contract(db, project)
 
 
 @router.get("/projects/{project_id}", response_model=Project)
@@ -91,7 +94,7 @@ def get_project(
             title="Resource not found",
             detail="Project not found.",
         )
-    return projects.to_contract(project)
+    return projects.to_contract(db, project)
 
 
 @router.patch("/projects/{project_id}", response_model=Project)
@@ -119,4 +122,4 @@ def update_project(
         target_id=project.project_id,
     )
     db.commit()
-    return projects.to_contract(project)
+    return projects.to_contract(db, project)

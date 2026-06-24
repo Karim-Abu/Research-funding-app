@@ -1,7 +1,6 @@
 """Sources router — list / upload files / create text / import url / get / delete."""
 from __future__ import annotations
 
-import hashlib
 import json
 
 from fastapi import (
@@ -24,7 +23,7 @@ from app.db.session import get_db
 from app.ingestion.pipeline import process_source_version
 from app.ingestion.signatures import UnsupportedFileError, detect_source_type
 from app.policy.classification import resolve_effective_classification
-from app.repositories import audit, controls, idempotency
+from app.repositories import audit, idempotency
 from app.repositories import projects as projects_repo
 from app.repositories import sources as sources_repo
 from app.security.deps import (
@@ -33,21 +32,13 @@ from app.security.deps import (
     require_unsafe_guards,
     settings_dep,
 )
+from app.sources import service as source_service
 from app.storage import get_storage
 
 router = APIRouter(tags=["Sources"])
 
-_UPLOAD_CONTROLS = (
-    "source.size",
-    "source.type",
-    "source.signature",
-    "source.archive_safety",
-    "source.path_safety",
-)
-
-
 def _sha256(data: bytes) -> str:
-    return hashlib.sha256(data).hexdigest()
+    return source_service.sha256_bytes(data)
 
 
 def _require_project(db: Session, project_id: str, workspace_id: str):
@@ -76,26 +67,7 @@ def _parse_classification(raw: str | dict) -> dict:
 
 
 def _record_upload_controls(db, doc, version, downgrade: bool) -> None:
-    for control_id in _UPLOAD_CONTROLS:
-        controls.record(
-            db,
-            workspace_id=doc.workspace_id,
-            project_id=doc.project_id,
-            source_id=doc.source_id,
-            source_version_id=version.source_version_id,
-            control_id=control_id,
-            status="passed",
-        )
-    controls.record(
-        db,
-        workspace_id=doc.workspace_id,
-        project_id=doc.project_id,
-        source_id=doc.source_id,
-        source_version_id=version.source_version_id,
-        control_id="source.classification",
-        status="warning" if downgrade else "passed",
-        detail="downgrade_clamped_to_project" if downgrade else None,
-    )
+    source_service.record_upload_controls(db, doc, version, downgrade)
 
 
 def _idempotency_scope(context: AuthContext, path: str) -> str:
@@ -240,7 +212,6 @@ def create_text_source(
     ),
 ) -> SourceDocument:
     project = _require_project(db, project_id, context.user.workspace_id)
-    source_dc = payload.data_classification.model_dump()
 
     fingerprint = idempotency.fingerprint(
         "POST", f"/projects/{project_id}/sources/text", payload.model_dump_json()
@@ -255,25 +226,11 @@ def create_text_source(
             )
         return SourceDocument(**existing.response_body)
 
-    effective, downgrade = resolve_effective_classification(
-        project.data_classification, source_dc
-    )
-    data = payload.text.encode("utf-8")
-    ref = get_storage().put(data)
-    doc = sources_repo.create_document(
-        db, project_id=project_id, workspace_id=context.user.workspace_id,
-        created_by=context.user.id, name=payload.name, source_type="txt",
-        classification=effective, status="uploaded",
-    )
-    version = sources_repo.create_version(
-        db, document=doc, original_content_hash=_sha256(data),
-        classification=effective, storage_ref=ref, original_filename=payload.name,
-        byte_size=len(data), mime_type="text/plain", status="uploaded",
-    )
-    _record_upload_controls(db, doc, version, downgrade)
-    audit.record(
-        db, workspace_id=doc.workspace_id, actor_user_id=context.user.id,
-        action="source.create", target_type="source", target_id=doc.source_id,
+    doc, version = source_service.prepare_text_source(
+        db,
+        project=project,
+        payload=payload,
+        actor_user_id=context.user.id,
     )
     db.commit()
 

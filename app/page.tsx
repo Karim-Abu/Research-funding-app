@@ -15,6 +15,7 @@ import { useSession } from "@/components/providers/app-providers"
 import { listProjects, toDashboardCard } from "@/lib/projects"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { setActiveProjectId } from "@/lib/intake-store"
 import type { DashboardProject, NextAction } from "@/lib/types"
 
 // The dashboard has no active workflow step — no stepper rendered.
@@ -29,7 +30,7 @@ const ACTION_ROUTES: Record<NextAction | "view_progress", string> = {
   start_analysis: "/quellen",
   review_analysis: "/anforderungen",
   // Beta: Review ist die einzige Editier-Oberfläche.
-  continue_draft: "/review",
+  continue_draft: "/editor",
   approve_review: "/review",
   create_export: "/export",
   resume_analysis: "/quellen",
@@ -70,7 +71,8 @@ export default function DashboardPage() {
 
   const cards = mode === "live" ? liveCards : dashboardProjects
 
-  function handleAction(_projectId: string, action: NextAction | "view_progress") {
+  function handleAction(projectId: string, action: NextAction | "view_progress") {
+    setActiveProjectId(projectId)
     router.push(ACTION_ROUTES[action])
   }
 

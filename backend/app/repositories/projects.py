@@ -9,13 +9,19 @@ from sqlalchemy.orm import Session
 from app.contracts.project import Project as ProjectSchema
 from app.contracts.project import ProjectCreate, ProjectPatch
 from app.db.models import Project
+from app.workflow_summary import calculate as calculate_workflow_summary
 
 
 def create(
-    db: Session, *, workspace_id: str, created_by: str, data: ProjectCreate
+    db: Session,
+    *,
+    workspace_id: str,
+    created_by: str,
+    data: ProjectCreate,
+    project_id: str | None = None,
 ) -> Project:
     project = Project(
-        project_id=str(uuid.uuid4()),
+        project_id=project_id or str(uuid.uuid4()),
         workspace_id=workspace_id,
         title=data.title,
         description=data.description,
@@ -62,7 +68,7 @@ def apply_patch(db: Session, project: Project, patch: ProjectPatch) -> Project:
     return project
 
 
-def to_contract(project: Project) -> ProjectSchema:
+def to_contract(db: Session, project: Project) -> ProjectSchema:
     return ProjectSchema(
         project_id=project.project_id,
         workspace_id=project.workspace_id,
@@ -76,5 +82,7 @@ def to_contract(project: Project) -> ProjectSchema:
         created_at=project.created_at,
         updated_at=project.updated_at,
         active_run_id=project.active_run_id,
-        workflow_summary=None,
+        workflow_summary=calculate_workflow_summary(
+            db, project.project_id, project.workspace_id
+        ),
     )

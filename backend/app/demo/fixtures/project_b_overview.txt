@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Das Projekt Zustandsüberwachung für Produktionsanlagen entwickelt eine deterministische Vorprüfung von Maschinensignalen für Wartungsentscheidungen. Der Schweizer Umsetzungspartner Helvetic Monitoring Systems AG betreibt Pilotanlagen und ist in der Schweiz wertschöpfend tätig.
+
+Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. Für diese Demo ist absichtlich kein beitragsberechtigter Schweizer Forschungspartner erfasst, damit die Anforderungen offen bleiben.

@@ -6,6 +6,7 @@ local-dev only and are documented in the README. Never commit real secrets.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,6 +18,8 @@ class Settings(BaseSettings):
 
     # Database -----------------------------------------------------------
     database_url: str = "sqlite:///./app.db"
+    app_env: Literal["development", "test", "production"] = "development"
+    demo_data_enabled: bool = False
 
     # Version reporting (resolved from final_backend_contracts_v1_1) -------
     api_version: str = "1.1.0"

@@ -1,15 +1,15 @@
-"""Fields router — listFields / getField / updateField + draft EvidenceLinks."""
+"""Fields router: listFields / getField / updateField + draft EvidenceLinks."""
 from __future__ import annotations
 
-from sqlalchemy.orm import Session
-
 from fastapi import APIRouter, Depends, Header, Response
+from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
 from app.contracts.draft import DraftPatch, EvidenceLinkCreate, PortalFieldDraft
 from app.contracts.evidence import EvidenceLink
-from app.db.models import AnalysisRun, EvidenceAnchor
+from app.db.models import AnalysisRun
 from app.db.session import get_db
+from app.fields import service as fields_service
 from app.registry import get_registry
 from app.repositories import audit
 from app.repositories import drafts as drafts_repo
@@ -26,7 +26,10 @@ def _require_run(db: Session, run_id: str, workspace_id: str) -> AnalysisRun:
     run = runs_repo.get_scoped(db, run_id, workspace_id)
     if run is None:
         raise ProblemException(
-            status=404, code="not_found", title=_NOT_FOUND, detail="Run not found.",
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
+            detail="Run not found.",
         )
     return run
 
@@ -39,13 +42,18 @@ def _supported_field(field_id: str) -> bool:
 def _require_draft(db: Session, run: AnalysisRun, field_id: str):
     if not _supported_field(field_id):
         raise ProblemException(
-            status=404, code="not_found", title=_NOT_FOUND,
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
             detail="Field is not a supported draft field.",
         )
     draft = drafts_repo.get_draft(db, run.run_id, field_id)
     if draft is None:
         raise ProblemException(
-            status=404, code="not_found", title=_NOT_FOUND, detail="Draft not found.",
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
+            detail="Draft not found.",
         )
     return draft
 
@@ -57,7 +65,6 @@ def list_fields(
     db: Session = Depends(get_db),
 ) -> list[PortalFieldDraft]:
     run = _require_run(db, run_id, context.user.workspace_id)
-    # Stable canonical registry order, supported fields only.
     out: list[PortalFieldDraft] = []
     for field in get_registry().m6_draft_fields():
         draft = drafts_repo.get_draft(db, run.run_id, field.field_id)
@@ -89,7 +96,9 @@ def update_field(
     run = _require_run(db, run_id, context.user.workspace_id)
     draft = _require_draft(db, run, field_id)
     drafts_repo.apply_update(
-        db, run, draft,
+        db,
+        run,
+        draft,
         base_version_id=payload.base_version_id,
         text=payload.text,
         source_operation_id=payload.source_operation_id,
@@ -101,7 +110,8 @@ def update_field(
 
 @router.post(
     "/runs/{run_id}/fields/{field_id}/evidence-links",
-    response_model=EvidenceLink, status_code=201,
+    response_model=EvidenceLink,
+    status_code=201,
 )
 def create_evidence_link(
     run_id: str,
@@ -115,30 +125,13 @@ def create_evidence_link(
 ) -> EvidenceLink:
     run = _require_run(db, run_id, context.user.workspace_id)
     draft = _require_draft(db, run, field_id)
-    # The base version must be the current draft version (optimistic concurrency).
-    if draft.current_version_id != payload.base_version_id:
-        raise ProblemException(
-            status=409, code="stale_base_version", title="Conflict",
-            detail="Dieser Abschnitt wurde zwischenzeitlich geändert.",
-        )
-    anchor = db.get(EvidenceAnchor, payload.anchor_id)
-    if anchor is None or anchor.run_id != run.run_id or anchor.workspace_id != run.workspace_id:
-        raise ProblemException(
-            status=404, code="not_found", title=_NOT_FOUND,
-            detail="Evidence anchor not found in this run.",
-        )
-    link = evidence_repo.upsert_draft_link(
-        db, run, payload.anchor_id, draft.current_version_id
-    )
-    run.recheck_required = True
-    audit.record(
-        db, workspace_id=run.workspace_id, actor_user_id=context.user.id,
-        action="evidence_link.created", target_type="evidence_link",
-        target_id=link.evidence_link_id, detail={"anchor_id": payload.anchor_id},
-    )
-    audit.record(
-        db, workspace_id=run.workspace_id, actor_user_id=context.user.id,
-        action="run.recheck_required", target_type="run", target_id=run.run_id,
+    link = fields_service.create_draft_evidence_link(
+        db,
+        run=run,
+        draft=draft,
+        anchor_id=payload.anchor_id,
+        base_version_id=payload.base_version_id,
+        actor_user_id=context.user.id,
     )
     db.commit()
     return evidence_repo.to_link_contract(link)
@@ -160,19 +153,28 @@ def delete_evidence_link(
     link = evidence_repo.get_link_scoped(db, evidence_link_id, run.run_id)
     if link is None or link.target_type != "draft_version":
         raise ProblemException(
-            status=404, code="not_found", title=_NOT_FOUND,
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
             detail="Evidence link not found.",
         )
     evidence_repo.remove_link(db, link)
     run.recheck_required = True
     audit.record(
-        db, workspace_id=run.workspace_id, actor_user_id=context.user.id,
-        action="evidence_link.removed", target_type="evidence_link",
+        db,
+        workspace_id=run.workspace_id,
+        actor_user_id=context.user.id,
+        action="evidence_link.removed",
+        target_type="evidence_link",
         target_id=link.evidence_link_id,
     )
     audit.record(
-        db, workspace_id=run.workspace_id, actor_user_id=context.user.id,
-        action="run.recheck_required", target_type="run", target_id=run.run_id,
+        db,
+        workspace_id=run.workspace_id,
+        actor_user_id=context.user.id,
+        action="run.recheck_required",
+        target_type="run",
+        target_id=run.run_id,
     )
     db.commit()
     return Response(status_code=204)

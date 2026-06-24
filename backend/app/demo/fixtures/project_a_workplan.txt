@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Das Arbeitspaket 1 beschreibt die Auswahl biobasierter Harzsysteme und rezyklierbarer Faserkombinationen. Arbeitspaket 2 entwickelt den KI-gestützten Prozessmonitor für Aushärtung, Temperaturführung und Ausschussreduktion. Arbeitspaket 3 validiert Demonstratorbauteile mit mechanischen Prüfungen und Lebenszyklusindikatoren.
+
+Die Projektpartner planen eine iterative Entwicklung mit Laborversuchen, Kleinserienmuster und einem abschliessenden Demonstrator. Offene Angaben zu detaillierten Kostenpositionen bleiben bewusst als Platzhalter im Entwurf.
