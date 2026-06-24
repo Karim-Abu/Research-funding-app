@@ -24,6 +24,7 @@ export const MOCK_CAPABILITIES: Capabilities = {
     runs: true,
     requirements: true,
     evidence: true,
+    drafts: true,
     review: false,
     export: false,
     web_research: false,

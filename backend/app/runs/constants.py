@@ -10,18 +10,22 @@ WORKFLOW_STAGES = [
     "extract_facts_and_map_evidence",
     "verify_evidence",
     "evaluate_requirements_and_rules",
+    "draft_fields",
+    "create_template_drafts",
     "finalize_run",
 ]
 
-# Technical progress per stage — covers the deterministic formal-eligibility
-# precheck + evidence baseline, NOT a complete proposal analysis (no AI
-# extraction, drafting, review or submission gate).
+# Technical progress per stage — covers the deterministic precheck + evidence
+# baseline + deterministic template drafts. NOT a complete/reviewed proposal
+# (no AI drafting, critic, review, approval or submission gate).
 STAGE_PROGRESS = {
-    "initialize": 16,
-    "validate_source_snapshot": 33,
-    "extract_facts_and_map_evidence": 50,
-    "verify_evidence": 66,
-    "evaluate_requirements_and_rules": 83,
+    "initialize": 12,
+    "validate_source_snapshot": 25,
+    "extract_facts_and_map_evidence": 37,
+    "verify_evidence": 50,
+    "evaluate_requirements_and_rules": 62,
+    "draft_fields": 75,
+    "create_template_drafts": 87,
     "finalize_run": 100,
 }
 

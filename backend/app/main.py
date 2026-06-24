@@ -13,6 +13,7 @@ from app.api import (
     auth,
     capabilities,
     evidence,
+    fields,
     health,
     me,
     operations,
@@ -83,6 +84,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
     health, auth, me, capabilities, projects, sources, runs, operations,
-    partners, requirements, evidence,
+    partners, requirements, evidence, fields,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

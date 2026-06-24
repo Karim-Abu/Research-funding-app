@@ -5,6 +5,7 @@ They are loaded and validated once at startup (fail-closed on corruption) from
 ``final_backend_contracts_v1_1`` and never mutated at runtime.
 """
 from app.registry.loader import (
+    PortalFieldDef,
     Registry,
     RegistryError,
     RequirementDef,
@@ -14,6 +15,7 @@ from app.registry.loader import (
 )
 
 __all__ = [
+    "PortalFieldDef",
     "Registry",
     "RegistryError",
     "RequirementDef",

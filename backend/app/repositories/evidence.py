@@ -226,6 +226,90 @@ def upsert_link(
     return link
 
 
+# --- draft-version links (Milestone 6) -------------------------------------
+
+
+def upsert_draft_link(
+    db: Session, run: AnalysisRun, anchor_id: str, draft_version_id: str
+) -> EvidenceLink:
+    """Link an anchor to a current draft version (active). Idempotent."""
+    existing = db.scalar(
+        select(EvidenceLink).where(
+            EvidenceLink.anchor_id == anchor_id,
+            EvidenceLink.target_type == "draft_version",
+            EvidenceLink.target_id == draft_version_id,
+        )
+    )
+    if existing is not None:
+        if existing.status == "removed":
+            existing.status = "active"
+        return existing
+    link = EvidenceLink(
+        evidence_link_id=str(uuid.uuid4()),
+        run_id=run.run_id,
+        workspace_id=run.workspace_id,
+        anchor_id=anchor_id,
+        target_type="draft_version",
+        target_id=draft_version_id,
+        claim_id=None,
+        claim_text=None,
+        status="active",
+    )
+    db.add(link)
+    db.flush()
+    return link
+
+
+def mark_draft_version_links_stale(db: Session, draft_version_id: str) -> int:
+    """A new draft version supersedes the old one — active links targeting the
+    previous version become stale (never copied forward)."""
+    count = 0
+    for link in db.scalars(
+        select(EvidenceLink).where(
+            EvidenceLink.target_type == "draft_version",
+            EvidenceLink.target_id == draft_version_id,
+            EvidenceLink.status == "active",
+        )
+    ):
+        link.status = "stale"
+        count += 1
+    return count
+
+
+def get_link_scoped(
+    db: Session, evidence_link_id: str, run_id: str
+) -> EvidenceLink | None:
+    return db.scalar(
+        select(EvidenceLink).where(
+            EvidenceLink.evidence_link_id == evidence_link_id,
+            EvidenceLink.run_id == run_id,
+        )
+    )
+
+
+def remove_link(db: Session, link: EvidenceLink) -> None:
+    """Preserve history: active/stale → removed (no physical delete)."""
+    link.status = "removed"
+    db.flush()
+
+
+def links_for_draft_versions(
+    db: Session, version_ids: list[str]
+) -> list[EvidenceLink]:
+    if not version_ids:
+        return []
+    links = list(
+        db.scalars(
+            select(EvidenceLink).where(
+                EvidenceLink.target_type == "draft_version",
+                EvidenceLink.target_id.in_(version_ids),
+            )
+        )
+    )
+    links.sort(key=lambda link: link.created_at)
+    return links
+
+
 def links_by_assessment(db: Session, run_id: str) -> dict[str, list[EvidenceLink]]:
     grouped: dict[str, list[EvidenceLink]] = {}
     rows = db.scalars(

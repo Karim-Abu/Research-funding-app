@@ -20,6 +20,7 @@ const LIVE_RESOURCES: ReadonlySet<string> = new Set([
   "partners",
   "requirements",
   "evidence",
+  "fields",
 ])
 
 let currentMode: BackendMode = "mock"

@@ -29,6 +29,8 @@ def get_capabilities(
         "requirements": True,
         # Milestone 5: deterministic evidence baseline (no AI/cloud).
         "evidence": True,
+        # Milestone 6: deterministic template drafts + versioned field workspace.
+        "drafts": True,
         "review": False,
         "export": False,
         "web_research": False,

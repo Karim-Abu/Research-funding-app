@@ -714,3 +714,64 @@ class EvidenceLink(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic template drafts (Milestone 6): PortalFieldDraft -> DraftVersion
+# ---------------------------------------------------------------------------
+
+
+class PortalFieldDraft(Base):
+    """One deterministic draft per run + portal field (openapi PortalFieldDraft).
+    Public fields only on the API; run_id/timestamps/template version stay
+    internal."""
+
+    __tablename__ = "portal_field_drafts"
+    __table_args__ = (
+        UniqueConstraint("run_id", "field_id", name="uq_draft_run_field"),
+    )
+
+    draft_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_name: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: draft | needs_review | reviewed | blocked | stale
+    status: Mapped[str] = mapped_column(
+        String, nullable=False, default="needs_review"
+    )
+    character_limit: Mapped[int | None] = mapped_column(nullable=True)
+    current_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    open_issue_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    template_catalog_version: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class DraftVersion(Base):
+    """Immutable text version of a PortalFieldDraft (openapi DraftVersion).
+    created_by enum: template | user (M6 never sets agent)."""
+
+    __tablename__ = "draft_versions"
+
+    draft_version_id: Mapped[str] = mapped_column(String, primary_key=True)
+    draft_id: Mapped[str] = mapped_column(
+        ForeignKey("portal_field_drafts.draft_id"), nullable=False, index=True
+    )
+    text: Mapped[str] = mapped_column(Text, nullable=False)
+    character_count: Mapped[int] = mapped_column(nullable=False)
+    # Contract enum: agent | user | template
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Internal audit only (not exposed): predecessor version + originating op.
+    base_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )

@@ -19,6 +19,7 @@ from sqlalchemy import select
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun, RunSourceSnapshot
 from app.db.session import SessionLocal
+from app.drafts import pipeline as drafts_pipeline
 from app.evidence import pipeline as evidence_pipeline
 from app.repositories import audit, controls
 from app.runs import evaluation
@@ -173,6 +174,39 @@ def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
         db.close()
 
 
+def node_draft_fields(state: RunState) -> RunState:
+    """A2 is deferred — record the disabled drafting route and continue to the
+    deterministic template stage. No provider/LLM/network call."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        drafts_pipeline.record_a2_disabled(db, run)
+        _set_stage(db, run, "draft_fields")
+        db.commit()
+        return state
+    finally:
+        db.close()
+
+
+def node_create_template_drafts(state: RunState) -> RunState:
+    """Create deterministic PortalFieldDraft templates + initial DraftVersions
+    idempotently from the immutable run inputs."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        count = drafts_pipeline.create_template_drafts(db, run)
+        _set_stage(db, run, "create_template_drafts")
+        db.commit()
+        logger.info("template drafts created=%d run=%s", count, run.run_id)
+        return state
+    finally:
+        db.close()
+
+
 def node_finalize_run(state: RunState) -> RunState:
     db = SessionLocal()
     try:
@@ -228,6 +262,8 @@ def get_graph():
             "evaluate_requirements_and_rules",
             node_evaluate_requirements_and_rules,
         )
+        builder.add_node("draft_fields", node_draft_fields)
+        builder.add_node("create_template_drafts", node_create_template_drafts)
         builder.add_node("finalize_run", node_finalize_run)
         builder.add_edge(START, "initialize")
         builder.add_edge("initialize", "validate_source_snapshot")
@@ -236,7 +272,9 @@ def get_graph():
         )
         builder.add_edge("extract_facts_and_map_evidence", "verify_evidence")
         builder.add_edge("verify_evidence", "evaluate_requirements_and_rules")
-        builder.add_edge("evaluate_requirements_and_rules", "finalize_run")
+        builder.add_edge("evaluate_requirements_and_rules", "draft_fields")
+        builder.add_edge("draft_fields", "create_template_drafts")
+        builder.add_edge("create_template_drafts", "finalize_run")
         builder.add_edge("finalize_run", END)
         _graph = builder.compile(checkpointer=get_checkpointer())
     return _graph

@@ -33,6 +33,13 @@ EXPECTED_PROFILE_ID = "innosuisse_innovation_project_with_implementation_partner
 # into one of these. human_override is reserved for human decisions (not M4).
 VALID_ASSESSMENT_BASIS = {"deterministic_rule", "semantic_assessment", "hybrid"}
 
+# M6 deterministic-draft field scope: agent-writable narrative/composite editors
+# that map to a singleton (non-repeated) structured path. Repeated work-package /
+# milestone fields are excluded by the "[]" path marker; repeated budget-position
+# families have no contract field_instance_id and are deferred explicitly.
+M6_DRAFT_FIELD_KINDS = {"narrative_text", "composite_editor"}
+M6_DEFERRED_FIELD_PREFIXES = ("PS.MATERIAL_POSITION.", "PS.CASH_CONTRIBUTION.")
+
 
 class RegistryError(RuntimeError):
     """Raised when a registry file is missing, malformed, or inconsistent."""
@@ -74,12 +81,40 @@ class RequirementDef:
 
 
 @dataclass(frozen=True)
+class PortalFieldDef:
+    field_id: str
+    label_or_question: str
+    portal_section: str
+    subsection: str
+    portal_area: str
+    character_limit: int | None
+    field_kind: str
+    support_mode: str
+    agent_writable: bool
+    structured_data_path: str
+    evidence_requirement: str
+    registry_index: int  # position in the registry → canonical stable order
+
+    @property
+    def is_m6_draft_field(self) -> bool:
+        return (
+            self.agent_writable
+            and self.support_mode == "draft_text"
+            and self.field_kind in M6_DRAFT_FIELD_KINDS
+            and "[]" not in (self.structured_data_path or "")
+            and not self.field_id.startswith(M6_DEFERRED_FIELD_PREFIXES)
+        )
+
+
+@dataclass(frozen=True)
 class Registry:
     requirement_registry_version: str
     rule_registry_version: str
+    portal_field_profile_version: str
     profile_id: str
     requirements: dict[str, RequirementDef]
     rules: dict[str, RuleDef]
+    portal_fields: dict[str, PortalFieldDef]
     # The M4-evaluable subset: active, user-facing requirements whose linked
     # rules are all known official core rules (the 12 REQ.INNO.* requirements).
     evaluable_requirement_ids: tuple[str, ...]
@@ -90,6 +125,19 @@ class Registry:
     def rule_for(self, requirement: RequirementDef) -> RuleDef:
         # M4 requirements link exactly one core rule.
         return self.rules[requirement.linked_rule_ids[0]]
+
+    def m6_draft_fields(self) -> list[PortalFieldDef]:
+        """The supported deterministic-draft fields, in canonical registry order."""
+        return [f for f in self.portal_fields.values() if f.is_m6_draft_field]
+
+    def mandatory_questions(self, editor_field_id: str) -> list[PortalFieldDef]:
+        """Registered Mandatory-Content main questions of a composite editor,
+        in registry order (e.g. VC 3.1/3.2, SOL 4.1–4.5)."""
+        family = editor_field_id.removesuffix(".EDITOR")
+        prefix = f"{family}.MANDATORY_"
+        return [
+            f for f in self.portal_fields.values() if f.field_id.startswith(prefix)
+        ]
 
 
 def _contracts_dir() -> Path:
@@ -184,6 +232,37 @@ def _parse_requirements(raw: dict[str, Any]) -> dict[str, RequirementDef]:
     return requirements
 
 
+def _parse_portal_fields(raw: dict[str, Any]) -> dict[str, PortalFieldDef]:
+    entries = raw.get("portal_fields")
+    if not isinstance(entries, list) or not entries:
+        raise RegistryError("Rule registry has no portal_fields.")
+    fields: dict[str, PortalFieldDef] = {}
+    for index, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise RegistryError("A portal field entry is not a mapping.")
+        field_id = entry.get("field_id")
+        if not field_id:
+            raise RegistryError("A portal field is missing field_id.")
+        if field_id in fields:
+            raise RegistryError(f"Duplicate portal field_id {field_id!r}.")
+        limit = entry.get("character_limit")
+        fields[field_id] = PortalFieldDef(
+            field_id=field_id,
+            label_or_question=str(entry.get("label_or_question", "")),
+            portal_section=str(entry.get("portal_section", "")),
+            subsection=str(entry.get("subsection", "")),
+            portal_area=str(entry.get("portal_area", "")),
+            character_limit=int(limit) if isinstance(limit, int) else None,
+            field_kind=str(entry.get("field_kind", "")),
+            support_mode=str(entry.get("support_mode", "")),
+            agent_writable=bool(entry.get("agent_writable", False)),
+            structured_data_path=str(entry.get("structured_data_path", "")),
+            evidence_requirement=str(entry.get("evidence_requirement", "")),
+            registry_index=index,
+        )
+    return fields
+
+
 def load_registry() -> Registry:
     """Read + validate both registries. Raises RegistryError (fail-closed)."""
     base = _contracts_dir()
@@ -197,6 +276,7 @@ def load_registry() -> Registry:
 
     rules = _parse_rules(rules_raw)
     requirements = _parse_requirements(reqs_raw)
+    portal_fields = _parse_portal_fields(rules_raw)
 
     # Referential integrity + build the evaluable subset deterministically.
     evaluable: list[str] = []
@@ -223,9 +303,11 @@ def load_registry() -> Registry:
     return Registry(
         requirement_registry_version=req_version,
         rule_registry_version=rule_version,
+        portal_field_profile_version=rule_version,
         profile_id=EXPECTED_PROFILE_ID,
         requirements=requirements,
         rules=rules,
+        portal_fields=portal_fields,
         evaluable_requirement_ids=tuple(evaluable),
     )
 
