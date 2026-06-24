@@ -225,7 +225,7 @@ export function ProposalEditor({
         open={runDialogOpen}
         onOpenChange={setRunDialogOpen}
         role="lead_admin"
-        dataClass="public_synthetic"
+        dataClass="public"
         variant="compact"
         onStart={handleRunStart}
         onCancel={() => setRunDialogOpen(false)}

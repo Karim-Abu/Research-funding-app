@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { useRouter } from "next/navigation"
 import { Loader2, XCircle } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -43,8 +44,8 @@ export default function LoginPage() {
       <div className="flex w-full max-w-[400px] flex-col gap-4">
         <Card>
           <CardHeader className="flex flex-col items-center gap-3 pt-8 text-center">
-            <span className="flex size-10 items-center justify-center rounded-md bg-primary text-base font-bold text-primary-foreground">
-              EP
+            <span className="relative flex size-11 items-center justify-center overflow-hidden rounded-md">
+              <Image src="/icon.png" alt="Logo" fill className="object-cover" priority />
             </span>
             <div className="flex flex-col gap-1">
               <h1 className="text-balance text-lg font-semibold text-foreground">

@@ -18,7 +18,7 @@ test("source ingestion live smoke", async ({ page }) => {
   await page.goto("/intake")
   await page.getByLabel(/Antragstitel/).fill("E2E Source Project")
   await page.getByLabel(/Projektidee/).fill("Eine Test-Projektidee für E2E.")
-  await page.getByText("Öffentlich (synthetisch)", { exact: true }).click()
+  await page.getByText("Öffentlich", { exact: true }).click()
   await page.getByRole("button", { name: "Antrag anlegen" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 
@@ -60,7 +60,7 @@ test("umlaut text source ingests and displays after refresh", async ({ page }) =
   await page.goto("/intake")
   await page.getByLabel(/Antragstitel/).fill("E2E Unicode Projekt")
   await page.getByLabel(/Projektidee/).fill("Projektidee mit Umlauten: äöüß.")
-  await page.getByText("Öffentlich (synthetisch)", { exact: true }).click()
+  await page.getByText("Öffentlich", { exact: true }).click()
   await page.getByRole("button", { name: "Antrag anlegen" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 

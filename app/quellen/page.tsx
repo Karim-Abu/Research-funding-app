@@ -208,7 +208,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "standard",
     label: "Standard",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -219,7 +219,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "member",
     label: "Mitglied",
     role: "member",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -249,21 +249,10 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     variant: "full",
   },
   {
-    id: "nda",
-    label: "NDA",
-    role: "lead_admin",
-    dataClass: "nda",
-    kiAvailable: true,
-    webAvailable: true,
-    hasActiveRun: false,
-    estimateState: "ready",
-    variant: "full",
-  },
-  {
     id: "active-run",
     label: "Durchlauf läuft",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: true,
@@ -274,7 +263,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "estimate-loading",
     label: "Schätzung lädt",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -285,7 +274,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "estimate-unavailable",
     label: "Schätzung nicht verfügbar",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -296,7 +285,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "compact",
     label: "Kompaktansicht",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -389,7 +378,7 @@ function QuellenPageContent() {
   const effectiveDataClass: DataClass | null =
     backendDataClass ??
     (intake
-      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public_synthetic"])
+      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public"])
       : null)
 
   // Run lifecycle: the page only starts a run and polls its status via the
@@ -550,7 +539,7 @@ function QuellenPageContent() {
   }, [liveMode, projectId, liveSources, capabilities, refreshSources])
 
   const sourceClassification = React.useMemo(
-    () => dataClassificationFromFlat(effectiveDataClass ?? "public_synthetic"),
+    () => dataClassificationFromFlat(effectiveDataClass ?? "public"),
     [effectiveDataClass]
   )
 

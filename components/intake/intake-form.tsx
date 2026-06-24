@@ -7,6 +7,7 @@ import {
   Plus,
   Trash2,
   CheckCircle2,
+  Circle,
   XCircle,
   Loader2,
 } from "lucide-react"
@@ -62,22 +63,15 @@ interface VertraulichkeitOption {
   value: DataClass
   title: string
   description: string
-  ki: "möglich" | "nicht möglich"
-  web: "möglich" | "nicht möglich"
+  ki: "möglich" | "nur mit Freigabe" | "nicht möglich"
+  web: "möglich" | "bedingt möglich" | "nicht möglich"
 }
 
 const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
   {
-    value: "public_synthetic",
-    title: "Öffentlich (synthetisch)",
-    description: "Keine unternehmensinternen Informationen enthalten.",
-    ki: "möglich",
-    web: "nicht möglich",
-  },
-  {
-    value: "public_external",
-    title: "Öffentlich (extern)",
-    description: "Öffentlich zugängliche Informationen, keine Interna.",
+    value: "public",
+    title: "Öffentlich",
+    description: "Keine internen oder vertraulichen Informationen enthalten.",
     ki: "möglich",
     web: "möglich",
   },
@@ -85,8 +79,8 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
     value: "internal",
     title: "Intern",
     description: "Interne Informationen, nicht für die Öffentlichkeit bestimmt.",
-    ki: "nicht möglich",
-    web: "nicht möglich",
+    ki: "nur mit Freigabe",
+    web: "bedingt möglich",
   },
   {
     value: "confidential",
@@ -96,25 +90,15 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
     ki: "nicht möglich",
     web: "nicht möglich",
   },
-  {
-    value: "nda",
-    title: "NDA",
-    description: "Durch Geheimhaltungsvereinbarung geschützte Informationen.",
-    ki: "nicht möglich",
-    web: "nicht möglich",
-  },
 ]
 
 const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
-  public_synthetic:
-    "Öffentlich (synthetisch) gewählt: Externe KI-Dienste möglich, Webrecherche nicht möglich.",
-  public_external:
-    "Öffentlich (extern) gewählt: Externe KI-Dienste möglich, Webrecherche möglich.",
+  public:
+    "Öffentlich gewählt: Externe KI-Dienste möglich, Webrecherche möglich.",
   internal:
-    "Intern gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
+    "Intern gewählt: Externe KI-Dienste nur mit Freigabe, Webrecherche bedingt möglich.",
   confidential:
     "Vertraulich gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
-  nda: "NDA gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
 }
 
 // ---------------------------------------------------------------------------
@@ -180,10 +164,13 @@ function ConsequenceLine({
   value: string
 }) {
   const ok = value === "möglich"
+  const conditional = value === "nur mit Freigabe" || value === "bedingt möglich"
   return (
     <span className="flex items-center gap-1.5 text-xs">
       {ok ? (
         <CheckCircle2 className="size-3.5 shrink-0 text-status-fulfilled" />
+      ) : conditional ? (
+        <Circle className="size-3.5 shrink-0 text-muted-foreground" />
       ) : (
         <XCircle className="size-3.5 shrink-0 text-muted-foreground" />
       )}

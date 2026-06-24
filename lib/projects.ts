@@ -41,7 +41,7 @@ function idempotencyKey(): string {
 }
 
 function intakeToCreatePayload(intake: IntakeFormData) {
-  const flat = intake.vertraulichkeit || "public_synthetic"
+  const flat = intake.vertraulichkeit || "public"
   const budget = intake.budgetrahmen.trim()
   return {
     title: intake.titel,

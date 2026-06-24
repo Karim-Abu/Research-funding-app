@@ -45,11 +45,9 @@ interface AnalyseEinstellungenDialogProps {
 }
 
 const dataClassLabel: Record<DataClass, string> = {
-  public_synthetic: "Öffentlich (synthetisch)",
-  public_external: "Öffentlich (extern)",
+  public: "Öffentlich",
   internal: "Intern",
   confidential: "Vertraulich",
-  nda: "NDA",
 }
 
 export function AnalyseEinstellungenDialog({
@@ -64,8 +62,8 @@ export function AnalyseEinstellungenDialog({
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  // Beta-Policy: internal/confidential/nda sind hart lokal — keine Cloud-KI,
-  // keine Webrecherche, keine Provider-Auswahl, keine Bestätigungs-Ausnahme.
+  // Beta-Policy: public can use validated external services; internal needs
+  // explicit release in a later flow; confidential stays local-only.
   const isLocalOnlyClass = !isCloudAllowed(dataClass)
 
   const [ki, setKi] = React.useState(!isLocalOnlyClass)
@@ -119,8 +117,9 @@ export function AnalyseEinstellungenDialog({
             {isLocalOnlyClass && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                Für diese Datenklasse werden keine externen KI- oder Webdienste
-                verwendet.
+                {dataClass === "internal"
+                  ? "Für interne Daten benötigen externe Dienste eine Freigabe. Aktuell werden keine externen Dienste verwendet."
+                  : "Für diese Datenklasse werden keine externen KI- oder Webdienste verwendet."}
               </div>
             )}
 

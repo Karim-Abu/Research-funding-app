@@ -11,7 +11,7 @@ const intake: IntakeFormData = {
   projektidee: "An innovation idea.",
   innovationsfeld: "",
   budgetrahmen: "350000",
-  vertraulichkeit: "public_synthetic",
+  vertraulichkeit: "public",
   partner: [],
 }
 
@@ -66,7 +66,7 @@ describe("projects client (live mode)", () => {
       sensitivity: "public",
       origin: "synthetic",
       processing_mode: "cloud_assisted",
-      web_research_mode: "off",
+      web_research_mode: "validated_public",
       nda_applies: false,
     })
     expect(body.budget_framework_chf).toBe(350000)
@@ -85,7 +85,7 @@ describe("projects client (live mode)", () => {
                 sensitivity: "public",
                 origin: "synthetic",
                 processing_mode: "cloud_assisted",
-                web_research_mode: "off",
+                web_research_mode: "validated_public",
                 nda_applies: false,
               },
             }),
