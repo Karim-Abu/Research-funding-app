@@ -13,6 +13,7 @@ from app.api import (
     auth,
     capabilities,
     evidence,
+    exports,
     fields,
     health,
     me,
@@ -55,11 +56,14 @@ async def lifespan(_: FastAPI):
 
     registry = get_registry()
     # Single-instance recovery: fail anything left mid-processing on restart.
+    from app.exports.executor import recover_interrupted_exports
     from app.ingestion.pipeline import recover_interrupted
     from app.runs.executor import recover_interrupted_runs
 
     recovered_sources = recover_interrupted()
     recovered_runs = recover_interrupted_runs()
+    recovered_exports = recover_interrupted_exports()
+    logger.info("recovered_exports=%d", recovered_exports)
     logger.info(
         "startup ok api_version=%s requirement_registry=%s rule_registry=%s "
         "recovered_sources=%d recovered_runs=%d",
@@ -85,6 +89,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
     health, auth, me, capabilities, projects, sources, runs, operations,
-    partners, requirements, evidence, fields, review,
+    partners, requirements, evidence, fields, review, exports,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

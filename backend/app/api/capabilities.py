@@ -33,7 +33,8 @@ def get_capabilities(
         "drafts": True,
         # Milestone 7: deterministic review, recheck and approval (no AI/cloud).
         "review": True,
-        "export": False,
+        # Milestone 8: deterministic DOCX/Markdown/technical-evidence exports.
+        "export": True,
         "web_research": False,
     }
     return Capabilities(

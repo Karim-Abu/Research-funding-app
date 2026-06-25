@@ -156,7 +156,7 @@ def test_capabilities_unchanged_after_seed(client, demo_seed_env):
     login(client, ANNA_EMAIL, ANNA_PASSWORD)
     features = client.get("/api/v1/capabilities").json()["features"]
     assert features["review"] is True  # Milestone 7 enables deterministic review
-    assert features["export"] is False
+    assert features["export"] is True  # Milestone 8 enables deterministic export
     assert features["web_research"] is False
     # No AI/cloud capability is advertised; deterministic slices stay on.
     assert "cloud_assisted" not in features

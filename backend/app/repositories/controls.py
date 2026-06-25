@@ -18,6 +18,8 @@ def record(
     source_id: str | None = None,
     source_version_id: str | None = None,
     detail: str | None = None,
+    run_id: str | None = None,
+    tool_invocation_id: str | None = None,
 ) -> ControlResult:
     result = ControlResult(
         control_result_id=str(uuid.uuid4()),
@@ -28,6 +30,8 @@ def record(
         control_id=control_id,
         status=status,
         detail=detail,
+        run_id=run_id,
+        tool_invocation_id=tool_invocation_id,
     )
     db.add(result)
     db.flush()

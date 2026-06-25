@@ -70,6 +70,13 @@ class Settings(BaseSettings):
     run_default_max_redrafts: int = 2
     run_default_timeout_seconds: int = 600
 
+    # Deterministic exports (Milestone 8) --------------------------------
+    export_storage_dir: str = "var/exports"
+    max_export_bytes: int = 25 * 1024 * 1024
+    export_generation_timeout_seconds: int = 60
+    max_exports_per_run_and_type: int = 5
+    max_export_concurrency: int = 2
+
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"
     seed_workspace_name: str = "Demo Workspace"

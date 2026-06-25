@@ -4,6 +4,8 @@ import * as React from "react"
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { ExportScreen } from "@/components/export/export-screen"
+import { LiveExport, LiveExportSkeleton } from "@/components/export/live-export"
+import { useSession } from "@/components/providers/app-providers"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
@@ -14,7 +16,8 @@ import {
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
-import { getCurrentRunId, loadIntake } from "@/lib/intake-store"
+import { getActiveProjectId, getCurrentRunId, loadIntake } from "@/lib/intake-store"
+import { listProjectRuns } from "@/lib/runs"
 import { cn } from "@/lib/utils"
 import type { StepStatus } from "@/lib/types"
 
@@ -32,7 +35,47 @@ const stepStatus: StepStatus[] = [
 // Set to true only during internal prototyping — never exposed in the Petra evaluation view.
 const showDebugControls = false
 
-export default function ExportPage() {
+function LiveExportContainer() {
+  const [runId, setRunId] = React.useState<string | null>(null)
+  const [resolved, setResolved] = React.useState(false)
+
+  React.useEffect(() => {
+    const projectId = getActiveProjectId()
+    if (!projectId) {
+      setResolved(true)
+      return
+    }
+    listProjectRuns(projectId)
+      .then((runs) => setRunId(runs.find((r) => r.status === "completed")?.run_id ?? null))
+      .catch(() => setRunId(null))
+      .finally(() => setResolved(true))
+  }, [])
+
+  if (!resolved) {
+    return (
+      <div className="px-6 py-8">
+        <LiveExportSkeleton />
+      </div>
+    )
+  }
+  if (!runId) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <p className="text-sm text-muted-foreground">
+          Es liegt noch keine abgeschlossene Analyse vor. Starten Sie zunächst die
+          Analyse.
+        </p>
+      </div>
+    )
+  }
+  return (
+    <div className="px-6 py-8">
+      <LiveExport runId={runId} />
+    </div>
+  )
+}
+
+function MockExportBody() {
   const [scenario, setScenario] = React.useState<PageScenario>("default")
   const [showDebug, setShowDebug] = React.useState(false)
   const [blockerCount, setBlockerCount] = React.useState<number | null>(null)
@@ -48,9 +91,7 @@ export default function ExportPage() {
       })
       .catch((e) => {
         if (!cancelled)
-          setError(
-            e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
-          )
+          setError(e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE)
       })
     return () => {
       cancelled = true
@@ -59,42 +100,38 @@ export default function ExportPage() {
 
   React.useEffect(() => load(), [load])
 
+  if (error) {
+    return (
+      <div className="mx-auto max-w-4xl px-6 py-10">
+        <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
+          <p className="text-sm text-muted-foreground">{error}</p>
+          <Button variant="outline" onClick={load}>
+            <RefreshCw data-icon="inline-start" />
+            Erneut versuchen
+          </Button>
+        </div>
+      </div>
+    )
+  }
+  if (blockerCount === null) {
+    return (
+      <div className="flex flex-col gap-4 px-6 py-8">
+        <Skeleton className="h-12 w-full rounded-md" />
+        <div className="grid grid-cols-3 gap-4">
+          {[0, 1, 2].map((i) => (
+            <Skeleton key={i} className="h-48 rounded-lg" />
+          ))}
+        </div>
+      </div>
+    )
+  }
   return (
-    <AppShell
-      user={currentUser}
-      projects={projects}
-      activeProjectId={activeProjectId}
-      currentStep={8}
-      stepStatus={stepStatus}
-    >
-      {error ? (
-        <div className="mx-auto max-w-4xl px-6 py-10">
-          <div className="flex flex-col items-center gap-4 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-16 text-center">
-            <p className="text-sm text-muted-foreground">{error}</p>
-            <Button variant="outline" onClick={load}>
-              <RefreshCw data-icon="inline-start" />
-              Erneut versuchen
-            </Button>
-          </div>
-        </div>
-      ) : blockerCount === null ? (
-        <div className="flex flex-col gap-4 px-6 py-8">
-          <Skeleton className="h-12 w-full rounded-md" />
-          <div className="grid grid-cols-3 gap-4">
-            {[0, 1, 2].map((i) => (
-              <Skeleton key={i} className="h-48 rounded-lg" />
-            ))}
-          </div>
-        </div>
-      ) : (
-        <ExportScreen
-          scenario={scenario}
-          openBlockerCount={blockerCount}
-          dataClass={loadIntake()?.vertraulichkeit || undefined}
-        />
-      )}
-
-      {/* Debug scenario switcher — hidden from normal user-facing UI */}
+    <>
+      <ExportScreen
+        scenario={scenario}
+        openBlockerCount={blockerCount}
+        dataClass={loadIntake()?.vertraulichkeit || undefined}
+      />
       {showDebugControls && (
         <div className="border-t border-border px-6 py-4">
           <button
@@ -114,7 +151,6 @@ export default function ExportPage() {
             )}
             Demo: Seitenzustände testen
           </button>
-
           {showDebug && (
             <div className="mt-3 flex flex-wrap gap-2">
               {PAGE_SCENARIOS.map((s) => (
@@ -137,6 +173,21 @@ export default function ExportPage() {
           )}
         </div>
       )}
+    </>
+  )
+}
+
+export default function ExportPage() {
+  const { mode } = useSession()
+  return (
+    <AppShell
+      user={currentUser}
+      projects={projects}
+      activeProjectId={activeProjectId}
+      currentStep={8}
+      stepStatus={stepStatus}
+    >
+      {mode === "live" ? <LiveExportContainer /> : <MockExportBody />}
     </AppShell>
   )
 }

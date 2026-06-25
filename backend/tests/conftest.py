@@ -23,9 +23,13 @@ if os.path.isdir(_TMP_STORAGE):
 _TMP_CHECKPOINTS = os.path.join(tempfile.gettempdir(), "rf_test_checkpoints.db")
 if os.path.exists(_TMP_CHECKPOINTS):
     os.remove(_TMP_CHECKPOINTS)
+_TMP_EXPORTS = os.path.join(tempfile.gettempdir(), "rf_test_exports")
+if os.path.isdir(_TMP_EXPORTS):
+    shutil.rmtree(_TMP_EXPORTS, ignore_errors=True)
 os.environ["DATABASE_URL"] = f"sqlite:///{_TMP_DB}"
 os.environ["COOKIE_SECURE"] = "false"
 os.environ["SOURCE_STORAGE_DIR"] = _TMP_STORAGE
+os.environ["EXPORT_STORAGE_DIR"] = _TMP_EXPORTS
 os.environ["MAX_UPLOAD_BYTES"] = "1048576"
 os.environ["CHECKPOINT_DB_PATH"] = _TMP_CHECKPOINTS
 

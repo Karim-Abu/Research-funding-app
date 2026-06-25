@@ -291,6 +291,11 @@ class ControlResult(Base):
     # Data Policy control_results enum: passed | warning | blocked | failed
     status: Mapped[str] = mapped_column(String, nullable=False)
     detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Optional links (both nullable in the public ControlResult schema). Used by
+    # the export tool boundary (Milestone 8) to attach controls to a run + a
+    # ToolInvocation.
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    tool_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -926,4 +931,86 @@ class ReviewPackage(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Deterministic export artifacts (Milestone 8): ExportArtifact + ToolInvocation.
+# Generators read only the immutable frozen snapshot. No LLM/provider/network.
+# ---------------------------------------------------------------------------
+
+
+class ToolInvocation(Base):
+    """Canonical registered-tool boundary call (Domain Model ToolInvocation).
+    Internal only — no public endpoint. ControlResults link via
+    ControlResult.tool_invocation_id."""
+
+    __tablename__ = "tool_invocations"
+
+    invocation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    tool_id: Mapped[str] = mapped_column(String, nullable=False)
+    caller: Mapped[str] = mapped_column(String, nullable=False)
+    input_hash: Mapped[str] = mapped_column(String, nullable=False)
+    output_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # queued | running | succeeded | failed
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    duration_ms: Mapped[int | None] = mapped_column(nullable=True)
+    error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ExportArtifact(Base):
+    """Immutable export artifact (openapi ExportArtifact). Public fields:
+    export_id, run_id, type, status, draft_marked, filename, created_at. All
+    other columns are internal (storage ref, hashes, frozen input snapshot)."""
+
+    __tablename__ = "export_artifacts"
+
+    export_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: docx | markdown | technical_evidence
+    type: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: queued | generating | available | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    draft_marked: Mapped[bool] = mapped_column(nullable=False)
+    filename: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Internal --------------------------------------------------------------
+    storage_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    size_bytes: Mapped[int | None] = mapped_column(nullable=True)
+    mime_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    approval_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    approval_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    review_package_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    effective_data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
+    export_snapshot_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    export_snapshot_hash: Mapped[str] = mapped_column(String, nullable=False)
+    tool_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )
