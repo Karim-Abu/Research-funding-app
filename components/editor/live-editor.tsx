@@ -28,6 +28,14 @@ import {
   VERIFICATION_LABELS,
   type EvidenceAnchorDto,
 } from "@/lib/evidence"
+import {
+  getReview,
+  createHumanDecision,
+  createApproval,
+  ReviewError,
+  type ReviewPackageDto,
+  type ReviewFindingDto,
+} from "@/lib/review"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -61,8 +69,17 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [conflict, setConflict] = React.useState(false)
   const [recheck, setRecheck] = React.useState(false)
   const [loadError, setLoadError] = React.useState<string | null>(null)
+  const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
+  const [commentText, setCommentText] = React.useState("")
+  const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
+
+  const loadReview = React.useCallback(() => {
+    getReview(runId)
+      .then(setReview)
+      .catch(() => setReview(null))
+  }, [runId])
 
   const load = React.useCallback(() => {
     setLoadError(null)
@@ -76,7 +93,8 @@ export function LiveEditor({ runId }: { runId: string }) {
       .catch((e) =>
         setLoadError(e instanceof Error ? e.message : "Entwürfe konnten nicht geladen werden.")
       )
-  }, [runId])
+    loadReview()
+  }, [runId, loadReview])
 
   React.useEffect(() => load(), [load])
 
@@ -87,6 +105,7 @@ export function LiveEditor({ runId }: { runId: string }) {
     setSaveState("saved")
     setErrorMsg(null)
     setRecheck(false)
+    setFieldNotice(null)
   }
 
   function applyDraft(updated: PortalFieldDraftDto) {
@@ -116,6 +135,7 @@ export function LiveEditor({ runId }: { runId: string }) {
       setLocalText(updated.current_version.text)
       setSaveState("saved")
       setRecheck(true)
+      loadReview()
     } catch (e) {
       if (e instanceof FieldError && e.status === 409) {
         setConflict(true) // keep local text — never overwrite
@@ -143,10 +163,61 @@ export function LiveEditor({ runId }: { runId: string }) {
     try {
       await deleteEvidenceLink(runId, selected.field_id, linkId)
       await refreshSelected(false)
+      loadReview()
     } catch {
       /* ignore */
     }
   }
+
+  async function addComment() {
+    if (!selected || !commentText.trim()) return
+    try {
+      await createHumanDecision(runId, {
+        target_type: "portal_field_draft",
+        target_id: selected.draft_id,
+        action: "request_changes",
+        comment: commentText.trim(),
+      })
+      setCommentText("")
+      loadReview()
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Kommentar fehlgeschlagen.")
+    }
+  }
+
+  async function resolveFinding(findingId: string) {
+    try {
+      await createHumanDecision(runId, {
+        target_type: "review_finding",
+        target_id: findingId,
+        action: "dismiss",
+      })
+      loadReview()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  async function approveField() {
+    if (!selected || !review) return
+    setFieldNotice(null)
+    setErrorMsg(null)
+    try {
+      await createApproval(runId, review, "field", selected.field_id)
+      setFieldNotice("Abschnitt freigegeben.")
+      loadReview()
+    } catch (e) {
+      setErrorMsg(e instanceof ReviewError ? e.message : "Freigabe fehlgeschlagen.")
+    }
+  }
+
+  const selectedFindings: ReviewFindingDto[] = (review?.findings ?? []).filter(
+    (f) => f.field_id === selected?.field_id
+  )
+  const fieldApprovable =
+    !!review &&
+    !review.recheck_required &&
+    !selectedFindings.some((f) => f.severity === "blocker")
 
   if (loadError) {
     return (
@@ -256,6 +327,82 @@ export function LiveEditor({ runId }: { runId: string }) {
               {RECHECK_NOTICE}
             </p>
           )}
+
+          {/* Aktuelle Version (Verlauf intern; nur aktuelle Metadaten sichtbar) */}
+          <div className="rounded-md border border-border px-3 py-2 text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Aktuelle Version</span>
+            {" · "}
+            {selected.current_version.created_by === "user" ? "bearbeitet" : "Vorlage"}
+            {" · "}
+            {new Date(selected.current_version.created_at).toLocaleString("de-CH")}
+            {" · "}
+            {selected.current_version.character_count} Zeichen
+            {" · "}
+            {draftLinks.filter((l) => l.status === "active").length} Belege
+          </div>
+
+          {/* Review-Hinweise + Abschnittskommentare */}
+          <section aria-label="Review-Hinweise" className="flex flex-col gap-2">
+            <h3 className="text-sm font-semibold">Review &amp; Kommentare</h3>
+            {selectedFindings.length === 0 ? (
+              <p className="text-xs text-muted-foreground">
+                Keine offenen Hinweise für diesen Abschnitt.
+              </p>
+            ) : (
+              <ul className="flex flex-col gap-1">
+                {selectedFindings.map((f) => (
+                  <li
+                    key={f.finding_id}
+                    className="flex items-start justify-between gap-2 rounded border border-border px-2 py-1 text-xs"
+                  >
+                    <span>
+                      <Badge
+                        variant={f.severity === "blocker" ? "destructive" : "outline"}
+                        className="mr-1 align-middle"
+                      >
+                        {f.severity === "blocker" ? "Blocker" : "Hinweis"}
+                      </Badge>
+                      {f.description}
+                    </span>
+                    <Button
+                      variant="ghost"
+                      size="xs"
+                      onClick={() => resolveFinding(f.finding_id)}
+                    >
+                      Erledigt
+                    </Button>
+                  </li>
+                ))}
+              </ul>
+            )}
+            <Textarea
+              value={commentText}
+              onChange={(e) => setCommentText(e.target.value)}
+              rows={2}
+              aria-label="Kommentar zum Abschnitt"
+              placeholder="Kommentar zum Abschnitt hinzufügen …"
+              className="text-sm"
+            />
+            <div className="flex items-center justify-between gap-2">
+              <Button size="sm" variant="outline" onClick={addComment} disabled={!commentText.trim()}>
+                Kommentar hinzufügen
+              </Button>
+              <Button size="sm" onClick={approveField} disabled={!fieldApprovable}>
+                Abschnitt freigeben
+              </Button>
+            </div>
+            {fieldNotice && (
+              <p role="status" className="text-xs text-emerald-700">
+                {fieldNotice}
+              </p>
+            )}
+            {!fieldApprovable && review && !review.recheck_required && (
+              <p className="text-xs text-muted-foreground">
+                Freigabe möglich, sobald keine Blocker-Hinweise für diesen Abschnitt
+                offen sind.
+              </p>
+            )}
+          </section>
         </div>
       ) : (
         <p className="text-sm text-muted-foreground">Kein Abschnitt ausgewählt.</p>

@@ -44,9 +44,13 @@ Project A ist im Zustand `Entwurf in Bearbeitung`.
 3. Mehrere Draft-Versionen stammen aus echten User-Edits.
 4. Mindestens zwei aktive Evidence-Links sind auf aktuelle User-Draft-Versionen gesetzt.
 5. Nach Refresh bleiben Drafts und Links erhalten.
+6. Das Review-Center zeigt die deterministischen Hinweise. Nach einer Bearbeitung
+   ist `recheck_required=true`; eine erneute Pruefung setzt es zurueck. Ein
+   bearbeiteter, platzhalterfreier Abschnitt kann feldweise freigegeben werden;
+   eine weitere Bearbeitung macht die Freigabe wieder ungueltig (stale).
 
-Project A ist nicht review-, approval-, export- oder einreichbereit. Es bleiben
-Platzhalter und offene Draft-Hinweise.
+Project A ist nicht export- oder einreichbereit. Eine vollstaendige Run-Freigabe
+bleibt blockiert, solange Platzhalter in unterstuetzten Pflichtfeldern offen sind.
 
 ## Project B
 
@@ -58,7 +62,10 @@ Project B ist im Zustand `Anforderungen offen`.
    OpenIssue aus der Rule Engine.
 4. Nach Refresh bleiben die Anforderungen erhalten.
 
-Project B impliziert keine Review-, Approval-, Export- oder Submission-Bereitschaft.
+Im Review-Center bleibt Project B blockiert: der fehlende beitragsberechtigte
+Forschungspartner erzeugt eine blockierende Review-Finding, sodass keine Freigabe
+moeglich ist. Project B impliziert keine Approval-, Export- oder
+Submission-Bereitschaft.
 
 ## Reset
 

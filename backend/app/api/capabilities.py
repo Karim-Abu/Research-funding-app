@@ -31,7 +31,8 @@ def get_capabilities(
         "evidence": True,
         # Milestone 6: deterministic template drafts + versioned field workspace.
         "drafts": True,
-        "review": False,
+        # Milestone 7: deterministic review, recheck and approval (no AI/cloud).
+        "review": True,
         "export": False,
         "web_research": False,
     }

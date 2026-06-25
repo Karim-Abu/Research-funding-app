@@ -803,3 +803,127 @@ class DraftVersion(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Review layer (Milestone 7): ReviewFinding, HumanDecision, ReviewApproval,
+# ReviewPackage. Deterministic review only — no A3/LLM findings.
+# ---------------------------------------------------------------------------
+
+
+class ReviewFinding(Base):
+    """Deterministic or human review finding (openapi ReviewFinding). source +
+    finding_code + target are internal; the API exposes only the contract fields."""
+
+    __tablename__ = "review_findings"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "source", "finding_code", name="uq_finding_run_source_code"
+        ),
+    )
+
+    finding_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Contract enum: blocker | warning | info
+    severity: Mapped[str] = mapped_column(String, nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False)
+    suggested_improvement: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Contract enum: open | resolved | overridden | dismissed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="open")
+    advisory: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # Internal: deterministic_review | human | system
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    # Internal stable key for deterministic dedup/idempotent upsert.
+    finding_code: Mapped[str] = mapped_column(String, nullable=False)
+    target_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    recommended_next_action: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class HumanDecision(Base):
+    """Typed human review decision (openapi HumanDecision). Records review-level
+    confirm/override/reject/dismiss/request_changes + optional comment. Never
+    mutates technical evidence verification."""
+
+    __tablename__ = "human_decisions"
+
+    decision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: requirement_assessment | evidence_anchor | review_finding |
+    # portal_field_draft
+    target_type: Mapped[str] = mapped_column(String, nullable=False)
+    target_id: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ReviewApproval(Base):
+    """Auditable review approval (openapi ReviewApproval). Goes stale on any
+    later edit to the covered scope."""
+
+    __tablename__ = "review_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Contract enum: run | field
+    scope: Mapped[str] = mapped_column(String, nullable=False)
+    scope_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: open | blocked | approved | changes_required | stale
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    approval_scope_hash: Mapped[str] = mapped_column(String, nullable=False)
+    review_package_version: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    invalidated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ReviewPackage(Base):
+    """Computed review summary per run (1:1). Refreshed by aggregate_review +
+    targeted recheck."""
+
+    __tablename__ = "review_packages"
+
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), primary_key=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    review_package_version: Mapped[str] = mapped_column(String, nullable=False)
+    approval_scope_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Contract enum: open | blocked | approved | changes_required | stale
+    approval_status: Mapped[str] = mapped_column(String, nullable=False)
+    blocker_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    warning_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    stale_finding_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    recheck_required: Mapped[bool] = mapped_column(nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )

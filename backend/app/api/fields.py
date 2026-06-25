@@ -15,6 +15,7 @@ from app.repositories import audit
 from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import runs as runs_repo
+from app.review.invalidation import invalidate_approvals
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
 router = APIRouter(tags=["Fields"])
@@ -160,6 +161,7 @@ def delete_evidence_link(
         )
     evidence_repo.remove_link(db, link)
     run.recheck_required = True
+    invalidate_approvals(db, run, actor_user_id=context.user.id)
     audit.record(
         db,
         workspace_id=run.workspace_id,

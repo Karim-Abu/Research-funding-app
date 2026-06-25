@@ -22,6 +22,7 @@ from app.db.session import SessionLocal
 from app.drafts import pipeline as drafts_pipeline
 from app.evidence import pipeline as evidence_pipeline
 from app.repositories import audit, controls
+from app.review import package as review_package
 from app.runs import evaluation
 from app.runs.constants import STAGE_PROGRESS
 from app.runs.transitions import transition_run
@@ -207,6 +208,70 @@ def node_create_template_drafts(state: RunState) -> RunState:
         db.close()
 
 
+def node_critic_review(state: RunState) -> RunState:
+    """A3 is deferred — record the disabled semantic-review route and run the
+    deterministic review aggregator only. Creates ReviewFindings from persisted
+    M4-M6 artifacts; no provider/LLM/network call and no semantic judgement."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        review_package.apply_findings(db, run)
+        controls.record(
+            db, workspace_id=run.workspace_id, project_id=run.project_id,
+            source_id=None, control_id="CTRL.DATA_POLICY", status="passed",
+            detail="a3_disabled deterministic_review",
+        )
+        _set_stage(db, run, "critic_review")
+        db.commit()
+        return state
+    finally:
+        db.close()
+
+
+def node_aggregate_review(state: RunState) -> RunState:
+    """Aggregate findings, evidence gaps, open issues and assessments into the
+    ReviewPackage; compute the review package version + approval scope hash."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        package = review_package.refresh_package(db, run, recompute_findings=False)
+        controls.record(
+            db, workspace_id=run.workspace_id, project_id=run.project_id,
+            source_id=None, control_id="CTRL.OUTPUT_SCHEMA", status="passed",
+            detail=f"review_package_version={package.review_package_version}",
+        )
+        _set_stage(db, run, "aggregate_review")
+        db.commit()
+        return state
+    finally:
+        db.close()
+
+
+def node_human_review(state: RunState) -> RunState:
+    """Record that review is available. Deterministic and non-pausing: human
+    review, recheck and approval happen on the completed run via the review API.
+    The run is never auto-approved here."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        controls.record(
+            db, workspace_id=run.workspace_id, project_id=run.project_id,
+            source_id=None, control_id="CTRL.APPROVAL_GATE", status="passed",
+            detail="review_available no_auto_approval",
+        )
+        _set_stage(db, run, "human_review")
+        db.commit()
+        return state
+    finally:
+        db.close()
+
+
 def node_finalize_run(state: RunState) -> RunState:
     db = SessionLocal()
     try:
@@ -264,6 +329,9 @@ def get_graph():
         )
         builder.add_node("draft_fields", node_draft_fields)
         builder.add_node("create_template_drafts", node_create_template_drafts)
+        builder.add_node("critic_review", node_critic_review)
+        builder.add_node("aggregate_review", node_aggregate_review)
+        builder.add_node("human_review", node_human_review)
         builder.add_node("finalize_run", node_finalize_run)
         builder.add_edge(START, "initialize")
         builder.add_edge("initialize", "validate_source_snapshot")
@@ -274,7 +342,10 @@ def get_graph():
         builder.add_edge("verify_evidence", "evaluate_requirements_and_rules")
         builder.add_edge("evaluate_requirements_and_rules", "draft_fields")
         builder.add_edge("draft_fields", "create_template_drafts")
-        builder.add_edge("create_template_drafts", "finalize_run")
+        builder.add_edge("create_template_drafts", "critic_review")
+        builder.add_edge("critic_review", "aggregate_review")
+        builder.add_edge("aggregate_review", "human_review")
+        builder.add_edge("human_review", "finalize_run")
         builder.add_edge("finalize_run", END)
         _graph = builder.compile(checkpointer=get_checkpointer())
     return _graph

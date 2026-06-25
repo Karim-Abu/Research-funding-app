@@ -212,6 +212,10 @@ def apply_update(
         db, run, draft.field_id, is_empty(text) or has_placeholder(text)
     )
     run.recheck_required = True
+    # An edit changes the review scope; any prior approval is now stale.
+    from app.review.invalidation import invalidate_approvals
+
+    invalidate_approvals(db, run, actor_user_id=actor_user_id)
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=actor_user_id,
         action="draft.update_succeeded", target_type="draft_version",

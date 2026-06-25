@@ -7,6 +7,7 @@ from app.api.errors import ProblemException
 from app.db.models import AnalysisRun, EvidenceAnchor, PortalFieldDraft
 from app.repositories import audit
 from app.repositories import evidence as evidence_repo
+from app.review.invalidation import invalidate_approvals
 
 _NOT_FOUND = "Resource not found"
 
@@ -43,6 +44,7 @@ def create_draft_evidence_link(
         db, run, anchor_id, draft.current_version_id
     )
     run.recheck_required = True
+    invalidate_approvals(db, run, actor_user_id=actor_user_id)
     audit.record(
         db,
         workspace_id=run.workspace_id,

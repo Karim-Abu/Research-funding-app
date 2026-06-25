@@ -3,7 +3,9 @@ from __future__ import annotations
 
 # Subset of the 12 canonical contract stages. M5 adds the deterministic evidence
 # baseline (extract_facts_and_map_evidence with A1 disabled, then verify_evidence)
-# before requirement evaluation. Drafting/review stages remain out of scope.
+# before requirement evaluation. M7 adds the deterministic review layer
+# (critic_review with A3 disabled, aggregate_review, human_review) before
+# finalize_run. None of the added stages pause the run or call a provider.
 WORKFLOW_STAGES = [
     "initialize",
     "validate_source_snapshot",
@@ -12,20 +14,27 @@ WORKFLOW_STAGES = [
     "evaluate_requirements_and_rules",
     "draft_fields",
     "create_template_drafts",
+    "critic_review",
+    "aggregate_review",
+    "human_review",
     "finalize_run",
 ]
 
 # Technical progress per stage — covers the deterministic precheck + evidence
-# baseline + deterministic template drafts. NOT a complete/reviewed proposal
-# (no AI drafting, critic, review, approval or submission gate).
+# baseline + deterministic template drafts + deterministic review aggregation.
+# NOT a complete/reviewed proposal (no AI drafting, AI critic, approval or
+# submission gate). finalize_run stays at 100.
 STAGE_PROGRESS = {
-    "initialize": 12,
-    "validate_source_snapshot": 25,
-    "extract_facts_and_map_evidence": 37,
-    "verify_evidence": 50,
-    "evaluate_requirements_and_rules": 62,
-    "draft_fields": 75,
-    "create_template_drafts": 87,
+    "initialize": 9,
+    "validate_source_snapshot": 18,
+    "extract_facts_and_map_evidence": 27,
+    "verify_evidence": 36,
+    "evaluate_requirements_and_rules": 45,
+    "draft_fields": 55,
+    "create_template_drafts": 64,
+    "critic_review": 73,
+    "aggregate_review": 82,
+    "human_review": 91,
     "finalize_run": 100,
 }
 
