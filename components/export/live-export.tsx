@@ -1,7 +1,15 @@
 "use client"
 
 import * as React from "react"
-import { Download, FileText, FileCode, FileJson, Loader2 } from "lucide-react"
+import Link from "next/link"
+import {
+  Download,
+  FileText,
+  FileCode,
+  FileJson,
+  Loader2,
+  ClipboardCopy,
+} from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -144,6 +152,20 @@ export function LiveExport({ runId }: { runId: string }) {
           )
         })}
       </div>
+
+      {/* Innolink transfer view — opens the copy assistant; creates no export. */}
+      <Link
+        href="/portal-transfer"
+        className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
+      >
+        <ClipboardCopy className="size-6 text-muted-foreground" />
+        <div>
+          <h2 className="text-sm font-semibold">Innolink-Übernahme</h2>
+          <p className="text-xs text-muted-foreground">
+            Feldweise Inhalte zum manuellen Kopieren nach Innolink vorbereiten.
+          </p>
+        </div>
+      </Link>
 
       <p className="text-xs text-muted-foreground">{PAGE_DISCLAIMER}</p>
     </div>

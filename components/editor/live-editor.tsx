@@ -72,6 +72,10 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [commentText, setCommentText] = React.useState("")
   const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
+  // Guards the initial auto-select so a duplicate/late load resolution (e.g. the
+  // React StrictMode double-invoke of the load effect) can never re-select the
+  // first field and clobber an in-progress edit.
+  const autoSelectedRef = React.useRef(false)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
 
@@ -88,7 +92,10 @@ export function LiveEditor({ runId }: { runId: string }) {
       .then(([drafts, ev]) => {
         setFields(drafts)
         setAnchors(ev)
-        if (drafts.length && !selectedId) selectField(drafts[0])
+        if (drafts.length && !autoSelectedRef.current) {
+          autoSelectedRef.current = true
+          selectField(drafts[0])
+        }
       })
       .catch((e) =>
         setLoadError(e instanceof Error ? e.message : "Entwürfe konnten nicht geladen werden.")
