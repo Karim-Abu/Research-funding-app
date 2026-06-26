@@ -87,6 +87,10 @@ class Settings(BaseSettings):
     agent_institutional_route_approved: bool = False
     # Optional, env-gated real-provider smoke test (never required for CI).
     run_real_provider_smoke: bool = False
+    # Milestone 9B: explicit A1 context character budget (payload minimization,
+    # in addition to the profile's max_input_fragments). Deterministic truncation
+    # at fragment boundaries keeps the model-facing payload minimal.
+    a1_context_char_budget: int = 24000
 
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"

@@ -48,6 +48,8 @@ class ExtractedFactRecord(BaseModel):
 
     fact_id: str
     statement: str
+    fact_type: str | None = None
+    normalized_value: str | None = None
     target_ref: str | None = None
     source_fragment_ids: list[str] = []
     versioned_user_input_ids: list[str] = []

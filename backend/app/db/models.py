@@ -1057,7 +1057,58 @@ class AgentInvocation(Base):
     )
     latency_ms: Mapped[int | None] = mapped_column(nullable=True)
     usage_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Milestone 9B: non-sensitive context metadata (selected/skipped fragment
+    # counts, char budget, context_hash) — never raw context or prompt text.
+    context_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_by_system: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# A1 Project Fact Extraction (Milestone 9B): ExtractedFact. Advisory proposals
+# only (output_authority: proposal_requires_validation) — never confirms facts,
+# changes RequirementAssessments, verifies evidence, or satisfies hard rules.
+# Internal: no public endpoint. Stores provenance refs + metadata, not full
+# source documents.
+# ---------------------------------------------------------------------------
+
+
+class ExtractedFact(Base):
+    """An advisory A1 fact / conflict / missing-information proposal tied to a
+    run (Domain Model ExtractedFact). M9B writes only proposed | conflicted |
+    missing; confirmed/rejected require a real HumanDecision in a later milestone."""
+
+    __tablename__ = "extracted_facts"
+    __table_args__ = (
+        UniqueConstraint("run_id", "fact_fingerprint", name="uq_run_fact_fingerprint"),
+    )
+
+    fact_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    fact_type: Mapped[str] = mapped_column(String, nullable=False)
+    normalized_value: Mapped[str | None] = mapped_column(Text, nullable=True)
+    original_statement: Mapped[str] = mapped_column(Text, nullable=False)
+    # proposed | conflicted | missing | rejected | confirmed (M9B: first three only)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_fragment_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    model_route: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    schema_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fact_fingerprint: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
     )

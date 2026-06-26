@@ -16,6 +16,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
 
+from app.agents import fact_extraction
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun, RunSourceSnapshot
 from app.db.session import SessionLocal
@@ -106,18 +107,22 @@ def node_validate_source_snapshot(state: RunState) -> RunState:
 
 
 def node_extract_facts_and_map_evidence(state: RunState) -> RunState:
-    """A1 is deferred — run the deterministic lexical evidence baseline only.
-    Creates EvidenceCandidates from requirements + frozen fragments; creates NO
-    ExtractedFacts and makes no LLM/network/embedding call."""
+    """M9B: run advisory A1 fact extraction (safe, never fails the run), then the
+    deterministic lexical evidence baseline. A1 ExtractedFacts are advisory only
+    and are NEVER consumed by the deterministic evidence/requirements pipeline."""
     db = SessionLocal()
     try:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
+        a1 = fact_extraction.run_a1_fact_extraction(db, run)
         count = evidence_pipeline.run_discovery(db, run)
         _set_stage(db, run, "extract_facts_and_map_evidence")
         db.commit()
-        logger.info("evidence discovery candidates=%d run=%s", count, run.run_id)
+        logger.info(
+            "A1=%s facts=%d evidence discovery candidates=%d run=%s",
+            a1.status, a1.facts_persisted, count, run.run_id,
+        )
         return state
     finally:
         db.close()
