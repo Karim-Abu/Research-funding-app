@@ -296,6 +296,8 @@ class ControlResult(Base):
     # ToolInvocation.
     run_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     tool_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Milestone 9A: links a control to the AgentInvocation that produced it.
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -1011,6 +1013,51 @@ class ExportArtifact(Base):
     )
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agent infrastructure (Milestone 9A): AgentInvocation. Internal only — no
+# public endpoint. Stores hashes + metadata only (never source text, full
+# prompts with source content, raw provider payloads or API keys).
+# ---------------------------------------------------------------------------
+
+
+class AgentInvocation(Base):
+    """One controlled ModelGateway agent call (Domain Model AgentInvocation).
+    Infrastructure entity; A1/A2/A3 are not wired into the run graph in M9A."""
+
+    __tablename__ = "agent_invocations"
+
+    invocation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    agent_id: Mapped[str] = mapped_column(String, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    model_route: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    model_id: Mapped[str] = mapped_column(String, nullable=False)
+    input_schema_id: Mapped[str] = mapped_column(String, nullable=False)
+    output_schema_id: Mapped[str] = mapped_column(String, nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # queued | running | succeeded | failed | blocked | timed_out
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    input_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    usage_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by_system: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

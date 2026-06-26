@@ -77,6 +77,17 @@ class Settings(BaseSettings):
     max_exports_per_run_and_type: int = 5
     max_export_concurrency: int = 2
 
+    # Agent infrastructure (Milestone 9A) — keys are env-only, never defaulted
+    # to a real value, never logged. Missing keys never break startup; the route
+    # is simply marked unavailable and the fake provider is used.
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
+    # External cloud processing of internal real-project data requires an
+    # institutionally approved provider route. Not approved in the beta.
+    agent_institutional_route_approved: bool = False
+    # Optional, env-gated real-provider smoke test (never required for CI).
+    run_real_provider_smoke: bool = False
+
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"
     seed_workspace_name: str = "Demo Workspace"

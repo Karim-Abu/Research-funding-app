@@ -55,6 +55,11 @@ async def lifespan(_: FastAPI):
     from app.registry import get_registry
 
     registry = get_registry()
+    # Fail-closed: validate the agent profile registry at startup too (M9A).
+    # A1/A2/A3 are not executed in the run graph; this only guards the contract.
+    from app.agents.registry import get_agent_registry
+
+    get_agent_registry()
     # Single-instance recovery: fail anything left mid-processing on restart.
     from app.exports.executor import recover_interrupted_exports
     from app.ingestion.pipeline import recover_interrupted
