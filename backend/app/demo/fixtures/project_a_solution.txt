@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Die technische Lösung kombiniert Sensordaten aus dem Herstellprozess mit regelbasierten Qualitätsmerkmalen und einem deterministischen Entscheidungsprotokoll. Ziel ist eine reproduzierbare Prozessführung, die Ausschuss reduziert und die spätere Kreislaufführung unterstützt.
+
+Der Innovationskern liegt in der Verbindung aus Materialrezeptur, Prozessfenster und nachvollziehbarer Qualitätsprüfung. Für die Demo werden keine realen Unternehmensdaten, keine Kundenlisten und keine vertraulichen Rezepturen verwendet.

@@ -21,7 +21,11 @@ _EXECUTABLE_MAGICS = (
     b"\xca\xfe\xba\xbe",  # Java/Mach-O fat
     b"#!",            # shebang script
 )
-_TEXT_BYTES = set(range(0x20, 0x7F)) | {0x09, 0x0A, 0x0D, 0x0C, 0x0B}
+# Control characters that legitimately occur in plain text.
+_ALLOWED_CONTROL_CHARS = {"\t", "\n", "\r", "\f", "\v"}
+# Above this share of (non-whitespace) control characters, decoded content is
+# treated as binary even if it decoded successfully.
+_MAX_CONTROL_RATIO = 0.15
 
 
 class UnsupportedFileError(Exception):
@@ -32,14 +36,46 @@ def is_executable(data: bytes) -> bool:
     return any(data[:8].startswith(magic) for magic in _EXECUTABLE_MAGICS)
 
 
+def _control_ratio_too_high(text: str) -> bool:
+    if not text:
+        return False
+    control = sum(
+        1
+        for ch in text
+        if (ord(ch) < 0x20 and ch not in _ALLOWED_CONTROL_CHARS) or ord(ch) == 0x7F
+    )
+    return (control / len(text)) > _MAX_CONTROL_RATIO
+
+
 def looks_binary(data: bytes) -> bool:
+    """Unicode-aware binary heuristic.
+
+    Valid UTF-8 (or plausible Windows-1252) text — including German umlauts, ß,
+    French accents and German quotation marks — is text, not binary. The decision
+    is based on the control characters of the *decoded* text, never on raw high
+    bytes (which legitimately occur in multibyte UTF-8). NUL bytes and a high
+    ratio of control characters still mark content as binary.
+    """
     sample = data[:8192]
     if not sample:
         return False
     if b"\x00" in sample:
         return True
-    printable = sum(1 for b in sample if b in _TEXT_BYTES)
-    return (printable / len(sample)) < 0.85
+    try:
+        text = sample.decode("utf-8")
+    except UnicodeDecodeError as exc:
+        if exc.reason == "unexpected end of data":
+            # A multibyte sequence was cut by the 8192-byte sample boundary;
+            # judge only the valid prefix (everything before is well-formed).
+            text = sample[: exc.start].decode("utf-8")
+        else:
+            # Not UTF-8 — accept plausible Windows-1252 text (e.g. umlauts saved
+            # on Windows). cp1252's undefined bytes raise → treat as binary.
+            try:
+                text = sample.decode("cp1252")
+            except UnicodeDecodeError:
+                return True
+    return _control_ratio_too_high(text)
 
 
 def validate_docx_container(data: bytes) -> None:

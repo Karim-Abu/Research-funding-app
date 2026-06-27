@@ -6,6 +6,7 @@ local-dev only and are documented in the README. Never commit real secrets.
 from __future__ import annotations
 
 from functools import lru_cache
+from typing import Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -17,13 +18,20 @@ class Settings(BaseSettings):
 
     # Database -----------------------------------------------------------
     database_url: str = "sqlite:///./app.db"
+    app_env: Literal["development", "test", "production"] = "development"
+    demo_data_enabled: bool = False
 
     # Version reporting (resolved from final_backend_contracts_v1_1) -------
     api_version: str = "1.1.0"
     policy_version: str = "1.1.0"
     agent_registry_version: str = "1.1.0"
     rule_registry_version: str = "1.1.0"
+    requirement_registry_version: str = "1.0.0"
     tool_registry_version: str = "1.1.0"
+
+    # Requirement / Rule registry (Milestone 4). Resolved relative to the repo
+    # root by the loader when unset; override for tests/alternate layouts.
+    contracts_dir: str | None = None
 
     # Session / cookie ---------------------------------------------------
     session_cookie_name: str = "rf_session"
@@ -52,12 +60,37 @@ class Settings(BaseSettings):
     max_expanded_archive_bytes: int = 50 * 1024 * 1024
     max_parsing_concurrency: int = 2
 
+    # Deterministic evidence baseline (Milestone 5) ----------------------
+    evidence_max_candidates_per_requirement: int = 3
+
     # Run orchestration (Milestone 3) ------------------------------------
     checkpoint_db_path: str = "var/checkpoints.db"
     max_run_concurrency: int = 2
     run_default_max_retries: int = 1
     run_default_max_redrafts: int = 2
     run_default_timeout_seconds: int = 600
+
+    # Deterministic exports (Milestone 8) --------------------------------
+    export_storage_dir: str = "var/exports"
+    max_export_bytes: int = 25 * 1024 * 1024
+    export_generation_timeout_seconds: int = 60
+    max_exports_per_run_and_type: int = 5
+    max_export_concurrency: int = 2
+
+    # Agent infrastructure (Milestone 9A) — keys are env-only, never defaulted
+    # to a real value, never logged. Missing keys never break startup; the route
+    # is simply marked unavailable and the fake provider is used.
+    anthropic_api_key: str | None = None
+    openai_api_key: str | None = None
+    # External cloud processing of internal real-project data requires an
+    # institutionally approved provider route. Not approved in the beta.
+    agent_institutional_route_approved: bool = False
+    # Optional, env-gated real-provider smoke test (never required for CI).
+    run_real_provider_smoke: bool = False
+    # Milestone 9B: explicit A1 context character budget (payload minimization,
+    # in addition to the profile's max_input_fragments). Deterministic truncation
+    # at fragment boundaries keeps the model-facing payload minimal.
+    a1_context_char_budget: int = 24000
 
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"

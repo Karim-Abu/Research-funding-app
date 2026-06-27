@@ -56,6 +56,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
     nextAction,
     warningBadge,
     analysisRunning,
+    isDemo,
   } = project
 
   const warningConfig = warningBadge ? WARNING_BADGE_CONFIG[warningBadge] : null
@@ -77,6 +78,11 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
             className={cn("mb-2 self-start text-xs font-medium", warningConfig.className)}
           >
             {warningConfig.label}
+          </Badge>
+        )}
+        {isDemo && (
+          <Badge variant="secondary" className="mb-2 self-start text-xs font-medium">
+            Demo
           </Badge>
         )}
 

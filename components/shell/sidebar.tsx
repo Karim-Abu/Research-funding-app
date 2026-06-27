@@ -9,6 +9,7 @@ import {
   Database,
   CheckSquare,
   Download,
+  ClipboardCopy,
   Wallet,
   PanelLeftClose,
   PanelLeftOpen,
@@ -37,6 +38,7 @@ const navItems: NavItem[] = [
   { label: "Quellen & Evidenz", href: "/quellen", icon: Database },
   { label: "Review", href: "/review", icon: CheckSquare },
   { label: "Export", href: "/export", icon: Download },
+  { label: "Innolink-Übernahme", href: "/portal-transfer", icon: ClipboardCopy },
   { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
 ]
 

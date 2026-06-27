@@ -17,6 +17,12 @@ interface DataClassBadgeProps {
  */
 export function DataClassBadge({ dataClass, className }: DataClassBadgeProps) {
   const cloud = isCloudAllowed(dataClass)
+  const detail =
+    dataClass === "public"
+      ? "· KI/Web möglich"
+      : dataClass === "internal"
+        ? "· Freigabe erforderlich"
+        : "· keine externen KI-/Webdienste"
   return (
     <span
       className={cn(
@@ -33,9 +39,7 @@ export function DataClassBadge({ dataClass, className }: DataClassBadgeProps) {
         <Lock className="size-3.5 shrink-0 text-status-partial" />
       )}
       {DATA_CLASS_LABELS[dataClass]}
-      <span className="text-muted-foreground">
-        {cloud ? "· KI aktiv" : "· keine externen KI-/Webdienste"}
-      </span>
+      <span className="text-muted-foreground">{detail}</span>
     </span>
   )
 }

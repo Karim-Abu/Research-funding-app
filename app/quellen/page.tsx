@@ -26,10 +26,10 @@ import {
   type Source,
 } from "@/lib/quellen-mock-data"
 import {
-  startRun,
-  getRun,
-  stopRun,
-  resumeRun,
+  startRun as startLegacyRun,
+  getRun as getLegacyRun,
+  stopRun as stopLegacyRun,
+  resumeRun as resumeLegacyRun,
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
   type RunCostDto,
@@ -54,6 +54,9 @@ import {
   type SourceDocumentDto,
 } from "@/lib/sources"
 import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import { cancelRun, createRun, listProjectRuns } from "@/lib/runs"
+import { pollOperation, type PollHandle } from "@/lib/operations"
+import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
 import { Input } from "@/components/ui/input"
 import { Textarea } from "@/components/ui/textarea"
@@ -206,7 +209,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "standard",
     label: "Standard",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -217,7 +220,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "member",
     label: "Mitglied",
     role: "member",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -247,21 +250,10 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     variant: "full",
   },
   {
-    id: "nda",
-    label: "NDA",
-    role: "lead_admin",
-    dataClass: "nda",
-    kiAvailable: true,
-    webAvailable: true,
-    hasActiveRun: false,
-    estimateState: "ready",
-    variant: "full",
-  },
-  {
     id: "active-run",
     label: "Durchlauf läuft",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: true,
@@ -272,7 +264,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "estimate-loading",
     label: "Schätzung lädt",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -283,7 +275,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "estimate-unavailable",
     label: "Schätzung nicht verfügbar",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -294,7 +286,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
     id: "compact",
     label: "Kompaktansicht",
     role: "lead_admin",
-    dataClass: "public_synthetic",
+    dataClass: "public",
     kiAvailable: true,
     webAvailable: true,
     hasActiveRun: false,
@@ -324,6 +316,29 @@ const quellenStepStatus = [
 
 // Set to true only during internal prototyping — never in the evaluation view.
 const SHOW_DEBUG_CONTROLS = false
+
+function liveAnalysisSteps(progressPercent: number): AnalysisProgressStep[] {
+  const progress = Math.max(0, Math.min(100, progressPercent))
+  const labels = [
+    "Quellen werden gesichert",
+    "Anforderungen werden geprueft",
+    "Belege werden verknuepft",
+    "Ergebnisse werden gespeichert",
+  ]
+  const thresholds = [10, 35, 70, 95]
+  const currentIndex = thresholds.findIndex((threshold) => progress < threshold)
+  const activeIndex = currentIndex === -1 ? labels.length - 1 : currentIndex
+  return labels.map((label, index) => ({
+    id: `live-${index + 1}`,
+    label,
+    state:
+      progress >= 100 || index < activeIndex
+        ? "done"
+        : index === activeIndex
+          ? "running"
+          : "pending",
+  }))
+}
 
 export default function QuellenPage() {
   // useSearchParams requires a Suspense boundary in the App Router.
@@ -387,20 +402,29 @@ function QuellenPageContent() {
   const effectiveDataClass: DataClass | null =
     backendDataClass ??
     (intake
-      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public_synthetic"])
+      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public"])
       : null)
 
   // Run lifecycle: the page only starts a run and polls its status via the
   // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
   const runIdRef = React.useRef<string | null>(null)
+  const operationPollRef = React.useRef<PollHandle | null>(null)
   const pollTimer = React.useRef<ReturnType<typeof setInterval> | undefined>(
     undefined
   )
-  React.useEffect(() => () => clearInterval(pollTimer.current), [])
+  React.useEffect(
+    () => () => {
+      clearInterval(pollTimer.current)
+      operationPollRef.current?.stop()
+    },
+    []
+  )
 
   const stopPolling = React.useCallback(() => {
     clearInterval(pollTimer.current)
     pollTimer.current = undefined
+    operationPollRef.current?.stop()
+    operationPollRef.current = null
   }, [])
 
   const startPolling = React.useCallback(() => {
@@ -409,7 +433,7 @@ function QuellenPageContent() {
       const runId = runIdRef.current
       if (!runId) return
       try {
-        const dto = await getRun(runId)
+        const dto = await getLegacyRun(runId)
         if (dto.steps) setAnalysisSteps(dto.steps)
         setRunCost(dto.cost)
         setCanResume(dto.canResume ?? false)
@@ -450,22 +474,66 @@ function QuellenPageContent() {
 
   async function handleAnalysisStart(settings: AnalyseSettings) {
     if (!intake || !effectiveDataClass) return
+    if (liveMode && !projectId) {
+      setApiError("Kein aktives Projekt ausgewaehlt.")
+      return
+    }
     setDialogOpen(false)
     setApiError(null)
+    stopPolling()
     setAnalysisSteps(
-      dummyAnalysisSteps.map((s, i) => ({
-        ...s,
-        state: i === 0 ? ("running" as const) : ("pending" as const),
-      }))
+      liveMode
+        ? liveAnalysisSteps(1)
+        : dummyAnalysisSteps.map((s, i) => ({
+            ...s,
+            state: i === 0 ? ("running" as const) : ("pending" as const),
+          }))
     )
     setAnalysisState("running")
+    setCanResume(false)
+    setRunCost(undefined)
     try {
+      if (liveMode && projectId) {
+        const accepted = await createRun(projectId, {
+          processing_mode: "deterministic_only",
+          max_cost_chf: settings.costLimit,
+          max_llm_calls: 0,
+          max_web_calls: 0,
+        })
+        runIdRef.current = accepted.resource_id
+        setCurrentRunId(accepted.resource_id)
+        operationPollRef.current = pollOperation(accepted.operation_id, {
+          intervalMs: (capabilities?.polling_interval_seconds ?? 1) * 1000,
+          onUpdate: (operation) => {
+            setAnalysisSteps(liveAnalysisSteps(operation.progress_percent ?? 25))
+          },
+          onTerminal: (operation) => {
+            operationPollRef.current = null
+            if (operation.status === "succeeded") {
+              setAnalysisSteps(liveAnalysisSteps(100))
+              setCompletedRunId(operation.resource_id)
+              setAnalysisState("completed")
+              void refreshSources()
+              return
+            }
+            setCanResume(false)
+            setAnalysisState("stopped")
+            if (operation.status === "failed") {
+              setApiError(
+                operation.error?.detail ??
+                  "Die Analyse konnte nicht abgeschlossen werden."
+              )
+            }
+          },
+        })
+        return
+      }
       const startRequest: RunStartRequestDto = {
         intake,
         settings,
         effectiveDataClass,
       }
-      const { runId } = await startRun(startRequest)
+      const { runId } = await startLegacyRun(startRequest)
       runIdRef.current = runId
       setCurrentRunId(runId)
       startPolling()
@@ -482,9 +550,14 @@ function QuellenPageContent() {
     setAnalysisState("stopped")
     const runId = runIdRef.current
     if (!runId) return
+    if (liveMode) {
+      setCanResume(false)
+      void cancelRun(runId).catch(() => undefined)
+      return
+    }
     // Refresh canResume/cost once from the stopped run.
-    void stopRun(runId)
-      .then(() => getRun(runId))
+    void stopLegacyRun(runId)
+      .then(() => getLegacyRun(runId))
       .then((dto) => {
         setCanResume(dto.canResume ?? false)
         setRunCost(dto.cost)
@@ -495,8 +568,13 @@ function QuellenPageContent() {
   function handleAnalysisResume() {
     const runId = runIdRef.current
     if (!runId) return
+    if (liveMode) {
+      setCanResume(false)
+      setAnalysisState("stopped")
+      return
+    }
     setAnalysisState("running")
-    resumeRun(runId)
+    resumeLegacyRun(runId)
       .then(startPolling)
       .catch((e) => {
         setAnalysisState("stopped")
@@ -511,6 +589,7 @@ function QuellenPageContent() {
   const liveMode = mode === "live"
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
+  const [completedRunId, setCompletedRunId] = React.useState<string | null>(null)
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
   )
@@ -547,7 +626,7 @@ function QuellenPageContent() {
   }, [liveMode, projectId, liveSources, capabilities, refreshSources])
 
   const sourceClassification = React.useMemo(
-    () => dataClassificationFromFlat(effectiveDataClass ?? "public_synthetic"),
+    () => dataClassificationFromFlat(effectiveDataClass ?? "public"),
     [effectiveDataClass]
   )
 
@@ -575,6 +654,27 @@ function QuellenPageContent() {
     },
     [projectId, sourceClassification, refreshSources]
   )
+
+  // Resolve the latest completed run so the Evidenz tab can show live evidence.
+  React.useEffect(() => {
+    if (!liveMode || !projectId) {
+      setCompletedRunId(null)
+      return
+    }
+    let cancelled = false
+    listProjectRuns(projectId)
+      .then((runs) => {
+        if (cancelled) return
+        const completed = runs.find((r) => r.status === "completed")
+        setCompletedRunId(completed?.run_id ?? null)
+      })
+      .catch(() => {
+        if (!cancelled) setCompletedRunId(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liveMode, projectId, liveSources])
 
   const sourceRows: Source[] = liveMode
     ? liveSources.map(toSourceRow)
@@ -699,7 +799,7 @@ function QuellenPageContent() {
               Quellen ({sourceCount})
             </TabsTrigger>
             <TabsTrigger value="evidenz">
-              Evidenz ({evidenceCount})
+              {liveMode ? "Evidenz" : `Evidenz (${evidenceCount})`}
             </TabsTrigger>
           </TabsList>
 
@@ -733,7 +833,18 @@ function QuellenPageContent() {
           </TabsContent>
 
           <TabsContent value="evidenz">
-            <EvidenceTab cards={dummyEvidence} />
+            {liveMode ? (
+              completedRunId ? (
+                <LiveEvidence runId={completedRunId} />
+              ) : (
+                <p className="py-10 text-center text-sm text-muted-foreground">
+                  Noch keine abgeschlossene Analyse. Starten Sie die Analyse, um
+                  Belege zu erzeugen.
+                </p>
+              )
+            ) : (
+              <EvidenceTab cards={dummyEvidence} />
+            )}
           </TabsContent>
         </Tabs>
 

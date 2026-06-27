@@ -7,7 +7,12 @@ import {
   type DataClassification,
 } from "./data-classification"
 import { getCsrfToken } from "./session"
-import type { DashboardProject, IntakeFormData } from "./types"
+import type {
+  DashboardProject,
+  IntakeFormData,
+  NextAction,
+  WarningBadge,
+} from "./types"
 
 export type ProjectStatus = "draft" | "active" | "archived"
 
@@ -24,11 +29,33 @@ export interface ProjectDto {
   created_at: string
   updated_at: string
   active_run_id?: string | null
+  workflow_summary?: WorkflowSummaryDto | null
 }
 
 interface ProjectListDto {
   items: ProjectDto[]
   next_cursor?: string | null
+}
+
+export type WorkflowNextAction = NextAction | "view_progress"
+
+export interface WorkflowSummaryDto {
+  bearbeitungsstand_percent: number
+  current_step: number
+  current_step_label?: string | null
+  next_action: WorkflowNextAction
+  warning_badge?: "run_stopped" | null
+  latest_run_id?: string | null
+}
+
+const WARNING_MAP: Partial<
+  Record<NonNullable<WorkflowSummaryDto["warning_badge"]>, WarningBadge>
+> = {
+  run_stopped: "durchlauf_gestoppt",
+}
+
+function toNextAction(action: WorkflowNextAction): NextAction {
+  return action === "view_progress" ? "resume_analysis" : action
 }
 
 // Single beta funding instrument profile (resolved from the contract registry).
@@ -41,7 +68,7 @@ function idempotencyKey(): string {
 }
 
 function intakeToCreatePayload(intake: IntakeFormData) {
-  const flat = intake.vertraulichkeit || "public_synthetic"
+  const flat = intake.vertraulichkeit || "public"
   const budget = intake.budgetrahmen.trim()
   return {
     title: intake.titel,
@@ -93,16 +120,22 @@ export async function createProjectFromIntake(
 
 /** Map a contract project onto the existing dashboard card shape (no redesign). */
 export function toDashboardCard(project: ProjectDto): DashboardProject {
+  const summary = project.workflow_summary
   return {
     id: project.project_id,
     title: project.title,
     profileLabel: "Innosuisse Beta-Profil",
     deadline: "—",
-    progressPercent: 0,
-    currentStep: 1,
+    progressPercent: summary?.bearbeitungsstand_percent ?? 0,
+    currentStep: summary?.current_step ?? 1,
     lastEditedLabel: `Angelegt: ${new Date(
       project.created_at
     ).toLocaleDateString("de-CH")}`,
-    nextAction: "upload_sources",
+    nextAction: toNextAction(summary?.next_action ?? "upload_sources"),
+    warningBadge: summary?.warning_badge
+      ? WARNING_MAP[summary.warning_badge]
+      : undefined,
+    analysisRunning: summary?.next_action === "view_progress",
+    isDemo: project.title.trim().endsWith("(Demo)"),
   }
 }

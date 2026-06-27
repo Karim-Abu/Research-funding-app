@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Zielmärkte sind Maschinenbau, Bahnkomponenten und modulare Energiesysteme. Die Lösung adressiert Unternehmen, die Gewicht, Reparierbarkeit und Rückführbarkeit gleichzeitig verbessern müssen. Die Demo-Annahme sieht erste Pilotkunden in der Schweiz und der DACH-Region vor.
+
+Die geplante Verwertung erfolgt über Bauteilentwicklung, Prozesslizenzierung und begleitende Materialdatenblätter. Alle Angaben sind synthetisch und dienen ausschliesslich der Evaluation der Benutzeroberfläche.

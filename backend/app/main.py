@@ -12,10 +12,16 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 from app.api import (
     auth,
     capabilities,
+    evidence,
+    exports,
+    fields,
     health,
     me,
     operations,
+    partners,
     projects,
+    requirements,
+    review,
     runs,
     sources,
 )
@@ -43,15 +49,32 @@ async def lifespan(_: FastAPI):
 
     with engine.connect() as conn:
         conn.execute(text("SELECT 1"))
+    # Fail-closed: load + validate the requirement/rule registries at startup so a
+    # corrupt or drifted registry stops the app rather than evaluating runs
+    # against a broken policy.
+    from app.registry import get_registry
+
+    registry = get_registry()
+    # Fail-closed: validate the agent profile registry at startup too (M9A).
+    # A1/A2/A3 are not executed in the run graph; this only guards the contract.
+    from app.agents.registry import get_agent_registry
+
+    get_agent_registry()
     # Single-instance recovery: fail anything left mid-processing on restart.
+    from app.exports.executor import recover_interrupted_exports
     from app.ingestion.pipeline import recover_interrupted
     from app.runs.executor import recover_interrupted_runs
 
     recovered_sources = recover_interrupted()
     recovered_runs = recover_interrupted_runs()
+    recovered_exports = recover_interrupted_exports()
+    logger.info("recovered_exports=%d", recovered_exports)
     logger.info(
-        "startup ok api_version=%s recovered_sources=%d recovered_runs=%d",
+        "startup ok api_version=%s requirement_registry=%s rule_registry=%s "
+        "recovered_sources=%d recovered_runs=%d",
         settings.api_version,
+        registry.requirement_registry_version,
+        registry.rule_registry_version,
         recovered_sources,
         recovered_runs,
     )
@@ -70,6 +93,7 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
-    health, auth, me, capabilities, projects, sources, runs, operations
+    health, auth, me, capabilities, projects, sources, runs, operations,
+    partners, requirements, evidence, fields, review, exports,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

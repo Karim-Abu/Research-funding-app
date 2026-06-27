@@ -3,7 +3,7 @@ import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { setBackendMode } from "@/lib/app-mode"
 import { login } from "@/lib/session"
-import { createProjectFromIntake, listProjects } from "@/lib/projects"
+import { createProjectFromIntake, listProjects, toDashboardCard } from "@/lib/projects"
 import type { IntakeFormData } from "@/lib/types"
 
 const intake: IntakeFormData = {
@@ -11,7 +11,7 @@ const intake: IntakeFormData = {
   projektidee: "An innovation idea.",
   innovationsfeld: "",
   budgetrahmen: "350000",
-  vertraulichkeit: "public_synthetic",
+  vertraulichkeit: "public",
   partner: [],
 }
 
@@ -66,7 +66,7 @@ describe("projects client (live mode)", () => {
       sensitivity: "public",
       origin: "synthetic",
       processing_mode: "cloud_assisted",
-      web_research_mode: "off",
+      web_research_mode: "validated_public",
       nda_applies: false,
     })
     expect(body.budget_framework_chf).toBe(350000)
@@ -85,7 +85,7 @@ describe("projects client (live mode)", () => {
                 sensitivity: "public",
                 origin: "synthetic",
                 processing_mode: "cloud_assisted",
-                web_research_mode: "off",
+                web_research_mode: "validated_public",
                 nda_applies: false,
               },
             }),
@@ -97,5 +97,40 @@ describe("projects client (live mode)", () => {
     const items = await listProjects()
     expect(items).toHaveLength(1)
     expect(items[0].title).toBe("Alpha")
+  })
+
+  it("maps workflow_summary to dashboard cards", () => {
+    const card = toDashboardCard(
+      projectFromBody({
+        title: "KI-gestuetzte Entwicklung (Demo)",
+        description: "d",
+        funding_instrument_profile_id: "f",
+        data_classification: {
+          sensitivity: "public",
+          origin: "synthetic",
+          processing_mode: "deterministic_only",
+          web_research_mode: "off",
+          nda_applies: false,
+        },
+        workflow_summary: {
+          bearbeitungsstand_percent: 72,
+          current_step: 5,
+          current_step_label: "Entwurf",
+          next_action: "continue_draft",
+          warning_badge: null,
+          latest_run_id: "r1",
+        },
+      })
+    )
+    expect(card.progressPercent).toBe(72)
+    expect(card.currentStep).toBe(5)
+    expect(card.nextAction).toBe("continue_draft")
+    expect(card.isDemo).toBe(true)
+    expect(card.warningBadge).toBeUndefined()
+  })
+
+  it("preserves mock mode by returning no live project data", async () => {
+    setBackendMode("mock")
+    await expect(listProjects()).resolves.toEqual([])
   })
 })

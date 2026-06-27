@@ -42,41 +42,31 @@ export interface HumanCheck {
 
 // Confidentiality / data class ------------------------------------------
 
-export type DataClass =
-  | "public_synthetic"
-  | "public_external"
-  | "internal"
-  | "confidential"
-  | "nda"
+export type DataClass = "public" | "internal" | "confidential"
 
 // Beta-Policy (zentral — UI und API nutzen dieselben Regeln):
-// public_* -> Cloud-LLM erlaubt; internal/confidential/nda -> keine externen
-// KI- oder Webdienste, keine Provider-Auswahl. Lokale LLMs sind in der Beta
-// kein Runtime-Pfad.
+// public -> Cloud-LLM und validierte öffentliche Webrecherche erlaubt;
+// internal/confidential bleiben ohne direkte externe Dienste im UI.
 
 export function isCloudAllowed(dataClass: DataClass): boolean {
-  return dataClass === "public_synthetic" || dataClass === "public_external"
+  return dataClass === "public"
 }
 
 export function isWebAllowed(dataClass: DataClass): boolean {
-  return dataClass === "public_external"
+  return dataClass === "public"
 }
 
 export const DATA_CLASS_LABELS: Record<DataClass, string> = {
-  public_synthetic: "Öffentlich (synthetisch)",
-  public_external: "Öffentlich (extern)",
+  public: "Öffentlich",
   internal: "Intern",
   confidential: "Vertraulich",
-  nda: "NDA",
 }
 
 // Restriktivität aufsteigend — Index = Rang.
 const DATA_CLASS_ORDER: DataClass[] = [
-  "public_synthetic",
-  "public_external",
+  "public",
   "internal",
   "confidential",
-  "nda",
 ]
 
 /**
@@ -84,7 +74,7 @@ const DATA_CLASS_ORDER: DataClass[] = [
  * Eine weniger restriktive Kombination darf nie Cloud-Aufrufe freischalten.
  */
 export function mostRestrictiveDataClass(classes: DataClass[]): DataClass {
-  let result: DataClass = "public_synthetic"
+  let result: DataClass = "public"
   for (const dc of classes) {
     if (DATA_CLASS_ORDER.indexOf(dc) > DATA_CLASS_ORDER.indexOf(result)) {
       result = dc
@@ -128,6 +118,7 @@ export interface DashboardProject {
   warningBadge?: WarningBadge
   /** When true, the card shows a spinner + "Analyse läuft…" and the next-action button becomes "Fortschritt ansehen". */
   analysisRunning?: boolean
+  isDemo?: boolean
 }
 
 

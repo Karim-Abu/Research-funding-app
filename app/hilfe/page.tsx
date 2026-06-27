@@ -76,14 +76,7 @@ export default function HilfePage() {
           </p>
           <ul className="flex list-disc flex-col gap-1.5 pl-5 text-sm leading-relaxed text-foreground">
             <li>
-              <span className="font-medium">Öffentlich (synthetisch)</span>
-              {" — "}
-              <span className="text-muted-foreground">
-                externe KI-Dienste möglich, Webrecherche nicht möglich.
-              </span>
-            </li>
-            <li>
-              <span className="font-medium">Öffentlich (extern)</span>
+              <span className="font-medium">Öffentlich</span>
               {" — "}
               <span className="text-muted-foreground">
                 externe KI-Dienste möglich, Webrecherche möglich.
@@ -93,20 +86,12 @@ export default function HilfePage() {
               <span className="font-medium">Intern</span>
               {" — "}
               <span className="text-muted-foreground">
-                Verarbeitung nur lokal — keine externen KI-Dienste, keine
-                Webrecherche.
+                externe KI-Dienste nur mit Freigabe, Webrecherche bedingt
+                möglich.
               </span>
             </li>
             <li>
               <span className="font-medium">Vertraulich</span>
-              {" — "}
-              <span className="text-muted-foreground">
-                Verarbeitung nur lokal — keine externen KI-Dienste, keine
-                Webrecherche.
-              </span>
-            </li>
-            <li>
-              <span className="font-medium">NDA</span>
               {" — "}
               <span className="text-muted-foreground">
                 Verarbeitung nur lokal — keine externen KI-Dienste, keine

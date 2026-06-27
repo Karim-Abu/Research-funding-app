@@ -35,6 +35,9 @@ const REQUEST_HEADERS_TO_FORWARD = [
 ]
 
 // Header, die von der Bridge zurück an den Browser weitergereicht werden.
+// NB: Content-Length is intentionally NOT forwarded — the body is streamed
+// through Next.js (which sets its own framing), and a forwarded length can
+// mismatch the re-framed stream and stall/truncate JSON responses.
 const RESPONSE_HEADERS_TO_FORWARD = [
   "content-type",
   "content-disposition",

@@ -1,10 +1,10 @@
-import { proxyToBridge } from "@/lib/bridge"
+import { forwardToBridge } from "@/lib/bridge"
 
-// GET /api/runs/{id}/fields — Feldentwürfe + Issues für das Review.
+// GET /api/runs/{id}/fields — PortalFieldDrafts des Runs (live, session-scoped).
 export async function GET(
-  _request: Request,
+  request: Request,
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params
-  return proxyToBridge(`/runs/${encodeURIComponent(id)}/fields`)
+  return forwardToBridge(request, `/runs/${encodeURIComponent(id)}/fields`)
 }

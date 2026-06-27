@@ -71,22 +71,22 @@ Nicht zugesagt beziehungsweise Post-Beta:
 
 ## Entscheidungstreiber (Drivers)
 
-| Treiber | Einfluss |
-|---|---|
-| **Specification-first** | Agenten, Tools, Regeln, Controls, Zustände und API müssen vor Implementierung als prüfbare Verträge feststehen. |
-| **Nutzermehrwert** | Der grösste Nutzen ist ein vollständiger, evidenzbasierter und editierbarer Erstentwurf mit klaren offenen Punkten. |
-| **Benutzerfreundlichkeit** | Komplexität bleibt im Backend; die UI zeigt Aufgaben, Status und nächste Schritte statt Agenten- oder Modelltechnik. |
-| **Portalorientierung** | Strukturierte und narrative Antragsbestandteile werden explizit an Portalobjekte gebunden. |
-| **Evidence-first** | Claims müssen auf versionierte Fundstellen zurückführbar oder sichtbar offen sein. |
-| **Deterministische Korrektheit** | Zeichenlimits, Pflichtfelder, Zahlen, Budget, Partnerkonstellationen und Freigabegates dürfen nicht vom LLM entschieden werden. |
-| **HITL mit geringer Reibung** | Menschen bearbeiten Ausnahmen, Blocker und kritische Findings; Routineprüfungen laufen automatisch. |
-| **Security & Guardrails** | Quellen sind untrusted data; Tool-, Daten-, Kosten-, Schema- und Prompt-Injection-Kontrollen sind querschnittlich. |
-| **Datenschutz** | Effektive Sensitivität ist die restriktivste Klassifikation aller Inputs; externe Verarbeitung ist environment- und providerabhängig. |
-| **Auditierbarkeit** | Run-Snapshot, Profile, Modelle, Regeln, Controls, Tools, Edits, Freigaben und Exporte müssen rekonstruierbar sein. |
-| **Kosten und Latenz** | Calls werden gebündelt, begrenzt, gecacht und nur bei fachlichem Mehrwert ausgeführt. |
-| **Geringe Betriebskomplexität** | Ein modularer Monolith ist für Einzelentwicklung und 10–15 Nutzer:innen angemessen. |
-| **Provider-Flexibilität** | Modellrouten bleiben austauschbar und werden per Rollenbenchmark bestätigt. |
-| **Weiterentwicklung** | PostgreSQL, Entra ID, Azure, Worker und granularere Zusammenarbeit sollen ohne Neuentwurf der Fachlogik möglich sein. |
+| Treiber                          | Einfluss                                                                                                                              |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
+| **Specification-first**          | Agenten, Tools, Regeln, Controls, Zustände und API müssen vor Implementierung als prüfbare Verträge feststehen.                       |
+| **Nutzermehrwert**               | Der grösste Nutzen ist ein vollständiger, evidenzbasierter und editierbarer Erstentwurf mit klaren offenen Punkten.                   |
+| **Benutzerfreundlichkeit**       | Komplexität bleibt im Backend; die UI zeigt Aufgaben, Status und nächste Schritte statt Agenten- oder Modelltechnik.                  |
+| **Portalorientierung**           | Strukturierte und narrative Antragsbestandteile werden explizit an Portalobjekte gebunden.                                            |
+| **Evidence-first**               | Claims müssen auf versionierte Fundstellen zurückführbar oder sichtbar offen sein.                                                    |
+| **Deterministische Korrektheit** | Zeichenlimits, Pflichtfelder, Zahlen, Budget, Partnerkonstellationen und Freigabegates dürfen nicht vom LLM entschieden werden.       |
+| **HITL mit geringer Reibung**    | Menschen bearbeiten Ausnahmen, Blocker und kritische Findings; Routineprüfungen laufen automatisch.                                   |
+| **Security & Guardrails**        | Quellen sind untrusted data; Tool-, Daten-, Kosten-, Schema- und Prompt-Injection-Kontrollen sind querschnittlich.                    |
+| **Datenschutz**                  | Effektive Sensitivität ist die restriktivste Klassifikation aller Inputs; externe Verarbeitung ist environment- und providerabhängig. |
+| **Auditierbarkeit**              | Run-Snapshot, Profile, Modelle, Regeln, Controls, Tools, Edits, Freigaben und Exporte müssen rekonstruierbar sein.                    |
+| **Kosten und Latenz**            | Calls werden gebündelt, begrenzt, gecacht und nur bei fachlichem Mehrwert ausgeführt.                                                 |
+| **Geringe Betriebskomplexität**  | Ein modularer Monolith ist für Einzelentwicklung und 10–15 Nutzer:innen angemessen.                                                   |
+| **Provider-Flexibilität**        | Modellrouten bleiben austauschbar und werden per Rollenbenchmark bestätigt.                                                           |
+| **Weiterentwicklung**            | PostgreSQL, Entra ID, Azure, Worker und granularere Zusammenarbeit sollen ohne Neuentwurf der Fachlogik möglich sein.                 |
 
 ## Optionen (Options)
 

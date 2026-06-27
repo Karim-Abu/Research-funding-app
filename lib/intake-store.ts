@@ -29,11 +29,24 @@ export function saveIntake(data: IntakeFormData): void {
   storage()?.setItem(INTAKE_KEY, JSON.stringify(data))
 }
 
+function normalizeLegacyConfidentiality(value: unknown): IntakeFormData["vertraulichkeit"] {
+  if (value === "public_synthetic" || value === "public_external") return "public"
+  if (value === "nda") return "confidential"
+  if (value === "public" || value === "internal" || value === "confidential") {
+    return value
+  }
+  return ""
+}
+
 export function loadIntake(): IntakeFormData | null {
   const raw = storage()?.getItem(INTAKE_KEY)
   if (!raw) return null
   try {
-    return JSON.parse(raw) as IntakeFormData
+    const data = JSON.parse(raw) as IntakeFormData
+    return {
+      ...data,
+      vertraulichkeit: normalizeLegacyConfidentiality(data.vertraulichkeit),
+    }
   } catch {
     return null
   }

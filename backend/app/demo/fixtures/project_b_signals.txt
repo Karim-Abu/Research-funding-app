@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Die synthetischen Signale beschreiben Vibration, Temperatur und Laufzeitklassen einer Produktionslinie. Die Demo-Quelle enthält keine realen Betriebsdaten. Sie dient dazu, die Navigation von Quellen zu Anforderungen und offenen Punkten in der Anwendung zu testen.
+
+Die formale Prüfung soll sichtbar machen, dass ohne Forschungspartner ein blockerender offener Punkt entsteht.
