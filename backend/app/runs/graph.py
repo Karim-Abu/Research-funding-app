@@ -16,7 +16,7 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
 
-from app.agents import fact_extraction
+from app.agents import evidence_mapping, fact_extraction
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun, RunSourceSnapshot
 from app.db.session import SessionLocal
@@ -117,11 +117,16 @@ def node_extract_facts_and_map_evidence(state: RunState) -> RunState:
             return {**state, "cancelled": True}
         a1 = fact_extraction.run_a1_fact_extraction(db, run)
         count = evidence_pipeline.run_discovery(db, run)
+        # M9C: advisory A1 evidence-candidate mapping (safe; never fails the run).
+        # Persists agent-origin EvidenceCandidates that the unchanged deterministic
+        # verify/link stages then process. Deterministic baseline is unaffected.
+        mapping = evidence_mapping.run_a1_evidence_mapping(db, run)
         _set_stage(db, run, "extract_facts_and_map_evidence")
         db.commit()
         logger.info(
-            "A1=%s facts=%d evidence discovery candidates=%d run=%s",
-            a1.status, a1.facts_persisted, count, run.run_id,
+            "A1 facts=%s/%d evidence candidates=%d mapping=%s/+%d run=%s",
+            a1.status, a1.facts_persisted, count, mapping.status,
+            mapping.candidates_persisted, run.run_id,
         )
         return state
     finally:
@@ -159,6 +164,9 @@ def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
         # Link verified/unverified anchors to the assessments now that they
         # exist. Supplementary only — never changes a deterministic status.
         evidence_pipeline.materialize_links(db, run)
+        # M9C: complete the agent evidence-proposal evaluation trail (verification
+        # status + linked assessment). Internal only; idempotent under replay.
+        evidence_mapping.backfill_agent_evaluation(db, run)
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="run.requirements_evaluated",

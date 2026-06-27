@@ -45,6 +45,7 @@ class A1Context:
     fragment_blocks: list[FragmentBlock] = field(default_factory=list)
     requirement_defs: list[dict] = field(default_factory=list)
     field_defs: list[dict] = field(default_factory=list)
+    extracted_facts: list[dict] = field(default_factory=list)
     context_text: str = ""
     context_hash: str = ""
     selected_fragment_ids: list[str] = field(default_factory=list)
@@ -159,7 +160,8 @@ def lookup_portal_field_profile(run: AnalysisRun) -> list[dict]:
 
 
 def _record_tool_invocation(
-    db: Session, run: AnalysisRun, tool_id: str, input_hash: str, output_hash: str
+    db: Session, run: AnalysisRun, tool_id: str, input_hash: str, output_hash: str,
+    *, caller: str = "A1.project_fact_extraction",
 ) -> None:
     db.add(
         ToolInvocation(
@@ -167,7 +169,7 @@ def _record_tool_invocation(
             workspace_id=run.workspace_id,
             run_id=run.run_id,
             tool_id=tool_id,
-            caller="A1.project_fact_extraction",
+            caller=caller,
             input_hash=input_hash,
             output_hash=output_hash,
             status="succeeded",
@@ -228,6 +230,62 @@ def assemble_a1_context(
         fragment_blocks=blocks,
         requirement_defs=requirement_defs,
         field_defs=field_defs,
+        context_text=context_text,
+        context_hash=context_hash,
+        selected_fragment_ids=selected_ids,
+        source_version_ids=version_ids,
+        meta=meta,
+    )
+
+
+def assemble_evidence_mapping_context(
+    db: Session, run: AnalysisRun, *, max_fragments: int
+) -> A1Context:
+    """Controlled context for A1.evidence_candidate_mapping: the run's ExtractedFacts
+    (ids/statements/status only) + active requirements/fields + frozen fragments. Same
+    payload minimization as fact extraction; source text is untrusted data."""
+    from app.repositories import extracted_facts as facts_repo
+
+    settings = get_settings()
+    caller = "A1.evidence_candidate_mapping"
+    blocks, meta = retrieve_source_fragments(
+        db, run, max_fragments=max_fragments,
+        char_budget=settings.a1_context_char_budget,
+    )
+    requirement_defs = lookup_requirement_definition(run)
+    field_defs = lookup_portal_field_profile(run)
+    facts = [
+        {"fact_id": f.fact_id, "statement": f.original_statement, "status": f.status}
+        for f in facts_repo.list_for_run(db, run.run_id)
+    ]
+
+    context_text = _render_context_text(blocks)
+    context_hash = _hash_text(context_text)
+    selected_ids = [b.fragment_id for b in blocks]
+    version_ids = sorted({b.source_version_id for b in blocks})
+
+    _record_tool_invocation(
+        db, run, "retrieve_source_fragments", input_hash=_hash_text(run.run_id),
+        output_hash=context_hash, caller=caller,
+    )
+    _record_tool_invocation(
+        db, run, "lookup_requirement_definition", input_hash=_hash_text(run.run_id),
+        output_hash=_hash_text(",".join(d["requirement_id"] for d in requirement_defs)),
+        caller=caller,
+    )
+    _record_tool_invocation(
+        db, run, "lookup_portal_field_profile", input_hash=_hash_text(run.run_id),
+        output_hash=_hash_text(",".join(d["field_id"] for d in field_defs)),
+        caller=caller,
+    )
+
+    meta["context_hash"] = context_hash
+    meta["extracted_fact_count"] = len(facts)
+    return A1Context(
+        fragment_blocks=blocks,
+        requirement_defs=requirement_defs,
+        field_defs=field_defs,
+        extracted_facts=facts,
         context_text=context_text,
         context_hash=context_hash,
         selected_fragment_ids=selected_ids,

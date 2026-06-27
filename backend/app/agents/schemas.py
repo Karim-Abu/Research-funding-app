@@ -87,11 +87,78 @@ class ProjectFactExtractionResult(BaseModel):
     source_instruction_warnings: list[str] = []
 
 
+# --- A1 EvidenceCandidateMapping (Milestone 9C) ----------------------------
+
+EvidenceTargetType = Literal["requirement", "portal_field"]
+
+
+class ExtractedFactRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fact_id: str
+    statement: str | None = None
+
+
+class EvidenceCandidateMappingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    facts: list[ExtractedFactRef]
+    fragment_ids: list[str]
+    target_requirement_ids: list[str]
+    target_field_ids: list[str]
+
+
+class EvidenceCandidateRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidate_id: str | None = None
+    fragment_id: str
+    quote: str
+    target_type: EvidenceTargetType
+    target_id: str
+    match_rationale: str | None = None
+    extracted_fact_id: str | None = None
+    match_type: str = "exact_normalized"
+
+    @model_validator(mode="after")
+    def _require_quote_and_fragment(self) -> "EvidenceCandidateRecord":
+        # A candidate without a fragment reference or a non-empty quote cannot be
+        # provenance-checked; the orchestrator additionally verifies the quote.
+        if not self.fragment_id or not self.quote.strip():
+            raise ValueError("evidence candidate missing fragment_id or quote")
+        return self
+
+
+class TargetRef(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: EvidenceTargetType
+    target_id: str
+
+
+class EvidenceConflictRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    description: str
+    candidate_ids: list[str] = []
+
+
+class EvidenceCandidateMappingResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    candidates: list[EvidenceCandidateRecord]
+    unmapped_targets: list[TargetRef]
+    conflicts: list[EvidenceConflictRecord] = []
+
+
 # --- registry + helpers ----------------------------------------------------
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ProjectFactExtractionInput@v1": ProjectFactExtractionInput,
     "ProjectFactExtractionResult@v1": ProjectFactExtractionResult,
+    "EvidenceCandidateMappingInput@v1": EvidenceCandidateMappingInput,
+    "EvidenceCandidateMappingResult@v1": EvidenceCandidateMappingResult,
 }
 
 
@@ -130,6 +197,10 @@ __all__ = [
     "ProjectFactExtractionInput",
     "ProjectFactExtractionResult",
     "ExtractedFactRecord",
+    "EvidenceCandidateMappingInput",
+    "EvidenceCandidateMappingResult",
+    "EvidenceCandidateRecord",
+    "TargetRef",
     "SchemaNotImplementedError",
     "ValidationError",
     "validate_payload",

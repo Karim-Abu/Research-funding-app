@@ -7,6 +7,7 @@ on stable uniqueness keys, so a terminal run stays immutable and re-execution
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -60,10 +61,82 @@ def upsert_candidate(
         retrieval_score=spec.retrieval_score,
         status="proposed",
         retrieval_algorithm_version=RETRIEVAL_ALGORITHM_VERSION,
+        generation_origin="deterministic_lexical",
     )
     db.add(candidate)
     db.flush()
     return candidate
+
+
+def find_candidate_by_key(
+    db: Session, run_id: str, target_requirement_id: str, fragment_id: str,
+    quote_hash: str,
+) -> EvidenceCandidate | None:
+    return db.scalar(
+        select(EvidenceCandidate).where(
+            EvidenceCandidate.run_id == run_id,
+            EvidenceCandidate.target_requirement_id == target_requirement_id,
+            EvidenceCandidate.fragment_id == fragment_id,
+            EvidenceCandidate.quote_hash == quote_hash,
+        )
+    )
+
+
+@dataclass(frozen=True)
+class AgentCandidateSpec:
+    """A validated agent-origin evidence candidate (span already derived)."""
+
+    target_requirement_id: str
+    fragment_id: str
+    source_version_id: str
+    source_id: str
+    proposed_quote: str
+    quote_hash: str
+    span_start_in_fragment: int
+    span_end_in_fragment: int
+    agent_invocation_id: str | None
+    profile_id: str
+    prompt_version: str | None
+    source_extracted_fact_id: str | None
+
+
+def upsert_agent_candidate(
+    db: Session, run: AnalysisRun, spec: AgentCandidateSpec
+) -> tuple[EvidenceCandidate, bool]:
+    """Persist an agent-origin candidate. Dedup-keyed identically to the M5
+    deterministic candidate (run, target, fragment, quote_hash): a match returns the
+    existing row with ``created=False`` (no duplicate, no duplicate anchor)."""
+    existing = find_candidate_by_key(
+        db, run.run_id, spec.target_requirement_id, spec.fragment_id, spec.quote_hash
+    )
+    if existing is not None:
+        return existing, False
+    candidate = EvidenceCandidate(
+        candidate_id=str(uuid.uuid4()),
+        run_id=run.run_id,
+        workspace_id=run.workspace_id,
+        target_type="requirement",
+        target_requirement_id=spec.target_requirement_id,
+        fragment_id=spec.fragment_id,
+        source_version_id=spec.source_version_id,
+        source_id=spec.source_id,
+        proposed_quote=spec.proposed_quote,
+        quote_hash=spec.quote_hash,
+        span_start_in_fragment=spec.span_start_in_fragment,
+        span_end_in_fragment=spec.span_end_in_fragment,
+        match_type="exact_normalized",
+        retrieval_score=0.0,
+        status="proposed",
+        retrieval_algorithm_version=spec.prompt_version or spec.profile_id,
+        generation_origin="agent_a1_evidence_mapping",
+        agent_invocation_id=spec.agent_invocation_id,
+        profile_id=spec.profile_id,
+        prompt_version=spec.prompt_version,
+        source_extracted_fact_id=spec.source_extracted_fact_id,
+    )
+    db.add(candidate)
+    db.flush()
+    return candidate, True
 
 
 def list_candidates_for_run(db: Session, run_id: str) -> list[EvidenceCandidate]:

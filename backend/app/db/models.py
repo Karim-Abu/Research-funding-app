@@ -660,6 +660,15 @@ class EvidenceCandidate(Base):
     retrieval_algorithm_version: Mapped[str] = mapped_column(String, nullable=False)
     # Set by the verify stage to the anchor produced for this candidate's quote.
     anchor_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Milestone 9C: candidate origin (internal — public anchor/link schema unchanged).
+    # deterministic_lexical (M5) | agent_a1_evidence_mapping (A1).
+    generation_origin: Mapped[str] = mapped_column(
+        String, nullable=False, default="deterministic_lexical"
+    )
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_extracted_fact_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -1111,4 +1120,46 @@ class ExtractedFact(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# A1 Evidence Candidate Mapping (Milestone 9C): the internal dedup + evaluation
+# trail for agent-proposed evidence candidates. Internal only — no public
+# endpoint. Records, per agent proposal: whether it was newly persisted,
+# deduplicated against an existing candidate, or rejected, plus the post-verify
+# verification outcome and post-link assessment — for baseline-vs-agent
+# evaluation. Never exposed through OpenAPI.
+# ---------------------------------------------------------------------------
+
+
+class AgentEvidenceProposal(Base):
+    """One A1.evidence_candidate_mapping proposal and its lifecycle outcome."""
+
+    __tablename__ = "agent_evidence_proposals"
+
+    proposal_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    fragment_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    quote_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    proposed_by_agent: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # persisted_new | deduplicated | rejected
+    outcome: Mapped[str] = mapped_column(String, nullable=False)
+    candidate_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    existing_candidate_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    duplicate_of_deterministic: Mapped[bool | None] = mapped_column(nullable=True)
+    duplicate_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    rejection_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Backfilled after the deterministic verify / link stages.
+    verification_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    linked_assessment_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )

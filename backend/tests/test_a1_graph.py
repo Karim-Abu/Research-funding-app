@@ -60,11 +60,13 @@ def test_cloud_path_persists_facts_and_runs_discovery(monkeypatch, fresh):
         select(ExtractedFact).where(ExtractedFact.run_id == run_id)
     ).all()
     assert len(facts) == 1  # A1 ran and persisted
-    # Only the A1 profile was invoked — no A2/A3.
+    # Fact extraction ran; only A1 agents are ever invoked (no A2/A3). The same
+    # stage also runs A1.evidence_candidate_mapping (M9C).
     invs = fresh.scalars(
         select(AgentInvocation).where(AgentInvocation.run_id == run_id)
     ).all()
-    assert invs and all(i.profile_id == "A1.project_fact_extraction" for i in invs)
+    assert any(i.profile_id == "A1.project_fact_extraction" for i in invs)
+    assert all(i.agent_id == "A1" for i in invs)
 
 
 def test_deterministic_only_path_skips_facts(monkeypatch, fresh):
