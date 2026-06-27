@@ -26,6 +26,7 @@ import {
 import {
   listEvidence,
   VERIFICATION_LABELS,
+  EVIDENCE_LINK_STATUS_LABELS,
   type EvidenceAnchorDto,
 } from "@/lib/evidence"
 import {
@@ -433,7 +434,9 @@ export function LiveEditor({ runId }: { runId: string }) {
               >
                 <span>
                   Verknüpfung{" "}
-                  <span className="text-muted-foreground">({l.status})</span>
+                  <span className="text-muted-foreground">
+                    ({EVIDENCE_LINK_STATUS_LABELS[l.status]})
+                  </span>
                 </span>
                 {l.status !== "removed" && (
                   <Button

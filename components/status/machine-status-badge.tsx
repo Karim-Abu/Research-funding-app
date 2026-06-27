@@ -1,28 +1,28 @@
 import { CheckCircle2, AlertTriangle, Circle, XCircle } from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { MachineStatus } from "@/lib/types"
+import { MACHINE_STATUS_LABELS, type MachineStatus } from "@/lib/types"
 
 const config: Record<
   MachineStatus,
   { label: string; className: string; icon: typeof CheckCircle2 }
 > = {
   verified: {
-    label: "Verifiziert",
+    label: MACHINE_STATUS_LABELS.verified,
     className: "bg-status-fulfilled/12 text-status-fulfilled",
     icon: CheckCircle2,
   },
   partial: {
-    label: "Prüfen",
+    label: MACHINE_STATUS_LABELS.partial,
     className: "bg-status-partial/12 text-status-partial",
     icon: AlertTriangle,
   },
   open: {
-    label: "Offen",
+    label: MACHINE_STATUS_LABELS.open,
     className: "bg-muted text-muted-foreground",
     icon: Circle,
   },
   blocker: {
-    label: "Blockierend",
+    label: MACHINE_STATUS_LABELS.blocker,
     className: "bg-status-blocker/12 text-status-blocker",
     icon: XCircle,
   },

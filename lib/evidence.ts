@@ -58,6 +58,14 @@ export const VERIFICATION_LABELS: Record<VerificationStatus, string> = {
   human_verified: "Menschlich geprüft",
 }
 
+// User-facing labels for the link lifecycle between a draft/claim and its
+// evidence anchor. Keeps raw enum values ("active"/"stale"/"removed") out of UI.
+export const EVIDENCE_LINK_STATUS_LABELS: Record<EvidenceLinkStatus, string> = {
+  active: "Aktiv",
+  stale: "Veraltet",
+  removed: "Entfernt",
+}
+
 // "Fundstelle bestätigt" = the quote exists verbatim in the source. It does NOT
 // mean the statement has been fachlich (substantively) approved.
 export const VERIFIED_EXPLANATION =

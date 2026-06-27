@@ -37,7 +37,7 @@ function project(overrides: Record<string, unknown>) {
   }
 }
 
-describe("dashboard live demo projects", () => {
+describe("projects overview", () => {
   beforeEach(() => {
     push.mockReset()
     replace.mockReset()
@@ -90,7 +90,7 @@ describe("dashboard live demo projects", () => {
     )
   })
 
-  it("shows demo badges and truthful next actions", async () => {
+  it("shows project cards and the compact overview", async () => {
     render(
       <AppProviders mode="live">
         <DashboardPage />
@@ -98,17 +98,16 @@ describe("dashboard live demo projects", () => {
     )
 
     await screen.findByText(/kreislauffaehiger Verbundwerkstoffe/)
+    expect(screen.getByRole("heading", { name: "Projekte" })).toBeInTheDocument()
+    expect(screen.getByText("Aktive Projekte")).toBeInTheDocument()
+    expect(screen.getByText("Review offen")).toBeInTheDocument()
+    expect(screen.getByText("Blocker")).toBeInTheDocument()
+    expect(screen.getByText("Nächste Frist")).toBeInTheDocument()
     expect(screen.getAllByText("Demo")).toHaveLength(2)
-    expect(
-      screen.getByRole("button", { name: "Entwurf weiterbearbeiten" })
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: /Analyse/ })).toBeInTheDocument()
-    expect(
-      screen.queryByRole("button", { name: "Review freigeben" })
-    ).not.toBeInTheDocument()
-    expect(
-      screen.queryByRole("button", { name: "Export erstellen" })
-    ).not.toBeInTheDocument()
+    expect(screen.getAllByRole("button", { name: "Weiterarbeiten" })).toHaveLength(2)
+    expect(screen.getAllByText("Innosuisse · Innovationsprojekt")).toHaveLength(2)
+    expect(screen.getByText(/Bearbeitungsstand:\s*72\s*%/)).toBeInTheDocument()
+    expect(screen.getByText(/Schritt 5 von 8:\s*Entwurf/)).toBeInTheDocument()
   })
 
   it("sets the active project before navigating", async () => {
@@ -118,9 +117,9 @@ describe("dashboard live demo projects", () => {
       </AppProviders>
     )
 
-    const action = await screen.findByRole("button", {
-      name: "Entwurf weiterbearbeiten",
-    })
+    const action = (await screen.findAllByRole("button", {
+      name: "Weiterarbeiten",
+    }))[0]
     fireEvent.click(action)
 
     expect(window.sessionStorage.getItem("rf_active_project_id")).toBe("project-a")

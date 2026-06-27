@@ -58,6 +58,7 @@ export function LiveEvidence({ runId }: { runId: string }) {
     "all"
   )
   const [expanded, setExpanded] = React.useState<string | null>(null)
+  const [expandedTech, setExpandedTech] = React.useState<string | null>(null)
 
   const load = React.useCallback(() => {
     setError(null)
@@ -68,7 +69,7 @@ export function LiveEvidence({ runId }: { runId: string }) {
       .then(([evidence, assessments]) => {
         const anchorToTitle = new Map<string, string>()
         for (const a of assessments) {
-          const title = a.title ?? a.requirement_id
+          const title = a.title ?? "Keine zugeordnete Anforderung"
           for (const link of a.evidence_links ?? []) {
             if (!anchorToTitle.has(link.anchor_id)) {
               anchorToTitle.set(link.anchor_id, title)
@@ -161,6 +162,7 @@ export function LiveEvidence({ runId }: { runId: string }) {
         <ul className="flex flex-col gap-3">
           {visible.map((anchor) => {
             const isOpen = expanded === anchor.anchor_id
+            const isTechOpen = expandedTech === anchor.anchor_id
             return (
               <li
                 key={anchor.anchor_id}
@@ -209,20 +211,43 @@ export function LiveEvidence({ runId }: { runId: string }) {
                   Details
                 </button>
                 {isOpen && (
-                  <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                    <dt>Quelle</dt>
-                    <dd>{anchor.source_name}</dd>
-                    <dt>Normalizer</dt>
-                    <dd>{anchor.normalizer_version}</dd>
-                    {anchor.start_offset != null && (
-                      <>
-                        <dt>Position</dt>
-                        <dd>
-                          {anchor.start_offset}–{anchor.end_offset}
-                        </dd>
-                      </>
-                    )}
-                  </dl>
+                  <div className="mt-2 flex flex-col gap-2">
+                    <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                      <dt>Quelle</dt>
+                      <dd>{anchor.source_name}</dd>
+                    </dl>
+                    <div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setExpandedTech(isTechOpen ? null : anchor.anchor_id)
+                        }
+                        aria-expanded={isTechOpen}
+                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      >
+                        {isTechOpen ? (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronRight className="h-3.5 w-3.5" />
+                        )}
+                        Technische Details
+                      </button>
+                      {isTechOpen && (
+                        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
+                          <dt>Normalizer</dt>
+                          <dd>{anchor.normalizer_version}</dd>
+                          {anchor.start_offset != null && (
+                            <>
+                              <dt>Position</dt>
+                              <dd>
+                                {anchor.start_offset}–{anchor.end_offset}
+                              </dd>
+                            </>
+                          )}
+                        </dl>
+                      )}
+                    </div>
+                  </div>
                 )}
               </li>
             )

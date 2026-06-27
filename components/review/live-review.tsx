@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { RefreshCw, CheckCircle2 } from "lucide-react"
+import { RefreshCw, CheckCircle2, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -10,24 +10,10 @@ import {
   startRecheck,
   createApproval,
   ReviewError,
+  APPROVAL_STATUS_LABELS,
+  APPROVAL_STATUS_VARIANT,
   type ReviewPackageDto,
 } from "@/lib/review"
-
-const STATUS_LABEL: Record<string, string> = {
-  open: "Offen",
-  blocked: "Blockiert",
-  approved: "Freigegeben",
-  changes_required: "Änderungen erforderlich",
-  stale: "Freigabe ungültig",
-}
-
-const STATUS_VARIANT: Record<string, "default" | "destructive" | "secondary" | "outline"> = {
-  approved: "default",
-  blocked: "destructive",
-  stale: "destructive",
-  changes_required: "outline",
-  open: "secondary",
-}
 
 function disabledReasons(pkg: ReviewPackageDto): string[] {
   const reasons: string[] = []
@@ -43,6 +29,7 @@ export function LiveReview({ runId }: { runId: string }) {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [notice, setNotice] = React.useState<string | null>(null)
+  const [showTech, setShowTech] = React.useState(false)
 
   const load = React.useCallback(() => {
     setError(null)
@@ -114,16 +101,37 @@ export function LiveReview({ runId }: { runId: string }) {
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-5">
       <div className="flex items-center justify-between gap-3">
-        <h1 className="text-lg font-semibold">Review-Center</h1>
-        <Badge variant={STATUS_VARIANT[pkg.approval_status] ?? "secondary"}>
-          {STATUS_LABEL[pkg.approval_status] ?? pkg.approval_status}
+        <h1 className="text-lg font-semibold">Qualitätsprüfung</h1>
+        <Badge variant={APPROVAL_STATUS_VARIANT[pkg.approval_status] ?? "secondary"}>
+          {APPROVAL_STATUS_LABELS[pkg.approval_status] ?? "Status unbekannt"}
         </Badge>
       </div>
 
       <div className="flex flex-wrap gap-4 text-sm text-muted-foreground">
         <span>{pkg.blocker_count} Blocker</span>
         <span>{pkg.warning_count} Hinweise</span>
-        <span className="font-mono text-xs">{pkg.review_package_version}</span>
+      </div>
+
+      <div>
+        <button
+          type="button"
+          onClick={() => setShowTech((v) => !v)}
+          aria-expanded={showTech}
+          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
+        >
+          {showTech ? (
+            <ChevronDown className="h-3.5 w-3.5" />
+          ) : (
+            <ChevronRight className="h-3.5 w-3.5" />
+          )}
+          Technische Details
+        </button>
+        {showTech && (
+          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
+            <dt>Prüfpaket-Version</dt>
+            <dd className="font-mono">{pkg.review_package_version}</dd>
+          </dl>
+        )}
       </div>
 
       {pkg.recheck_required && (

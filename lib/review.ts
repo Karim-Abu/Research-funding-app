@@ -18,6 +18,27 @@ export type ApprovalStatus =
   | "stale"
 export type ApprovalScope = "run" | "field"
 
+// User-facing approval labels + badge variants. Single source so the raw enum
+// values never reach the UI.
+export const APPROVAL_STATUS_LABELS: Record<ApprovalStatus, string> = {
+  open: "Offen",
+  blocked: "Blockiert",
+  approved: "Freigegeben",
+  changes_required: "Änderungen erforderlich",
+  stale: "Freigabe ungültig",
+}
+
+export const APPROVAL_STATUS_VARIANT: Record<
+  ApprovalStatus,
+  "default" | "destructive" | "secondary" | "outline"
+> = {
+  approved: "default",
+  blocked: "destructive",
+  stale: "destructive",
+  changes_required: "outline",
+  open: "secondary",
+}
+
 export interface ReviewFindingDto {
   finding_id: string
   profile_id: string

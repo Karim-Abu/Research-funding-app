@@ -507,7 +507,7 @@ export function ReviewScreen({
         {/* Page header */}
         <div className="mb-8 flex flex-col gap-2">
           <h1 className="text-balance text-2xl font-semibold text-foreground">
-            Review
+            Qualitätsprüfung
           </h1>
           <p className="text-sm text-muted-foreground">
             Qualitätsprüfungen, Hinweise und Freigabe für diesen Antrag.

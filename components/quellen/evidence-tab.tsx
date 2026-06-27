@@ -18,7 +18,7 @@ import type {
   EvidenceSection,
 } from "@/lib/quellen-mock-data"
 import { EVIDENCE_SECTIONS } from "@/lib/quellen-mock-data"
-import type { MachineStatus } from "@/lib/types"
+import { MACHINE_STATUS_LABELS, type MachineStatus } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Filter bar
@@ -68,7 +68,7 @@ function EvidenceFilters({
           <span className="truncate">
             {statusFilter === "all"
               ? "Alle Status"
-              : STATUS_LABEL[statusFilter as MachineStatus]}
+              : MACHINE_STATUS_LABELS[statusFilter as MachineStatus]}
           </span>
         </SelectTrigger>
         <SelectContent>
@@ -82,12 +82,6 @@ function EvidenceFilters({
   )
 }
 
-const STATUS_LABEL: Record<MachineStatus, string> = {
-  verified: "Verifiziert",
-  partial: "Prüfen",
-  open: "Offen",
-  blocker: "Blockierend",
-}
 
 // ---------------------------------------------------------------------------
 // Evidence card

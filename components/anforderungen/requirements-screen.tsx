@@ -37,7 +37,7 @@ import {
 } from "@/lib/anforderungen-mock-data"
 import { dummyEvidence } from "@/lib/quellen-mock-data"
 import type { Requirement, RequirementGroup } from "@/lib/anforderungen-mock-data"
-import type { MachineStatus } from "@/lib/types"
+import { REQUIREMENT_STATUS_LABELS, type MachineStatus } from "@/lib/types"
 import type { EvidenceCard } from "@/lib/quellen-mock-data"
 
 // ---------------------------------------------------------------------------
@@ -59,12 +59,6 @@ interface CounterBarProps {
 // Set to true only during internal prototyping — never in the evaluation view.
 const SHOW_DEBUG_CONTROLS = false
 
-const STATUS_LABEL: Record<MachineStatus, string> = {
-  verified: "Erfüllt",
-  partial: "Teilweise",
-  open: "Offen",
-  blocker: "Blockierend",
-}
 
 const COUNTER_CONFIG: { status: MachineStatus; color: string; activeColor: string }[] = [
   { status: "verified", color: "text-status-fulfilled", activeColor: "bg-status-fulfilled/10 ring-status-fulfilled/30" },
@@ -115,7 +109,7 @@ function CounterBar({ rows, activeFilter, onFilterChange }: CounterBarProps) {
               aria-pressed={isActive}
             >
               <span className={cn("text-base font-semibold", color)}>{count}</span>
-              <span className="text-muted-foreground">{STATUS_LABEL[status]}</span>
+              <span className="text-muted-foreground">{REQUIREMENT_STATUS_LABELS[status]}</span>
             </button>
           )
         })}
@@ -201,7 +195,7 @@ function OverrideDialog({ open, onOpenChange, rowTitle, onConfirm }: OverrideDia
             </Label>
             <Select value={status} onValueChange={(v) => setStatus(v as MachineStatus)}>
               <SelectTrigger id="override-status" className="w-full">
-                <span>{STATUS_LABEL[status]}</span>
+                <span>{REQUIREMENT_STATUS_LABELS[status]}</span>
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="verified">Erfüllt</SelectItem>
@@ -288,7 +282,7 @@ function RequirementRow({
         )}
         <MachineStatusBadge
           status={effectiveStatus}
-          label={STATUS_LABEL[effectiveStatus]}
+          label={REQUIREMENT_STATUS_LABELS[effectiveStatus]}
           className="shrink-0"
         />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">

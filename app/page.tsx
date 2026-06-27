@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { Plus, RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { ProjectCard } from "@/components/dashboard/project-card"
+import { ProjectSummaryBar } from "@/components/dashboard/project-summary"
 import {
   currentUser,
   dashboardProjects,
@@ -87,10 +88,10 @@ export default function DashboardPage() {
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold text-foreground text-balance">
-              {`Willkommen zurück, ${(user?.name ?? currentUser.name).split(" ")[0]}`}
+              Projekte
             </h1>
             <p className="text-sm text-muted-foreground">
-              Arbeitsbereich Innosuisse-Anträge (Dummy-Daten)
+              {`Willkommen zurück, ${(user?.name ?? currentUser.name).split(" ")[0]} — Ihre Innosuisse-Anträge im Überblick.`}
             </p>
           </div>
           <Button onClick={() => router.push("/intake")}>
@@ -98,6 +99,11 @@ export default function DashboardPage() {
             Neuer Antrag
           </Button>
         </div>
+
+        {/* Compact overview — only when projects are loaded */}
+        {pageState === "default" && cards.length > 0 && (
+          <ProjectSummaryBar projects={cards} />
+        )}
 
         {/* Content area — four states */}
         {pageState === "loading" && <LoadingGrid />}

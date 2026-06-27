@@ -84,6 +84,13 @@ export interface EvidenceAnchorDto {
 export type IssueSeverity = "blocker" | "warning" | "info"
 export type IssueState = "open" | "confirmed" | "overridden"
 
+// Canonical user-facing severity wording. Single source so screens don't drift.
+export const ISSUE_SEVERITY_LABELS: Record<IssueSeverity, string> = {
+  blocker: "Blockierend",
+  warning: "Warnung",
+  info: "Hinweis",
+}
+
 export interface IssueDto {
   id: string
   fieldId: string

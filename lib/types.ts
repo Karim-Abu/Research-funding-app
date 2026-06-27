@@ -34,6 +34,25 @@ export interface WorkflowStep {
 /** Machine-evaluated status — always rendered as a colored Badge. */
 export type MachineStatus = "verified" | "partial" | "open" | "blocker"
 
+// Two legitimate label domains share the MachineStatus type. Centralised here so
+// each domain has a single source of truth (no per-screen duplicate maps).
+//
+// Default / evidence verification wording (Evidenz, Belege).
+export const MACHINE_STATUS_LABELS: Record<MachineStatus, string> = {
+  verified: "Verifiziert",
+  partial: "Prüfen",
+  open: "Offen",
+  blocker: "Blockierend",
+}
+
+// Requirement-fulfilment wording (Anforderungen / Fördervoraussetzungen).
+export const REQUIREMENT_STATUS_LABELS: Record<MachineStatus, string> = {
+  verified: "Erfüllt",
+  partial: "Teilweise",
+  open: "Offen",
+  blocker: "Blockierend",
+}
+
 /** Human confirmation — always rendered as a teal check with name + time. */
 export interface HumanCheck {
   name: string
@@ -105,6 +124,27 @@ export type NextAction =
 /** Optional warning badge — at most one per card. */
 export type WarningBadge = "durchlauf_gestoppt" | "freigabe_offen"
 
+/** High-level project status surfaced as the primary card badge + summary counts. */
+export type ProjectCardStatus =
+  | "in_bearbeitung"
+  | "review_offen"
+  | "blockiert"
+  | "eingereicht"
+
+export const PROJECT_STATUS_LABELS: Record<ProjectCardStatus, string> = {
+  in_bearbeitung: "In Bearbeitung",
+  review_offen: "Review offen",
+  blockiert: "Blockiert",
+  eingereicht: "Eingereicht",
+}
+
+/** A person involved in a project — rendered as an avatar in the card stack. */
+export interface ProjectPerson {
+  name: string
+  /** 1–2 letter monogram for the avatar fallback. */
+  initials: string
+}
+
 export interface DashboardProject {
   id: string
   title: string
@@ -113,12 +153,24 @@ export interface DashboardProject {
   progressPercent: number
   /** 1-based current step number (1–8). */
   currentStep: number
+  /** Optional backend-provided display label for the current step. */
+  currentStepLabel?: string | null
   lastEditedLabel: string
   nextAction: NextAction
   warningBadge?: WarningBadge
-  /** When true, the card shows a spinner + "Analyse läuft…" and the next-action button becomes "Fortschritt ansehen". */
+  /** When true, the card shows a spinner while keeping the primary action stable. */
   analysisRunning?: boolean
   isDemo?: boolean
+  /** Funding programme, e.g. "Innosuisse". Frontend fallback when absent. */
+  fundingProgram?: string
+  /** Application type, e.g. "Innovationsprojekt". Frontend fallback when absent. */
+  applicationType?: string
+  /** High-level status badge. Derived in the live mapping when absent. */
+  cardStatus?: ProjectCardStatus
+  /** ISO date of the submission deadline — used for the "nächste Frist" summary. */
+  deadlineIso?: string | null
+  /** People involved, rendered as an avatar stack. */
+  people?: ProjectPerson[]
 }
 
 
