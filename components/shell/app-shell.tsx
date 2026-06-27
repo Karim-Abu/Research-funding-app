@@ -4,6 +4,7 @@ import * as React from "react"
 import { Sidebar } from "./sidebar"
 import { Topbar } from "./topbar"
 import { WorkflowStepper } from "./workflow-stepper"
+import { useSession } from "@/components/providers/app-providers"
 import type { Project, StepStatus, User } from "@/lib/types"
 
 interface AppShellProps {
@@ -30,16 +31,28 @@ export function AppShell({
   const [collapsed, setCollapsed] = React.useState(false)
   const [projectId, setProjectId] = React.useState(activeProjectId)
 
+  // In live mode the authenticated session user takes precedence over the
+  // prop (mock identity); in mock mode the passed user is used unchanged.
+  const { status, user: sessionUser } = useSession()
+  const effectiveUser: User =
+    status === "authenticated" && sessionUser
+      ? {
+          name: sessionUser.name,
+          displayRole: sessionUser.display_label ?? "",
+          role: sessionUser.effective_role,
+        }
+      : user
+
   return (
     <div className="flex h-screen min-w-[1280px] overflow-hidden bg-background">
       <Sidebar
-        role={user.role}
+        role={effectiveUser.role}
         collapsed={collapsed}
         onToggle={() => setCollapsed((c) => !c)}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
-          user={user}
+          user={effectiveUser}
           projects={projects}
           activeProjectId={projectId}
           onProjectChange={setProjectId}

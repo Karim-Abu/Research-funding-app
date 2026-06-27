@@ -5,8 +5,14 @@ import type { DataClass, HumanCheck, MachineStatus } from "./types"
 // Sources
 // ---------------------------------------------------------------------------
 
-export type SourceType = "PDF" | "URL" | "Text"
-export type SourceStatus = "processed" | "processing" | "error"
+export type SourceType = "PDF" | "DOCX" | "URL" | "Text"
+// Aligned with the contract SourceDocument status enum.
+export type SourceStatus =
+  | "uploaded"
+  | "processing"
+  | "processed"
+  | "needs_manual_input"
+  | "failed"
 
 export interface Source {
   id: string
@@ -15,7 +21,7 @@ export interface Source {
   status: SourceStatus
   addedBy: string
   addedAt: string
-  /** Only set when status === "error". */
+  /** Set for failed / needs_manual_input states. */
   errorHint?: string
 }
 
@@ -48,7 +54,7 @@ export const dummySources: Source[] = [
     id: "s4",
     name: "Zusammenfassung_Partnergespräch.txt (Dummy)",
     type: "Text",
-    status: "error",
+    status: "failed",
     addedBy: "Tobias Frei",
     addedAt: "heute, 08:45",
     errorHint:

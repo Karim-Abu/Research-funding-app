@@ -8,11 +8,13 @@ import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Alert } from "@/components/ui/alert"
+import { useSession } from "@/components/providers/app-providers"
 
-// Mock login — no real authentication, no session, no storage.
-// "/" remains directly reachable; there is no auth guard.
+// Login submits real credentials in live mode (POST /api/session via the BFF);
+// in mock mode the session layer returns a stable demo identity.
 export default function LoginPage() {
   const router = useRouter()
+  const { login } = useSession()
   const [email, setEmail] = React.useState("")
   const [password, setPassword] = React.useState("")
   const [submitting, setSubmitting] = React.useState(false)
@@ -27,9 +29,13 @@ export default function LoginPage() {
     }
     setError(false)
     setSubmitting(true)
-    // Simulated sign-in delay — prototype only, nothing is checked or stored.
-    await new Promise((r) => setTimeout(r, 800))
-    router.push("/")
+    try {
+      await login(email, password)
+      router.push("/")
+    } catch {
+      setError(true)
+      setSubmitting(false)
+    }
   }
 
   return (

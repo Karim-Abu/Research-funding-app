@@ -1,0 +1,660 @@
+schema_version: 1.0.0
+registry_id: controls.core
+title: Control & Guardrail Registry
+status: ready_for_implementation
+last_updated: '2026-06-21'
+global_rules:
+- Unknown control IDs are startup-fatal.
+- A blocked or failed pre-action control prevents the dependent action.
+- Every control result is immutable, versioned and linked to the governed invocation or action.
+- Warnings permit continuation only when the control definition and policy explicitly allow it.
+- Source content is always untrusted data.
+control_result_schema: ControlResultRecord@v1
+controls:
+- control_id: CTRL.DATA_POLICY
+  version: 1.0.0
+  name: Data policy routing
+  category: privacy
+  phase:
+  - pre_source
+  - pre_model
+  - pre_tool
+  - pre_export
+  description: Resolves effective classification and permits, conditions, or blocks the requested processing route.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_action
+  reason_codes:
+  - POLICY_ALLOWED
+  - POLICY_CONFIRMATION_REQUIRED
+  - POLICY_PROVIDER_NOT_APPROVED
+  - POLICY_CONFIDENTIAL_BLOCKED
+  - POLICY_NDA_BLOCKED
+  - POLICY_CLASSIFICATION_MISSING
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.INPUT_SCHEMA
+  version: 1.0.0
+  name: Input schema validation
+  category: validation
+  phase:
+  - pre_model
+  - pre_tool
+  - pre_api
+  description: Validates inputs against the referenced versioned schema.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_action
+  reason_codes:
+  - INPUT_VALID
+  - INPUT_SCHEMA_INVALID
+  - INPUT_REQUIRED_FIELD_MISSING
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.OUTPUT_SCHEMA
+  version: 1.0.0
+  name: Output schema validation
+  category: validation
+  phase:
+  - post_model
+  - post_tool
+  description: Validates model and tool output against the referenced versioned schema and rejects additional forbidden fields.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_persistence
+  reason_codes:
+  - OUTPUT_VALID
+  - OUTPUT_SCHEMA_INVALID
+  - OUTPUT_FORBIDDEN_FIELD
+  - OUTPUT_PARTIAL_ACCEPTED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.SOURCE_TRUST
+  version: 1.0.0
+  name: Untrusted source handling
+  category: security
+  phase:
+  - pre_source
+  - pre_model
+  description: Marks all source content as untrusted data and prevents source text from changing system, profile, or tool instructions.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_prevents_use
+  reason_codes:
+  - SOURCE_MARKED_UNTRUSTED
+  - SOURCE_INJECTION_SUSPECTED
+  - SOURCE_INSTRUCTION_BOUNDARY_VIOLATION
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.PROMPT_INJECTION
+  version: 1.0.0
+  name: Prompt injection protection
+  category: security
+  phase:
+  - pre_model
+  - post_model
+  - pre_tool
+  description: Applies instruction/data separation, suspicious-pattern marking and tool-call validation against source-borne instructions.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_prevents_action
+  reason_codes:
+  - NO_INJECTION_SIGNAL
+  - INJECTION_SUSPECTED
+  - INJECTION_TOOL_ESCALATION_BLOCKED
+  - INJECTION_POLICY_BYPASS_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.TOOL_AUTHORIZATION
+  version: 1.0.0
+  name: Tool authorization
+  category: authorization
+  phase:
+  - pre_tool
+  description: Requires the caller profile and tool definition to mutually authorize the call and enforces caller role/scope.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_tool_call
+  reason_codes:
+  - TOOL_ALLOWED
+  - TOOL_NOT_REGISTERED
+  - CALLER_NOT_ALLOWED
+  - PROFILE_TOOL_MISMATCH
+  - ROLE_NOT_ALLOWED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.COST_GUARD
+  version: 1.0.0
+  name: Cost and call guard
+  category: cost
+  phase:
+  - pre_model
+  - post_model
+  - pre_tool
+  - post_tool
+  description: Checks remaining run budgets before calls and records actual usage after calls.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_prevents_new_call
+  reason_codes:
+  - BUDGET_OK
+  - BUDGET_WARNING
+  - COST_LIMIT_REACHED
+  - CALL_LIMIT_REACHED
+  - RETRY_LIMIT_REACHED
+  - REDAFT_LIMIT_REACHED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.RUN_SNAPSHOT_SCOPE
+  version: 1.0.0
+  name: Run snapshot scope
+  category: integrity
+  phase:
+  - pre_tool
+  - pre_model
+  description: Ensures retrieval and processing only use source versions and configuration versions frozen in the run snapshot.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_action
+  reason_codes:
+  - SNAPSHOT_SCOPE_VALID
+  - SOURCE_NOT_IN_SNAPSHOT
+  - CONFIG_VERSION_MISMATCH
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.LEAST_CONTEXT
+  version: 1.0.0
+  name: Least-context minimization
+  category: privacy
+  phase:
+  - pre_model
+  - pre_tool
+  description: Limits retrieved and externally transmitted context to the minimum required fragments and fields.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_prevents_external_call
+  reason_codes:
+  - CONTEXT_MINIMIZED
+  - CONTEXT_EXCESSIVE
+  - CONTEXT_REDUCED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.FILE_TYPE
+  version: 1.0.0
+  name: File type validation
+  category: source_security
+  phase:
+  - pre_source
+  description: Allows only configured content types and rejects extension/MIME mismatches.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_ingestion
+  reason_codes:
+  - FILE_TYPE_ALLOWED
+  - FILE_TYPE_UNSUPPORTED
+  - MIME_EXTENSION_MISMATCH
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.FILE_SIZE
+  version: 1.0.0
+  name: Technical file size limit
+  category: source_security
+  phase:
+  - pre_source
+  description: Enforces the deployment-configured technical limit without defining a business limit.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_prevents_ingestion
+  reason_codes:
+  - FILE_SIZE_OK
+  - FILE_SIZE_NEAR_LIMIT
+  - FILE_TOO_LARGE
+  - LIMIT_NOT_CONFIGURED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.FILENAME_NORMALIZATION
+  version: 1.0.0
+  name: Filename normalization
+  category: source_security
+  phase:
+  - pre_source
+  - pre_export
+  description: Normalizes filenames and removes unsafe path/control characters.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_prevents_write
+  reason_codes:
+  - FILENAME_SAFE
+  - FILENAME_NORMALIZED
+  - FILENAME_UNSAFE
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.PATH_TRAVERSAL
+  version: 1.0.0
+  name: Path traversal prevention
+  category: source_security
+  phase:
+  - pre_source
+  - pre_export
+  description: Ensures resolved storage paths remain inside configured storage roots.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_write
+  reason_codes:
+  - PATH_SAFE
+  - PATH_TRAVERSAL_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.MALWARE_SCAN
+  version: 1.0.0
+  name: Malware scan
+  category: source_security
+  phase:
+  - pre_source
+  description: Runs a configured malware scanner when available; lack of scanner is visible and policy-controlled.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: infected_or_failed_if_required_prevents_ingestion
+  reason_codes:
+  - SCAN_CLEAN
+  - SCAN_NOT_AVAILABLE
+  - MALWARE_DETECTED
+  - SCAN_FAILED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.PARSER_ALLOWLIST
+  version: 1.0.0
+  name: Parser allowlist
+  category: source_security
+  phase:
+  - pre_source
+  description: Selects only registered parser versions for the detected source type.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_normalization
+  reason_codes:
+  - PARSER_ALLOWED
+  - PARSER_NOT_REGISTERED
+  - PARSER_VERSION_REVOKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.CONTENT_HASH
+  version: 1.0.0
+  name: Content hash integrity
+  category: integrity
+  phase:
+  - pre_source
+  - post_source
+  - pre_export
+  description: Computes and verifies immutable content hashes for source and export versions.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: hash_mismatch_prevents_use
+  reason_codes:
+  - HASH_VALID
+  - HASH_CREATED
+  - HASH_MISMATCH
+  - HASH_FAILED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.PUBLIC_URL_VALIDATION
+  version: 1.0.0
+  name: Validated public URL
+  category: network_security
+  phase:
+  - pre_tool
+  description: Requires HTTPS, public DNS resolution, no credentials, allowed content purpose, and no private/authenticated target.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_fetch
+  reason_codes:
+  - PUBLIC_URL_VALID
+  - URL_NOT_HTTPS
+  - URL_HAS_CREDENTIALS
+  - URL_NOT_PUBLIC
+  - URL_PURPOSE_NOT_ALLOWED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.SSRF_PREVENTION
+  version: 1.0.0
+  name: SSRF prevention
+  category: network_security
+  phase:
+  - pre_tool
+  description: Blocks loopback, private, link-local, metadata and disallowed network targets before and after DNS resolution.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_fetch
+  reason_codes:
+  - NETWORK_TARGET_PUBLIC
+  - PRIVATE_TARGET_BLOCKED
+  - DNS_REBINDING_BLOCKED
+  - METADATA_TARGET_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.REDIRECT_REVALIDATION
+  version: 1.0.0
+  name: Redirect revalidation
+  category: network_security
+  phase:
+  - pre_tool
+  description: Revalidates every redirect target using the same public URL and SSRF controls.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_fetch
+  reason_codes:
+  - REDIRECT_CHAIN_VALID
+  - REDIRECT_TARGET_BLOCKED
+  - TOO_MANY_REDIRECTS
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.INTERNAL_PUBLIC_QUERY_CONFIRMATION
+  version: 1.0.0
+  name: Internal-project public query confirmation
+  category: privacy
+  phase:
+  - pre_tool
+  description: For internal projects, requires the exact sanitized query/URL to be shown and confirmed as public before external research.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_external_call
+  reason_codes:
+  - QUERY_CONFIRMED_PUBLIC
+  - QUERY_NOT_CONFIRMED
+  - QUERY_CONTAINS_INTERNAL_CONTENT
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.PROFESSIONAL_RESEARCH_PURPOSE
+  version: 1.0.0
+  name: Professional research purpose limitation
+  category: privacy
+  phase:
+  - pre_tool
+  - post_tool
+  description: Limits public-person research to professional competencies, publications and public project track record for stated partner-role
+    needs.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_prevents_use
+  reason_codes:
+  - PURPOSE_ALLOWED
+  - PURPOSE_TOO_BROAD
+  - NON_PROFESSIONAL_PROFILING_BLOCKED
+  - AUTOMATIC_PARTNER_SELECTION_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.NO_SENSITIVE_PERSONAL_ATTRIBUTES
+  version: 1.0.0
+  name: Sensitive personal attribute exclusion
+  category: privacy
+  phase:
+  - pre_tool
+  - post_tool
+  description: Blocks collection or inference of sensitive and non-professional personal attributes.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_persistence
+  reason_codes:
+  - NO_SENSITIVE_ATTRIBUTES
+  - SENSITIVE_ATTRIBUTE_DETECTED
+  - PRIVATE_CONTACT_DATA_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.VERSION_LOCK
+  version: 1.0.0
+  name: Configuration version lock
+  category: integrity
+  phase:
+  - pre_model
+  - pre_tool
+  - pre_rule
+  - pre_export
+  description: Ensures referenced policy, rule, profile, prompt, parser, normalizer, source and draft versions match the run snapshot or current
+    optimistic lock.
+  statuses:
+  - passed
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_action
+  reason_codes:
+  - VERSION_MATCH
+  - CONFIG_VERSION_MISMATCH
+  - SOURCE_VERSION_MISMATCH
+  - DRAFT_VERSION_CONFLICT
+  - NORMALIZER_VERSION_MISMATCH
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.EVIDENCE_VERIFICATION
+  version: 1.0.0
+  name: Evidence technical verification
+  category: evidence
+  phase:
+  - post_tool
+  - pre_review
+  - pre_export
+  description: Enforces exact-normalized verification rules; fuzzy/semantic candidates require human verification.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_when_required_evidence_not_verified
+  reason_codes:
+  - EXACT_VERIFIED
+  - HUMAN_VERIFIED
+  - NEEDS_HUMAN_REVIEW
+  - QUOTE_NOT_FOUND
+  - ANCHOR_REJECTED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.EVIDENCE_REQUIREMENT
+  version: 1.0.0
+  name: Evidence requirement
+  category: evidence
+  phase:
+  - post_model
+  - pre_review
+  - pre_export
+  description: Checks that required claims and fields have active verified evidence links or explicit placeholders/open issues.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_for_required_unresolved_evidence
+  reason_codes:
+  - EVIDENCE_COMPLETE
+  - EVIDENCE_PARTIAL
+  - EVIDENCE_MISSING
+  - PLACEHOLDER_PRESENT
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.FACT_STATUS
+  version: 1.0.0
+  name: Confirmed fact filter
+  category: integrity
+  phase:
+  - pre_model
+  - pre_tool
+  description: Ensures drafting and review use only confirmed facts unless the schema explicitly carries proposed/conflicted facts as context.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  blocking_rule: blocked_prevents_authoritative_use
+  reason_codes:
+  - FACT_CONFIRMED
+  - FACT_PROPOSED_EXCLUDED
+  - FACT_CONFLICTED
+  - FACT_MISSING
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.APPROVAL_GATE
+  version: 1.0.0
+  name: Review approval gate
+  category: workflow
+  phase:
+  - pre_approval
+  - pre_resume
+  - pre_export
+  description: Requires a current rechecked approval scope, no unresolved blockers and valid review authorization.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: blocked_or_failed_prevents_approval_or_finalize
+  reason_codes:
+  - APPROVAL_ALLOWED
+  - RECHECK_REQUIRED
+  - BLOCKERS_OPEN
+  - APPROVAL_SCOPE_STALE
+  - USER_NOT_AUTHORIZED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.EXPORT_CLASSIFICATION
+  version: 1.0.0
+  name: Export classification and draft marking
+  category: workflow
+  phase:
+  - pre_export
+  - post_export
+  description: Propagates effective classification and enforces ENTWURF marking without a valid approval.
+  statuses:
+  - passed
+  - warning
+  - blocked
+  - failed
+  blocking_rule: failed_prevents_export
+  reason_codes:
+  - EXPORT_APPROVED
+  - EXPORT_MARKED_DRAFT
+  - EXPORT_CLASSIFICATION_APPLIED
+  - EXPORT_BLOCKED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path
+- control_id: CTRL.AUDIT_WRITE
+  version: 1.0.0
+  name: Audit write assurance
+  category: audit
+  phase:
+  - post_action
+  description: Requires immutable audit persistence for governed actions; configured critical failures fail closed.
+  statuses:
+  - passed
+  - failed
+  blocking_rule: failed_stops_critical_workflow
+  reason_codes:
+  - AUDIT_WRITTEN
+  - AUDIT_WRITE_FAILED
+  audit_required: true
+  test_cases_required:
+  - happy_path
+  - blocked_or_failed_path

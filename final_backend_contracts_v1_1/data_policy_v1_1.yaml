@@ -1,0 +1,307 @@
+schema_version: 1.1.0
+policy_id: proposal-assistant-data-policy
+title: Data Policy – Evidenzbasierte Proposal-Unterstützung
+status: approved_for_evaluation_beta
+effective_date: null
+last_updated: '2026-06-21'
+scope:
+  active_environment: evaluation_beta
+  environments:
+  - evaluation_beta
+  - institutional_pilot
+  note: Institutional pilot rules are proposed and inactive until provider, legal and infrastructure approvals are configured server-side.
+principles:
+- deny_by_default
+- most_restrictive_input_wins
+- purpose_limitation
+- data_minimization
+- human_control_for_reclassification
+- no_automatic_training_use
+- untrusted_source_content
+- policy_before_external_call
+- auditable_decisions
+classification_dimensions:
+  sensitivity:
+  - public
+  - internal
+  - confidential
+  origin:
+  - public_source
+  - synthetic
+  - anonymized
+  - real_project
+  processing_mode:
+  - deterministic_only
+  - cloud_assisted
+  - local_only
+  web_research_mode:
+  - 'off'
+  - validated_public
+  contractual_restrictions:
+    nda_applies: boolean
+defaults:
+  missing_sensitivity: confidential
+  missing_origin: real_project
+  missing_processing_mode: deterministic_only
+  missing_web_research_mode: 'off'
+  unknown_provider_route: blocked
+  automatic_downgrade: blocked
+  automatic_anonymization_for_reclassification: blocked
+  web_research_mode: 'off'
+classification_resolution:
+  effective_sensitivity_order:
+  - public
+  - internal
+  - confidential
+  rule: Use the most restrictive sensitivity among project, source documents, source fragments, and derived artifacts included in the operation.
+  nda_rule: nda_applies=true activates confidential-level external-processing restrictions unless a contract-specific approved route exists.
+  derived_artifact_rule: Derived artifacts inherit at least the most restrictive classification of their provenance.
+evaluation_beta_policy_matrix:
+  public:
+    deterministic_only: allowed
+    local_only: allowed
+    cloud_assisted: allowed
+    web_research: allowed_validated_public
+    human_confirmation: false
+  internal:
+    deterministic_only: allowed
+    local_only: allowed
+    cloud_assisted: allowed_with_confirmation
+    web_research: allowed_with_confirmation_only_for_public_sanitized_query_and_approved_route
+    human_confirmation: true
+    additional_preconditions:
+    - provider_route_institutional_approval_is_approved
+    - no_confidential_or_nda_content_in_payload
+    - payload_minimized_to_required_fragments
+    - authorized_user_confirms_external_processing_per_run
+    - full_prompt_and_response_content_not_written_to_shared_logs
+    - active_policy_environment_allows_real_project_cloud_processing_when_origin_is_real_project
+  confidential:
+    deterministic_only: allowed
+    local_only: allowed
+    cloud_assisted: blocked_in_evaluation_beta
+    web_research: blocked
+    human_confirmation: false
+later_pilot_policy:
+  status: proposed
+  internal_cloud: allowed_with_confirmation_and_institutional_approval
+  confidential_cloud: blocked_by_default; may only be reconsidered through a separate approved deployment and governance decision
+  azure_foundry: planned_route_not_active
+  requirements_before_activation:
+  - institutional_approval
+  - data_processing_agreement_or_equivalent
+  - deployment_region_and_processing_location_verified
+  - retention_and_logging_configuration_verified
+  - approved_models_and_features_recorded
+  - security_and_privacy_review_completed
+provider_routes:
+  openai_direct:
+    status: active_for_public_beta_data
+    processor_type: external_cloud
+    allowed_sensitivity:
+    - public
+    - internal
+    training_use: not_used_for_training_by_default_unless_opt_in
+    retention: deployment_specific; standard abuse-monitoring retention may apply unless approved controls are active
+    institutional_approval: not_confirmed
+    source_url: https://developers.openai.com/api/docs/guides/your-data
+    last_verified: '2026-06-20'
+    internal_effective_status: blocked_until_institutional_approval_is_approved
+  anthropic_direct:
+    status: active_for_public_beta_data
+    processor_type: external_cloud
+    allowed_sensitivity:
+    - public
+    - internal
+    training_use: commercial_api_data_not_assumed_for_training_without_permission
+    retention: deployment/model/feature specific; ZDR requires a qualified arrangement and eligibility
+    institutional_approval: not_confirmed
+    source_url: https://docs.anthropic.com/en/docs/build-with-claude/zero-data-retention
+    last_verified: '2026-06-20'
+    internal_effective_status: blocked_until_institutional_approval_is_approved
+    model_specific_constraints:
+      claude-fable-5: 30-day retention required on direct Claude API; not eligible for ZDR. Public/synthetic optional review only and runtime
+        availability check required.
+  firecrawl_cloud:
+    status: active_for_public_allowlisted_beta_research
+    processor_type: external_cloud
+    allowed_sensitivity:
+    - public
+    - internal
+    allowed_operations:
+    - search_public_professional_sources
+    - fetch_validated_public_url
+    blocked_operations:
+    - authenticated_portals
+    - internal_urls
+    - arbitrary_user_urls_without_validation
+    - stealth_mode
+    retention: plan and option specific; do not assume ZDR unless contract/configuration is verified
+    institutional_approval: not_confirmed
+    source_url: https://docs.firecrawl.dev/api-reference/introduction
+    last_verified: '2026-06-20'
+    internal_effective_status: only_public_sanitized_query_with_confirmation
+  azure_foundry:
+    status: planned_not_active
+    processor_type: external_cloud_or_managed_compute
+    allowed_sensitivity: []
+    activation_requires:
+    - institutional_approval
+    - deployment_type_verified
+    - regional_or_eu_data_zone_decision
+    - model_category_and_terms_verified
+    source_urls:
+    - https://learn.microsoft.com/en-us/azure/foundry/foundry-models/concepts/deployment-types
+    - https://learn.microsoft.com/en-us/azure/foundry/responsible-ai/openai/data-privacy
+    last_verified: '2026-06-20'
+public_professional_research:
+  status: included_in_beta
+  purpose: Research professional competence profiles, publications, and publicly evidenced track record to support partner-role suggestions.
+  allowed_data:
+  - public_professional_affiliation
+  - public_research_topics
+  - publications_and_public_metadata
+  - publicly_described_projects_and_roles
+  - public_institutional_profiles
+  prohibited_data:
+  - private_contact_data_not_needed_for_purpose
+  - sensitive_personal_attributes
+  - non_public_or_authenticated_profile_data
+  - inferences_unrelated_to_professional_competence
+  - final_automated_partner_selection
+  controls:
+  - source_url_and_access_date_required
+  - professional_purpose_only
+  - human_review_before_partner_role_suggestion_is_accepted
+  - suggestions_are_advisory
+  - no_contact_or_outreach_automation
+web_research_controls:
+  default: 'off'
+  mode: validated_public
+  rules:
+  - Research is explicitly user-triggered; agents receive only locally imported and normalized results.
+  - HTTPS is required.
+  - Every URL and redirect target passes public DNS resolution, SSRF and credential checks.
+  - Authenticated areas, private networks, tokens in URLs and non-professional profiling are blocked.
+  - All search results remain candidates until the user or orchestrator imports them as a versioned SourceDocument.
+  - For internal projects, the exact query or URL must itself be public, sanitized and confirmed before any external call.
+  - Confidential and NDA project content is never included in external search queries.
+  public_professional_research:
+    allowed:
+    - institutional_profiles
+    - publication_metadata
+    - public_projects
+    - professional_competencies
+    - public_track_record
+    blocked:
+    - sensitive_personal_attributes
+    - private_contact_details_without_need
+    - non_professional_profiling
+    - automatic_partner_selection
+    - automatic_contacting
+    human_review_required: true
+logging_and_audit:
+  public:
+    content_logging: local_allowed_if_needed
+    shared_logs: metadata_preferred
+  internal:
+    content_logging: local_minimized
+    shared_logs: metadata_and_hashes_only
+  confidential:
+    content_logging: no_prompt_or_response_fulltext_in_shared_logs
+    shared_logs: metadata_and_hashes_only
+  required_external_call_fields:
+  - run_id
+  - component
+  - effective_sensitivity
+  - origin
+  - processing_mode
+  - provider_route
+  - model_or_service
+  - policy_version
+  - control_result_id
+  - input_hash
+  - output_hash
+  - usage
+  - cost
+  - timestamp
+  api_keys_in_logs: prohibited
+retention_and_deletion:
+  status: needs_institutional_decision
+  fixed_days: null
+  beta_requirement: Provide explicit project/source/run deletion and document actual storage locations. Do not claim a retention period that has
+    not been approved.
+  provider_retention: Record provider route and configuration snapshot; do not assume no retention.
+  training_use: prohibited_by_default
+reclassification:
+  less_restrictive: human_decision_required
+  comment_required: true
+  audit_required: true
+  automatic_redaction_as_basis: prohibited
+  anonymized_origin_rule: An anonymized derivative remains internal or confidential until a human explicitly reclassifies it.
+control_results:
+  allowed:
+    status: passed
+    action: continue
+  allowed_with_confirmation:
+    status: warning
+    action: require_human_confirmation
+  blocked:
+    status: blocked
+    action: stop_action
+  failed:
+    status: failed
+    action: stop_run_or_action
+mandatory_tests:
+- id: DP-01
+  case: public synthetic content to approved direct model route
+  expected: allowed
+- id: DP-02
+  case: internal content to direct model route without institutional approval
+  expected: blocked
+- id: DP-03
+  case: internal content to approved route with per-run confirmation and minimized payload
+  expected: allowed_with_confirmation
+- id: DP-04
+  case: confidential content to any direct cloud provider in beta
+  expected: blocked
+- id: DP-05
+  case: NDA flag on otherwise internal content
+  expected: blocked_for_external_processing
+- id: DP-06
+  case: internal project with public human-approved web query
+  expected: allowed_with_confirmation
+- id: DP-07
+  case: web URL resolves to private IP or unapproved redirect
+  expected: blocked
+- id: DP-08
+  case: missing classification
+  expected: confidential_and_blocked_for_external_processing
+- id: DP-09
+  case: public profile research includes sensitive personal attribute
+  expected: blocked_and_removed
+- id: DP-10
+  case: attempt to use audit/edit history as training input
+  expected: blocked
+policy_environments:
+  evaluation_beta:
+    status: active
+    data_scope: public or synthetic evaluation data; internal sources may be stored locally but real internal project content is not sent to direct
+      cloud providers without institutional approval.
+    origin_overrides:
+      real_project:
+        cloud_assisted: blocked_unless_provider_route_institutionally_approved_and_environment_override_enabled
+        note: Current direct-provider routes are not institutionally approved; therefore real internal projects are operationally blocked from
+          cloud processing.
+  institutional_pilot:
+    status: proposed_inactive
+    activation_requires:
+    - institutional_data_protection_approval
+    - approved_provider_route
+    - retention_and_residency_decision
+    - identity_and_access_controls
+    - logging_and_deletion_decision
+    origin_overrides:
+      real_project:
+        cloud_assisted: allowed_with_confirmation_for_internal_only_when_all_controls_pass
+control_registry: controls.yaml@1.0.0

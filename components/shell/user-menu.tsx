@@ -1,6 +1,8 @@
 "use client"
 
+import { useRouter } from "next/navigation"
 import { ChevronDown, User as UserIcon, LogOut } from "lucide-react"
+import { useSession } from "@/components/providers/app-providers"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import {
   DropdownMenu,
@@ -22,6 +24,14 @@ function initials(name: string) {
 }
 
 export function UserMenu({ user }: { user: User }) {
+  const router = useRouter()
+  const { logout } = useSession()
+
+  async function handleLogout() {
+    await logout()
+    router.push("/login")
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex min-h-[44px] items-center gap-2 rounded-md px-2 outline-none transition-colors hover:bg-accent focus-visible:ring-2 focus-visible:ring-ring">
@@ -47,7 +57,7 @@ export function UserMenu({ user }: { user: User }) {
             Profil
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem>
+          <DropdownMenuItem onClick={handleLogout}>
             <LogOut className="size-4" />
             Abmelden
           </DropdownMenuItem>
