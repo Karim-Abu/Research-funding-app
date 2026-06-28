@@ -21,9 +21,11 @@ import {
   dummySources,
   dummyEvidence,
   dummyAnalysisSteps,
+  URL_SOURCE_KIND_LABELS,
   type AnalysisProgressStep,
   type PageAnalysisState,
   type Source,
+  type UrlSourceKind,
 } from "@/lib/quellen-mock-data"
 import {
   startRun as startLegacyRun,
@@ -50,6 +52,7 @@ import {
   listSources,
   uploadFiles,
   createTextSource,
+  createUrlSource,
   deleteSource,
   type SourceDocumentDto,
 } from "@/lib/sources"
@@ -58,9 +61,6 @@ import { cancelRun, createRun, listProjectRuns } from "@/lib/runs"
 import { pollOperation, type PollHandle } from "@/lib/operations"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
 
 // Map a live contract SourceDocument onto the existing table row shape.
 const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
@@ -73,118 +73,34 @@ const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
 function toSourceRow(s: SourceDocumentDto): Source {
   let errorHint: string | undefined
   if (s.status === "failed") {
-    errorHint = s.error_message ?? "Die Datei konnte nicht verarbeitet werden."
+    errorHint =
+      s.error_message ??
+      "Die Quelle konnte nicht verarbeitet werden. Bitte Format prüfen, erneut hochladen oder entfernen."
   } else if (s.status === "needs_manual_input") {
     errorHint =
-      "Kein durchsuchbarer Text gefunden — bitte Datei prüfen oder Inhalt als Text erfassen."
+      "Kein durchsuchbarer Text gefunden. Bitte Datei prüfen oder Inhalt als Text erfassen."
   }
   return {
     id: s.source_id,
     name: s.name,
     type: SOURCE_TYPE_LABEL[s.type] ?? "Text",
     status: s.status,
-    addedBy: "—",
+    addedBy: "Projektteam",
     addedAt: s.created_at
       ? new Date(s.created_at).toLocaleString("de-CH")
-      : "—",
+      : "Unbekannt",
     errorHint,
   }
 }
 
-// Minimal text-source form (live mode) — contract createTextSource.
-function TextSourceForm({
-  onAdd,
-  disabled,
-}: {
-  onAdd: (name: string, text: string) => Promise<void>
-  disabled?: boolean
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [name, setName] = React.useState("")
-  const [text, setText] = React.useState("")
-  const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+function isLocalSourceId(id: string): boolean {
+  return id.startsWith("local-source-")
+}
 
-  async function submit() {
-    if (!name.trim() || !text.trim()) return
-    setBusy(true)
-    setError(null)
-    try {
-      await onAdd(name.trim(), text)
-      setName("")
-      setText("")
-      setOpen(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Hinzufügen fehlgeschlagen.")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!open) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="self-start"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        Text als Quelle hinzufügen
-      </Button>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="text-source-name">Name</Label>
-        <Input
-          id="text-source-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="z. B. Gesprächsnotiz"
-          disabled={busy}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="text-source-text">Text</Label>
-        <Textarea
-          id="text-source-text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={5}
-          placeholder="Inhalt der Textquelle…"
-          disabled={busy}
-        />
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-status-blocker">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          size="sm"
-          onClick={submit}
-          disabled={busy || !name.trim() || !text.trim()}
-        >
-          Hinzufügen
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setOpen(false)}
-          disabled={busy}
-        >
-          Abbrechen
-        </Button>
-      </div>
-    </div>
-  )
+function localSourceId(kind: string): string {
+  return `local-source-${kind}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -302,7 +218,6 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
 const quellenStepStatus = [
   "done",
   "current",
-  "upcoming",
   "upcoming",
   "upcoming",
   "upcoming",
@@ -589,6 +504,7 @@ function QuellenPageContent() {
   const liveMode = mode === "live"
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
+  const [localSourceRows, setLocalSourceRows] = React.useState<Source[]>([])
   const [completedRunId, setCompletedRunId] = React.useState<string | null>(null)
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
@@ -598,6 +514,10 @@ function QuellenPageContent() {
     if (!liveMode) return
     setProjectId(getActiveProjectId())
     void getCapabilities().then(setCapabilities)
+  }, [liveMode])
+
+  React.useEffect(() => {
+    if (!liveMode) setLocalSourceRows([])
   }, [liveMode])
 
   const refreshSources = React.useCallback(async () => {
@@ -641,18 +561,86 @@ function QuellenPageContent() {
 
   const handleDeleteSource = React.useCallback(
     (id: string) => {
+      if (isLocalSourceId(id)) {
+        setLocalSourceRows((prev) => prev.filter((source) => source.id !== id))
+        return
+      }
       void deleteSource(id).then(refreshSources).catch(() => undefined)
     },
     [refreshSources]
   )
 
   const handleAddTextSource = React.useCallback(
-    async (name: string, text: string) => {
+    async ({ title, text }: { title: string; text: string }) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
-      await createTextSource(projectId, name, text, sourceClassification)
+      await createTextSource(projectId, title, text, sourceClassification)
       await refreshSources()
     },
     [projectId, sourceClassification, refreshSources]
+  )
+
+  const handleAddUrlSource = React.useCallback(
+    async ({ url, kind }: { url: string; kind: UrlSourceKind }) => {
+      if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
+      const canUseBackendUrlImport = Boolean(
+        capabilities?.features?.url_import ||
+          capabilities?.supported_source_types.includes("url")
+      )
+
+      if (canUseBackendUrlImport) {
+        try {
+          await createUrlSource(
+            projectId,
+            url,
+            `${URL_SOURCE_KIND_LABELS[kind]}: ${url}`,
+            sourceClassification
+          )
+          await refreshSources()
+          return
+        } catch {
+          // Fall back to a transparent frontend row when the beta deployment
+          // still reports URL import as unavailable.
+        }
+      }
+
+      setLocalSourceRows((prev) => [
+        {
+          id: localSourceId("url"),
+          name: url,
+          type: "URL",
+          status: "uploaded",
+          addedBy: currentUser.name,
+          addedAt: "soeben",
+          note: `${URL_SOURCE_KIND_LABELS[kind]} · Verarbeitung ausstehend.`,
+        },
+        ...prev,
+      ])
+    },
+    [capabilities, projectId, refreshSources, sourceClassification]
+  )
+
+  const handleImportSources = React.useCallback(
+    ({
+      project,
+      sources,
+    }: {
+      project: { title: string }
+      sources: Source[]
+    }) => {
+      setLocalSourceRows((prev) => [
+        ...sources.map((source) => ({
+          ...source,
+          id: localSourceId("import"),
+          type: "Übernommen" as const,
+          status: "uploaded" as const,
+          addedBy: currentUser.name,
+          addedAt: "soeben",
+          note: `Aus „${project.title}“ übernommen. Verarbeitung ausstehend.`,
+        })),
+        ...prev,
+      ])
+    },
+    []
   )
 
   // Resolve the latest completed run so the Evidenz tab can show live evidence.
@@ -677,7 +665,7 @@ function QuellenPageContent() {
   }, [liveMode, projectId, liveSources])
 
   const sourceRows: Source[] = liveMode
-    ? liveSources.map(toSourceRow)
+    ? [...localSourceRows, ...liveSources.map(toSourceRow)]
     : dummySources
   const sourceCount = sourceRows.length
   const evidenceCount = dummyEvidence.length
@@ -819,16 +807,19 @@ function QuellenPageContent() {
                   sources={sourceRows}
                   controlled
                   onUploadFiles={handleUploadSources}
+                  onAddTextSource={handleAddTextSource}
+                  onAddUrlSource={handleAddUrlSource}
+                  onImportSources={handleImportSources}
                   onDeleteSource={handleDeleteSource}
                   acceptExtensions={[".pdf", ".docx", ".txt"]}
-                />
-                <TextSourceForm
-                  onAdd={handleAddTextSource}
-                  disabled={!projectId}
+                  currentUserName={currentUser.name}
                 />
               </div>
             ) : (
-              <SourceTable sources={dummySources} />
+              <SourceTable
+                sources={dummySources}
+                currentUserName={currentUser.name}
+              />
             )}
           </TabsContent>
 

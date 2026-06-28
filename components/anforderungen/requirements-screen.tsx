@@ -31,6 +31,10 @@ import { HumanCheckMark } from "@/components/status/human-check-mark"
 import { EvidenceDrawer } from "@/components/quellen/evidence-drawer"
 import { cn } from "@/lib/utils"
 import {
+  RequirementSummaryBar,
+  RequirementFilterBar,
+} from "@/components/anforderungen/requirements-controls"
+import {
   requirements as initialRequirements,
   GROUPS,
   runState,
@@ -38,7 +42,40 @@ import {
 import { dummyEvidence } from "@/lib/quellen-mock-data"
 import type { Requirement, RequirementGroup } from "@/lib/anforderungen-mock-data"
 import { REQUIREMENT_STATUS_LABELS, type MachineStatus } from "@/lib/types"
+import {
+  machineStatusToBucket,
+  matchesFilter,
+  summarize,
+  REQ_FILTER_ORDER,
+  type EvidenceState,
+  type HumanState,
+  type ReqBucket,
+  type ReqFilter,
+  type ReqView,
+} from "@/lib/requirements-view"
 import type { EvidenceCard } from "@/lib/quellen-mock-data"
+
+// Effective status of a mock row: override wins, otherwise a missing evidence
+// chip forces "open" (matches the row rendering below).
+function effectiveBucket(r: Requirement): ReqBucket {
+  const ms: MachineStatus = r.override
+    ? r.override.newStatus
+    : !r.evidence
+      ? "open"
+      : r.machineStatus
+  return machineStatusToBucket(ms)
+}
+
+function rowView(r: Requirement): ReqView {
+  const bucket = effectiveBucket(r)
+  const evidenceState: EvidenceState = r.evidence ? "present" : "missing"
+  const humanState: HumanState = r.humanCheck
+    ? "confirmed"
+    : bucket === "fulfilled"
+      ? "not_required"
+      : "needed"
+  return { bucket, evidenceState, humanState }
+}
 
 // ---------------------------------------------------------------------------
 // Page-level state types
@@ -46,86 +83,8 @@ import type { EvidenceCard } from "@/lib/quellen-mock-data"
 
 type PageState = "default" | "loading" | "empty" | "stopped"
 
-// ---------------------------------------------------------------------------
-// Counter summary card
-// ---------------------------------------------------------------------------
-
-interface CounterBarProps {
-  rows: Requirement[]
-  activeFilter: MachineStatus | "all"
-  onFilterChange: (f: MachineStatus | "all") => void
-}
-
 // Set to true only during internal prototyping — never in the evaluation view.
 const SHOW_DEBUG_CONTROLS = false
-
-
-const COUNTER_CONFIG: { status: MachineStatus; color: string; activeColor: string }[] = [
-  { status: "verified", color: "text-status-fulfilled", activeColor: "bg-status-fulfilled/10 ring-status-fulfilled/30" },
-  { status: "partial", color: "text-status-partial", activeColor: "bg-status-partial/10 ring-status-partial/30" },
-  { status: "open", color: "text-muted-foreground", activeColor: "bg-muted ring-border" },
-]
-
-function CounterBar({ rows, activeFilter, onFilterChange }: CounterBarProps) {
-  const effectiveRows = rows.map((r) => ({
-    ...r,
-    machineStatus: r.override ? r.override.newStatus : (!r.evidence ? "open" : r.machineStatus),
-  }))
-
-  const counts = {
-    verified: effectiveRows.filter((r) => r.machineStatus === "verified").length,
-    partial: effectiveRows.filter((r) => r.machineStatus === "partial").length,
-    open: effectiveRows.filter((r) => r.machineStatus === "open").length,
-  }
-
-  // Derive budget badge
-  const budgetRows = rows.filter((r) => r.group === "Budget-Prüfung")
-  const hasBudgetBlocker = budgetRows.some((r) => r.machineStatus === "blocker")
-  const hasBudgetPartial = budgetRows.some((r) => r.machineStatus === "partial")
-  const budgetBadge = hasBudgetBlocker
-    ? { label: "Budget: Konflikt", className: "bg-status-blocker/10 text-status-blocker" }
-    : hasBudgetPartial
-    ? { label: "Budget: Prüfen", className: "bg-status-partial/10 text-status-partial" }
-    : { label: "Budget: Im Rahmen", className: "bg-status-fulfilled/10 text-status-fulfilled" }
-
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-border bg-card px-5 py-4">
-      <div className="flex flex-1 items-center gap-2">
-        {COUNTER_CONFIG.map(({ status, color, activeColor }) => {
-          const count = counts[status as keyof typeof counts]
-          const isActive = activeFilter === status
-          return (
-            <button
-              key={status}
-              type="button"
-              onClick={() => onFilterChange(isActive ? "all" : status)}
-              className={cn(
-                "flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm font-medium ring-1 ring-transparent transition-colors",
-                "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
-                isActive
-                  ? cn("ring-1", activeColor)
-                  : "hover:bg-muted/60"
-              )}
-              aria-pressed={isActive}
-            >
-              <span className={cn("text-base font-semibold", color)}>{count}</span>
-              <span className="text-muted-foreground">{REQUIREMENT_STATUS_LABELS[status]}</span>
-            </button>
-          )
-        })}
-      </div>
-
-      <span
-        className={cn(
-          "inline-flex items-center rounded-full px-2.5 py-1 text-xs font-medium",
-          budgetBadge.className
-        )}
-      >
-        {budgetBadge.label}
-      </span>
-    </div>
-  )
-}
 
 // ---------------------------------------------------------------------------
 // Stopped run banner
@@ -526,7 +485,8 @@ export function RequirementsScreen({
     requirements ?? initialRequirements
   )
   const [expandedIds, setExpandedIds] = React.useState<Set<string>>(new Set())
-  const [statusFilter, setStatusFilter] = React.useState<MachineStatus | "all">("all")
+  const [statusFilter, setStatusFilter] = React.useState<ReqFilter>("all")
+  const [search, setSearch] = React.useState("")
 
   // Override dialog state
   const [overrideDialogOpen, setOverrideDialogOpen] = React.useState(false)
@@ -591,23 +551,22 @@ export function RequirementsScreen({
     setDrawerOpen(true)
   }
 
-  // Apply status filter — override + no-evidence affect effective status
-  const filteredRows =
-    statusFilter === "all"
-      ? rows
-      : rows.filter((r) => {
-          const eff = r.override
-            ? r.override.newStatus
-            : !r.evidence
-            ? "open"
-            : r.machineStatus
-          return eff === statusFilter
-        })
+  // Status summary + filter chips run through the shared view model so the
+  // wording stays consistent with the live screen.
+  const summary = summarize(rows.map(rowView))
+  const availableFilters = REQ_FILTER_ORDER.filter(
+    (f) => f !== "all" && rows.some((r) => matchesFilter(rowView(r), f))
+  )
 
-  const openCount = rows.filter((r) => {
-    const eff = r.override ? r.override.newStatus : !r.evidence ? "open" : r.machineStatus
-    return eff === "open"
-  }).length
+  const query = search.trim().toLowerCase()
+  const filteredRows = rows.filter((r) => {
+    if (!matchesFilter(rowView(r), statusFilter)) return false
+    if (query && !`${r.title} ${r.reason}`.toLowerCase().includes(query))
+      return false
+    return true
+  })
+
+  const openCount = summary.open + summary.partial + summary.blocked
 
   const overrideTarget = rows.find((r) => r.id === overrideTargetId)
 
@@ -624,7 +583,8 @@ export function RequirementsScreen({
               Anforderungen &amp; Fördervoraussetzungen
             </h1>
             <p className="text-sm text-muted-foreground">
-              Automatisch erkannte Voraussetzungen, geprüft anhand Ihrer Unterlagen.
+              Automatisch erkannte Voraussetzungen, Belege und offene Prüfpunkte
+              für diesen Antrag.
             </p>
           </div>
 
@@ -644,11 +604,16 @@ export function RequirementsScreen({
                 </p>
               )}
 
-              {/* Counter bar */}
-              <CounterBar
-                rows={rows}
-                activeFilter={statusFilter}
-                onFilterChange={setStatusFilter}
+              {/* Status summary */}
+              <RequirementSummaryBar summary={summary} />
+
+              {/* Filter chips + search */}
+              <RequirementFilterBar
+                available={availableFilters}
+                value={statusFilter}
+                onChange={setStatusFilter}
+                search={search}
+                onSearchChange={setSearch}
               />
 
               {/* Accordion groups */}
@@ -669,9 +634,9 @@ export function RequirementsScreen({
                     />
                   )
                 })}
-                {filteredRows.length === 0 && statusFilter !== "all" && (
+                {filteredRows.length === 0 && (statusFilter !== "all" || query) && (
                   <p className="py-8 text-center text-sm text-muted-foreground">
-                    Keine Anforderungen mit diesem Status.
+                    Keine Anforderungen entsprechen dem aktuellen Filter.
                   </p>
                 )}
               </div>
@@ -721,16 +686,32 @@ export function RequirementsScreen({
         </div>
       </div>
 
-      {/* Sticky footer */}
+      {/* Sticky footer — blocker-aware next step */}
       <footer className="sticky bottom-0 z-10 border-t border-border bg-background/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-4xl items-center justify-between gap-4 px-6 py-4">
-          <p className="text-sm text-muted-foreground">
-            <span className="font-medium text-foreground">{openCount} offene{openCount === 1 ? "r Punkt wird" : " Punkte werden"}</span>
-            {" "}ins Review übernommen.
-          </p>
-          <Button render={<a href="/editor" />} nativeButton={false}>
-            Weiter zum Entwurf
-          </Button>
+          {summary.blocked > 0 ? (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-destructive">
+                {summary.blocked} Blocker
+              </span>{" "}
+              {summary.blocked === 1 ? "verhindert" : "verhindern"} den nächsten
+              Schritt.
+            </p>
+          ) : (
+            <p className="text-sm text-muted-foreground">
+              <span className="font-medium text-foreground">
+                {openCount} offene{openCount === 1 ? "r Punkt wird" : " Punkte werden"}
+              </span>{" "}
+              ins Review übernommen.
+            </p>
+          )}
+          {summary.blocked > 0 ? (
+            <Button disabled>Blocker zuerst klären</Button>
+          ) : (
+            <Button render={<a href="/editor" />} nativeButton={false}>
+              Weiter zum Entwurf
+            </Button>
+          )}
         </div>
       </footer>
 

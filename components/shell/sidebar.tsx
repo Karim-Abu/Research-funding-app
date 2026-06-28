@@ -1,5 +1,6 @@
 "use client"
 
+import type { ReactNode } from "react"
 import Image from "next/image"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
@@ -18,6 +19,7 @@ import {
   PenLine,
   CheckSquare,
   Download,
+  Wallet,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -52,10 +54,11 @@ const currentApplication: NavLink[] = [
   { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
   { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },
   { label: "Entwurf", href: "/editor", icon: PenLine },
-  { label: "Review", href: "/review", icon: CheckSquare },
+  { label: "Qualitätsprüfung", href: "/review", icon: CheckSquare },
   // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
   // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
   { label: "Export", href: "/export", icon: Download },
+  { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
@@ -183,7 +186,7 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 // ---------------------------------------------------------------------------
 // Building blocks
 // ---------------------------------------------------------------------------
-function SectionLabel({ children }: { children: React.ReactNode }) {
+function SectionLabel({ children }: { children: ReactNode }) {
   return (
     <p className="mt-4 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/50">
       {children}
@@ -191,7 +194,7 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
   )
 }
 
-function GroupLabel({ children }: { children: React.ReactNode }) {
+function GroupLabel({ children }: { children: ReactNode }) {
   return (
     <p className="px-3 pt-1 text-xs font-medium text-sidebar-foreground/70">
       {children}

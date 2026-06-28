@@ -22,24 +22,18 @@ export const projects: Project[] = [
 
 export const activeProjectId = "p1"
 
-// 8 Schritte, die auf 6 Screens abgebildet werden.
-// Schritt 2 UND 4 -> "Quellen & Evidenz"; Schritt 6 UND 7 -> "Review".
+// 7 Schritte, die auf 6 Screens abgebildet werden.
+// Schritt 2 UND 4 -> "Quellen & Evidenz". Freigabe ist Teil der Qualitätsprüfung
+// (kein eigener Abschluss-Screen), daher kein separater "Abschluss"-Schritt.
 export const workflowSteps: WorkflowStep[] = [
   { step: 1, label: "Intake", subLabel: "Projekt & Daten", href: "/intake" },
   { step: 2, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
   { step: 3, label: "Anforderungen", shortLabel: "Anford.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
   { step: 4, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
-  // Beta: eine Editier-Oberfläche — der Entwurf wird im Review geprüft und
-  // bearbeitet; /editor ist aus der Navigation nicht erreichbar.
-  { step: 5, label: "Entwurf prüfen", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/review" },
-  { step: 6, label: "Review", subLabel: "Qualitätsprüfung", href: "/review" },
-  {
-    step: 7,
-    label: "Abschluss",
-    subLabel: "Freigabe",
-    href: "/review",
-  },
-  { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
+  // Der Entwurf wird feldweise im Portal-Editor vorbereitet (/editor).
+  { step: 5, label: "Entwurf", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/editor" },
+  { step: 6, label: "Qualitätsprüfung", shortLabel: "Prüfung", subLabel: "Freigabe & Qualität", href: "/review" },
+  { step: 7, label: "Export", subLabel: "Abgabe", href: "/export" },
 ]
 
 // Dashboard project cards — 4 demo entries covering distinct states.

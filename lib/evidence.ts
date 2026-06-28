@@ -71,6 +71,105 @@ export const EVIDENCE_LINK_STATUS_LABELS: Record<EvidenceLinkStatus, string> = {
 export const VERIFIED_EXPLANATION =
   "«Fundstelle bestätigt» bedeutet, dass das Zitat exakt in der Quelle vorkommt. Es bedeutet nicht, dass die Aussage fachlich geprüft oder genehmigt wurde."
 
+// Shorter inline hint used directly on the Evidenz screens.
+export const EVIDENCE_VERIFIED_HINT =
+  "«Fundstelle bestätigt» bedeutet, dass der Text in der Quelle auffindbar ist. Die fachliche Bewertung erfolgt im Review."
+
+// ---------------------------------------------------------------------------
+// User-friendly fallbacks (Mock + Live). Never show raw backend values.
+// ---------------------------------------------------------------------------
+export const REQUIREMENT_FALLBACK = "Keine zugeordnete Anforderung"
+export const FUNDSTELLE_FALLBACK = "Fundstelle nicht genau bestimmt"
+export const REVIEWER_FALLBACK = "Noch nicht menschlich geprüft"
+
+// ---------------------------------------------------------------------------
+// Unified evidence filter (works for both VerificationStatus and MachineStatus)
+// ---------------------------------------------------------------------------
+export type EvidenceFilter =
+  | "all"
+  | "verified"
+  | "review"
+  | "open"
+  | "error"
+  | "no_location"
+
+export const EVIDENCE_FILTER_LABELS: Record<EvidenceFilter, string> = {
+  all: "Alle",
+  verified: "Verifiziert",
+  review: "Prüfung nötig",
+  open: "Offen",
+  error: "Fehler",
+  no_location: "Ohne genaue Fundstelle",
+}
+
+export type EvidenceStatusFilter = Exclude<EvidenceFilter, "all" | "no_location">
+
+/** Map a live VerificationStatus onto the shared filter status. */
+export function verificationToFilter(s: VerificationStatus): EvidenceStatusFilter {
+  switch (s) {
+    case "exact_verified":
+    case "human_verified":
+      return "verified"
+    case "unverified":
+      return "review"
+    case "rejected":
+      return "error"
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Fundstelle (human-readable location). Raw offsets are never shown.
+// ---------------------------------------------------------------------------
+interface LocationFields {
+  page?: number | null
+  section?: string | null
+}
+
+/** True when the anchor carries any precise location signal. */
+export function hasPreciseLocation(loc: LocationFields): boolean {
+  return loc.page != null || Boolean(loc.section?.trim())
+}
+
+/** Build a readable location like "S. 8 · Abschnitt 2.1" from available fields. */
+export function formatFundstelle(loc: LocationFields): string {
+  const parts: string[] = []
+  if (loc.page != null) parts.push(`S. ${loc.page}`)
+  const section = loc.section?.trim()
+  if (section) {
+    parts.push(/^abschnitt|^tabelle|^abb\.?|^kapitel/i.test(section) ? section : `Abschnitt ${section}`)
+  }
+  return parts.length > 0 ? parts.join(" · ") : FUNDSTELLE_FALLBACK
+}
+
+// ---------------------------------------------------------------------------
+// Reviewer line. Internal user-/actor-ids are never shown.
+// ---------------------------------------------------------------------------
+function looksLikeId(value: string): boolean {
+  return (
+    /[0-9a-f]{8}-[0-9a-f]{4}/i.test(value) || /^(user|usr|actor|system)[-_:]/i.test(value)
+  )
+}
+
+function formatWhen(at: string): string {
+  const d = new Date(at)
+  return Number.isNaN(d.getTime()) ? at : d.toLocaleString("de-CH")
+}
+
+/**
+ * Human reviewer label, or null when nobody has checked it yet (caller shows
+ * REVIEWER_FALLBACK). Falls back to a neutral phrase if the actor is an id.
+ */
+export function formatReviewer(
+  name?: string | null,
+  at?: string | null
+): string | null {
+  const trimmed = name?.trim()
+  if (!trimmed) return null
+  const when = at ? ` · ${formatWhen(at)}` : ""
+  if (looksLikeId(trimmed)) return `Menschlich geprüft${when}`
+  return `Geprüft von ${trimmed}${when}`
+}
+
 export async function listEvidence(
   runId: string
 ): Promise<EvidenceAnchorDto[]> {

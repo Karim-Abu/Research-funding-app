@@ -329,6 +329,14 @@ export function IntakeForm() {
         <div ref={scrollRef} className="flex-1 overflow-y-auto">
           <div className="mx-auto w-full max-w-[720px] px-6 py-8">
 
+            {/* Page header */}
+            <div className="mb-6 flex flex-col gap-1">
+              <h1 className="text-balance text-2xl font-semibold text-foreground">Intake</h1>
+              <p className="text-sm text-muted-foreground">
+                Erfassen Sie die Eckdaten Ihres Innosuisse-Projekts.
+              </p>
+            </div>
+
             {/* Non-dismissible info box */}
             <Alert className="mb-8 flex items-start gap-3 border-border bg-accent/40 text-sm text-foreground">
               <Info className="mt-0.5 size-4 shrink-0 text-primary" />

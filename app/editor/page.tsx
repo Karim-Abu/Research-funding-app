@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { AppShell } from "@/components/shell/app-shell"
-import { ProposalEditor } from "@/components/editor/proposal-editor"
+import { DraftWorkspace } from "@/components/editor/draft-workspace"
 import { LiveEditor } from "@/components/editor/live-editor"
 import { useSession } from "@/components/providers/app-providers"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
@@ -15,7 +15,6 @@ const editorStepStatus = [
   "done",
   "done",
   "current",
-  "upcoming",
   "upcoming",
   "upcoming",
 ] as const
@@ -47,11 +46,7 @@ function LiveEditorContainer() {
       </div>
     )
   }
-  return (
-    <div className="px-6 py-8">
-      <LiveEditor runId={runId} />
-    </div>
-  )
+  return <LiveEditor runId={runId} />
 }
 
 export default function EditorPage() {
@@ -64,7 +59,7 @@ export default function EditorPage() {
       currentStep={5}
       stepStatus={[...editorStepStatus]}
     >
-      {mode === "live" ? <LiveEditorContainer /> : <ProposalEditor />}
+      {mode === "live" ? <LiveEditorContainer /> : <DraftWorkspace />}
     </AppShell>
   )
 }

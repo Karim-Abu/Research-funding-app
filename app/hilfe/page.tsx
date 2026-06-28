@@ -21,7 +21,7 @@ export default function HilfePage() {
 
         <section className="mb-8">
           <h2 className="mb-2 text-base font-semibold text-foreground">
-            Der Workflow in 8 Schritten
+            Der Workflow in 7 Schritten
           </h2>
           <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
             Die Plattform führt Sie Schritt für Schritt von der Projektidee bis

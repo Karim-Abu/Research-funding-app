@@ -25,7 +25,6 @@ const stepStatus = [
   "upcoming",
   "upcoming",
   "upcoming",
-  "upcoming",
 ] as const
 
 // --- Live mode: render the run-scoped RequirementAssessments ----------------

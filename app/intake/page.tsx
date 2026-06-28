@@ -10,7 +10,6 @@ const intakeStepStatus = [
   "upcoming",
   "upcoming",
   "upcoming",
-  "upcoming",
 ] as const
 
 export default function IntakePage() {

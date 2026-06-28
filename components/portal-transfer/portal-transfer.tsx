@@ -21,11 +21,14 @@ export function PortalTransfer({
   review,
   mockMode = false,
   confidentialReminder = false,
+  embedded = false,
 }: {
   fields: PortalFieldDraftDto[]
   review: ReviewPackageDto | null
   mockMode?: boolean
   confidentialReminder?: boolean
+  /** When rendered inside the Export screen, the page header is provided there. */
+  embedded?: boolean
 }) {
   const [copied, setCopied] = React.useState<Set<string>>(new Set())
   const markCopied = React.useCallback((fieldId: string) => {
@@ -35,11 +38,13 @@ export function PortalTransfer({
   const groups = groupBySection(fields)
 
   return (
-    <div className="mx-auto flex max-w-4xl flex-col gap-5">
-      <div>
-        <h1 className="text-lg font-semibold">Innolink-Übernahme</h1>
-        <p className="text-sm text-muted-foreground">{PAGE_DISCLAIMER}</p>
-      </div>
+    <div className={embedded ? "flex flex-col gap-5" : "mx-auto flex max-w-4xl flex-col gap-5"}>
+      {!embedded && (
+        <div>
+          <h1 className="text-lg font-semibold">Innolink-Kopieransicht</h1>
+          <p className="text-sm text-muted-foreground">{PAGE_DISCLAIMER}</p>
+        </div>
+      )}
 
       {/* Generic clipboard privacy reminder — always shown (never relies solely
           on local intake state). */}
