@@ -39,8 +39,16 @@ import {
 } from "@/lib/review"
 import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
+import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
 import { liveFieldToViewModel, pickDefaultTab } from "@/lib/draft-viewmodel"
 import { AI_GOALS, AI_LIVE_NOTICE } from "@/lib/draft-ai-actions"
+import {
+  createRedraft,
+  RedraftError,
+  SOLUTION_INNOVATION_FIELD_ID,
+  type A2Suggestion,
+} from "@/lib/redraft"
+import { Sparkles } from "lucide-react"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -72,9 +80,26 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [commentText, setCommentText] = React.useState("")
   const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
+  // M9D: A2 draft suggestions (Solution & Innovation field only).
+  const [a2Suggestion, setA2Suggestion] = React.useState<A2Suggestion | null>(null)
+  const [a2Loading, setA2Loading] = React.useState(false)
+  const [a2Unavailable, setA2Unavailable] = React.useState(false)
+  const [a2Error, setA2Error] = React.useState<string | null>(null)
+  const [a2ReviewOpen, setA2ReviewOpen] = React.useState(false)
+  const [a2Accepting, setA2Accepting] = React.useState(false)
   const autoSelectedRef = React.useRef(false)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
+  const isSolutionField = selected?.field_id === SOLUTION_INNOVATION_FIELD_ID
+
+  function resetA2() {
+    setA2Suggestion(null)
+    setA2Loading(false)
+    setA2Unavailable(false)
+    setA2Error(null)
+    setA2ReviewOpen(false)
+    setA2Accepting(false)
+  }
 
   const loadReview = React.useCallback(() => {
     getReview(runId)
@@ -110,6 +135,64 @@ export function LiveEditor({ runId }: { runId: string }) {
     setErrorMsg(null)
     setRecheck(false)
     setFieldNotice(null)
+    resetA2()
+  }
+
+  async function generateSuggestion() {
+    if (!selected) return
+    setA2Loading(true)
+    setA2Error(null)
+    setA2Unavailable(false)
+    try {
+      const suggestion = await createRedraft(runId, selected.field_id, baseVersionId)
+      setA2Suggestion(suggestion)
+      setA2ReviewOpen(true)
+    } catch (e) {
+      if (e instanceof RedraftError && e.status === 503) {
+        setA2Unavailable(true)
+      } else if (e instanceof RedraftError && e.status === 409) {
+        setConflict(true)
+      } else {
+        setA2Error(e instanceof Error ? e.message : "KI-Vorschlag fehlgeschlagen.")
+      }
+    } finally {
+      setA2Loading(false)
+    }
+  }
+
+  async function acceptSuggestion() {
+    if (!selected || !a2Suggestion) return
+    setA2Accepting(true)
+    setErrorMsg(null)
+    try {
+      const updated = await updateField(
+        runId,
+        selected.field_id,
+        a2Suggestion.base_version_id,
+        a2Suggestion.suggested_text,
+        a2Suggestion.operation_id
+      )
+      applyDraft(updated)
+      setBaseVersionId(updated.current_version.draft_version_id)
+      setLocalText(updated.current_version.text)
+      setSaveState("saved")
+      setRecheck(true)
+      loadReview()
+      resetA2()
+    } catch (e) {
+      setA2Accepting(false)
+      if (e instanceof FieldError && e.status === 409) {
+        setA2ReviewOpen(false)
+        setConflict(true)
+      } else {
+        setA2Error(e instanceof FieldError ? e.message : "Übernehmen fehlgeschlagen.")
+      }
+    }
+  }
+
+  function dismissSuggestion() {
+    // Client-side dismissal only — no backend call, no audited rejection.
+    resetA2()
   }
 
   function applyDraft(updated: PortalFieldDraftDto) {
@@ -415,7 +498,7 @@ export function LiveEditor({ runId }: { runId: string }) {
     </Dialog>
   )
 
-  return (
+  const editorShell = (
     <DraftWorkspaceShell
       subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie KI-Vorschläge, Belege und offene Punkte."
       viewModels={viewModels}
@@ -440,6 +523,37 @@ export function LiveEditor({ runId }: { runId: string }) {
       }
       noticeSlot={
         <>
+          {isSolutionField && (
+            <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={generateSuggestion}
+                  disabled={a2Loading}
+                >
+                  <Sparkles data-icon="inline-start" />
+                  {a2Loading ? "KI-Vorschlag wird erstellt …" : "KI-Vorschlag erstellen"}
+                </Button>
+                {a2Suggestion && !a2ReviewOpen && (
+                  <Button size="sm" variant="ghost" onClick={() => setA2ReviewOpen(true)}>
+                    Vorschlag anzeigen
+                  </Button>
+                )}
+              </div>
+              {a2Unavailable && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.
+                </p>
+              )}
+              {!a2Suggestion && !a2Loading && !a2Unavailable && !a2Error && (
+                <p className="text-xs text-muted-foreground">
+                  KI-Vorschlag für diesen Abschnitt noch nicht erstellt.
+                </p>
+              )}
+              {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
+            </div>
+          )}
           {recheck && (
             <p
               role="status"
@@ -474,5 +588,24 @@ export function LiveEditor({ runId }: { runId: string }) {
       }
       conflictDialog={conflictDialog}
     />
+  )
+
+  return (
+    <>
+      {editorShell}
+      {a2Suggestion && (
+        <SuggestionReviewDialog
+          open={a2ReviewOpen}
+          onOpenChange={(o) => {
+            if (!o) dismissSuggestion()
+          }}
+          currentText={localText}
+          suggestion={a2Suggestion}
+          onAccept={acceptSuggestion}
+          onDismiss={dismissSuggestion}
+          accepting={a2Accepting}
+        />
+      )}
+    </>
   )
 }

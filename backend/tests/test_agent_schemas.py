@@ -48,7 +48,7 @@ def test_invalid_enum_in_classification():
 
 def test_unimplemented_schema_fails_safely():
     with pytest.raises(SchemaNotImplementedError):
-        validate_payload("PortalFieldDraftBundle@v1", {})  # A2 model not in M9A
+        validate_payload("ReviewFindingBundle@v1", {})  # A3 model not implemented yet
 
 
 def test_hallucinated_fragment_reference():

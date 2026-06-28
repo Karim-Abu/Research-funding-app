@@ -152,6 +152,89 @@ class EvidenceCandidateMappingResult(BaseModel):
     conflicts: list[EvidenceConflictRecord] = []
 
 
+# --- A2 Solution & Innovation field drafting (Milestone 9D) -----------------
+
+
+class PortalFieldProfileView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    label: str
+    character_limit: int | None = None
+    mandatory_questions: list[str] = []
+    guidance: str | None = None
+
+
+class EvidenceLinkRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    anchor_id: str
+    quote: str
+    source_name: str
+    verification_status: str
+    page: int | None = None
+    section: str | None = None
+    requirement_id: str | None = None
+
+
+class OpenIssueRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str
+    issue_type: str
+    severity: str
+    description: str
+    target_type: str
+    target_id: str
+
+
+class StructuredProjectDataResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_title: str | None = None
+    funding_instrument_profile_id: str | None = None
+    partner_count: int = 0
+
+
+class FieldDraftingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    profile_id: str
+    field_profiles: list[PortalFieldProfileView]
+    confirmed_facts: list[ExtractedFactRecord]
+    verified_evidence: list[EvidenceLinkRecord]
+    structured_project_data: StructuredProjectDataResult
+    open_issues: list[OpenIssueRecord]
+    language: str
+
+
+class DraftCandidateRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    suggested_text: str
+    rationale: str | None = None
+    evidence_anchor_ids: list[str] = []
+    open_issue_ids: list[str] = []
+    character_count: int | None = None
+
+
+class PlaceholderRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    reason: str | None = None
+
+
+class PortalFieldDraftBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_candidates: list[DraftCandidateRecord]
+    placeholders: list[PlaceholderRecord]
+    field_level_warnings: list[OpenIssueRecord] = []
+
+
 # --- registry + helpers ----------------------------------------------------
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
@@ -159,6 +242,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ProjectFactExtractionResult@v1": ProjectFactExtractionResult,
     "EvidenceCandidateMappingInput@v1": EvidenceCandidateMappingInput,
     "EvidenceCandidateMappingResult@v1": EvidenceCandidateMappingResult,
+    "FieldDraftingInput@v1": FieldDraftingInput,
+    "PortalFieldDraftBundle@v1": PortalFieldDraftBundle,
 }
 
 

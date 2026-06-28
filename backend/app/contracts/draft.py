@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from app.contracts.evidence import EvidenceLink
 from app.contracts.requirement import OpenIssue
@@ -49,3 +49,13 @@ class EvidenceLinkCreate(BaseModel):
 
     anchor_id: str
     base_version_id: str
+
+
+class RedraftRequest(BaseModel):
+    """createRedraft body (openapi RedraftRequest). Milestone 9D: request an
+    advisory A2 draft suggestion for the current draft version."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_version_id: str
+    guidance: str | None = Field(default=None, max_length=4000)

@@ -91,6 +91,10 @@ class Settings(BaseSettings):
     # in addition to the profile's max_input_fragments). Deterministic truncation
     # at fragment boundaries keeps the model-facing payload minimal.
     a1_context_char_budget: int = 24000
+    # Milestone 9D: dev/test-only deterministic fake agent provider for A2 draft
+    # suggestions (no network/key). Off in production — A2 then uses the real
+    # adapters and is simply unavailable without a configured key.
+    agent_fake_provider: bool = False
 
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"

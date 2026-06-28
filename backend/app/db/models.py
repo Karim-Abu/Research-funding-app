@@ -1163,3 +1163,50 @@ class AgentEvidenceProposal(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# A2 Solution & Innovation draft suggestions (Milestone 9D): advisory AI draft
+# suggestions for SOL.INNOVATION_SOLUTION.EDITOR. Internal only — no public
+# endpoint; surfaced through the async operation result. Immutable except the
+# status/decision fields. Accepting (only) creates a new DraftVersion.
+# ---------------------------------------------------------------------------
+
+
+class DraftSuggestion(Base):
+    """One advisory A2 draft suggestion produced via createRedraft (proposed →
+    accepted | rejected | expired | failed). Never auto-applied."""
+
+    __tablename__ = "draft_suggestions"
+
+    suggestion_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    draft_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    base_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    operation_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_route: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # proposed | accepted | rejected | expired | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    suggested_text: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_anchor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    open_issue_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    placeholders: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    character_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decided_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    accepted_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -1,14 +1,16 @@
 """Fields router: listFields / getField / updateField + draft EvidenceLinks."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends, Header, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, Response
 from sqlalchemy.orm import Session
 
-from app.api.errors import ProblemException
-from app.contracts.draft import DraftPatch, EvidenceLinkCreate, PortalFieldDraft
+from app.api.errors import ProblemException, correlation_id
+from app.contracts.draft import DraftPatch, EvidenceLinkCreate, PortalFieldDraft, RedraftRequest
 from app.contracts.evidence import EvidenceLink
+from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun
 from app.db.session import get_db
+from app.fields import redraft_service
 from app.fields import service as fields_service
 from app.registry import get_registry
 from app.repositories import audit
@@ -21,6 +23,8 @@ from app.security.deps import AuthContext, require_session, require_unsafe_guard
 router = APIRouter(tags=["Fields"])
 
 _NOT_FOUND = "Resource not found"
+# Milestone 9D: A2 suggestions are scoped to exactly this field.
+A2_REDRAFT_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
 
 def _require_run(db: Session, run_id: str, workspace_id: str) -> AnalysisRun:
@@ -107,6 +111,44 @@ def update_field(
     )
     db.commit()
     return drafts_repo.to_contract(db, draft)
+
+
+@router.post(
+    "/runs/{run_id}/fields/{field_id}/redrafts",
+    response_model=AsyncAccepted,
+    status_code=202,
+)
+def create_redraft(
+    run_id: str,
+    field_id: str,
+    payload: RedraftRequest,
+    request: Request,
+    background: BackgroundTasks,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> AsyncAccepted:
+    """Milestone 9D: request an advisory A2 suggestion for the Solution & Innovation
+    field. Async (202); 409 on a stale base version; 503 when AI is unavailable for
+    the run's data class / processing mode. The draft is never auto-modified."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    # A2 is scoped to exactly one field in M9D.
+    if field_id != A2_REDRAFT_FIELD_ID:
+        raise ProblemException(
+            status=404, code="not_found", title=_NOT_FOUND,
+            detail="AI suggestions are not available for this field.",
+        )
+    draft = _require_draft(db, run, field_id)
+    operation, accepted, guidance = redraft_service.prepare_redraft(
+        db, run, draft, base_version_id=payload.base_version_id,
+        guidance=payload.guidance, actor_user_id=context.user.id,
+        idempotency_key=None, correlation_id=correlation_id(request),
+    )
+    db.commit()
+    background.add_task(
+        redraft_service.redraft_executor, operation.operation_id, run.run_id,
+        draft.draft_id, payload.base_version_id, guidance,
+    )
+    return accepted
 
 
 @router.post(

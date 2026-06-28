@@ -96,14 +96,19 @@ export async function updateField(
   runId: string,
   fieldId: string,
   baseVersionId: string,
-  text: string
+  text: string,
+  // Milestone 9D: set when accepting an A2 suggestion → the backend records the
+  // new version as created_by=agent and marks the suggestion accepted.
+  sourceOperationId?: string
 ): Promise<PortalFieldDraftDto> {
+  const body: Record<string, unknown> = { base_version_id: baseVersionId, text }
+  if (sourceOperationId) body.source_operation_id = sourceOperationId
   const res = await fetch(
     `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}`,
     {
       method: "PATCH",
       headers: { "Content-Type": "application/json", ...csrfHeaders() },
-      body: JSON.stringify({ base_version_id: baseVersionId, text }),
+      body: JSON.stringify(body),
     }
   )
   if (!res.ok) throw await toError(res)
