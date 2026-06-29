@@ -7,6 +7,11 @@ export default defineConfig({
   timeout: 60_000,
   expect: { timeout: 15_000 },
   fullyParallel: false,
+  // Serial by default: the live E2E specs mutate one shared local SQLite database
+  // (single-writer). Parallel workers cause transient write contention — a local
+  // test-infra limitation, NOT application logic. Override with `--workers=N` to
+  // observe parallel behaviour. (Milestone 9D.1, STEP 3.)
+  workers: 1,
   retries: 0,
   reporter: [["list"]],
   use: {

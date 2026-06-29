@@ -23,12 +23,12 @@ test("source ingestion live smoke", async ({ page }) => {
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 
   // 3. Add a text source
-  await page.getByRole("button", { name: "Text als Quelle hinzufügen" }).click()
-  await page.getByLabel("Name").fill("E2E Notiz")
+  await page.getByRole("button", { name: "Text einfügen" }).click()
+  await page.getByLabel("Titel der Quelle").fill("E2E Notiz")
   await page
-    .getByLabel("Text")
+    .getByLabel("Textinhalt")
     .fill("Dies ist der Inhalt der E2E-Textquelle für die Verarbeitung.")
-  await page.getByRole("button", { name: "Hinzufügen" }).click()
+  await page.getByRole("button", { name: "Als Quelle hinzufügen" }).click()
 
   // 4. The source appears and becomes processed
   await expect(page.getByText("E2E Notiz")).toBeVisible({ timeout: 20_000 })
@@ -64,12 +64,12 @@ test("umlaut text source ingests and displays after refresh", async ({ page }) =
   await page.getByRole("button", { name: "Antrag anlegen" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 
-  await page.getByRole("button", { name: "Text als Quelle hinzufügen" }).click()
-  await page.getByLabel("Name").fill(UMLAUT_NAME)
+  await page.getByRole("button", { name: "Text einfügen" }).click()
+  await page.getByLabel("Titel der Quelle").fill(UMLAUT_NAME)
   await page
-    .getByLabel("Text")
+    .getByLabel("Textinhalt")
     .fill("Müller & Söhne prüfen die Förderfähigkeit für größere Vorhaben. äöüÄÖÜß")
-  await page.getByRole("button", { name: "Hinzufügen" }).click()
+  await page.getByRole("button", { name: "Als Quelle hinzufügen" }).click()
 
   // Previously this source ended up `failed`; it must now become processed.
   await expect(page.getByText(UMLAUT_NAME)).toBeVisible({ timeout: 20_000 })

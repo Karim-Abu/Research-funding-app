@@ -39,8 +39,13 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     timeout: 20_000,
   })
   await expect(page.getByText(/Produktionsanlagen \(Demo\)/)).toBeVisible()
-  await expect(page.getByRole("button", { name: "Entwurf weiterbearbeiten" }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: /Analyse/ }).first()).toBeVisible()
+  // Each project card carries a single primary-action button ("Weiterarbeiten");
+  // the per-project next_action (continue_draft vs review_analysis) is asserted via
+  // the API below. Both demo projects expose the action.
+  await expect(page.getByRole("button", { name: "Weiterarbeiten" }).first()).toBeVisible()
+  expect(
+    await page.getByRole("button", { name: "Weiterarbeiten" }).count()
+  ).toBeGreaterThanOrEqual(2)
   await expect(page.getByRole("button", { name: "Review freigeben" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 
@@ -80,7 +85,10 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
   })
-  await expect(page.getByText(/Verkn/).first()).toBeVisible()
+  // The evidence panel is a tab — open "Belege" to see the linkage section
+  // ("Verknüpfte Belege"). Active links for this run are asserted via the API above.
+  await page.getByRole("tab", { name: "Belege" }).first().click()
+  await expect(page.getByText(/Verkn/).first()).toBeVisible({ timeout: 20_000 })
   await page.reload()
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
@@ -92,9 +100,11 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   await expect(page.getByText(/rdervoraussetzungen/).first()).toBeVisible({
     timeout: 20_000,
   })
-  await expect(page.getByText(/Blockiert|Angaben/).first()).toBeVisible()
+  // Blocked project: the blocker-aware footer ("… Blocker verhindern aktuell den
+  // nächsten Schritt") is shown only when blockers exist.
+  await expect(page.getByText(/verhinder/).first()).toBeVisible()
   await page.reload()
-  await expect(page.getByText(/Blockiert|Angaben/).first()).toBeVisible({
+  await expect(page.getByText(/verhinder/).first()).toBeVisible({
     timeout: 20_000,
   })
 

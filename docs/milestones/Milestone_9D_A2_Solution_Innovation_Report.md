@@ -161,8 +161,46 @@ specs, pass — confirming the LiveEditor changes are safe.
 - **Frontend** `tsc --noEmit` 0, `pnpm lint` 0, `pnpm build` success, `pnpm test` **108
   passed** (+12 A2 vitest).
 - **Playwright**: the M9D A2 spec passes (safe-503 unavailable + field-scope + no draft
-  mutation); the deterministic editor/evidence/requirements/export/run specs pass.
-  **4 specs fail for pre-existing reasons** (see below).
+  mutation); the deterministic editor/evidence/requirements/export/run specs pass. At M9D
+  end, 4 specs failed for **pre-existing UX-stabilization drift** (not M9D); these were
+  resolved in **Milestone 9D.1** (the full suite is now green in serial mode — see
+  `Milestone_9D_1_E2E_Acceptance_Report.md`).
+
+## Runtime Availability in the Beta (added in M9D.1)
+
+A2.solution_innovation is **fully implemented** and exercised by mandatory tests using the
+**fake provider** and **cloud-assisted test fixtures** (backend tests construct
+cloud_assisted runs directly in the DB; the dev-only `agent_fake_provider` flag drives the
+fake adapter). However, in the **live beta deployment the feature returns a safe `503
+ai_unavailable`** ("KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht
+verfügbar"), because:
+
+- **Cloud processing is disabled by policy.** `app/runs/policy.py`
+  (`validate_processing_mode`) rejects `cloud_assisted` run creation with `403
+  cloud_processing_unavailable` in the evaluation beta. Every live run is therefore
+  `deterministic_only`.
+- **A2 requires `cloud_assisted`.** `createRedraft`/`availability()` read the run's
+  **existing** processing mode and **never silently upgrade** `deterministic_only` →
+  `cloud_assisted` (no mode smuggling via `RedraftRequest.guidance`). A `deterministic_only`
+  run → A2 unavailable → safe 503. This honest behaviour is intentional until the cloud /
+  data-policy confirmation gate is built.
+
+**What must be implemented before real user-facing A2 can run** (out of scope here — no
+data-policy change in M9D/M9D.1):
+
+- an **explicit cloud-assisted run** (or a field-level cloud-processing confirmation) that
+  the deployment policy permits;
+- a **DataClassification check** restricting payloads to **public / synthetic** content in
+  the beta (confidential / NDA always blocked);
+- the **per-run external-processing confirmation route** (institutional approval +
+  authorized-user confirmation) the A1/A2 data policy already declares;
+- **CostGuard** enforcement (already wired) and **provider availability** (a configured,
+  approved model route / key);
+- **audit** of the cloud invocation (already wired via AgentInvocation / ControlResult /
+  AuditEvent).
+
+Until those exist, the deterministic M6 template draft remains the field's content and the
+Editor shows the calm unavailable state — no misleading suggestion is produced.
 
 ## Known limitations
 
