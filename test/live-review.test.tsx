@@ -100,4 +100,42 @@ describe("LiveReview", () => {
       expect(screen.getByText("Review freigegeben.")).toBeInTheDocument()
     )
   })
+
+  it("groups A3 findings under KI-gestützte Hinweise, blocks approval, hides provider", async () => {
+    server.use(
+      http.get("/api/runs/r1/review", () =>
+        HttpResponse.json(
+          pkg({
+            blocker_count: 1,
+            findings: [
+              {
+                finding_id: "det1", profile_id: "deterministic-review-1",
+                field_id: "INTRO.APP.ABSTRACT", requirement_id: null,
+                severity: "warning", description: "Deterministischer Hinweis.",
+                suggested_improvement: null, status: "open", advisory: true,
+              },
+              {
+                finding_id: "ai1", profile_id: "A3.evidence_consistency",
+                field_id: "SOL.INNOVATION_SOLUTION.EDITOR", requirement_id: null,
+                severity: "blocker",
+                description: "Aussage ohne verifizierten Beleg.",
+                suggested_improvement: "Beleg verknüpfen oder offen markieren.",
+                status: "open", advisory: false,
+              },
+            ],
+          })
+        )
+      )
+    )
+    render(<LiveReview runId="r1" />)
+    const aiSection = await screen.findByTestId("ai-findings")
+    expect(aiSection).toHaveTextContent("KI-gestützte Hinweise")
+    expect(aiSection).toHaveTextContent("Aussage ohne verifizierten Beleg.")
+    // Deterministic finding stays out of the KI section.
+    expect(aiSection).not.toHaveTextContent("Deterministischer Hinweis.")
+    // A3 blocker disables approval.
+    expect(screen.getByRole("button", { name: /Review freigeben/ })).toBeDisabled()
+    // No model/provider/confidence leaks anywhere.
+    expect(screen.queryByText(/anthropic|openai|gpt|claude|sonnet|confidence|Konfidenz/i)).toBeNull()
+  })
 })

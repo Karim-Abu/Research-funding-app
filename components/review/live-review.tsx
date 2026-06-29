@@ -9,6 +9,7 @@ import {
   AlertTriangle,
   ShieldCheck,
   ArrowRight,
+  Sparkles,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -36,6 +37,10 @@ import {
   blockerRelevance,
   REVIEW_GROUP_LABELS,
   classifyFinding,
+  aiFindings,
+  deterministicFindings,
+  AI_FINDINGS_LABEL,
+  AI_FINDINGS_DESCRIPTION,
   type DedupedFinding,
 } from "@/lib/review-view"
 
@@ -130,9 +135,13 @@ export function LiveReview({ runId }: { runId: string }) {
   const summary = summarizeReview(pkg)
   const breakdown = blockerBreakdown(pkg)
   const hasBlockers = breakdown.blocker > 0
-  const groups = groupFindings(pkg.findings)
-  const blockerFindings = pkg.findings.filter((f) => f.severity === "blocker")
-  const warningFindings = pkg.findings.filter((f) => f.severity !== "blocker")
+  // A3 (KI) findings are surfaced in their own section; the deterministic
+  // quality-check groups, blocker cards and hints stay deterministic-only.
+  const detFindings = deterministicFindings(pkg)
+  const aiFinds = aiFindings(pkg)
+  const groups = groupFindings(detFindings)
+  const blockerFindings = detFindings.filter((f) => f.severity === "blocker")
+  const warningFindings = detFindings.filter((f) => f.severity !== "blocker")
   const dedupedHints = dedupeFindings(warningFindings)
 
   return (
@@ -231,6 +240,24 @@ export function LiveReview({ runId }: { runId: string }) {
           <div className="flex flex-col gap-2">
             {dedupedHints.map((h) => (
               <DedupedHint key={h.description} hint={h} />
+            ))}
+          </div>
+        </section>
+      )}
+
+      {/* KI-gestützte Hinweise (A3 evidence-consistency, advisory) */}
+      {aiFinds.length > 0 && (
+        <section className="flex flex-col gap-3" data-testid="ai-findings">
+          <div className="flex flex-col gap-0.5">
+            <h2 className="flex items-center gap-2 text-sm font-semibold text-foreground">
+              <Sparkles className="size-4 text-muted-foreground" />
+              {AI_FINDINGS_LABEL}
+            </h2>
+            <p className="text-xs text-muted-foreground">{AI_FINDINGS_DESCRIPTION}</p>
+          </div>
+          <div className="flex flex-col gap-2">
+            {aiFinds.map((f) => (
+              <AiFindingCard key={f.finding_id} finding={f} />
             ))}
           </div>
         </section>
@@ -523,6 +550,27 @@ function BlockerCard({
 // ---------------------------------------------------------------------------
 // Deduplicated hint
 // ---------------------------------------------------------------------------
+function AiFindingCard({ finding }: { finding: ReviewFindingDto }) {
+  return (
+    <div className="rounded-md border border-border bg-card px-4 py-3">
+      <div className="flex items-start justify-between gap-3">
+        <p className="text-sm text-foreground">{finding.description}</p>
+        <span
+          className={`shrink-0 rounded-full px-2 py-0.5 text-xs font-medium ${REVIEW_SEVERITY_STYLE[finding.severity]}`}
+        >
+          {REVIEW_SEVERITY_LABELS[finding.severity]}
+        </span>
+      </div>
+      <p className="mt-1 text-xs text-muted-foreground">{fieldLabel(finding.field_id)}</p>
+      {finding.suggested_improvement && (
+        <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
+          Vorschlag: {finding.suggested_improvement}
+        </p>
+      )}
+    </div>
+  )
+}
+
 function DedupedHint({ hint }: { hint: DedupedFinding }) {
   const [open, setOpen] = React.useState(false)
   return (

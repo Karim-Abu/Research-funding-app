@@ -37,6 +37,7 @@ import {
   type ReviewPackageDto,
   type ReviewFindingDto,
 } from "@/lib/review"
+import { isAiFinding } from "@/lib/review-view"
 import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
@@ -442,6 +443,11 @@ export function LiveEditor({ runId }: { runId: string }) {
                   >
                     {f.severity === "blocker" ? "Blocker" : "Hinweis"}
                   </Badge>
+                  {isAiFinding(f) && (
+                    <Badge variant="outline" className="mr-1 align-middle">
+                      KI-Prüfung
+                    </Badge>
+                  )}
                   {f.description}
                 </span>
                 <Button variant="ghost" size="xs" onClick={() => resolveFinding(f.finding_id)}>

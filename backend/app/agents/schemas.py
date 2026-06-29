@@ -235,6 +235,89 @@ class PortalFieldDraftBundle(BaseModel):
     field_level_warnings: list[OpenIssueRecord] = []
 
 
+# --- A3 Evidence & Consistency review (Milestone 9G) ------------------------
+
+FindingSeverity = Literal["blocker", "warning", "info"]
+FindingStatus = Literal["open", "resolved", "overridden", "dismissed"]
+
+
+class DraftVersionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    draft_version_id: str
+    text: str
+    created_by: str | None = None
+    character_count: int | None = None
+
+
+class RequirementAssessmentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirement_id: str
+    status: str
+    basis: str | None = None
+
+
+class RuleResultRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule_id: str
+    status: str
+    requirement_id: str | None = None
+
+
+class CriticReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    profile_ids: list[str]
+    current_drafts: list[DraftVersionRecord]
+    requirements: list[RequirementAssessmentRecord]
+    rule_results: list[RuleResultRecord]
+    evidence_links: list[EvidenceLinkRecord]
+    # M9G/corr-1: confirmed facts ONLY. Proposed A1 facts are passed as marked
+    # context text, never here. Usually empty in the current system.
+    confirmed_facts: list[ExtractedFactRecord]
+    structured_project_data: StructuredProjectDataResult
+
+
+class ReviewFindingRecord(BaseModel):
+    """One advisory A3 finding. ``extra="forbid"`` rejects any attempt to carry an
+    approval decision, confidence value, draft-replacement text, or a
+    requirement/evidence status mutation (those keys are simply not present)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    origin_profile_id: str
+    severity: FindingSeverity
+    description: str
+    status: FindingStatus = "open"
+    field_id: str | None = None
+    requirement_id: str | None = None
+    evidence_anchor_id: str | None = None
+    evidence_link_id: str | None = None
+    evidence_status: str | None = None
+    suggested_improvement: str | None = None
+    recommended_next_action: str | None = None
+
+
+class ProfileReviewSummaryRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str
+    finding_count: int | None = None
+    limitations: list[str] = []
+
+
+class ReviewFindingBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[ReviewFindingRecord]
+    profile_summaries: list[ProfileReviewSummaryRecord]
+    overall_limitations: list[str] = []
+
+
 # --- registry + helpers ----------------------------------------------------
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
@@ -244,6 +327,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "EvidenceCandidateMappingResult@v1": EvidenceCandidateMappingResult,
     "FieldDraftingInput@v1": FieldDraftingInput,
     "PortalFieldDraftBundle@v1": PortalFieldDraftBundle,
+    "CriticReviewInput@v1": CriticReviewInput,
+    "ReviewFindingBundle@v1": ReviewFindingBundle,
 }
 
 

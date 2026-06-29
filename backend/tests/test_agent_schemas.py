@@ -48,7 +48,8 @@ def test_invalid_enum_in_classification():
 
 def test_unimplemented_schema_fails_safely():
     with pytest.raises(SchemaNotImplementedError):
-        validate_payload("ReviewFindingBundle@v1", {})  # A3 model not implemented yet
+        # FinalQualityReviewInput is a later A3 profile, not implemented in M9G.
+        validate_payload("FinalQualityReviewInput@v1", {})
 
 
 def test_hallucinated_fragment_reference():

@@ -1,9 +1,15 @@
-"""Targeted recheck: a deterministic, async review recompute on a completed run.
+"""Targeted recheck: async review recompute on a completed run.
 
 Re-runs the deterministic aggregator + rebuilds the ReviewPackage and clears
 ``recheck_required`` because the review state is current again — even if blocker
 findings remain. It NEVER re-runs the graph, re-ingests sources, re-discovers
-evidence, mutates historical artifacts, calls a provider/LLM, or auto-approves.
+evidence, mutates historical artifacts, or auto-approves.
+
+Milestone 9G: on an **eligible cloud-assisted (public/synthetic)** run it also runs
+the advisory A3 evidence-consistency review through the ModelGateway and persists its
+findings (source=agent) before rebuilding the package; deterministic-only / ineligible
+runs stay purely deterministic and make no provider call. A failed/skipped A3 run
+preserves prior A3 findings (the package still rebuilds deterministically).
 """
 from __future__ import annotations
 
@@ -111,6 +117,7 @@ def recheck_executor(run_id: str, operation_id: str) -> None:
         op = db.get(AsyncOperation, operation_id)
         if run is None or op is None:
             return
+        _maybe_run_a3(db, run)
         package = review_package.refresh_package(db, run, clear_recheck=True)
         if op.status not in TERMINAL_OPERATION_STATUSES:
             op.status = "succeeded"
@@ -133,6 +140,24 @@ def recheck_executor(run_id: str, operation_id: str) -> None:
         _mark_failed(run_id, operation_id)
     finally:
         db.close()
+
+
+def _maybe_run_a3(db: Session, run: AnalysisRun) -> None:
+    """Run the advisory A3 review on an eligible cloud run; persist findings only on a
+    successful, schema-valid bundle (corr 2). Never raises — the recheck must complete
+    deterministically regardless of A3."""
+    from app.agents import critic_review
+    from app.agents.a3_review import A3_PROFILE_ID
+
+    available, _reason = critic_review.availability(run)
+    if not available:
+        return  # deterministic / ineligible run — no provider call, no A3
+    outcome = critic_review.run_a3_evidence_consistency(db, run)
+    if outcome.status == "succeeded":
+        review_package.apply_agent_findings(
+            db, run, outcome.findings, profile_id=A3_PROFILE_ID
+        )
+    # skipped / failed / blocked → prior A3 findings preserved; failure already audited.
 
 
 def _mark_failed(run_id: str, operation_id: str) -> None:

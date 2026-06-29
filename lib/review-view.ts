@@ -22,6 +22,30 @@ export const HUMAN_IN_THE_LOOP_NOTE =
   "Die Qualitätsprüfung unterstützt die fachliche Kontrolle. Die finale Entscheidung bleibt beim Menschen."
 
 // ---------------------------------------------------------------------------
+// KI-gestützte Hinweise (A3 evidence-consistency findings, Milestone 9G).
+// Advisory only; surfaced separately from the deterministic checks. We identify
+// them by profile_id and never show model/provider/confidence.
+// ---------------------------------------------------------------------------
+export const AI_FINDINGS_LABEL = "KI-gestützte Hinweise"
+export const AI_FINDINGS_DESCRIPTION =
+  "Hinweise einer KI-Prüfung zu Belegen und Konsistenz. Vorschläge zur menschlichen Prüfung — keine Freigabe."
+
+/** A finding produced by an A3 review agent (profile_id like "A3.…"). */
+export function isAiFinding(finding: ReviewFindingDto): boolean {
+  return (finding.profile_id ?? "").startsWith("A3.")
+}
+
+/** The advisory KI findings in a package, in their existing order. */
+export function aiFindings(pkg: ReviewPackageDto): ReviewFindingDto[] {
+  return pkg.findings.filter(isAiFinding)
+}
+
+/** The deterministic (non-AI) findings — fed to the quality-check groups. */
+export function deterministicFindings(pkg: ReviewPackageDto): ReviewFindingDto[] {
+  return pkg.findings.filter((f) => !isAiFinding(f))
+}
+
+// ---------------------------------------------------------------------------
 // Severity labels + styles (review wording: Blocker / Hinweis).
 // ---------------------------------------------------------------------------
 export const REVIEW_SEVERITY_LABELS: Record<FindingSeverity, string> = {
