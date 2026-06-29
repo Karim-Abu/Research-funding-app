@@ -229,26 +229,26 @@ def _fake_run(mode, sensitivity="public", origin="synthetic", nda=False):
 
 
 def test_a2_availability_deterministic_unavailable(client):
-    ok, reason = field_drafting.availability(_fake_run("deterministic_only"))
+    ok, reason = field_drafting.availability(_fake_run("deterministic_only"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
     assert reason == "processing_mode_deterministic_only"
 
 
 def test_a2_availability_cloud_with_fake_provider(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", True)
-    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"))
+    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is True
     assert reason == "available"
 
 
 def test_a2_availability_provider_unavailable_without_fake(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", False)
-    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"))
+    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
     assert reason == "provider_unavailable"
 
 
 def test_a2_availability_blocked_for_confidential(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", True)
-    ok, _ = field_drafting.availability(_fake_run("cloud_assisted", "confidential", "real_project"))
+    ok, _ = field_drafting.availability(_fake_run("cloud_assisted", "confidential", "real_project"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False

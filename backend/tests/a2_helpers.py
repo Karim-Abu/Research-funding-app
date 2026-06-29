@@ -17,6 +17,7 @@ from app.db.models import (
 from tests.a1_mapping_helpers import build_run
 
 FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
+VC_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
 REQ_ID = "REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"
 # A suggestion body that preserves the mandatory 4.1-4.5 structure.
 GOOD_TEXT = (
@@ -25,6 +26,11 @@ GOOD_TEXT = (
     "4.3 Ziele: messbar mit Baseline.\n"
     "4.4 Vorarbeiten: abgeschlossene Vorstudien.\n"
     "4.5 Partner: geeignete Infrastruktur."
+)
+# A VC suggestion body that preserves the registry mandatory 3.1/3.2 structure.
+VC_GOOD_TEXT = (
+    "3.1 Wertschöpfung: erwartete Wirkung, mit Belegen oder Platzhalter [Marktzahl fehlt].\n"
+    "3.2 Geschäftsmodell und Markt: Zielkunden und Differenzierung; Wettbewerb [unklar]."
 )
 
 
@@ -36,8 +42,10 @@ def build_run_with_draft(
     db, *, draft_text: str = "4.1 ... 4.2 ... 4.3 ... 4.4 ... 4.5 ...",
     processing_mode: str = "cloud_assisted", sensitivity: str = "public",
     origin: str = "synthetic", nda: bool = False, workspace_id: str = "ws-demo",
+    field_id: str = FIELD_ID, character_limit: int = 25000,
+    field_name: str = "Innovation Solution",
 ):
-    """Run + a SOL.INNOVATION_SOLUTION.EDITOR draft with a current version.
+    """Run + an A2-enabled draft (SOL by default, or VC) with a current version.
     Returns (run, draft, base_version_id)."""
     run, _frags, _sv = build_run(
         db, fragments=["Synthetic project context."], processing_mode=processing_mode,
@@ -51,8 +59,8 @@ def build_run_with_draft(
     ))
     db.add(PortalFieldDraft(
         draft_id=draft_id, run_id=run.run_id, workspace_id=run.workspace_id,
-        field_id=FIELD_ID, field_name="Innovation Solution", status="draft",
-        character_limit=25000, current_version_id=version_id, open_issue_count=0,
+        field_id=field_id, field_name=field_name, status="draft",
+        character_limit=character_limit, current_version_id=version_id, open_issue_count=0,
         template_catalog_version="tpl-1",
     ))
     db.flush()
@@ -90,10 +98,10 @@ def fake_resolver(provider: FakeProvider):
 
 
 def bundle(*, suggested_text=GOOD_TEXT, evidence_anchor_ids=None, open_issue_ids=None,
-           placeholders=None, rationale="Improved per evidence.") -> dict:
+           placeholders=None, rationale="Improved per evidence.", field_id=FIELD_ID) -> dict:
     return {
         "draft_candidates": [{
-            "field_id": FIELD_ID, "suggested_text": suggested_text,
+            "field_id": field_id, "suggested_text": suggested_text,
             "rationale": rationale, "evidence_anchor_ids": evidence_anchor_ids or [],
             "open_issue_ids": open_issue_ids or [],
         }],

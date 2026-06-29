@@ -44,8 +44,8 @@ import { liveFieldToViewModel, pickDefaultTab } from "@/lib/draft-viewmodel"
 import { AI_GOALS, AI_LIVE_NOTICE } from "@/lib/draft-ai-actions"
 import {
   createRedraft,
+  isA2Field,
   RedraftError,
-  SOLUTION_INNOVATION_FIELD_ID,
   type A2Suggestion,
 } from "@/lib/redraft"
 import { Sparkles } from "lucide-react"
@@ -80,7 +80,7 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [commentText, setCommentText] = React.useState("")
   const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
-  // M9D: A2 draft suggestions (Solution & Innovation field only).
+  // M9D/9E: A2 draft suggestions (Solution & Innovation + Value Creation fields).
   const [a2Suggestion, setA2Suggestion] = React.useState<A2Suggestion | null>(null)
   const [a2Loading, setA2Loading] = React.useState(false)
   const [a2Unavailable, setA2Unavailable] = React.useState(false)
@@ -90,7 +90,7 @@ export function LiveEditor({ runId }: { runId: string }) {
   const autoSelectedRef = React.useRef(false)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
-  const isSolutionField = selected?.field_id === SOLUTION_INNOVATION_FIELD_ID
+  const showA2Controls = isA2Field(selected?.field_id)
 
   function resetA2() {
     setA2Suggestion(null)
@@ -523,7 +523,7 @@ export function LiveEditor({ runId }: { runId: string }) {
       }
       noticeSlot={
         <>
-          {isSolutionField && (
+          {showA2Controls && (
             <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
               <div className="flex items-center gap-2">
                 <Button

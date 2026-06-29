@@ -5,6 +5,36 @@ import { server } from "./server"
 import { LiveEditor } from "@/components/editor/live-editor"
 
 const SOL = "SOL.INNOVATION_SOLUTION.EDITOR"
+const VC = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+
+function vcDraft(overrides: Record<string, unknown> = {}) {
+  return {
+    draft_id: "d-vc",
+    field_id: VC,
+    field_name: "Value Creation",
+    status: "draft",
+    current_version: {
+      draft_version_id: "v1", text: "3.1 ... 3.2 ...", character_count: 16,
+      created_by: "template", created_at: new Date().toISOString(), content_hash: "h",
+    },
+    character_count: 16,
+    character_limit: 15000,
+    open_issue_count: 0,
+    evidence_links: [],
+    open_issues: [],
+    ...overrides,
+  }
+}
+
+function vcSuggestionResult() {
+  return {
+    suggestion_id: "s-vc", operation_id: "opvc", field_id: VC, base_version_id: "v1",
+    suggested_text: "3.1 Wertschöpfung neu 3.2 Geschäftsmodell neu [Marktzahl fehlt]",
+    rationale: "ok", evidence: [], open_issue_ids: [],
+    placeholders: [{ label: "Marktzahl", reason: "fehlt" }],
+    character_count: 60, character_limit: 15000, warnings: ["contains_placeholders"],
+  }
+}
 
 function solDraft(overrides: Record<string, unknown> = {}) {
   return {
@@ -116,6 +146,51 @@ describe("LiveEditor A2 suggestions", () => {
     await waitFor(() =>
       expect(screen.getByTestId("suggestion-text").textContent).toContain("4.5 neu")
     )
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
+    await waitFor(() =>
+      expect(
+        screen.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
+      ).toBeInTheDocument()
+    )
+  })
+
+  it("renders side-by-side and accepts a Value Creation (VC) suggestion", async () => {
+    server.use(
+      http.get("/api/runs/r1/fields", () => HttpResponse.json([vcDraft()])),
+      http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg())),
+      http.get(`/api/runs/r1/fields/${VC}`, () => HttpResponse.json(vcDraft())),
+      http.post(`/api/runs/r1/fields/${VC}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "opvc" }, { status: 202 })
+      ),
+      http.get("/api/operations/opvc", () =>
+        HttpResponse.json({
+          operation_id: "opvc", resource_type: "redraft", resource_id: "d-vc",
+          status: "succeeded", created_at: new Date().toISOString(),
+          result: vcSuggestionResult(),
+        })
+      ),
+      http.patch(`/api/runs/r1/fields/${VC}`, () =>
+        HttpResponse.json(
+          vcDraft({
+            current_version: {
+              draft_version_id: "v2",
+              text: "3.1 Wertschöpfung neu 3.2 Geschäftsmodell neu [Marktzahl fehlt]",
+              character_count: 60, created_by: "agent",
+              created_at: new Date().toISOString(), content_hash: "h2",
+            },
+          })
+        )
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate()
+    await waitFor(() =>
+      expect(screen.getByTestId("suggestion-text").textContent).toContain("3.2 Geschäftsmodell")
+    )
+    // Placeholder warning surfaces; no provider/model names anywhere.
+    expect(screen.getByText(/Platzhalter/i)).toBeInTheDocument()
+    expect(screen.queryByText(/anthropic|openai|gpt|claude|sonnet/i)).toBeNull()
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     await waitFor(() =>
       expect(

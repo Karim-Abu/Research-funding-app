@@ -1,12 +1,24 @@
-// A2 Solution & Innovation draft-suggestion client (Milestone 9D).
+// A2 draft-suggestion client (Milestone 9D; extended to Value Creation in 9E).
 // createRedraft (202 async) → poll the operation → the suggestion in result.
 // Advisory only: accepting is a separate updateField call with source_operation_id.
-// Scoped to SOL.INNOVATION_SOLUTION.EDITOR; no provider/model details ever surface.
+// Scoped to the A2-enabled fields below; no provider/model details ever surface.
 
 import { getCsrfToken } from "./session"
 import { pollOperation, type AsyncOperationDto } from "./operations"
 
 export const SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
+export const VALUE_CREATION_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+
+// The explicit set of fields that may request an A2 suggestion. Mirrors the
+// backend registry-backed allow-list; the backend stays authoritative.
+export const A2_FIELD_IDS: ReadonlySet<string> = new Set([
+  SOLUTION_INNOVATION_FIELD_ID,
+  VALUE_CREATION_FIELD_ID,
+])
+
+export function isA2Field(fieldId: string | undefined | null): boolean {
+  return fieldId != null && A2_FIELD_IDS.has(fieldId)
+}
 
 export interface A2EvidenceItem {
   anchor_id: string

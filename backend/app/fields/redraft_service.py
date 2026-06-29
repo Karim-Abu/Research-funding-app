@@ -1,10 +1,10 @@
-"""createRedraft service + async executor (Milestone 9D).
+"""createRedraft service + async executor (Milestone 9D; generalized in 9E).
 
-Generates an advisory A2 suggestion for SOL.INNOVATION_SOLUTION.EDITOR. Mirrors the
-M3 run-executor async pattern: a queued AsyncOperation runs the A2 orchestrator in the
-background and stores the suggestion in ``operation.result``. The endpoint pre-checks
-base-version currency (409) and per-run availability (503) — it NEVER upgrades the run's
-processing mode.
+Generates an advisory A2 suggestion for an A2-enabled field (SOL.INNOVATION_SOLUTION.
+EDITOR / VC.BUSINESS_TARGETS_MODEL.EDITOR). Mirrors the M3 run-executor async pattern:
+a queued AsyncOperation runs the A2 orchestrator in the background and stores the
+suggestion in ``operation.result``. The endpoint pre-checks base-version currency (409)
+and per-run availability (503) — it NEVER upgrades the run's processing mode.
 """
 from __future__ import annotations
 
@@ -22,8 +22,6 @@ from app.runs.constants import TERMINAL_OPERATION_STATUSES
 from app.runs.transitions import transition_operation
 
 logger = logging.getLogger("app.fields.redraft")
-
-FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
 
 def _now() -> datetime:
@@ -48,7 +46,7 @@ def prepare_redraft(
             status=409, code="stale_base_version", title="Conflict",
             detail="Dieser Abschnitt wurde zwischenzeitlich geändert.",
         )
-    available, reason = field_drafting.availability(run)
+    available, reason = field_drafting.availability(run, draft.field_id)
     if not available:
         raise ProblemException(
             status=503, code="ai_unavailable", title="Service Unavailable",
@@ -69,14 +67,14 @@ def prepare_redraft(
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=actor_user_id,
         action="redraft.requested", target_type="portal_field_draft",
-        target_id=draft.draft_id, detail={"field_id": FIELD_ID},
+        target_id=draft.draft_id, detail={"field_id": draft.field_id},
     )
     return operation, accepted, guidance
 
 
 def redraft_executor(
     operation_id: str, run_id: str, draft_id: str, base_version_id: str,
-    guidance: str | None,
+    guidance: str | None, field_id: str,
 ) -> None:
     """Background task: run A2 and store the suggestion in operation.result."""
     db = SessionLocal()
@@ -89,8 +87,8 @@ def redraft_executor(
         op.started_at = _now()
         db.commit()
 
-        outcome = field_drafting.run_a2_solution_innovation(
-            db, run, draft_id=draft_id, base_version_id=base_version_id,
+        outcome = field_drafting.run_a2_field_drafting(
+            db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
             operation_id=operation_id, guidance=guidance,
         )
 

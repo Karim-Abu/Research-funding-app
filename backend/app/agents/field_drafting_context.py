@@ -1,12 +1,15 @@
-"""A2 Solution & Innovation context assembly (Milestone 9D).
+"""A2 field-drafting context assembly (Milestone 9D; generalized in 9E).
 
-Field-specific, minimal, evidence-aware context for A2.solution_innovation. Six
-read-only tool-services (recorded as ToolInvocations) gather: the current draft text +
-SOL field profile (label, 25000 limit, mandatory 4.1-4.5), requirement assessments and
-open issues for the field, exact-verified evidence quotes, structured project data, and
-advisory A1 facts. No full documents, secrets or unrelated fields. Source text is
-untrusted data. The pinned ``FieldDraftingInput@v1`` carries the structured fields; the
-current draft text + requirement assessments are rendered into ``context_text``.
+Field-specific, minimal, evidence-aware context for an A2 drafting profile, keyed by
+``field_id`` + ``profile_id`` (SOL.INNOVATION_SOLUTION.EDITOR / A2.solution_innovation;
+VC.BUSINESS_TARGETS_MODEL.EDITOR / A2.value_creation_market_logic). Six read-only
+tool-services (recorded as ToolInvocations) gather: the current draft text + the field
+profile (label, registry character limit, registry mandatory questions), requirement
+assessments and open issues for the field, exact-verified evidence quotes, structured
+project data, and advisory A1 facts. No full documents, secrets or unrelated fields.
+Source text is untrusted data. The pinned ``FieldDraftingInput@v1`` carries the
+structured fields; the current draft text + requirement assessments are rendered into
+``context_text``.
 """
 from __future__ import annotations
 
@@ -33,12 +36,11 @@ from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import extracted_facts as facts_repo
 
-PROFILE_ID = "A2.solution_innovation"
-FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
-
 
 @dataclass
 class A2Context:
+    field_id: str = ""
+    profile_id: str = ""
     field_profile: dict = field(default_factory=dict)
     confirmed_facts: list[dict] = field(default_factory=list)
     verified_evidence: list[dict] = field(default_factory=list)
@@ -58,40 +60,42 @@ def _hash_text(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def _record_tool(db: Session, run: AnalysisRun, tool_id: str, output_hash: str) -> None:
+def _record_tool(
+    db: Session, run: AnalysisRun, tool_id: str, output_hash: str, *, caller: str
+) -> None:
     db.add(
         ToolInvocation(
             invocation_id=str(uuid.uuid4()), workspace_id=run.workspace_id,
-            run_id=run.run_id, tool_id=tool_id, caller=PROFILE_ID,
+            run_id=run.run_id, tool_id=tool_id, caller=caller,
             input_hash=_hash_text(run.run_id), output_hash=output_hash,
             status="succeeded",
         )
     )
 
 
-def _linked_requirement_ids() -> set[str]:
+def _linked_requirement_ids(field_id: str) -> set[str]:
     registry = get_registry()
     return {
         r.requirement_id for r in registry.requirements.values()
-        if FIELD_ID in (r.affected_field_ids or [])
+        if field_id in (r.affected_field_ids or [])
     }
 
 
-def _field_profile_view() -> dict:
+def _field_profile_view(field_id: str) -> dict:
     registry = get_registry()
-    fdef = registry.portal_fields.get(FIELD_ID)
-    mandatory = [q.field_id for q in registry.mandatory_questions(FIELD_ID)]
+    fdef = registry.portal_fields.get(field_id)
+    mandatory = [q.field_id for q in registry.mandatory_questions(field_id)]
     return {
-        "field_id": FIELD_ID,
-        "label": fdef.label_or_question if fdef else FIELD_ID,
+        "field_id": field_id,
+        "label": fdef.label_or_question if fdef else field_id,
         "character_limit": fdef.character_limit if fdef else None,
         "mandatory_questions": mandatory,
         "guidance": None,
     }
 
 
-def _current_draft_text(db: Session, run: AnalysisRun) -> str:
-    draft = drafts_repo.get_draft(db, run.run_id, FIELD_ID)
+def _current_draft_text(db: Session, run: AnalysisRun, field_id: str) -> str:
+    draft = drafts_repo.get_draft(db, run.run_id, field_id)
     if draft is None or draft.current_version_id is None:
         return ""
     version = db.get(DraftVersion, draft.current_version_id)
@@ -167,13 +171,15 @@ def retrieve_structured_project_data(db: Session, run: AnalysisRun) -> dict:
     }
 
 
-def retrieve_open_issues(db: Session, run: AnalysisRun, requirement_ids: set[str]) -> list[dict]:
+def retrieve_open_issues(
+    db: Session, run: AnalysisRun, requirement_ids: set[str], field_id: str
+) -> list[dict]:
     issues = []
     for issue in db.scalars(
         select(OpenIssue).where(OpenIssue.run_id == run.run_id, OpenIssue.status == "open")
     ):
         relevant = (
-            (issue.target_type == "field" and issue.target_id == FIELD_ID)
+            (issue.target_type == "field" and issue.target_id == field_id)
             or (issue.target_type == "requirement_assessment")
             or (issue.target_id in requirement_ids)
         )
@@ -218,31 +224,34 @@ def _render_context_text(ctx: A2Context) -> str:
     return "\n\n".join(parts)
 
 
-def assemble_a2_context(db: Session, run: AnalysisRun, *, language: str = "de") -> A2Context:
-    requirement_ids = _linked_requirement_ids()
-    ctx = A2Context(language=language)
-    ctx.field_profile = _field_profile_view()
-    ctx.current_draft_text = _current_draft_text(db, run)
+def assemble_a2_context(
+    db: Session, run: AnalysisRun, *, field_id: str, profile_id: str, language: str = "de"
+) -> A2Context:
+    requirement_ids = _linked_requirement_ids(field_id)
+    ctx = A2Context(field_id=field_id, profile_id=profile_id, language=language)
+    ctx.field_profile = _field_profile_view(field_id)
+    ctx.current_draft_text = _current_draft_text(db, run, field_id)
     ctx.confirmed_facts = retrieve_confirmed_project_facts(db, run)
     ctx.verified_evidence = retrieve_verified_evidence(db, run)
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
-    ctx.open_issues = retrieve_open_issues(db, run, requirement_ids)
+    ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
     ctx.allowed_anchor_ids = {e["anchor_id"] for e in ctx.verified_evidence}
     ctx.allowed_issue_ids = {i["issue_id"] for i in ctx.open_issues}
 
     # Record the tool invocations (authorization checked against the registry).
-    _record_tool(db, run, "lookup_portal_field_profile", _hash_text(str(ctx.field_profile)))
+    _record_tool(db, run, "lookup_portal_field_profile",
+                 _hash_text(str(ctx.field_profile)), caller=profile_id)
     _record_tool(db, run, "retrieve_confirmed_project_facts",
-                 _hash_text(",".join(f["fact_id"] for f in ctx.confirmed_facts)))
+                 _hash_text(",".join(f["fact_id"] for f in ctx.confirmed_facts)), caller=profile_id)
     _record_tool(db, run, "retrieve_verified_evidence",
-                 _hash_text(",".join(sorted(ctx.allowed_anchor_ids))))
+                 _hash_text(",".join(sorted(ctx.allowed_anchor_ids))), caller=profile_id)
     _record_tool(db, run, "retrieve_structured_project_data",
-                 _hash_text(str(ctx.structured_project_data)))
+                 _hash_text(str(ctx.structured_project_data)), caller=profile_id)
     _record_tool(db, run, "retrieve_open_issues",
-                 _hash_text(",".join(sorted(ctx.allowed_issue_ids))))
+                 _hash_text(",".join(sorted(ctx.allowed_issue_ids))), caller=profile_id)
     _record_tool(db, run, "lookup_requirement_definition",
-                 _hash_text(",".join(sorted(requirement_ids))))
+                 _hash_text(",".join(sorted(requirement_ids))), caller=profile_id)
 
     ctx.context_text = _render_context_text(ctx)
     settings = get_settings()
@@ -264,7 +273,7 @@ def assemble_a2_context(db: Session, run: AnalysisRun, *, language: str = "de") 
 def build_input_payload(ctx: A2Context, run_id: str) -> dict:
     return {
         "run_id": run_id,
-        "profile_id": PROFILE_ID,
+        "profile_id": ctx.profile_id,
         "field_profiles": [ctx.field_profile],
         "confirmed_facts": [
             {"fact_id": f["fact_id"], "statement": f["statement"],

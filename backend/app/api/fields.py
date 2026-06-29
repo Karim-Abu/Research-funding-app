@@ -20,11 +20,11 @@ from app.repositories import runs as runs_repo
 from app.review.invalidation import invalidate_approvals
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
+from app.agents.a2_fields import A2_FIELD_PROFILES
+
 router = APIRouter(tags=["Fields"])
 
 _NOT_FOUND = "Resource not found"
-# Milestone 9D: A2 suggestions are scoped to exactly this field.
-A2_REDRAFT_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
 
 def _require_run(db: Session, run_id: str, workspace_id: str) -> AnalysisRun:
@@ -127,12 +127,13 @@ def create_redraft(
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
 ) -> AsyncAccepted:
-    """Milestone 9D: request an advisory A2 suggestion for the Solution & Innovation
-    field. Async (202); 409 on a stale base version; 503 when AI is unavailable for
-    the run's data class / processing mode. The draft is never auto-modified."""
+    """Milestone 9D/9E: request an advisory A2 suggestion for an A2-enabled field
+    (Solution & Innovation or Value Creation). Async (202); 409 on a stale base
+    version; 503 when AI is unavailable for the run's data class / processing mode.
+    The draft is never auto-modified."""
     run = _require_run(db, run_id, context.user.workspace_id)
-    # A2 is scoped to exactly one field in M9D.
-    if field_id != A2_REDRAFT_FIELD_ID:
+    # A2 is scoped to the explicit registry-backed field/profile allow-list.
+    if field_id not in A2_FIELD_PROFILES:
         raise ProblemException(
             status=404, code="not_found", title=_NOT_FOUND,
             detail="AI suggestions are not available for this field.",
@@ -146,7 +147,7 @@ def create_redraft(
     db.commit()
     background.add_task(
         redraft_service.redraft_executor, operation.operation_id, run.run_id,
-        draft.draft_id, payload.base_version_id, guidance,
+        draft.draft_id, payload.base_version_id, guidance, field_id,
     )
     return accepted
 

@@ -113,7 +113,9 @@ def test_confidential_blocked(db):
 
 def test_availability_no_mode_upgrade(db):
     run, _d, _b = build_run_with_draft(db, processing_mode="deterministic_only")
-    available, reason = field_drafting.availability(run)
+    available, reason = field_drafting.availability(
+        run, "SOL.INNOVATION_SOLUTION.EDITOR"
+    )
     assert available is False and reason == "processing_mode_deterministic_only"
     # The run's mode is unchanged (never upgraded).
     assert run.processing_mode == "deterministic_only"
