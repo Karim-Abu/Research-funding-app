@@ -12,11 +12,12 @@ from app.contracts.run import AsyncAccepted, RunCreate
 from app.db.models import AnalysisRun, AsyncOperation, UsageRecord
 from app.registry import get_registry
 from app.repositories import audit, controls
+from app.repositories import processing_confirmations as confirmations_repo
 from app.repositories import runs as runs_repo
-from app.runs import project_snapshot
+from app.runs import cloud_policy, project_snapshot
 from app.runs import snapshot as snapshot_service
 from app.runs.constants import SNAPSHOT_VERSIONS
-from app.runs.policy import build_policy_snapshot, validate_processing_mode
+from app.runs.policy import POLICY_VERSION, build_policy_snapshot
 
 RUN_CONTROLS = (
     "run.authorization",
@@ -45,7 +46,14 @@ def prepare_run(
     Caller owns idempotency records, commit, and execution/background dispatch.
     """
 
-    validate_processing_mode(payload.settings.processing_mode)
+    # M9D.2 cloud-processing gate: non-cloud modes pass through; cloud_assisted is
+    # allowed only for eligible (public/synthetic) projects with a valid one-run
+    # confirmation. Blocks persist their own ControlResult + AuditEvent.
+    cloud_decision = cloud_policy.validate_cloud_run(
+        db, project, payload.settings, actor_user_id=actor_user_id,
+        requested_source_version_ids=payload.settings.source_version_ids or [],
+        policy_version=POLICY_VERSION,
+    )
     registry = get_registry()
 
     if runs_repo.active_run(db, project.project_id) is not None:
@@ -99,7 +107,10 @@ def prepare_run(
     project_snapshot.build_and_persist(
         db, run_id=actual_run_id, project=project, registry=registry
     )
-    db.add(build_policy_snapshot(actual_run_id, payload.settings, settings))
+    db.add(build_policy_snapshot(actual_run_id, payload.settings, settings, cloud_decision))
+    if cloud_decision.confirmation is not None:
+        # Consume the one-run confirmation now that the cloud run is committed.
+        confirmations_repo.mark_used(db, cloud_decision.confirmation, actual_run_id)
     db.add(
         UsageRecord(
             usage_record_id=str(uuid.uuid4()),

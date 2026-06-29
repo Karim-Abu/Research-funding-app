@@ -57,7 +57,14 @@ import {
   type SourceDocumentDto,
 } from "@/lib/sources"
 import { getCapabilities, type Capabilities } from "@/lib/capabilities"
-import { cancelRun, createRun, listProjectRuns } from "@/lib/runs"
+import {
+  cancelRun,
+  createRun,
+  listProjectRuns,
+  RunError,
+  type RunSettings,
+} from "@/lib/runs"
+import { createProcessingConfirmation } from "@/lib/processing-confirmations"
 import { pollOperation, type PollHandle } from "@/lib/operations"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
@@ -409,12 +416,39 @@ function QuellenPageContent() {
     setRunCost(undefined)
     try {
       if (liveMode && projectId) {
-        const accepted = await createRun(projectId, {
+        // Derive the processing mode from the run-settings opt-in. Cloud-KI is
+        // only used when the user enabled it AND explicitly confirmed for a
+        // public/synthetic project; otherwise the run stays deterministic.
+        const processedVersionIds = liveSources
+          .filter((s) => s.status === "processed" && s.current_source_version_id)
+          .map((s) => s.current_source_version_id as string)
+        const useCloud =
+          settings.ki &&
+          settings.cloudConfirmed === true &&
+          !isLocalOnly &&
+          processedVersionIds.length > 0
+
+        let runSettings: RunSettings = {
           processing_mode: "deterministic_only",
           max_cost_chf: settings.costLimit,
           max_llm_calls: 0,
           max_web_calls: 0,
-        })
+        }
+        if (useCloud) {
+          const confirmation = await createProcessingConfirmation(
+            projectId,
+            processedVersionIds
+          )
+          runSettings = {
+            processing_mode: "cloud_assisted",
+            max_cost_chf: settings.costLimit,
+            max_llm_calls: 25,
+            max_web_calls: 0,
+            source_version_ids: processedVersionIds,
+            internal_cloud_confirmation_id: confirmation.confirmation_id,
+          }
+        }
+        const accepted = await createRun(projectId, runSettings)
         runIdRef.current = accepted.resource_id
         setCurrentRunId(accepted.resource_id)
         operationPollRef.current = pollOperation(accepted.operation_id, {
@@ -454,9 +488,11 @@ function QuellenPageContent() {
       startPolling()
     } catch (e) {
       setAnalysisState("idle")
-      setApiError(
-        e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
-      )
+      if (e instanceof RunError || e instanceof ApiError) {
+        setApiError(e.message)
+      } else {
+        setApiError(BRIDGE_UNREACHABLE_MESSAGE)
+      }
     }
   }
 

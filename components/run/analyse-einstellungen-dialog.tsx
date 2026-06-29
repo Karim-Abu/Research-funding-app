@@ -70,19 +70,25 @@ export function AnalyseEinstellungenDialog({
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [localSourcesOnly, setLocalSourcesOnly] = React.useState(false)
   const [costLimit, setCostLimit] = React.useState("2.00")
+  // Cloud-KI requires an explicit one-run acknowledgement (public/synthetic only).
+  const [cloudConfirmed, setCloudConfirmed] = React.useState(false)
 
   const webDisabled = localSourcesOnly || !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
+  const cloudOptIn = ki && !isLocalOnlyClass
+  // Block the start until the user confirms cloud processing for this run.
+  const cloudConfirmationMissing = cloudOptIn && !cloudConfirmed
 
   function handleStart() {
     onStart?.({
-      ki: ki && !isLocalOnlyClass,
+      ki: cloudOptIn,
       web: effectiveWeb,
       localSourcesOnly,
       costLimit: Number.parseFloat(costLimit) || 0,
       // Beta: Modell-Routing ist eine Backend-/Config-Entscheidung —
       // die Drafter/Critic-Trennung bleibt cross-provider.
       model: "auto",
+      cloudConfirmed: cloudOptIn && cloudConfirmed,
     })
   }
 
@@ -129,6 +135,42 @@ export function AnalyseEinstellungenDialog({
               onCheckedChange={setKi}
               available={serviceAvailability.ki && !isLocalOnlyClass}
             />
+
+            {/* Cloud-KI one-run confirmation (public/synthetic only) */}
+            {cloudOptIn && (
+              <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
+                <p className="text-muted-foreground">
+                  Cloud-KI kann für diesen Durchlauf bewusst freigegeben werden,
+                  sofern die Daten öffentlich oder synthetisch sind.
+                </p>
+                <p className="text-muted-foreground">
+                  Cloud-KI kann ausgewählte Inhalte an den konfigurierten
+                  KI-Dienst übermitteln. Diese Beta erlaubt Cloud-KI nur für
+                  öffentliche oder synthetische Inhalte. Interne, vertrauliche
+                  oder NDA-Inhalte werden blockiert. Webrecherche bleibt
+                  deaktiviert.
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={cloudConfirmed}
+                    onCheckedChange={(c) => setCloudConfirmed(c === true)}
+                    className="mt-0.5"
+                    aria-label="Cloud-KI für diesen Durchlauf erlauben"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium text-foreground">
+                      Cloud-KI für diesen Durchlauf erlauben
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Ich bestätige, dass die ausgewählten Inhalte öffentlich
+                      oder synthetisch sind und für diesen Durchlauf an den
+                      konfigurierten KI-Dienst übermittelt werden dürfen.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
             <WebSearchToggle
               id="web-toggle"
               checked={effectiveWeb}
@@ -245,7 +287,9 @@ export function AnalyseEinstellungenDialog({
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
-            <Button onClick={handleStart}>Analyse starten</Button>
+            <Button onClick={handleStart} disabled={cloudConfirmationMissing}>
+              Analyse starten
+            </Button>
           </DialogFooter>
         )}
       </DialogContent>

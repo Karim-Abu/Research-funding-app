@@ -201,4 +201,9 @@ export interface AnalyseSettings {
   maxTextLength?: number
   maxSources?: number
   maxWebPages?: number
+  /**
+   * Cloud-KI für diesen Durchlauf bewusst freigegeben (nur public/synthetic).
+   * Mandatory user acknowledgement before a cloud_assisted run (Milestone 9D.2).
+   */
+  cloudConfirmed?: boolean
 }

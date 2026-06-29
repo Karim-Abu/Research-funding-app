@@ -97,12 +97,21 @@ def availability(run: AnalysisRun) -> tuple[bool, str]:
     if mode in _NO_CALL_MODES:
         return False, f"processing_mode_{mode}"
     registry = gateway.get_agent_registry()
+    settings = get_settings()
     decision = data_policy.evaluate(
         profile=registry.profile(PROFILE_ID), classification=_classification(run),
-        processing_mode=mode, settings=get_settings(), run_confirmation=False,
+        processing_mode=mode, settings=settings, run_confirmation=False,
     )
     if decision.blocked:
         return False, decision.reason
+    # A provider must actually be available: a real configured route OR the dev/test
+    # fake. Without either, A2 is unavailable (503) rather than a failing async job.
+    # Uses the module-level resolver so the orchestrator and this pre-check agree.
+    if not settings.agent_fake_provider:
+        route = registry.route(registry.profile(PROFILE_ID).primary_model)
+        adapter = _PROVIDER_RESOLVER(route)
+        if adapter is None or not adapter.available():
+            return False, "provider_unavailable"
     return True, "available"
 
 

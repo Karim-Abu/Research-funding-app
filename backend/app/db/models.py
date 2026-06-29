@@ -431,6 +431,9 @@ class RunPolicySnapshot(Base):
     timeout_seconds: Mapped[int] = mapped_column(nullable=False, default=600)
     allowed_routes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     policy_version: Mapped[str] = mapped_column(String, nullable=False)
+    # Milestone 9D.2: cloud-processing gate provenance frozen on the run.
+    cloud_confirmation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_route_class: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -1210,3 +1213,41 @@ class DraftSuggestion(Base):
     )
     decided_by: Mapped[str | None] = mapped_column(String, nullable=True)
     accepted_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Cloud-processing confirmation (Milestone 9D.2): a per-run user acknowledgement
+# that selected public/synthetic content may be sent to the configured cloud AI
+# for one cloud_assisted run. NOT an institutional approval. One-run, bound to the
+# source versions + policy version. Internal/confidential/NDA remain blocked.
+# ---------------------------------------------------------------------------
+
+
+class ProcessingConfirmation(Base):
+    """One-run cloud-processing confirmation (openapi ProcessingConfirmation)."""
+
+    __tablename__ = "processing_confirmations"
+
+    confirmation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    # valid | used | revoked | expired
+    status: Mapped[str] = mapped_column(String, nullable=False, default="valid")
+    processing_mode: Mapped[str] = mapped_column(String, nullable=False)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    accepted_policy_version: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    provider_route_class: Mapped[str] = mapped_column(String, nullable=False)
+    confirmation_text_version: Mapped[str] = mapped_column(String, nullable=False)
+    data_classification_shown: Mapped[dict] = mapped_column(JSON, nullable=False)
+    expires_after_one_run: Mapped[bool] = mapped_column(nullable=False, default=True)
+    used_by_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
