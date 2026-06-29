@@ -318,6 +318,71 @@ class ReviewFindingBundle(BaseModel):
     overall_limitations: list[str] = []
 
 
+# --- A1 PublicCompetenceResearch (Milestone 9I-A) --------------------------
+
+EvidenceType = Literal[
+    "institutional_profile", "publication", "public_project",
+    "professional_competence", "track_record",
+]
+
+
+class PublicCompetenceResearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    research_task_id: str
+    project_id: str
+    research_result_source_version_ids: list[str]
+    requested_partner_roles: list[str]
+    competence_needs: list[str]
+
+
+class ProfessionalEvidenceRecord(BaseModel):
+    """One public professional-evidence claim. ``source_version_id`` ties the claim to
+    an imported public SourceVersion; the persistence layer assigns the public id and
+    source_id. Advisory only — never a confirmed fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_type: EvidenceType
+    subject_name: str
+    organisation: str | None = None
+    claim: str
+    source_url: str
+    source_title: str
+    accessed_at: str | None = None
+    source_version_id: str | None = None
+
+
+class PartnerRoleSuggestionRecord(BaseModel):
+    """Advisory partner-role suggestion. Evidence is referenced by 0-based index into
+    the bundle's ``professional_evidence`` array (the model never invents ids)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role_name: str
+    competence_gap: str
+    suggested_subject_name: str | None = None
+    suggested_organisation: str | None = None
+    professional_evidence_indexes: list[int] = []
+
+
+class IdentityMatchRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_name: str
+    status: Literal["matched", "ambiguous", "unresolved"]
+    note: str | None = None
+
+
+class PublicCompetenceResearchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    professional_evidence: list[ProfessionalEvidenceRecord]
+    partner_role_suggestions: list[PartnerRoleSuggestionRecord]
+    unresolved_identity_matches: list[IdentityMatchRecord] = []
+    warnings: list[str] = []
+
+
 # --- registry + helpers ----------------------------------------------------
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
@@ -329,6 +394,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "PortalFieldDraftBundle@v1": PortalFieldDraftBundle,
     "CriticReviewInput@v1": CriticReviewInput,
     "ReviewFindingBundle@v1": ReviewFindingBundle,
+    "PublicCompetenceResearchInput@v1": PublicCompetenceResearchInput,
+    "PublicCompetenceResearchResult@v1": PublicCompetenceResearchResult,
 }
 
 

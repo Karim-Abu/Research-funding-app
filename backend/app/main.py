@@ -21,6 +21,7 @@ from app.api import (
     partners,
     projects,
     requirements,
+    research,
     review,
     runs,
     sources,
@@ -94,6 +95,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
     health, auth, me, capabilities, projects, sources, runs, operations,
-    partners, requirements, evidence, fields, review, exports,
+    partners, requirements, evidence, fields, review, exports, research,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

@@ -35,7 +35,11 @@ def get_capabilities(
         "review": True,
         # Milestone 8: deterministic DOCX/Markdown/technical-evidence exports.
         "export": True,
-        "web_research": False,
+        # Milestone 9I-A: public web research. Truthful — true only when enabled AND a
+        # provider (real Firecrawl or the dedicated web fake) is configured. url_import
+        # stays false: web import is an internal Research path, not free-form URL import.
+        "web_research": settings.web_research_enabled
+        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
     }
     return Capabilities(
         api_version=settings.api_version,

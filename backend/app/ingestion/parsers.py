@@ -135,6 +135,8 @@ def parse(source_type: str, data: bytes) -> ParseResult:
         return parse_pdf(data)
     if source_type == "docx":
         return parse_docx(data)
-    if source_type == "txt":
+    # Milestone 9I-A: imported public web sources store provider-extracted page text
+    # (UTF-8); they are parsed as text like any other textual source.
+    if source_type in ("txt", "url"):
         return parse_txt(data)
     raise ParserError(f"unsupported source type: {source_type}")

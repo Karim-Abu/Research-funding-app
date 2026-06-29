@@ -298,6 +298,8 @@ class ControlResult(Base):
     tool_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Milestone 9A: links a control to the AgentInvocation that produced it.
     agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Milestone 9I-A: links a control to a public-web-research task.
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -443,9 +445,13 @@ class UsageRecord(Base):
     __tablename__ = "usage_records"
 
     usage_record_id: Mapped[str] = mapped_column(String, primary_key=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    # Nullable since Milestone 9I-A: public-web-research usage is scoped to a
+    # research_task, not an analysis run.
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
     )
+    # Milestone 9I-A: research-task-scoped usage (never aggregated under run_id=null).
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -963,9 +969,13 @@ class ToolInvocation(Base):
 
     invocation_id: Mapped[str] = mapped_column(String, primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    # Nullable since Milestone 9I-A: public-web-research tool calls are scoped to a
+    # research_task, not an analysis run.
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
     )
+    # Milestone 9I-A: research-task-scoped tool invocation.
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     tool_id: Mapped[str] = mapped_column(String, nullable=False)
     caller: Mapped[str] = mapped_column(String, nullable=False)
     input_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -1250,4 +1260,101 @@ class ProcessingConfirmation(Base):
     )
     decided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public web research (Milestone 9I-A): ResearchTask + ResearchResult
+# ---------------------------------------------------------------------------
+
+
+class ResearchTask(Base):
+    """Explicit, user-initiated public web research task (Domain Model
+    ResearchTask). Internal table; the public surface is the openapi ResearchTask
+    schema. ``query_text`` only ever holds the user-confirmed public query — never
+    raw confidential/internal project text."""
+
+    __tablename__ = "research_tasks"
+
+    research_task_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Controlled enum: partner_role_suggestion | competence_gap_analysis |
+    # publication_track_record (openapi ResearchTaskCreate.purpose).
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    # person | organisation | topic
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # User-confirmed public query only (== ResearchTaskCreate.query_preview).
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_query_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # queued | running | succeeded | failed | blocked | cancelled
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    preferred_domains: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    disallowed_domains: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    competence_needs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    requested_partner_roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    max_results: Mapped[int] = mapped_column(nullable=False, default=10)
+    max_pages: Mapped[int] = mapped_column(nullable=False, default=1)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Advisory A1 public-competence synthesis state (non-blocking): null | succeeded |
+    # failed | skipped. Used to enforce at-most-one successful synthesis per task.
+    a1_synthesis_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    internal_public_confirmation_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ResearchResult(Base):
+    """A public web search candidate (Domain Model ResearchResult). Snippets are
+    NOT evidence; a result becomes source material only after explicit import as a
+    SourceDocument. ``professional_evidence`` / ``partner_role_suggestions`` hold
+    advisory A1 synthesis output (human-review required)."""
+
+    __tablename__ = "research_results"
+
+    result_id: Mapped[str] = mapped_column(String, primary_key=True)
+    research_task_id: Mapped[str] = mapped_column(
+        ForeignKey("research_tasks.research_task_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+    final_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_rank: Mapped[int | None] = mapped_column(nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    # candidate | imported | rejected | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="candidate")
+    # not_applicable | matched | ambiguous | unresolved
+    identity_match_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_applicable"
+    )
+    source_document_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    professional_evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    partner_role_suggestions: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
     )

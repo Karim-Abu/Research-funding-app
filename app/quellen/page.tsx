@@ -6,6 +6,7 @@ import { Play, ChevronDown, ChevronRight, XCircle } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { SourceTable } from "@/components/quellen/source-table"
+import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
 import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
@@ -850,6 +851,12 @@ function QuellenPageContent() {
                   acceptExtensions={[".pdf", ".docx", ".txt"]}
                   currentUserName={currentUser.name}
                 />
+                {projectId && capabilities?.features?.web_research && (
+                  <PublicResearchPanel
+                    projectId={projectId}
+                    onImported={refreshSources}
+                  />
+                )}
               </div>
             ) : (
               <SourceTable

@@ -96,6 +96,20 @@ class Settings(BaseSettings):
     # adapters and is simply unavailable without a configured key.
     agent_fake_provider: bool = False
 
+    # Milestone 9I-A: public web research. Keys are env-only, never defaulted/logged.
+    # web_research_enabled gates the whole feature; a missing Firecrawl key + no fake
+    # simply reports the feature unavailable (no crash). The web fake provider has its
+    # OWN flag — it is NOT implied by agent_fake_provider (binding correction 5).
+    web_research_enabled: bool = False
+    firecrawl_api_key: str | None = None
+    web_research_fake_provider: bool = False
+    # Deployment/technical limits for web research (NOT funding rules).
+    web_search_max_results: int = 10
+    web_fetch_max_bytes: int = 5 * 1024 * 1024
+    web_fetch_max_redirects: int = 5
+    web_research_timeout_seconds: int = 60
+    web_research_max_credits: int = 50
+
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"
     seed_workspace_name: str = "Demo Workspace"
