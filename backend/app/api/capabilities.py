@@ -40,6 +40,10 @@ def get_capabilities(
         # stays false: web import is an internal Research path, not free-form URL import.
         "web_research": settings.web_research_enabled
         and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        # Milestone 9I-B: market/competitor comparison (beta-internal) — available with
+        # web research (it is built from imported public sources).
+        "market_comparison": settings.web_research_enabled
+        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
     }
     return Capabilities(
         api_version=settings.api_version,

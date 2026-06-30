@@ -75,7 +75,9 @@ class FakeWebProvider:
     def fetch(self, url: str, *, max_bytes: int) -> FetchOutcome:
         self._raise_for_mode()
         body = (
-            "Öffentlich abgerufener Seiteninhalt für die fachliche Prüfung.\n\n"
+            "Die Plattform dieser öffentlichen Quelle ist eine alternative Lösung für "
+            "den Markt. Konkurrenten und Anbieter bieten ähnliche Produkte für Kunden "
+            "an; im Vergleich unterscheidet sich das Angebot durch Differenzierung.\n\n"
             "Dieser Text stammt aus einer öffentlichen Webquelle und wird als normales "
             "Quellenmaterial importiert. Er ist erst nach der regulären, "
             "deterministischen Evidenzprüfung als Beleg verwendbar."

@@ -1358,3 +1358,90 @@ class ResearchResult(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+# ---------------------------------------------------------------------------
+# Market & competitor comparison (Milestone 9I-B): beta-internal, built only from
+# imported public sources. No finalized contract object — internal tables only.
+# ---------------------------------------------------------------------------
+
+
+class MarketComparison(Base):
+    """A structured market/competitor comparison built from imported public sources
+    (Domain has no contract object — beta-internal). Run-nullable; evidence comes from
+    standalone deterministic quote verification, never from snippets/provider payloads."""
+
+    __tablename__ = "market_comparisons"
+
+    comparison_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Comparison is decoupled from any analysis run (rule: no run coupling).
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    research_task_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # draft | ready_for_review | stale | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    # Comparison-level open questions / caveats from the structuring step (advisory).
+    research_gaps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    comparison_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    source_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Once-per-comparison generation guard: null | succeeded | failed | skipped.
+    generation_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class MarketComparisonItem(Base):
+    """One comparison row. Each item is either source_backed (>=1 verified quote ref)
+    or needs_human_review / insufficient_evidence. ``verified_quote_refs`` carries the
+    standalone deterministic verification; ``linked_evidence_anchor_id`` is set only when
+    a pre-existing EvidenceAnchor already covers the span (never fabricated)."""
+
+    __tablename__ = "market_comparison_items"
+
+    item_id: Mapped[str] = mapped_column(String, primary_key=True)
+    comparison_id: Mapped[str] = mapped_column(
+        ForeignKey("market_comparisons.comparison_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String, nullable=False)
+    # competitor | alternative_solution | substitute | incumbent_process |
+    # reference_solution | unknown
+    category: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_customer_segment: Mapped[str | None] = mapped_column(String, nullable=True)
+    offering_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strengths: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weaknesses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    differentiation_relevance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # similar | complementary | competing | reference | unclear
+    relation_to_project: Mapped[str] = mapped_column(
+        String, nullable=False, default="unclear"
+    )
+    # source_backed | needs_review | insufficient_evidence
+    confidence_label: Mapped[str] = mapped_column(
+        String, nullable=False, default="insufficient_evidence"
+    )
+    # proposed | accepted | rejected | needs_human_review
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    source_document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # list of verified-quote reference dicts (rule 6). Never search snippets.
+    verified_quote_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )

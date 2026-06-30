@@ -41,6 +41,7 @@ import { isAiFinding } from "@/lib/review-view"
 import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
+import { getActiveProjectId } from "@/lib/intake-store"
 import { liveFieldToViewModel, pickDefaultTab } from "@/lib/draft-viewmodel"
 import { AI_GOALS, AI_LIVE_NOTICE } from "@/lib/draft-ai-actions"
 import {
@@ -68,6 +69,8 @@ const SAVE_STATE_LABEL: Record<SaveState, string> = {
 }
 
 export function LiveEditor({ runId }: { runId: string }) {
+  // M9I-B: the active project drives the read-only market-comparison context.
+  const marketProjectId = getActiveProjectId() ?? undefined
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [anchors, setAnchors] = React.useState<EvidenceAnchorDto[]>([])
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
@@ -586,7 +589,7 @@ export function LiveEditor({ runId }: { runId: string }) {
           key={selected.field_id}
           vm={activeVm}
           defaultTab={defaultTab}
-          market={{ data: null, relevant: activeVm.isMarketRelevant, live: true }}
+          market={{ data: null, relevant: activeVm.isMarketRelevant, live: true, projectId: marketProjectId }}
           suggestionExists={false}
           belegeContent={belegeContent}
           kommentareContent={kommentareContent}

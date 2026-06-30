@@ -7,6 +7,7 @@ import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { SourceTable } from "@/components/quellen/source-table"
 import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
+import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
 import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
@@ -856,6 +857,9 @@ function QuellenPageContent() {
                     projectId={projectId}
                     onImported={refreshSources}
                   />
+                )}
+                {projectId && capabilities?.features?.market_comparison && (
+                  <MarketComparisonSection projectId={projectId} />
                 )}
               </div>
             ) : (

@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Info, AlertTriangle, ArrowRight, Plus, Circle } from "lucide-react"
 import { Button } from "@/components/ui/button"
+import { LiveMarketComparison } from "@/components/editor/live-market-comparison"
 import { cn } from "@/lib/utils"
 import {
   MARKET_STATUS_LABELS,
@@ -67,6 +68,8 @@ interface MarketCompetitionPanelProps {
   relevant: boolean
   /** Live mode has no real market analysis yet → show empty state, no mock data. */
   live?: boolean
+  /** Live project id → render the compact, read-only M9I-B comparison context. */
+  projectId?: string
   /** Append a sentence + improvement label to the current KI suggestion (mock). */
   onApply?: (improvement: string, text: string) => void
 }
@@ -75,6 +78,7 @@ export function MarketCompetitionPanel({
   data,
   relevant,
   live = false,
+  projectId,
   onApply,
 }: MarketCompetitionPanelProps) {
   const [note, setNote] = React.useState<string | null>(null)
@@ -94,6 +98,10 @@ export function MarketCompetitionPanel({
   }
 
   if (!data) {
+    // M9I-B: a live project shows the compact, read-only public-source comparison.
+    if (live && projectId) {
+      return <LiveMarketComparison projectId={projectId} />
+    }
     if (live) {
       return (
         <div className="flex flex-col gap-3">

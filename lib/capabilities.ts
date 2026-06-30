@@ -28,6 +28,7 @@ export const MOCK_CAPABILITIES: Capabilities = {
     review: false,
     export: false,
     web_research: false,
+    market_comparison: false,
   },
 }
 

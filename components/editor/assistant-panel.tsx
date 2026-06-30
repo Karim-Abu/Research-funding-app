@@ -25,6 +25,7 @@ interface AssistantPanelProps {
     data: MarketDataset | null
     relevant: boolean
     live: boolean
+    projectId?: string
     onApply?: (improvement: string, text: string) => void
   }
   suggestionExists: boolean
@@ -73,6 +74,7 @@ export function AssistantPanel({
           data={market.data}
           relevant={market.relevant}
           live={market.live}
+          projectId={market.projectId}
           onApply={market.onApply}
         />
       )}

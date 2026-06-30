@@ -385,6 +385,63 @@ class PublicCompetenceResearchResult(BaseModel):
 
 # --- registry + helpers ----------------------------------------------------
 
+# --- MC MarketComparison (Milestone 9I-B, beta-internal, code-only schemas) ------
+
+MarketCategory = Literal[
+    "competitor", "alternative_solution", "substitute", "incumbent_process",
+    "reference_solution", "unknown",
+]
+MarketRelation = Literal["similar", "complementary", "competing", "reference", "unclear"]
+
+
+class MarketCandidateFragment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fragment_id: str
+    source_version_id: str
+    source_document_id: str
+    text: str
+
+
+class MarketComparisonInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    comparison_id: str
+    project_title: str
+    # ONLY imported public fragments are fed to the model (never draft/private text).
+    candidate_fragments: list[MarketCandidateFragment]
+
+
+class MarketComparisonItemRecord(BaseModel):
+    """One structured comparison item. Evidence is referenced by ``source_fragment_id`` +
+    an exact ``quote`` copied from that fragment; the model never invents ids/offsets and
+    never asserts market facts without a quote (verified deterministically downstream)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    category: MarketCategory = "unknown"
+    description: str | None = None
+    target_customer_segment: str | None = None
+    offering_summary: str | None = None
+    strengths: str | None = None
+    weaknesses: str | None = None
+    differentiation_relevance: str | None = None
+    relation_to_project: MarketRelation = "unclear"
+    source_fragment_id: str | None = None
+    source_document_id: str | None = None
+    quote: str | None = None
+
+
+class MarketComparisonResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[MarketComparisonItemRecord]
+    research_gaps: list[str] = []
+    warnings: list[str] = []
+
+
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ProjectFactExtractionInput@v1": ProjectFactExtractionInput,
     "ProjectFactExtractionResult@v1": ProjectFactExtractionResult,
@@ -396,6 +453,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ReviewFindingBundle@v1": ReviewFindingBundle,
     "PublicCompetenceResearchInput@v1": PublicCompetenceResearchInput,
     "PublicCompetenceResearchResult@v1": PublicCompetenceResearchResult,
+    "MarketComparisonInput@v1": MarketComparisonInput,
+    "MarketComparisonResult@v1": MarketComparisonResult,
 }
 
 
