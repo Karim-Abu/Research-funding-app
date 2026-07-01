@@ -26,6 +26,7 @@ from app.research.providers import (
     get_web_provider,
 )
 from app.research.url_safety import validate_public_url
+from app.security.data_class import DataClass, derive_data_class
 
 logger = logging.getLogger("app.research.import")
 
@@ -66,21 +67,46 @@ def import_result(
 ) -> SourceDocument:
     settings = get_settings()
     classification = project.data_classification or {}
+    try:
+        data_class = (
+            DataClass(task.firewall_data_class)
+            if task.firewall_data_class
+            else derive_data_class(classification)
+        )
+    except ValueError:
+        data_class = derive_data_class(classification)
 
-    decision = evaluate_web_research(
-        classification=classification,
-        processing_mode=classification.get("processing_mode", ""),
-        settings=settings,
-        internal_public_confirmation_id=task.internal_public_confirmation_id,
-    )
-    recording.record_control(
-        db, workspace_id=task.workspace_id, project_id=task.project_id,
-        research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
-        status=decision.status, detail=decision.reason,
-    )
-    if decision.blocked:
+    if data_class == DataClass.D0_PUBLIC:
+        decision = evaluate_web_research(
+            classification=classification,
+            processing_mode=classification.get("processing_mode", ""),
+            settings=settings,
+            internal_public_confirmation_id=task.internal_public_confirmation_id,
+        )
+        recording.record_control(
+            db, workspace_id=task.workspace_id, project_id=task.project_id,
+            research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
+            status=decision.status, detail=decision.reason,
+        )
+        if decision.blocked:
+            raise ImportBlocked("web_research_blocked",
+                                "Import ist für diese Datenklasse nicht erlaubt.", status=422)
+    elif data_class in (DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA):
+        # The task passed the Search Query Firewall; fetching the (public) result URL is
+        # a public pull-in, not a confidential push-out. The D2/D1 live-provider gate
+        # still applies to the fetch.
+        recording.record_control(
+            db, workspace_id=task.workspace_id, project_id=task.project_id,
+            research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
+            status="passed", detail=f"{data_class}:sanitized_approved_query",
+        )
+        if not settings.d2_web_research_enabled and not settings.web_research_fake_provider:
+            raise ImportBlocked("d2_live_web_research_disabled",
+                                "Live-Websuche für vertrauliche Projekte ist nicht aktiviert.",
+                                status=422)
+    else:
         raise ImportBlocked("web_research_blocked",
-                            "Import ist für diese Datenklasse nicht erlaubt.", status=422)
+                            "Import ist für diese Datenklasse gesperrt.", status=422)
 
     check = validate_public_url(result.source_url, resolver=get_web_provider(settings)[1])
     recording.record_control(

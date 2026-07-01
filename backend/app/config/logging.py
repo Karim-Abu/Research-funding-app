@@ -13,6 +13,10 @@ _REDACT_PATTERNS = [
     re.compile(r"(?i)(csrf[_-]?token\"?\s*[:=]\s*\"?)([^\"\s,}]+)"),
     re.compile(r"(?i)(set-cookie\s*[:=]\s*)([^\s,]+)"),
     re.compile(r"(?i)(authorization\s*[:=]\s*)([^\s,]+)"),
+    # Milestone 9J — never let a raw web-research query text reach the logs. Only
+    # ``*_hash`` fields (raw_query_hash) may carry a value; ``query``/``raw_query``/
+    # ``query_text``/``query_preview`` values are scrubbed defensively.
+    re.compile(r"(?i)((?:raw_)?query(?:_text|_preview)?\"?\s*[:=]\s*\"?)([^\"\n,}]+)"),
 ]
 
 

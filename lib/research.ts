@@ -71,6 +71,9 @@ export interface ResearchTaskInput {
   max_results: number
   competence_needs?: string[]
   requested_partner_roles?: string[]
+  // M9J: for a confidential (D1/D2) project, the id of a firewall-sanitized, approved
+  // query. The raw query never reaches the provider; only the sanitized query is sent.
+  approval_id?: string
 }
 
 const STATUS_MESSAGES: Record<number, string> = {

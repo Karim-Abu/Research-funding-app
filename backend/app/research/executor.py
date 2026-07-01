@@ -26,6 +26,7 @@ from app.research.providers import (
     get_web_provider,
 )
 from app.research.url_safety import validate_public_url
+from app.security.data_class import DataClass, derive_data_class
 
 logger = logging.getLogger("app.research.executor")
 _semaphore = threading.BoundedSemaphore(get_settings().max_run_concurrency)
@@ -63,6 +64,23 @@ def _fail_task(task: ResearchTask, *, code: str, detail: str) -> None:
     task.finished_at = _now()
 
 
+def _block_task(db, task: ResearchTask, operation_id: str, code: str, detail: str,
+                reason: str) -> None:
+    """Mark a task blocked, write a metadata-only audit event, finish the operation and
+    commit. Used for data-policy / D2-live-gate blocks."""
+    task.status = "blocked"
+    task.error_code = code
+    task.safe_error_detail = detail
+    task.finished_at = _now()
+    recording.record_audit(
+        db, workspace_id=task.workspace_id, actor_user_id=None,
+        action="research_task.blocked", research_task_id=task.research_task_id,
+        detail={"reason": reason},
+    )
+    _finish_operation(db, operation_id, "failed", code, "Web research blocked.")
+    db.commit()
+
+
 def research_executor(task_id: str, operation_id: str) -> None:
     with _semaphore:
         db = SessionLocal()
@@ -88,30 +106,55 @@ def research_executor(task_id: str, operation_id: str) -> None:
         try:
             settings = get_settings()
             classification = project.data_classification if project else {}
-            decision = evaluate_web_research(
-                classification=classification,
-                processing_mode=(classification or {}).get("processing_mode", ""),
-                settings=settings,
-                internal_public_confirmation_id=task.internal_public_confirmation_id,
-            )
-            recording.record_control(
-                db, workspace_id=task.workspace_id, project_id=task.project_id,
-                research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
-                status=decision.status, detail=decision.reason,
-            )
-            if decision.blocked:
-                task.status = "blocked"
-                task.error_code = "web_research_blocked"
-                task.safe_error_detail = "Öffentliche Recherche ist für diese Datenklasse nicht erlaubt."
-                task.finished_at = _now()
-                recording.record_audit(
-                    db, workspace_id=task.workspace_id, actor_user_id=None,
-                    action="research_task.blocked", research_task_id=task.research_task_id,
-                    detail={"reason": decision.reason},
+            try:
+                data_class = (
+                    DataClass(task.firewall_data_class)
+                    if task.firewall_data_class
+                    else derive_data_class(classification)
                 )
-                _finish_operation(db, operation_id, "failed", "web_research_blocked",
-                                  "Web research blocked by data policy.")
-                db.commit()
+            except ValueError:
+                data_class = derive_data_class(classification)
+
+            if data_class == DataClass.D0_PUBLIC:
+                # Public/synthetic: the existing web Data Policy applies unchanged.
+                decision = evaluate_web_research(
+                    classification=classification,
+                    processing_mode=(classification or {}).get("processing_mode", ""),
+                    settings=settings,
+                    internal_public_confirmation_id=task.internal_public_confirmation_id,
+                )
+                recording.record_control(
+                    db, workspace_id=task.workspace_id, project_id=task.project_id,
+                    research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
+                    status=decision.status, detail=decision.reason,
+                )
+                if decision.blocked:
+                    _block_task(db, task, operation_id, "web_research_blocked",
+                                "Öffentliche Recherche ist für diese Datenklasse nicht erlaubt.",
+                                decision.reason)
+                    return
+            elif data_class in (DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA):
+                # Confidential: only a firewall-sanitized, human-approved query reaches
+                # here (the service enforced it). The project's own sensitivity gate does
+                # NOT apply to the public-safe sanitized query — record it as passed.
+                recording.record_control(
+                    db, workspace_id=task.workspace_id, project_id=task.project_id,
+                    research_task_id=task.research_task_id, control_id="CTRL.DATA_POLICY",
+                    status="passed", detail=f"{data_class}:sanitized_approved_query",
+                )
+                # D2/D1 live-provider gate (binding correction 1): a confidential class
+                # may reach a LIVE web provider only when d2_web_research_enabled. Without
+                # it the fake provider is fine (dev/test); a live provider is blocked.
+                if not settings.d2_web_research_enabled and not settings.web_research_fake_provider:
+                    _block_task(db, task, operation_id, "d2_live_web_research_disabled",
+                                "Live-Websuche für vertrauliche Projekte ist nicht aktiviert.",
+                                "d2_live_web_research_disabled")
+                    return
+            else:
+                # D3 / UNKNOWN never reach the provider (defensive — service blocks first).
+                _block_task(db, task, operation_id, "web_research_blocked",
+                            "Öffentliche Recherche ist für diese Datenklasse gesperrt.",
+                            f"{data_class}:class_blocked")
                 return
 
             provider, dns_resolver = get_web_provider(settings)

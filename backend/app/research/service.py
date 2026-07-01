@@ -27,7 +27,23 @@ from app.db.models import (
     ResearchResult,
     ResearchTask,
 )
+from app.repositories import controls
 from app.research import recording
+from app.security import approval_service
+from app.security.approval_service import CTRL_QUERY_FIREWALL, ApprovalError
+from app.security.data_class import DataClass, derive_data_class, is_external_blocked
+from app.security.search_query_firewall import evaluate_query, raw_query_hash
+
+
+class ResearchBlocked(Exception):
+    """The Search Query Firewall refused this web-research request (M9J). ``status``
+    maps to an HTTP problem in the API layer."""
+
+    def __init__(self, code: str, detail: str, *, status: int = 422) -> None:
+        super().__init__(detail)
+        self.code = code
+        self.detail = detail
+        self.status = status
 
 
 def _now() -> datetime:
@@ -42,6 +58,83 @@ def _query_hash(query: str) -> str:
     return hashlib.sha256(normalize_query(query).encode("utf-8")).hexdigest()
 
 
+def _firewall_query(
+    db: Session,
+    *,
+    project: Project,
+    payload: ResearchTaskCreate,
+    actor_user_id: str,
+    task_id: str,
+) -> tuple[str, DataClass, str | None]:
+    """Enforce the Search Query Firewall at the single web-research chokepoint.
+
+    Returns ``(query_text, data_class, approval_id)``. The RAW query is hashed and
+    discarded — for D1/D2 only the firewall-sanitized, human-approved query is returned;
+    for D3/UNKNOWN and blocked queries it raises ``ResearchBlocked``. This runs in the
+    SERVICE (not just the API) so an agent using the service cannot bypass it.
+    """
+    data_class = derive_data_class(project.data_classification)
+    qhash = raw_query_hash(payload.query_preview)
+
+    def _blocked(code: str, detail: str, *, status: int, reason: str) -> ResearchBlocked:
+        controls.record(
+            db, workspace_id=project.workspace_id, project_id=project.project_id,
+            control_id=CTRL_QUERY_FIREWALL, status="blocked",
+            detail=f"{data_class}:{reason}", research_task_id=task_id,
+        )
+        recording.record_audit(
+            db, workspace_id=project.workspace_id, actor_user_id=actor_user_id,
+            action="research_task.firewall_blocked", research_task_id=task_id,
+            detail={"data_class": str(data_class), "reason": reason, "raw_query_hash": qhash},
+        )
+        return ResearchBlocked(code, detail, status=status)
+
+    # D3 (NDA) / UNKNOWN never reach an external tool.
+    if is_external_blocked(data_class):
+        raise _blocked(
+            "web_research_class_blocked",
+            "Öffentliche Recherche ist für diese Datenklasse gesperrt.",
+            status=403, reason="class_blocked",
+        )
+
+    def _consume() -> str:
+        if not payload.approval_id:
+            raise _blocked(
+                "approval_required",
+                "Für vertrauliche Projekte ist eine geprüfte, bereinigte Suchanfrage "
+                "erforderlich.",
+                status=422, reason="approval_required",
+            )
+        try:
+            return approval_service.consume_for_task(
+                db, approval_id=payload.approval_id, workspace_id=project.workspace_id,
+                project_id=project.project_id, raw_query_hash=qhash,
+                research_task_id=task_id,
+            )
+        except ApprovalError as exc:
+            raise ResearchBlocked(exc.code, exc.detail, status=exc.status) from exc
+
+    if data_class == DataClass.D0_PUBLIC:
+        fw = evaluate_query(
+            db, project_id=project.project_id, workspace_id=project.workspace_id,
+            actor_user_id=actor_user_id, raw_query=payload.query_preview,
+            data_class=data_class, intended_tool="firecrawl", purpose=payload.purpose,
+        )
+        if fw.decision == "allow":
+            return normalize_query(payload.query_preview), data_class, None
+        if fw.decision == "block":
+            raise _blocked(
+                "web_research_query_blocked",
+                "Die Suchanfrage enthält gesperrte Angaben. Bitte allgemeiner formulieren.",
+                status=422, reason="query_blocked",
+            )
+        # require_human_approval: consume the approved sanitized query.
+        return _consume(), data_class, payload.approval_id
+
+    # D1 / D2 — confidential: only an approved sanitized query may proceed.
+    return _consume(), data_class, payload.approval_id
+
+
 def create_research_task(
     db: Session,
     *,
@@ -54,7 +147,13 @@ def create_research_task(
 ) -> tuple[ResearchTask, AsyncOperation, AsyncAccepted]:
     actual_task_id = task_id or str(uuid.uuid4())
     actual_operation_id = operation_id or str(uuid.uuid4())
-    query = normalize_query(payload.query_preview)
+
+    # Search Query Firewall — the raw query is hashed and discarded; ``query`` is the
+    # public-safe query that may be stored/sent (== normalized preview for a benign D0).
+    query, data_class, approval_id = _firewall_query(
+        db, project=project, payload=payload, actor_user_id=actor_user_id,
+        task_id=actual_task_id,
+    )
 
     task = ResearchTask(
         research_task_id=actual_task_id,
@@ -76,8 +175,15 @@ def create_research_task(
         max_pages=1,
         result_count=0,
         internal_public_confirmation_id=payload.internal_public_confirmation_id,
+        firewall_data_class=str(data_class),
+        firewall_approval_id=approval_id,
     )
     db.add(task)
+    controls.record(
+        db, workspace_id=project.workspace_id, project_id=project.project_id,
+        control_id=CTRL_QUERY_FIREWALL, status="passed",
+        detail=f"{data_class}:sanitized_ok", research_task_id=actual_task_id,
+    )
 
     operation = AsyncOperation(
         operation_id=actual_operation_id,

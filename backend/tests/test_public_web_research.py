@@ -235,8 +235,10 @@ def test_workspace_isolation(client, web_enabled):
     assert res.status_code == 404
 
 
-def test_blocked_classification_marks_task_failed(client, db, web_enabled):
-    # An internal project is blocked by the web-research policy in the executor.
+def test_blocked_classification_refused_at_firewall(client, db, web_enabled):
+    # M9J: an internal (D1) project is a confidential class — the Search Query Firewall
+    # refuses the task at creation (422) unless a sanitized query has been approved. The
+    # block now happens BEFORE a task/executor run, not after.
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = client.post("/api/v1/projects", json={
         "title": "Internal", "description": "internal",
@@ -249,10 +251,10 @@ def test_blocked_classification_marks_task_failed(client, db, web_enabled):
         },
     }, headers=_headers(csrf))
     project_id = res.json()["project_id"]
-    body, op = _run_task(client, csrf, project_id)
-    assert op["status"] == "failed"
-    task = db.get(ResearchTask, body["resource_id"])
-    assert task.status == "blocked"
+    refused = client.post(f"/api/v1/projects/{project_id}/research-tasks",
+                          json=_task_payload(), headers=_headers(csrf))
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == "approval_required"
 
 
 # --- import → SourceDocument + A1 synthesis ---------------------------------

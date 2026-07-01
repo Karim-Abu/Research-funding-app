@@ -1309,6 +1309,11 @@ class ResearchTask(Base):
     internal_public_confirmation_id: Mapped[str | None] = mapped_column(
         String, nullable=True
     )
+    # Milestone 9J — Search Query Firewall provenance. ``firewall_data_class`` is the
+    # derived D0–D3/UNKNOWN class at creation; ``firewall_approval_id`` links the
+    # single-use sanitized-query approval consumed for D1/D2 (null for D0).
+    firewall_data_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    firewall_approval_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
@@ -1444,4 +1449,50 @@ class MarketComparisonItem(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Search Query Firewall approvals (Milestone 9J): beta-internal privacy control.
+# A single-use record of a firewall decision for a D1/D2 web-research query. The RAW
+# query is NEVER stored — only its hash + the sanitized public-safe query + a redaction
+# summary (categories/counts, no raw values). Changing the query changes the hash and
+# invalidates the approval. Workspace-scoped.
+# ---------------------------------------------------------------------------
+
+
+class SearchQueryApproval(Base):
+    """A firewall decision + (for confidential classes) a human approval of a sanitized
+    query. Never stores raw D1/D2/D3 query text (only ``raw_query_hash``)."""
+
+    __tablename__ = "search_query_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    # firecrawl | web_research (intended tool for the sanitized query).
+    intended_tool: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str | None] = mapped_column(String, nullable=True)
+    # D0_PUBLIC | D1_INTERNAL | D2_CONFIDENTIAL_IDEA | D3_NDA_BLOCKED | UNKNOWN
+    data_class: Mapped[str] = mapped_column(String, nullable=False)
+    # SHA256 of the normalized RAW query. The raw query itself is never persisted.
+    raw_query_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    sanitized_query: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_score: Mapped[int] = mapped_column(nullable=False, default=0)
+    # firewall decision: allow | require_human_approval | block
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reasons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # [{category, label, count}] — never raw removed values.
+    redaction_summary: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # pending | approved | rejected | expired | used
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    used_by_research_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )

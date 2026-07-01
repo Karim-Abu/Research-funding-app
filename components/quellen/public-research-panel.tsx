@@ -1,12 +1,13 @@
 "use client"
 
-// "Öffentliche Recherche" — user-initiated public web research (M9I-A).
-// Enter a public query, run a controlled search, review candidates, import one as a
-// normal source. No provider/Firecrawl/API terminology is ever shown. Imported page
-// text becomes source material; it is not evidence until the deterministic pipeline runs.
+// "Öffentliche Recherche" — user-initiated public web research (M9I-A) with the M9J
+// Search Query Firewall for confidential projects. For a public (D0) project the query
+// runs directly. For an internal/confidential (D1/D2) project the query is first screened
+// and sanitized; only a human-approved, sanitized query is ever searched. No provider/
+// Firecrawl/API terminology and no raw confidential query is surfaced.
 
 import * as React from "react"
-import { Globe, Loader2, Sparkles } from "lucide-react"
+import { Globe, Loader2, ShieldAlert, Sparkles } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -20,8 +21,23 @@ import {
   ResearchError,
   type ResearchResultDto,
 } from "@/lib/research"
+import {
+  approveSearchQuery,
+  previewSearchQuery,
+  FirewallError,
+  type FirewallPreview,
+} from "@/lib/firewall"
+import { flatToPrivacyClass, requiresSanitizedApproval } from "@/lib/data-class"
+import type { DataClass } from "@/lib/types"
 
-type PanelState = "idle" | "searching" | "results" | "error"
+type PanelState =
+  | "idle"
+  | "previewing"
+  | "preview"
+  | "blocked"
+  | "searching"
+  | "results"
+  | "error"
 
 function hostOf(url: string): string {
   try {
@@ -33,14 +49,19 @@ function hostOf(url: string): string {
 
 export function PublicResearchPanel({
   projectId,
+  dataClass = "public",
   onImported,
 }: {
   projectId: string
+  dataClass?: DataClass
   onImported?: () => void
 }) {
+  const needsFirewall = requiresSanitizedApproval(flatToPrivacyClass(dataClass))
+
   const [query, setQuery] = React.useState("")
   const [state, setState] = React.useState<PanelState>("idle")
   const [error, setError] = React.useState<string | null>(null)
+  const [preview, setPreview] = React.useState<FirewallPreview | null>(null)
   const [results, setResults] = React.useState<ResearchResultDto[]>([])
   const [importing, setImporting] = React.useState<Record<string, boolean>>({})
   const [imported, setImported] = React.useState<Record<string, boolean>>({})
@@ -48,11 +69,12 @@ export function PublicResearchPanel({
 
   React.useEffect(() => () => pollRef.current?.stop(), [])
 
-  const runSearch = React.useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault()
-      const trimmed = query.trim()
-      if (!trimmed || state === "searching") return
+  const busy = state === "searching" || state === "previewing"
+  const submitLabel = needsFirewall ? "Vor Webrecherche prüfen" : "Suchen"
+
+  // Run the actual research task (public query, or an approved sanitized query).
+  const runTask = React.useCallback(
+    async (queryPreview: string, approvalId?: string) => {
       setState("searching")
       setError(null)
       setResults([])
@@ -60,8 +82,9 @@ export function PublicResearchPanel({
         const accepted = await createResearchTask(projectId, {
           purpose: "partner_role_suggestion",
           subject_type: "topic",
-          query_preview: trimmed,
+          query_preview: queryPreview,
           max_results: 5,
+          ...(approvalId ? { approval_id: approvalId } : {}),
         })
         pollRef.current = pollOperation(accepted.operation_id, {
           onTerminal: async (op) => {
@@ -85,14 +108,53 @@ export function PublicResearchPanel({
       } catch (err) {
         setState("error")
         setError(
-          err instanceof ResearchError
-            ? err.message
-            : "Es ist ein Fehler aufgetreten."
+          err instanceof ResearchError ? err.message : "Es ist ein Fehler aufgetreten."
         )
       }
     },
-    [projectId, query, state]
+    [projectId]
   )
+
+  const onSubmit = React.useCallback(
+    async (event: React.FormEvent) => {
+      event.preventDefault()
+      const trimmed = query.trim()
+      if (!trimmed || busy) return
+      setError(null)
+      setPreview(null)
+      if (!needsFirewall) {
+        await runTask(trimmed)
+        return
+      }
+      // Confidential: screen + sanitize before anything is searched.
+      setState("previewing")
+      try {
+        const result = await previewSearchQuery(projectId, trimmed)
+        setPreview(result)
+        setState(result.decision === "block" ? "blocked" : "preview")
+      } catch (err) {
+        setState("error")
+        setError(
+          err instanceof FirewallError ? err.message : "Es ist ein Fehler aufgetreten."
+        )
+      }
+    },
+    [query, busy, needsFirewall, projectId, runTask]
+  )
+
+  const approveAndSearch = React.useCallback(async () => {
+    if (!preview?.approval_id) return
+    setState("searching")
+    try {
+      await approveSearchQuery(preview.approval_id)
+      await runTask(query.trim(), preview.approval_id)
+    } catch (err) {
+      setState("error")
+      setError(
+        err instanceof FirewallError ? err.message : "Es ist ein Fehler aufgetreten."
+      )
+    }
+  }, [preview, query, runTask])
 
   const importOne = React.useCallback(
     async (resultId: string) => {
@@ -121,16 +183,15 @@ export function PublicResearchPanel({
     >
       <div className="mb-1 flex items-center gap-2">
         <Globe className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold text-foreground">
-          Öffentliche Recherche
-        </h3>
+        <h3 className="text-sm font-semibold text-foreground">Öffentliche Recherche</h3>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Nur öffentliche Suchbegriffe verwenden. Keine vertraulichen oder
-        personenbezogenen Informationen eingeben.
+        {needsFirewall
+          ? "Diese Anfrage enthält möglicherweise vertrauliche Angaben. Sie wird vor der Websuche geprüft und bereinigt."
+          : "Nur öffentliche Suchbegriffe verwenden. Keine vertraulichen oder personenbezogenen Informationen eingeben."}
       </p>
 
-      <form onSubmit={runSearch} className="flex flex-col gap-2 sm:flex-row">
+      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
         <div className="flex-1">
           <Label htmlFor="research-query" className="sr-only">
             Öffentlicher Suchbegriff
@@ -138,21 +199,95 @@ export function PublicResearchPanel({
           <Input
             id="research-query"
             value={query}
-            onChange={(e) => setQuery(e.target.value)}
+            onChange={(e) => {
+              setQuery(e.target.value)
+              if (state === "preview" || state === "blocked") setState("idle")
+            }}
             placeholder="z. B. öffentliche Forschungskompetenz Photonik"
-            disabled={state === "searching"}
+            disabled={busy}
           />
         </div>
-        <Button type="submit" disabled={state === "searching" || !query.trim()}>
-          {state === "searching" ? (
+        <Button type="submit" disabled={busy || !query.trim()}>
+          {busy ? (
             <>
-              <Loader2 className="size-4 animate-spin" /> Suche läuft …
+              <Loader2 className="size-4 animate-spin" />{" "}
+              {state === "previewing" ? "Prüfung läuft …" : "Suche läuft …"}
             </>
           ) : (
-            "Suchen"
+            submitLabel
           )}
         </Button>
       </form>
+
+      {/* Firewall preview — sanitized query + approval (D1/D2, require_human_approval) */}
+      {state === "preview" && preview && (
+        <div
+          data-testid="firewall-preview"
+          className="mt-4 rounded-md border border-status-partial/40 bg-status-partial/8 p-3"
+        >
+          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <ShieldAlert className="size-4 text-status-partial" />
+            Bereinigte Suchanfrage
+          </p>
+          <p
+            data-testid="sanitized-query"
+            className="mt-2 rounded bg-background px-2 py-1.5 text-sm text-foreground"
+          >
+            {preview.sanitized_query || "—"}
+          </p>
+          {preview.redaction_summary.length > 0 && (
+            <div className="mt-2">
+              <p className="text-xs text-muted-foreground">
+                Entfernte oder verallgemeinerte Angaben:
+              </p>
+              <ul className="mt-1 flex flex-wrap gap-1.5">
+                {preview.redaction_summary.map((r) => (
+                  <li key={r.category}>
+                    <Badge variant="secondary">
+                      {r.label}
+                      {r.count > 1 ? ` ×${r.count}` : ""}
+                    </Badge>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+          <p className="mt-2 text-xs text-muted-foreground">
+            Die Websuche erhält nur die bereinigte Anfrage.
+          </p>
+          <div className="mt-3 flex gap-2">
+            <Button type="button" size="sm" onClick={approveAndSearch}>
+              Bereinigte Anfrage freigeben und suchen
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              onClick={() => setState("idle")}
+            >
+              Anfrage anpassen
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {/* Firewall block — cannot be safely sanitized */}
+      {state === "blocked" && preview && (
+        <div
+          data-testid="firewall-blocked"
+          role="alert"
+          className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3"
+        >
+          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
+            <ShieldAlert className="size-4 text-destructive" />
+            Diese Suchanfrage kann nicht sicher bereinigt werden.
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Bitte formulieren Sie die Anfrage allgemeiner (ohne Partner-, Projekt- oder
+            Budgetangaben).
+          </p>
+        </div>
+      )}
 
       {error && (
         <p role="alert" className="mt-3 text-sm text-status-incomplete">

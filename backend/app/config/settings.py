@@ -103,6 +103,11 @@ class Settings(BaseSettings):
     web_research_enabled: bool = False
     firecrawl_api_key: str | None = None
     web_research_fake_provider: bool = False
+    # Milestone 9J: even an approved, firewall-sanitized D2 (confidential) query must not
+    # reach a LIVE web provider unless this flag is explicitly enabled. Default off; the
+    # D2 sanitized-query flow otherwise routes to the fake provider / is blocked. D0
+    # public/synthetic web research is unaffected (stays live-capable).
+    d2_web_research_enabled: bool = False
     # Deployment/technical limits for web research (NOT funding rules).
     web_search_max_results: int = 10
     web_fetch_max_bytes: int = 5 * 1024 * 1024

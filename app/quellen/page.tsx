@@ -855,6 +855,7 @@ function QuellenPageContent() {
                 {projectId && capabilities?.features?.web_research && (
                   <PublicResearchPanel
                     projectId={projectId}
+                    dataClass={effectiveDataClass ?? "public"}
                     onImported={refreshSources}
                   />
                 )}

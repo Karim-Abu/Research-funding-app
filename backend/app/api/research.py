@@ -85,10 +85,17 @@ def create_research_task(
             )
         return AsyncAccepted(**existing.response_body)
 
-    _task, _op, accepted = service.create_research_task(
-        db, project=project, payload=payload, actor_user_id=context.user.id,
-        idempotency_key=idempotency_key,
-    )
+    try:
+        _task, _op, accepted = service.create_research_task(
+            db, project=project, payload=payload, actor_user_id=context.user.id,
+            idempotency_key=idempotency_key,
+        )
+    except service.ResearchBlocked as exc:
+        db.commit()  # persist the firewall control/audit records
+        raise ProblemException(
+            status=exc.status, code=exc.code, title="Search query refused",
+            detail=exc.detail,
+        ) from exc
     db.commit()
     idempotency.save(
         db, scope=scope, key=idempotency_key, request_fingerprint=fingerprint,
