@@ -8,20 +8,28 @@ from app.db.models import (
     AnalysisRun,
     AsyncOperation,
     AuditEvent,
+    ClaimLineage,
     ControlResult,
     DemoSeedManifest,
+    DraftClaim,
     DraftVersion,
     EvidenceAnchor,
     EvidenceCandidate,
     EvidenceLink,
+    MarketComparison,
+    MarketComparisonItem,
     OpenIssue,
     Partner,
     PortalFieldDraft,
     Project,
     RequirementAssessment,
+    ReviewApproval,
+    ReviewFinding,
+    ReviewPackage,
     RuleResult,
     RunPolicySnapshot,
     RunProjectSnapshot,
+    RunQualitySummary,
     RunSourceSnapshot,
     SourceDocument,
     SourceFragment,
@@ -114,6 +122,14 @@ def reset_demo_data(db: Session, *, seed_version: str = SEED_VERSION) -> int:
     derived_ids |= set(run_ids) | set(operation_ids) | set(draft_ids)
 
     if run_ids:
+        # Milestone 9K/10 reliability + review artifacts (created by the eval enrichment;
+        # scoped by run — cleaned so a re-seed is deterministic).
+        db.execute(delete(ClaimLineage).where(ClaimLineage.run_id.in_(run_ids)))
+        db.execute(delete(DraftClaim).where(DraftClaim.run_id.in_(run_ids)))
+        db.execute(delete(RunQualitySummary).where(RunQualitySummary.run_id.in_(run_ids)))
+        db.execute(delete(ReviewFinding).where(ReviewFinding.run_id.in_(run_ids)))
+        db.execute(delete(ReviewApproval).where(ReviewApproval.run_id.in_(run_ids)))
+        db.execute(delete(ReviewPackage).where(ReviewPackage.run_id.in_(run_ids)))
         db.execute(delete(EvidenceLink).where(EvidenceLink.run_id.in_(run_ids)))
         db.execute(delete(EvidenceAnchor).where(EvidenceAnchor.run_id.in_(run_ids)))
         db.execute(delete(EvidenceCandidate).where(EvidenceCandidate.run_id.in_(run_ids)))
@@ -152,6 +168,25 @@ def reset_demo_data(db: Session, *, seed_version: str = SEED_VERSION) -> int:
         db.execute(delete(SourceDocument).where(SourceDocument.source_id.in_(source_ids)))
 
     if project_ids:
+        # Milestone 9I-B/10 market comparison (created by the eval enrichment; project-scoped).
+        comparison_ids = list(
+            db.scalars(
+                select(MarketComparison.comparison_id).where(
+                    MarketComparison.project_id.in_(project_ids)
+                )
+            )
+        )
+        if comparison_ids:
+            db.execute(
+                delete(MarketComparisonItem).where(
+                    MarketComparisonItem.comparison_id.in_(comparison_ids)
+                )
+            )
+            db.execute(
+                delete(MarketComparison).where(
+                    MarketComparison.comparison_id.in_(comparison_ids)
+                )
+            )
         db.execute(delete(Partner).where(Partner.project_id.in_(project_ids)))
         db.execute(delete(ControlResult).where(ControlResult.project_id.in_(project_ids)))
         db.execute(delete(Project).where(Project.project_id.in_(project_ids)))
