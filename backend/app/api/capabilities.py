@@ -44,6 +44,9 @@ def get_capabilities(
         # web research (it is built from imported public sources).
         "market_comparison": settings.web_research_enabled
         and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        # Milestone 9K: deterministic MAS reliability & value assurance (beta-internal) —
+        # available whenever the review layer is (no provider dependency).
+        "reliability": True,
     }
     return Capabilities(
         api_version=settings.api_version,

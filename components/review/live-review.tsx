@@ -14,6 +14,8 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { getCapabilities } from "@/lib/capabilities"
+import { QualitySummary } from "@/components/review/quality-summary"
 import {
   getReview,
   startRecheck,
@@ -59,6 +61,13 @@ export function LiveReview({ runId }: { runId: string }) {
   const [busy, setBusy] = React.useState(false)
   const [notice, setNotice] = React.useState<string | null>(null)
   const [showTech, setShowTech] = React.useState(false)
+  const [reliabilityEnabled, setReliabilityEnabled] = React.useState(false)
+
+  React.useEffect(() => {
+    void getCapabilities().then((c) =>
+      setReliabilityEnabled(Boolean(c.features?.reliability))
+    )
+  }, [])
 
   const load = React.useCallback(() => {
     setError(null)
@@ -285,6 +294,7 @@ export function LiveReview({ runId }: { runId: string }) {
           </dl>
         )}
       </div>
+      {reliabilityEnabled && <QualitySummary runId={runId} />}
     </div>
   )
 }

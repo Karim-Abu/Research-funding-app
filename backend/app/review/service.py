@@ -388,6 +388,17 @@ def approval_blockers(
             issue.target_type == "portal_field" and issue.target_id in field_ids
         ):
             reasons.append(f"blocker_issue:{issue.target_id}")
+
+    # Milestone 9K: scope-bound reliability blockers (only for claims of the current,
+    # non-stale RunQualitySummary — a stale summary never blocks). Lazy import avoids a
+    # cycle; runs with no reliability pass yield no reasons, so behaviour is unchanged.
+    from app.reliability import approval as reliability_approval
+
+    reasons.extend(
+        reliability_approval.reliability_blocker_reasons(
+            db, run, field_ids=None if scope == "run" else field_ids
+        )
+    )
     return reasons
 
 

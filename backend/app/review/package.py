@@ -269,6 +269,17 @@ def _open_findings(db: Session, run: AnalysisRun) -> list[ReviewFinding]:
     )
 
 
+RELIABILITY = "M9K.reliability_assurance"
+
+
+def _reliability_blocks(db: Session, run: AnalysisRun) -> bool:
+    """Scope-bound reliability blocker (Milestone 9K). Lazy import avoids a cycle; only
+    counts M9K blockers whose claim belongs to the current non-stale RunQualitySummary."""
+    from app.reliability import approval as reliability_approval
+
+    return reliability_approval.has_reliability_blocker(db, run)
+
+
 def has_open_blocker(db: Session, run: AnalysisRun) -> bool:
     if db.scalar(
         select(OpenIssue).where(
@@ -278,7 +289,13 @@ def has_open_blocker(db: Session, run: AnalysisRun) -> bool:
         )
     ):
         return True
-    return any(f.severity == "blocker" for f in _open_findings(db, run))
+    # M9K reliability findings never block via the generic path — they are scope-bound.
+    if any(
+        f.severity == "blocker" and f.profile_id != RELIABILITY
+        for f in _open_findings(db, run)
+    ):
+        return True
+    return _reliability_blocks(db, run)
 
 
 def has_open_change_request(db: Session, run: AnalysisRun) -> bool:
@@ -295,9 +312,16 @@ def has_open_change_request(db: Session, run: AnalysisRun) -> bool:
 
 
 def counts(db: Session, run: AnalysisRun) -> tuple[int, int, int]:
-    """Returns (blocker_count, warning_count, stale_finding_count)."""
+    """Returns (blocker_count, warning_count, stale_finding_count). M9K reliability blockers
+    count only when scope-bound-current (not via the generic severity sum)."""
     open_findings = _open_findings(db, run)
-    blocker = sum(1 for f in open_findings if f.severity == "blocker")
+    blocker = sum(
+        1 for f in open_findings if f.severity == "blocker" and f.profile_id != RELIABILITY
+    )
+    if _reliability_blocks(db, run):
+        from app.reliability import approval as reliability_approval
+
+        blocker += len(reliability_approval.reliability_blocker_reasons(db, run))
     warning = sum(1 for f in open_findings if f.severity == "warning")
     stale = len(open_findings) if run.recheck_required else 0
     return blocker, warning, stale

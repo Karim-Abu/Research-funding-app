@@ -15,6 +15,8 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AnalysisRun,
+    ClaimLineage,
+    DraftClaim,
     EvidenceAnchor,
     EvidenceLink,
     HumanDecision,
@@ -25,6 +27,7 @@ from app.db.models import (
     ReviewPackage,
     RuleResult,
     RunProjectSnapshot,
+    RunQualitySummary,
 )
 from app.exports import EXPORT_SNAPSHOT_SCHEMA
 from app.exports.eligibility import DraftDecision
@@ -106,6 +109,74 @@ def _fields(db: Session, run: AnalysisRun) -> list[dict]:
             }
         )
     return out
+
+
+def _reliability_block(db: Session, run: AnalysisRun) -> dict:
+    """Milestone 9K reliability metrics for the technical-evidence export. Uses the
+    RunQualitySummary + per-claim *metadata* only — ``claim_hash`` + status, never
+    ``claim_text`` (corr 5/14). Absent when no reliability pass has run."""
+    summary = db.scalar(
+        select(RunQualitySummary)
+        .where(RunQualitySummary.run_id == run.run_id)
+        .order_by(RunQualitySummary.generated_at.desc())
+    )
+    if summary is None:
+        return {"available": False}
+    lineages = {
+        lin.claim_id: lin
+        for lin in db.scalars(select(ClaimLineage).where(ClaimLineage.run_id == run.run_id))
+    }
+    claim_lineage_summary = [
+        {
+            "claim_hash": c.source_text_hash,
+            "field_id": c.field_id,
+            "claim_type": c.claim_type,
+            "strength": c.strength,
+            "requires_evidence": c.requires_evidence,
+            "lineage_status": lineages[c.claim_id].lineage_status if c.claim_id in lineages else "no_evidence",
+            "sufficiency_status": lineages[c.claim_id].sufficiency_status if c.claim_id in lineages else "insufficient_evidence",
+        }
+        for c in db.scalars(
+            select(DraftClaim)
+            .where(DraftClaim.run_id == run.run_id)
+            .order_by(DraftClaim.field_id.asc(), DraftClaim.start_char.asc())
+        )
+    ]
+    return {
+        "available": True,
+        "assurance_matrix_ref": "docs/reliability/Architecture_Assurance_Matrix.md",
+        "note": (
+            "Evidence sufficiency is a deterministic check under defined criteria "
+            "(not semantic proof / not 'verified as true'). The raw claim wording is "
+            "intentionally excluded; only claim_hash + status metadata are exported."
+        ),
+        "quality_summary": {
+            "summary_version": summary.summary_version,
+            "status": summary.status,
+            "source_scope_hash": summary.source_scope_hash,
+            "quality_flag": summary.quality_flag,
+            "claim_count": summary.claim_count,
+            "supported_claims": summary.supported_claims,
+            "weakly_supported_claims": summary.weakly_supported_claims,
+            "unsupported_claims": summary.unsupported_claims,
+            "conflicting_claims": summary.conflicting_claims,
+            "evidence_coverage": summary.evidence_coverage,
+            "evidence_correctness_sample_size": summary.evidence_correctness_sample_size,
+            "evidence_correctness_sample_pass_rate": summary.evidence_correctness_sample_pass_rate,
+            "review_required_count": summary.review_required_count,
+            "blocker_count": summary.blocker_count,
+            "warning_count": summary.warning_count,
+            "fields_ready": summary.fields_ready,
+            "fields_needs_review": summary.fields_needs_review,
+            "false_consensus_risk_count": summary.false_consensus_risk_count,
+            "semantic_drift_count": summary.semantic_drift_count,
+            "raw_logging_detected": summary.raw_logging_detected,
+            "tool_leakage_detected": summary.tool_leakage_detected,
+            "cost_chf": summary.cost_chf,
+            "cost_placeholder": summary.cost_placeholder,
+        },
+        "claim_lineage_summary": claim_lineage_summary,
+    }
 
 
 def build_snapshot(
@@ -246,6 +317,7 @@ def build_snapshot(
         "evidence_links": links,
         "review_findings": findings,
         "human_decisions": decisions,
+        "reliability": _reliability_block(db, run),
         "config_versions": {
             "requirement_registry_version": registry.requirement_registry_version,
             "rule_registry_version": registry.rule_registry_version,

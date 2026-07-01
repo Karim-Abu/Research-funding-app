@@ -53,6 +53,8 @@ def generate_technical_evidence(snapshot: dict, snapshot_hash: str) -> bytes:
         "evidence_links": snapshot["evidence_links"],
         "review_findings": snapshot["review_findings"],
         "human_decisions": snapshot["human_decisions"],
+        # Milestone 9K: reliability metrics (claim_hash + status metadata only; no claim_text).
+        "reliability": snapshot.get("reliability", {"available": False}),
         "config_versions": snapshot["config_versions"],
     }
     text = json.dumps(payload, ensure_ascii=False, sort_keys=True, indent=2)

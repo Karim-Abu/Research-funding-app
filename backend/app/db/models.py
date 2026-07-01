@@ -1496,3 +1496,131 @@ class SearchQueryApproval(Base):
     decided_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+
+
+# ---------------------------------------------------------------------------
+# MAS reliability & value assurance (Milestone 9K): beta-internal, run-scoped.
+# Deterministic claim extraction + lineage + evidence-sufficiency + a per-run quality
+# summary. No finalized contract object. Reliability findings reuse ReviewFinding
+# (source="agent", profile_id="M9K.reliability_assurance"). ``claim_text`` is internal
+# only (same sensitivity as DraftVersion.text) — never in audit/logs/export.
+# ---------------------------------------------------------------------------
+
+
+class DraftClaim(Base):
+    """A single claim-like statement extracted from a run's current DraftVersion text.
+    Deterministic + position-aware ``claim_id`` so re-running a pass upserts rather than
+    duplicates. ``source_scope_hash`` binds the claim to the pass that produced it."""
+
+    __tablename__ = "draft_claims"
+
+    claim_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    draft_id: Mapped[str] = mapped_column(String, nullable=False)
+    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    start_char: Mapped[int] = mapped_column(nullable=False, default=0)
+    end_char: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Internal-only; same sensitivity as DraftVersion.text. Never audited/logged/exported.
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # market | innovation | technical | partner_fit | value_creation | requirement |
+    # budget | generic
+    claim_type: Mapped[str] = mapped_column(String, nullable=False, default="generic")
+    # strong | moderate | weak
+    strength: Mapped[str] = mapped_column(String, nullable=False, default="moderate")
+    requires_evidence: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # deterministic_sentence_rule | agent_assisted_if_available
+    extraction_method: Mapped[str] = mapped_column(
+        String, nullable=False, default="deterministic_sentence_rule"
+    )
+    source_text_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Binds the claim to its reliability pass (the RunQualitySummary.source_scope_hash).
+    source_scope_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ClaimLineage(Base):
+    """Per-claim provenance mapping + deterministic evidence-sufficiency status. One row
+    per DraftClaim. Never framed as semantic proof — ``sufficiency_status`` is an evidence
+    sufficiency *check* under defined criteria (needs human review when uncertain)."""
+
+    __tablename__ = "claim_lineages"
+
+    lineage_id: Mapped[str] = mapped_column(String, primary_key=True)
+    claim_id: Mapped[str] = mapped_column(
+        ForeignKey("draft_claims.claim_id"), nullable=False, index=True
+    )
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # direct_evidence | indirect_evidence | weak_evidence | no_evidence |
+    # conflicting_evidence | needs_human_review
+    lineage_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="no_evidence"
+    )
+    # supports_claim | weakly_supports_claim | does_not_support_claim |
+    # insufficient_evidence | needs_human_review
+    sufficiency_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="insufficient_evidence"
+    )
+    # {extracted_fact_ids, evidence_anchor_ids, evidence_candidate_ids,
+    #  source_fragment_ids, draft_suggestion_id, market_item_ids, a3_finding_ids}
+    provenance: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    matched_terms: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class RunQualitySummary(Base):
+    """Deterministic per-run quality/reliability metrics for M10 evaluation. Coverage and
+    sufficiency are kept as SEPARATE metrics. Stale when any scoped input changes; a stale
+    summary must not be used as current quality evidence."""
+
+    __tablename__ = "run_quality_summaries"
+
+    summary_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # current | stale | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="current")
+    # Excludes this pass's own M9K findings (corr 11) so a pass never staleifies itself.
+    source_scope_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    claim_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    supported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    weakly_supported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    unsupported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    conflicting_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Coverage = fraction of evidence-requiring claims with ANY linked evidence.
+    evidence_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Correctness = sufficiency pass-rate over the checked sample (distinct from coverage).
+    evidence_correctness_sample_size: Mapped[int] = mapped_column(nullable=False, default=0)
+    evidence_correctness_sample_pass_rate: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    review_required_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    blocker_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    warning_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    fields_ready: Mapped[int] = mapped_column(nullable=False, default=0)
+    fields_needs_review: Mapped[int] = mapped_column(nullable=False, default=0)
+    false_consensus_risk_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    semantic_drift_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    raw_logging_detected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    tool_leakage_detected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # ok | risky (high coverage + low sufficiency ⇒ risky, not success).
+    quality_flag: Mapped[str] = mapped_column(String, nullable=False, default="ok")
+    cost_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_placeholder: Mapped[bool] = mapped_column(nullable=False, default=True)
+    latency_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary_version: Mapped[str] = mapped_column(String, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
