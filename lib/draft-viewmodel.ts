@@ -67,7 +67,6 @@ export interface DraftFieldViewModel {
   responsible?: VMPerson
   reviewer?: VMPerson
   versions: VMVersion[]
-  technicalDetails: { label: string; value: string }[]
 }
 
 // ---------------------------------------------------------------------------
@@ -138,10 +137,6 @@ export function liveFieldToViewModel(
   const original =
     dto.field_name && dto.field_name.trim() !== cleanedName ? dto.field_name.trim() : undefined
   const activeLinks = dto.evidence_links.filter((l) => l.status === "active").length
-  const technicalDetails: { label: string; value: string }[] = [
-    { label: "Feld-ID", value: dto.field_id },
-  ]
-  if (original) technicalDetails.push({ label: "Original-Bezeichnung", value: original })
 
   return {
     id: dto.field_id,
@@ -166,7 +161,6 @@ export function liveFieldToViewModel(
     responsible: undefined,
     reviewer: undefined,
     versions: [],
-    technicalDetails,
   }
 }
 

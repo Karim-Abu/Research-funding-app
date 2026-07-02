@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react"
+import { ExternalLink } from "lucide-react"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { ReqBucketBadge } from "@/components/anforderungen/requirements-controls"
@@ -44,7 +44,6 @@ export function AssistantPanel({
   kommentareContent,
 }: AssistantPanelProps) {
   const [tab, setTab] = React.useState<AssistantTab>(defaultTab)
-  const [techOpen, setTechOpen] = React.useState(false)
 
   return (
     <div className="flex gap-3">
@@ -176,30 +175,6 @@ export function AssistantPanel({
         </Section>
       )}
 
-      {/* Technical details — collapsed, never in the standard view */}
-      {vm.technicalDetails.length > 0 && (
-        <div className="border-t border-border pt-2">
-          <button
-            type="button"
-            onClick={() => setTechOpen((v) => !v)}
-            aria-expanded={techOpen}
-            className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-          >
-            {techOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
-            Technische Details
-          </button>
-          {techOpen && (
-            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              {vm.technicalDetails.map((d) => (
-                <React.Fragment key={d.label}>
-                  <dt>{d.label}</dt>
-                  <dd className="font-mono break-all">{d.value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          )}
-        </div>
-      )}
       </div>
     </div>
   )

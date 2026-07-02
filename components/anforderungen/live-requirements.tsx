@@ -19,7 +19,6 @@ import {
 } from "@/components/anforderungen/requirements-controls"
 import {
   listRequirements,
-  BASIS_LABELS,
   STALE_NOTICE,
   type RequirementAssessmentDto,
 } from "@/lib/requirements"
@@ -42,7 +41,6 @@ import {
 // Normalized row the screen renders — derived purely in the frontend.
 interface LiveRow {
   id: string
-  requirementId: string
   title: string
   reasoning: string
   bucket: ReqBucket
@@ -50,7 +48,6 @@ interface LiveRow {
   evidenceState: EvidenceState
   humanState: HumanState
   openPoints: string[]
-  basisLabel: string
   /** First linked anchor — target of the "Beleg ansehen" deep link. */
   firstAnchorId: string | null
 }
@@ -74,7 +71,6 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     .filter((t): t is string => Boolean(t?.trim()))
   return {
     id: a.assessment_id,
-    requirementId: a.requirement_id,
     title: a.title?.trim() || REQ_FALLBACK.title,
     reasoning: a.reasoning?.trim() || "Keine Begründung vorhanden.",
     bucket,
@@ -82,7 +78,6 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     evidenceState,
     humanState,
     openPoints,
-    basisLabel: BASIS_LABELS[a.basis],
     firstAnchorId,
   }
 }
@@ -94,7 +89,6 @@ export function LiveRequirements({ runId }: { runId: string }) {
   const [search, setSearch] = React.useState("")
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
   const [closedGroups, setClosedGroups] = React.useState<Set<string>>(new Set())
-  const [techOpen, setTechOpen] = React.useState<Set<string>>(new Set())
 
   const load = React.useCallback(() => {
     setError(null)
@@ -267,9 +261,7 @@ export function LiveRequirements({ runId }: { runId: string }) {
                                 key={row.id}
                                 row={row}
                                 expanded={expanded.has(row.id)}
-                                techOpen={techOpen.has(row.id)}
                                 onToggle={() => toggleSet(setExpanded, row.id)}
-                                onToggleTech={() => toggleSet(setTechOpen, row.id)}
                               />
                             ))}
                           </div>
@@ -333,15 +325,11 @@ export function LiveRequirements({ runId }: { runId: string }) {
 function LiveRequirementRow({
   row,
   expanded,
-  techOpen,
   onToggle,
-  onToggleTech,
 }: {
   row: LiveRow
   expanded: boolean
-  techOpen: boolean
   onToggle: () => void
-  onToggleTech: () => void
 }) {
   return (
     <div id={`req-${row.id}`} className="border-b border-border last:border-0">
@@ -453,31 +441,6 @@ function LiveRequirementRow({
             <span className="text-xs text-muted-foreground">
               Bestätigung und Korrektur erfolgen im Review.
             </span>
-          </div>
-
-          {/* Technical details — collapsed, never in the standard view */}
-          <div>
-            <button
-              type="button"
-              onClick={onToggleTech}
-              aria-expanded={techOpen}
-              className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-            >
-              {techOpen ? (
-                <ChevronDown className="h-3.5 w-3.5" />
-              ) : (
-                <ChevronRight className="h-3.5 w-3.5" />
-              )}
-              Technische Details
-            </button>
-            {techOpen && (
-              <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                <dt>Anforderungs-ID</dt>
-                <dd className="font-mono break-all">{row.requirementId}</dd>
-                <dt>Grundlage</dt>
-                <dd>{row.basisLabel}</dd>
-              </dl>
-            )}
           </div>
         </div>
       )}

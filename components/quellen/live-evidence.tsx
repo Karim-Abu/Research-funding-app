@@ -80,7 +80,6 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
   const [error, setError] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<EvidenceFilter>("all")
   const [expanded, setExpanded] = React.useState<string | null>(null)
-  const [expandedTech, setExpandedTech] = React.useState<string | null>(null)
 
   // Requirement → evidence deep link: open the referenced card once loaded.
   React.useEffect(() => {
@@ -190,7 +189,6 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
         <ul className="flex flex-col gap-3">
           {visible.map((anchor) => {
             const isOpen = expanded === anchor.anchor_id
-            const isTechOpen = expandedTech === anchor.anchor_id
             const style = STATUS_STYLE[anchor.verification_status]
             const StatusIcon = style.icon
             const reviewer = formatReviewer(
@@ -293,48 +291,6 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                       <dt>Fundstelle</dt>
                       <dd>{formatFundstelle(anchor)}</dd>
                     </dl>
-                    {/* Technische Details — backend/normalizer internals only here */}
-                    <div>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          setExpandedTech(isTechOpen ? null : anchor.anchor_id)
-                        }
-                        aria-expanded={isTechOpen}
-                        className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-                      >
-                        {isTechOpen ? (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronRight className="h-3.5 w-3.5" />
-                        )}
-                        Technische Details
-                      </button>
-                      {isTechOpen && (
-                        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <dt>Normalizer</dt>
-                          <dd>{anchor.normalizer_version}</dd>
-                          {anchor.start_offset != null && (
-                            <>
-                              <dt>Position</dt>
-                              <dd>
-                                {anchor.start_offset}–{anchor.end_offset}
-                              </dd>
-                            </>
-                          )}
-                          <dt>Quell-ID</dt>
-                          <dd className="font-mono break-all">{anchor.source_id}</dd>
-                          <dt>Fragment-ID</dt>
-                          <dd className="font-mono break-all">{anchor.fragment_id}</dd>
-                          {anchor.match_type && (
-                            <>
-                              <dt>Treffer-Typ</dt>
-                              <dd>{anchor.match_type}</dd>
-                            </>
-                          )}
-                        </dl>
-                      )}
-                    </div>
                   </div>
                 )}
               </li>

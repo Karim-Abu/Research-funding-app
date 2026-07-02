@@ -114,7 +114,6 @@ export function DraftWorkspace() {
       responsible: mockResponsibleByField[f.id],
       reviewer: mockReviewerByField[f.id],
       versions: (mockVersionsByField[f.id] ?? []).map((v) => ({ ...v })),
-      technicalDetails: [{ label: "Feld-ID", value: f.id }],
     }
   })
   const activeVm = viewModels.find((v) => v.id === selectedId) ?? viewModels[0]

@@ -61,7 +61,6 @@ export function LiveReview({ runId }: { runId: string }) {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [notice, setNotice] = React.useState<string | null>(null)
-  const [showTech, setShowTech] = React.useState(false)
   const [reliabilityEnabled, setReliabilityEnabled] = React.useState(false)
 
   React.useEffect(() => {
@@ -294,28 +293,6 @@ export function LiveReview({ runId }: { runId: string }) {
         </section>
       )}
 
-      {/* Technical details */}
-      <div>
-        <button
-          type="button"
-          onClick={() => setShowTech((v) => !v)}
-          aria-expanded={showTech}
-          className="flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground"
-        >
-          {showTech ? (
-            <ChevronDown className="h-3.5 w-3.5" />
-          ) : (
-            <ChevronRight className="h-3.5 w-3.5" />
-          )}
-          Technische Details
-        </button>
-        {showTech && (
-          <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs text-muted-foreground">
-            <dt>Prüfpaket-Version</dt>
-            <dd className="font-mono">{pkg.review_package_version}</dd>
-          </dl>
-        )}
-      </div>
       {reliabilityEnabled && <QualitySummary runId={runId} />}
     </div>
   )
