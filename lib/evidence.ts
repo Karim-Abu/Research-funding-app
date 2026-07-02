@@ -73,7 +73,8 @@ export const VERIFIED_EXPLANATION =
 
 // Shorter inline hint used directly on the Evidenz screens.
 export const EVIDENCE_VERIFIED_HINT =
-  "«Fundstelle bestätigt» bedeutet, dass der Text in der Quelle auffindbar ist. Die fachliche Bewertung erfolgt im Review."
+  "«Fundstelle bestätigt» bedeutet, dass der Text in der Quelle auffindbar ist — " +
+  "keine inhaltliche Freigabe. Die fachliche Bewertung erfolgt im Review."
 
 // ---------------------------------------------------------------------------
 // User-friendly fallbacks (Mock + Live). Never show raw backend values.

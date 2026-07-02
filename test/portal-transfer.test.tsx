@@ -79,6 +79,27 @@ describe("PortalTransfer", () => {
     ).toBeInTheDocument()
   })
 
+  it("keeps plain copy primary; formatted copy sits behind 'Erweitert' (M10.2)", async () => {
+    // Formatted copy is only offered when ClipboardItem exists.
+    setClipboard({ writeText: vi.fn(), write: vi.fn() })
+    ;(globalThis as Record<string, unknown>).ClipboardItem = class {}
+    try {
+      const fields = [field("INTRO.APP.ABSTRACT", "Abstract", "Text.")]
+      render(<PortalTransfer fields={fields} review={reviewPkg()} />)
+      expect(screen.getByRole("button", { name: "Text kopieren" })).toBeInTheDocument()
+      // Hidden until the user opens the advanced disclosure.
+      expect(
+        screen.queryByRole("button", { name: /Formatiert kopieren/ })
+      ).toBeNull()
+      fireEvent.click(screen.getByRole("button", { name: "Erweitert" }))
+      expect(
+        screen.getByRole("button", { name: /Formatiert kopieren \(experimentell\)/ })
+      ).toBeInTheDocument()
+    } finally {
+      delete (globalThis as Record<string, unknown>).ClipboardItem
+    }
+  })
+
   it("plain copy puts ONLY the field text on the clipboard (no metadata)", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard({ writeText })

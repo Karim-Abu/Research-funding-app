@@ -17,7 +17,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
-import { PROJECT_STATUS_BADGE } from "@/lib/dashboard"
+import {
+  NEXT_ACTION_LABELS,
+  PROJECT_STATUS_BADGE,
+  WARNING_BADGE_LABELS,
+} from "@/lib/dashboard"
 import { workflowSteps } from "@/lib/mock-data"
 import {
   PROJECT_STATUS_LABELS,
@@ -50,6 +54,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
     cardStatus,
     lastEditedLabel,
     nextAction,
+    warningBadge,
     analysisRunning,
     isDemo,
     people,
@@ -85,6 +90,14 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
               Demo
             </Badge>
           )}
+          {warningBadge && (
+            <Badge
+              variant="outline"
+              className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+            >
+              {WARNING_BADGE_LABELS[warningBadge]}
+            </Badge>
+          )}
         </div>
 
         <h2 className="text-balance text-base font-semibold leading-snug text-foreground">
@@ -118,6 +131,12 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
             currentStep,
             currentStepLabel
           )}`}
+        </p>
+
+        {/* Nächster Schritt — answers "what should I do next?" without
+            changing the stable primary-button label. */}
+        <p className="text-xs font-medium text-foreground">
+          {`Nächster Schritt: ${NEXT_ACTION_LABELS[cardAction]}`}
         </p>
 
         {/* Letzte Aktivität */}

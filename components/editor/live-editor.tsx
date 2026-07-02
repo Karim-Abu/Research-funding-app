@@ -563,6 +563,15 @@ export function LiveEditor({ runId }: { runId: string }) {
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
             </div>
           )}
+          {!showA2Controls && (
+            <p
+              className="text-xs text-muted-foreground"
+              data-testid="a2-field-unavailable"
+            >
+              KI-Vorschläge sind für dieses Feld nicht verfügbar — sie unterstützen
+              die Abschnitte «Lösung &amp; Innovation» und «Wertschöpfung».
+            </p>
+          )}
           {recheck && (
             <p
               role="status"

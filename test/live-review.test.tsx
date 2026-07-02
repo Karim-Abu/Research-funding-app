@@ -101,6 +101,39 @@ describe("LiveReview", () => {
     )
   })
 
+  it("shows the Nächste Schritte card with derived actions (M10.2)", async () => {
+    server.use(
+      http.get("/api/runs/r1/review", () =>
+        HttpResponse.json(
+          pkg({
+            recheck_required: true,
+            blocker_count: 1,
+            findings: [
+              {
+                finding_id: "f1",
+                profile_id: "p",
+                field_id: "INTRO.APP.ABSTRACT",
+                requirement_id: null,
+                severity: "blocker",
+                description: "Feld enthält Platzhalter.",
+                suggested_improvement: null,
+                status: "open",
+                advisory: false,
+              },
+            ],
+          })
+        )
+      )
+    )
+    render(<LiveReview runId="r1" />)
+    const card = await screen.findByTestId("next-steps")
+    expect(card).toHaveTextContent("Nächste Schritte")
+    expect(card).toHaveTextContent(/Ungeprüfte Änderungen/)
+    expect(card).toHaveTextContent(/Platzhalter/)
+    // The M10.1 stale-reliability banner stays untouched and absent here.
+    expect(screen.queryByTestId("reliability-stale-banner")).toBeNull()
+  })
+
   it("shows the stale-reliability banner and blocks approval (M10.1, F3)", async () => {
     server.use(
       http.get("/api/runs/r1/review", () =>

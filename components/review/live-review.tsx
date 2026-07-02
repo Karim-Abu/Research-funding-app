@@ -215,6 +215,15 @@ export function LiveReview({ runId }: { runId: string }) {
       {/* Summary */}
       <ReviewSummaryBar summary={summary} />
 
+      {/* Nächste Schritte — the top actions derived from the current package */}
+      <NextStepsCard
+        pkg={pkg}
+        staleReliability={Boolean(staleReliability)}
+        groups={groups}
+        busy={busy}
+        onRecheck={recheck}
+      />
+
       {/* Approval / blocker panel */}
       <ApprovalPanel
         hasBlockers={hasBlockers}
@@ -309,6 +318,94 @@ export function LiveReview({ runId }: { runId: string }) {
       </div>
       {reliabilityEnabled && <QualitySummary runId={runId} />}
     </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Nächste Schritte — max 3 derived actions (recheck → stale reliability →
+// dominant blocker group). Pure derivation from existing package data.
+// ---------------------------------------------------------------------------
+function NextStepsCard({
+  pkg,
+  staleReliability,
+  groups,
+  busy,
+  onRecheck,
+}: {
+  pkg: ReviewPackageDto
+  staleReliability: boolean
+  groups: ReturnType<typeof groupFindings>
+  busy: boolean
+  onRecheck: () => void
+}) {
+  const steps: { key: string; text: string; action?: React.ReactNode }[] = []
+
+  if (pkg.recheck_required) {
+    steps.push({
+      key: "recheck",
+      text: "Ungeprüfte Änderungen — führen Sie eine erneute Prüfung durch.",
+      action: (
+        <Button size="xs" variant="outline" onClick={onRecheck} disabled={busy}>
+          Erneut prüfen
+        </Button>
+      ),
+    })
+  }
+  if (staleReliability) {
+    steps.push({
+      key: "reliability",
+      text: "Qualitätsprüfung veraltet — führen Sie die Zuverlässigkeitsprüfung erneut aus.",
+      action: (
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={() =>
+            document
+              .querySelector('[data-testid="quality-summary"]')
+              ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
+          }
+        >
+          Zur Qualitätsübersicht
+        </Button>
+      ),
+    })
+  }
+  for (const group of groups) {
+    if (steps.length >= 3) break
+    if (group.status !== "nicht_bestanden") continue
+    steps.push({
+      key: group.key,
+      text: `${group.label}: ${group.findings.length} Punkt(e) klären.`,
+      action: (
+        <Button size="xs" variant="outline" render={<a href="/editor" />} nativeButton={false}>
+          Im Entwurf öffnen
+        </Button>
+      ),
+    })
+  }
+
+  return (
+    <section
+      data-testid="next-steps"
+      className="flex flex-col gap-2 rounded-lg border border-border bg-card px-5 py-4"
+    >
+      <h2 className="text-sm font-semibold text-foreground">Nächste Schritte</h2>
+      {steps.length === 0 ? (
+        <p className="text-sm text-muted-foreground">
+          Keine offenen Schritte — prüfen Sie den Entwurf final und geben Sie das Review frei.
+        </p>
+      ) : (
+        <ol className="flex flex-col gap-1.5">
+          {steps.slice(0, 3).map((step, index) => (
+            <li key={step.key} className="flex flex-wrap items-center gap-2 text-sm">
+              <span className="text-muted-foreground">{index + 1}.</span>
+              <span className="min-w-0 flex-1 text-foreground">{step.text}</span>
+              {step.action}
+            </li>
+          ))}
+        </ol>
+      )}
+    </section>
   )
 }
 
@@ -494,12 +591,29 @@ function GroupAccordion({
       </button>
       {open && group.findings.length > 0 && (
         <ul className="flex flex-col gap-1 border-t border-border bg-muted/20 px-4 py-3">
-          {dedupeFindings(group.findings).map((d) => (
-            <li key={d.description} className="text-xs text-foreground">
-              • {d.count > 1 ? `${d.count} × ` : ""}
-              {d.description}
-            </li>
-          ))}
+          {dedupeFindings(group.findings).map((d) => {
+            const blocker = d.findings.find((f) => f.severity === "blocker")
+            const text = `${d.count > 1 ? `${d.count} × ` : ""}${d.description}`
+            return (
+              <li key={d.description} className="text-xs text-foreground">
+                {blocker ? (
+                  <button
+                    type="button"
+                    onClick={() =>
+                      document
+                        .getElementById(`blocker-${blocker.finding_id}`)
+                        ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
+                    }
+                    className="rounded text-left underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    • {text}
+                  </button>
+                ) : (
+                  <>• {text}</>
+                )}
+              </li>
+            )
+          })}
         </ul>
       )}
     </section>

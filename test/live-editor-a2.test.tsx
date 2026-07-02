@@ -103,8 +103,12 @@ describe("LiveEditor A2 suggestions", () => {
     baseMock([abstractDraft()])
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Abstract")
-    // The default-selected field is the Abstract → no A2 control.
+    // The default-selected field is the Abstract → no A2 control, but the
+    // availability is explained instead of silent (M10.2).
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
+    expect(screen.getByTestId("a2-field-unavailable")).toHaveTextContent(
+      /für dieses Feld nicht verfügbar/
+    )
   })
 
   it("renders the empty-state hint for the SOL field", async () => {

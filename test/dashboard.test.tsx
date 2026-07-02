@@ -100,14 +100,87 @@ describe("projects overview", () => {
     await screen.findByText(/kreislauffaehiger Verbundwerkstoffe/)
     expect(screen.getByRole("heading", { name: "Projekte" })).toBeInTheDocument()
     expect(screen.getByText("Aktive Projekte")).toBeInTheDocument()
-    expect(screen.getByText("Review offen")).toBeInTheDocument()
+    // "Review offen" appears as summary tile AND as filter chip since M10.2.
+    expect(screen.getAllByText("Review offen").length).toBeGreaterThan(0)
     expect(screen.getByText("Blocker")).toBeInTheDocument()
     expect(screen.getByText("Nächste Frist")).toBeInTheDocument()
-    expect(screen.getAllByText("Demo")).toHaveLength(2)
+    // 2 card badges + 1 filter chip (M10.2).
+    expect(screen.getAllByText("Demo")).toHaveLength(3)
     expect(screen.getAllByRole("button", { name: "Weiterarbeiten" })).toHaveLength(2)
     expect(screen.getAllByText("Innosuisse · Innovationsprojekt")).toHaveLength(2)
     expect(screen.getByText(/Bearbeitungsstand:\s*72\s*%/)).toBeInTheDocument()
     expect(screen.getByText(/Schritt 5 von 8:\s*Entwurf/)).toBeInTheDocument()
+  })
+
+  it("filters, searches and shows the warning badge (M10.2)", async () => {
+    server.use(
+      http.get("/api/projects", () =>
+        HttpResponse.json({
+          items: [
+            project({
+              project_id: "project-a",
+              title: "Verbundwerkstoffe (Demo)",
+              workflow_summary: {
+                bearbeitungsstand_percent: 72,
+                current_step: 5,
+                current_step_label: "Entwurf",
+                next_action: "continue_draft",
+                warning_badge: null,
+                latest_run_id: "run-a",
+              },
+            }),
+            project({
+              project_id: "project-user",
+              title: "Eigener Antrag Robotik",
+              workflow_summary: {
+                bearbeitungsstand_percent: 10,
+                current_step: 2,
+                current_step_label: "Quellen",
+                next_action: "resume_analysis",
+                warning_badge: "run_stopped",
+                latest_run_id: "run-u",
+              },
+            }),
+          ],
+          next_cursor: null,
+        })
+      )
+    )
+    render(
+      <AppProviders mode="live">
+        <DashboardPage />
+      </AppProviders>
+    )
+
+    // A user-created project is first-class and shows the stopped-run warning.
+    await screen.findByText("Eigener Antrag Robotik")
+    expect(screen.getByText("Analyse gestoppt")).toBeInTheDocument()
+    expect(screen.getByText(/Nächster Schritt: Analyse fortsetzen/)).toBeInTheDocument()
+
+    // Search narrows the grid.
+    fireEvent.change(screen.getByLabelText("Anträge durchsuchen"), {
+      target: { value: "Robotik" },
+    })
+    expect(screen.queryByText("Verbundwerkstoffe (Demo)")).toBeNull()
+    expect(screen.getByText("Eigener Antrag Robotik")).toBeInTheDocument()
+
+    // Demo filter shows only demo projects (search cleared first).
+    fireEvent.change(screen.getByLabelText("Anträge durchsuchen"), {
+      target: { value: "" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Demo" }))
+    expect(screen.getByText("Verbundwerkstoffe (Demo)")).toBeInTheDocument()
+    expect(screen.queryByText("Eigener Antrag Robotik")).toBeNull()
+
+    // Empty filter result offers a reset.
+    fireEvent.change(screen.getByLabelText("Anträge durchsuchen"), {
+      target: { value: "xyz-nicht-vorhanden" },
+    })
+    expect(
+      screen.getByText(/Keine Anträge entsprechen der Suche/)
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Filter zurücksetzen" }))
+    expect(screen.getByText("Eigener Antrag Robotik")).toBeInTheDocument()
   })
 
   it("sets the active project before navigating", async () => {

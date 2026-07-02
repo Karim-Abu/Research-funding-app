@@ -67,12 +67,30 @@ interface JoinedAnchor extends EvidenceAnchorDto {
   requirementTitle: string | null
 }
 
-export function LiveEvidence({ runId }: { runId: string }) {
+interface LiveEvidenceProps {
+  runId: string
+  /** Deep link (?anchor=…): expand + scroll to this anchor after load. */
+  focusAnchorId?: string | null
+  /** When set, the source name becomes a button that opens the source detail. */
+  onOpenSource?: (sourceId: string) => void
+}
+
+export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenceProps) {
   const [anchors, setAnchors] = React.useState<JoinedAnchor[] | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<EvidenceFilter>("all")
   const [expanded, setExpanded] = React.useState<string | null>(null)
   const [expandedTech, setExpandedTech] = React.useState<string | null>(null)
+
+  // Requirement → evidence deep link: open the referenced card once loaded.
+  React.useEffect(() => {
+    if (!focusAnchorId || anchors === null) return
+    if (!anchors.some((a) => a.anchor_id === focusAnchorId)) return
+    setExpanded(focusAnchorId)
+    document
+      .getElementById(`evidence-${focusAnchorId}`)
+      ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
+  }, [focusAnchorId, anchors])
 
   const load = React.useCallback(() => {
     setError(null)
@@ -183,13 +201,28 @@ export function LiveEvidence({ runId }: { runId: string }) {
             return (
               <li
                 key={anchor.anchor_id}
-                className="rounded-lg border border-border bg-card px-5 py-4"
+                id={`evidence-${anchor.anchor_id}`}
+                className={cn(
+                  "rounded-lg border border-border bg-card px-5 py-4",
+                  focusAnchorId === anchor.anchor_id && "ring-2 ring-primary/40"
+                )}
               >
                 {/* Header: source + Fundstelle + status */}
                 <div className="flex items-start justify-between gap-3">
                   <div className="flex min-w-0 flex-col gap-0.5">
                     <span className="truncate text-xs font-medium text-muted-foreground">
-                      {anchor.source_name}
+                      {onOpenSource ? (
+                        <button
+                          type="button"
+                          onClick={() => onOpenSource(anchor.source_id)}
+                          aria-label={`Quelle „${anchor.source_name}“ anzeigen`}
+                          className="rounded underline-offset-2 hover:text-foreground hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                        >
+                          {anchor.source_name}
+                        </button>
+                      ) : (
+                        anchor.source_name
+                      )}
                       <span className="ml-2 rounded bg-muted px-1.5 py-0.5">
                         {SOURCE_TYPE_LABEL[anchor.source_type] ?? anchor.source_type}
                       </span>

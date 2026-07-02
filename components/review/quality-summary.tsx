@@ -112,6 +112,11 @@ export function QualitySummary({ runId }: { runId: string }) {
             Wahrheit. Konfliktende Belege: {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
             {summary.false_consensus_risk_count}. Semantische Drift: {summary.semantic_drift_count}.
           </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie Suffizienz (der Beleg
+            scheint die Aussage zu stützen). «Risiko» ist ein Risikosignal für die menschliche
+            Prüfung — kein Fehler der Anwendung.
+          </p>
 
           {blockers.length > 0 && (
             <div className="mt-3" data-testid="reliability-blockers">

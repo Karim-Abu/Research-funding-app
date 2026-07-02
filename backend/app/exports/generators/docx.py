@@ -17,6 +17,8 @@ from app.exports.generators.common import (
     DRAFT_BODY,
     DRAFT_HEADER,
     NO_SUBMISSION,
+    field_label,
+    grouped_open_points,
 )
 
 
@@ -75,7 +77,7 @@ def generate_docx(snapshot: dict, snapshot_hash: str) -> bytes:
 
     doc.add_heading("Portalfelder", level=1)
     for field in snapshot["fields"]:
-        doc.add_heading(field["field_name"], level=2)
+        doc.add_heading(field_label(field), level=2)
         doc.add_paragraph(field["text"])
         doc.add_paragraph().add_run(_char_info(field)).italic = True
         active = [
@@ -85,22 +87,14 @@ def generate_docx(snapshot: dict, snapshot_hash: str) -> bytes:
             doc.add_paragraph(f"Belege: {len(active)} aktive Verknüpfung(en)")
 
     doc.add_heading("Anhang: Offene Punkte und Review-Hinweise", level=1)
-    issues = snapshot["open_issues"]
-    open_findings = [
-        f for f in snapshot["review_findings"] if f["status"] == "open"
-    ]
-    if not issues and not open_findings:
+    groups = grouped_open_points(snapshot)
+    if not groups:
         doc.add_paragraph("Keine offenen Punkte erfasst.")
     else:
-        for issue in issues:
-            doc.add_paragraph(
-                f"[{issue['severity']}] {issue['description']}", style=_BULLET
-            )
-        for finding in open_findings:
-            doc.add_paragraph(
-                f"[{finding['severity']}] {finding['description']}",
-                style=_BULLET,
-            )
+        for group, entries in groups:
+            doc.add_heading(group, level=2)
+            for entry in entries:
+                doc.add_paragraph(entry, style=_BULLET)
 
     doc.add_heading("Anhang: Technische Nachvollziehbarkeit", level=1)
     doc.add_paragraph(f"Run: {meta['run_id']}")

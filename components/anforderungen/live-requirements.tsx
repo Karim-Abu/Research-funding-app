@@ -51,12 +51,18 @@ interface LiveRow {
   humanState: HumanState
   openPoints: string[]
   basisLabel: string
+  /** First linked anchor — target of the "Beleg ansehen" deep link. */
+  firstAnchorId: string | null
 }
 
 function toRow(a: RequirementAssessmentDto): LiveRow {
   const bucket = liveStatusToBucket(a.status)
   const evidenceState: EvidenceState =
     a.evidence_links.length > 0 ? "present" : "missing"
+  const firstAnchorId =
+    a.evidence_links.find((l) => l.status === "active")?.anchor_id ??
+    a.evidence_links[0]?.anchor_id ??
+    null
   const humanState: HumanState =
     a.basis === "human_override"
       ? "confirmed"
@@ -77,6 +83,7 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     humanState,
     openPoints,
     basisLabel: BASIS_LABELS[a.basis],
+    firstAnchorId,
   }
 }
 
@@ -409,11 +416,40 @@ function LiveRequirementRow({
             Betroffenes Portal-Feld: {REQ_FALLBACK.portal}
           </p>
 
-          {/* Actions — write-back needs a Review endpoint; surface that calmly. */}
+          {/* Actions — guidance links only; confirmation/decisions live in the
+              Review (no write-back from this screen). */}
           <div className="flex flex-wrap items-center gap-2">
+            {row.evidenceState === "present" && row.firstAnchorId ? (
+              <Button
+                variant="outline"
+                size="sm"
+                render={
+                  <a
+                    href={`/quellen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`}
+                  />
+                }
+                nativeButton={false}
+              >
+                Beleg ansehen
+              </Button>
+            ) : (
+              <Button
+                variant="outline"
+                size="sm"
+                render={<a href="/quellen" />}
+                nativeButton={false}
+              >
+                Quelle ergänzen
+              </Button>
+            )}
             <Button variant="outline" size="sm" render={<a href="/review" />} nativeButton={false}>
               In Review übernehmen
             </Button>
+            {row.humanState === "needed" && (
+              <Button variant="ghost" size="sm" render={<a href="/review" />} nativeButton={false}>
+                Kommentar im Review erfassen
+              </Button>
+            )}
             <span className="text-xs text-muted-foreground">
               Bestätigung und Korrektur erfolgen im Review.
             </span>

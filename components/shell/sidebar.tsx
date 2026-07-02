@@ -71,6 +71,8 @@ interface SidebarProps {
   role: Role
   collapsed: boolean
   onToggle: () => void
+  /** Title of the active Antrag; null → project-scoped links are disabled. */
+  activeProjectTitle?: string | null
 }
 
 function pathActive(pathname: string, href: string): boolean {
@@ -79,8 +81,16 @@ function pathActive(pathname: string, href: string): boolean {
   return pathname === path || pathname.startsWith(`${path}/`)
 }
 
-export function Sidebar({ collapsed, onToggle }: SidebarProps) {
+// Links that work without a selected Antrag (overview + creating a new one).
+const PROJECT_INDEPENDENT = new Set(["Übersicht", "Intake"])
+
+export function Sidebar({
+  collapsed,
+  onToggle,
+  activeProjectTitle = null,
+}: SidebarProps) {
   const pathname = usePathname()
+  const hasProject = activeProjectTitle !== null && activeProjectTitle !== ""
 
   return (
     <aside
@@ -109,13 +119,17 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
 
       <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
         {collapsed ? (
-          collapsedItems.map((item) => (
-            <CollapsedLink
-              key={item.label}
-              item={item}
-              active={pathActive(pathname, item.href)}
-            />
-          ))
+          collapsedItems.map((item) =>
+            hasProject || PROJECT_INDEPENDENT.has(item.label) || item.label === "Projekte" ? (
+              <CollapsedLink
+                key={item.label}
+                item={item}
+                active={pathActive(pathname, item.href)}
+              />
+            ) : (
+              <CollapsedDisabled key={item.label} item={item} />
+            )
+          )
         ) : (
           <>
             {/* Projekte */}
@@ -145,19 +159,39 @@ export function Sidebar({ collapsed, onToggle }: SidebarProps) {
             <DisabledRow item={{ label: "SNF", icon: Landmark }} />
             <DisabledRow item={{ label: "Horizon Europe", icon: Globe }} />
 
-            {/* Aktueller Antrag */}
+            {/* Aktueller Antrag — always names the selected application. */}
             <SectionLabel>Aktueller Antrag</SectionLabel>
-            {currentApplication.map((item) => (
-              <ExpandedLink
-                key={item.label}
-                item={item}
-                active={
-                  item.href === "/"
-                    ? false
-                    : pathActive(pathname, item.href)
-                }
-              />
-            ))}
+            <p
+              data-testid="sidebar-active-project"
+              className={cn(
+                "truncate px-3 pb-1 text-xs",
+                hasProject
+                  ? "font-medium text-sidebar-foreground"
+                  : "text-sidebar-foreground/50"
+              )}
+              title={activeProjectTitle ?? undefined}
+            >
+              {hasProject ? activeProjectTitle : "Kein Antrag ausgewählt"}
+            </p>
+            {currentApplication.map((item) =>
+              hasProject || PROJECT_INDEPENDENT.has(item.label) ? (
+                <ExpandedLink
+                  key={item.label}
+                  item={item}
+                  active={
+                    item.href === "/"
+                      ? false
+                      : pathActive(pathname, item.href)
+                  }
+                />
+              ) : (
+                <DisabledRow
+                  key={item.label}
+                  item={{ label: item.label, icon: item.icon }}
+                  hint="Zuerst Antrag auswählen"
+                />
+              )
+            )}
           </>
         )}
       </nav>
@@ -258,18 +292,45 @@ function CollapsedLink({ item, active }: { item: NavLink; active: boolean }) {
   )
 }
 
-function DisabledRow({ item }: { item: DisabledLink }) {
+function DisabledRow({
+  item,
+  hint = "Nicht verfügbar",
+}: {
+  item: DisabledLink
+  hint?: string
+}) {
   return (
     <div
       aria-disabled="true"
-      title="Nicht verfügbar"
+      title={hint}
       className="flex min-h-[40px] cursor-not-allowed items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/35"
     >
       {item.icon && <item.icon className="size-5 shrink-0" />}
       <span className="truncate">{item.label}</span>
       <span className="ml-auto rounded-full border border-sidebar-border px-2 py-0.5 text-[10px] font-medium text-sidebar-foreground/45">
-        Nicht verfügbar
+        {hint}
       </span>
     </div>
+  )
+}
+
+function CollapsedDisabled({ item }: { item: NavLink }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <div
+            aria-disabled="true"
+            aria-label={`${item.label} — zuerst Antrag auswählen`}
+            className="flex min-h-[44px] cursor-not-allowed items-center justify-center rounded-md text-sidebar-foreground/30"
+          >
+            <item.icon className="size-5 shrink-0" />
+          </div>
+        }
+      />
+      <TooltipContent side="right">
+        {item.label} — zuerst Antrag auswählen
+      </TooltipContent>
+    </Tooltip>
   )
 }

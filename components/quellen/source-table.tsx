@@ -86,6 +86,10 @@ interface SourceTableProps {
   acceptExtensions?: string[]
   currentUserName?: string
   importProjects?: ImportableSourceProject[]
+  /** External request (e.g. from the Evidenz tab) to open a source's details. */
+  openDetailsForId?: string | null
+  /** Called when the externally requested details dialog closes. */
+  onDetailsOpenChange?: (open: boolean) => void
 }
 
 const SOURCE_STATUS_CONFIG: Record<
@@ -217,6 +221,8 @@ export function SourceTable({
   acceptExtensions = DEFAULT_ACCEPT_EXTENSIONS,
   currentUserName = "Anna Keller",
   importProjects = importableSourceProjects,
+  openDetailsForId = null,
+  onDetailsOpenChange,
 }: SourceTableProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
@@ -232,6 +238,13 @@ export function SourceTable({
   }, [controlled, sources])
 
   const displayed = controlled ? sources : localSources
+
+  // Externally requested detail view (evidence → source navigation).
+  React.useEffect(() => {
+    if (!openDetailsForId) return
+    const match = displayed.find((s) => s.id === openDetailsForId)
+    if (match) setDetailsSource(match)
+  }, [openDetailsForId, displayed])
   const pendingSource = displayed.find((source) => source.id === confirmId)
 
   function openFilePicker() {
@@ -488,7 +501,10 @@ export function SourceTable({
       <SourceDetailsDialog
         source={detailsSource}
         onOpenChange={(open) => {
-          if (!open) setDetailsSource(null)
+          if (!open) {
+            setDetailsSource(null)
+            onDetailsOpenChange?.(false)
+          }
         }}
       />
 
@@ -684,12 +700,17 @@ function SourceList({
                   isProblemStatus(source.status) && "bg-destructive/5"
                 )}
               >
-                <span
-                  role="cell"
-                  className="truncate font-medium text-foreground"
-                  title={source.name}
-                >
-                  {source.name}
+                <span role="cell" className="min-w-0">
+                  {/* Name opens the details — a real button (keyboard path). */}
+                  <button
+                    type="button"
+                    onClick={() => onDetails(source)}
+                    title={source.name}
+                    aria-label={`${source.name}: Details anzeigen`}
+                    className="block max-w-full truncate rounded text-left font-medium text-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  >
+                    {source.name}
+                  </button>
                 </span>
                 <span role="cell">
                   <SourceTypePill type={source.type} />

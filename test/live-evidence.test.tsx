@@ -1,5 +1,5 @@
-import { describe, it, expect } from "vitest"
-import { render, screen, waitFor } from "@testing-library/react"
+import { describe, it, expect, vi } from "vitest"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
@@ -62,6 +62,35 @@ function mock(anchors: unknown[], assessments: unknown[]) {
 }
 
 describe("LiveEvidence", () => {
+  it("links the source name and explains 'Fundstelle bestätigt' (M10.2)", async () => {
+    mock([anchor()], [assessment([link()])])
+    const onOpenSource = vi.fn()
+    render(<LiveEvidence runId="r1" onOpenSource={onOpenSource} />)
+    await waitFor(() =>
+      expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+    )
+    // Explainer: found in the source ≠ inhaltliche Freigabe.
+    expect(screen.getByText(/keine inhaltliche Freigabe/)).toBeInTheDocument()
+    // The source name is a real, labelled button that opens the source detail.
+    const sourceButton = screen.getByRole("button", {
+      name: /Quelle „Quelle.txt“ anzeigen/,
+    })
+    fireEvent.click(sourceButton)
+    expect(onOpenSource).toHaveBeenCalledWith("s1")
+  })
+
+  it("expands and highlights the deep-linked anchor (M10.2)", async () => {
+    mock([anchor()], [assessment([link()])])
+    render(<LiveEvidence runId="r1" focusAnchorId="an1" />)
+    await waitFor(() =>
+      expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+    )
+    // The card auto-expanded: the collapse control shows "ausblenden".
+    expect(
+      await screen.findByRole("button", { name: "Details ausblenden" })
+    ).toBeInTheDocument()
+  })
+
   it("renders a verified Unicode quote with joined requirement context", async () => {
     mock([anchor()], [assessment([link()])])
     render(<LiveEvidence runId="r1" />)

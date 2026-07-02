@@ -280,8 +280,12 @@ function QuellenPageContent() {
   const searchParams = useSearchParams()
   const tabFromUrl: QuellenTab =
     searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
+  // Deep link from Anforderungen ("Beleg ansehen"): focus one evidence card.
+  const focusAnchorId = searchParams.get("anchor")
 
   const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
+  // Evidence → source navigation: switch tab + open that source's details.
+  const [sourceDetailId, setSourceDetailId] = React.useState<string | null>(null)
   // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
   // this route, so follow URL changes after mount as well.
   React.useEffect(() => {
@@ -294,6 +298,11 @@ function QuellenPageContent() {
     router.replace(tab === "evidenz" ? "/quellen?tab=evidenz" : "/quellen", {
       scroll: false,
     })
+  }
+
+  function handleOpenSourceFromEvidence(sourceId: string) {
+    handleTabChange("quellen")
+    setSourceDetailId(sourceId)
   }
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -851,6 +860,10 @@ function QuellenPageContent() {
                   onDeleteSource={handleDeleteSource}
                   acceptExtensions={[".pdf", ".docx", ".txt"]}
                   currentUserName={currentUser.name}
+                  openDetailsForId={sourceDetailId}
+                  onDetailsOpenChange={(open) => {
+                    if (!open) setSourceDetailId(null)
+                  }}
                 />
                 {projectId && capabilities?.features?.web_research && (
                   <PublicResearchPanel
@@ -874,7 +887,11 @@ function QuellenPageContent() {
           <TabsContent value="evidenz">
             {liveMode ? (
               completedRunId ? (
-                <LiveEvidence runId={completedRunId} />
+                <LiveEvidence
+                  runId={completedRunId}
+                  focusAnchorId={focusAnchorId}
+                  onOpenSource={handleOpenSourceFromEvidence}
+                />
               ) : (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   Noch keine abgeschlossene Analyse. Starten Sie die Analyse, um

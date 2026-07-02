@@ -27,9 +27,15 @@ import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
   EXPORT_REVIEW_LABELS,
   EXPORT_REVIEW_STYLE,
+  FIELD_READINESS_LABELS,
+  FIELD_READINESS_STYLE,
+  KOPIERBEREIT_LEGEND,
   NO_AUTO_SUBMIT_NOTE,
+  NOT_FOR_SUBMISSION,
+  fieldReadinessRows,
   summarizeExportReadiness,
 } from "@/lib/export-view"
+import { UNSUPPORTED_AREAS } from "@/lib/portal-transfer"
 
 const PAGE_DISCLAIMER =
   "Dies ist keine Einreichfreigabe. Die Einreichung erfolgt durch Sie im " +
@@ -98,13 +104,14 @@ export function LiveExport({ runId }: { runId: string }) {
         setPkg(null)
         setApproval(null)
       })
+    // Field drafts feed the Feld-Bereitschaft overview (and the Innolink tab).
+    listFields(runId)
+      .then(setFields)
+      .catch(() => setFields([]))
   }, [runId])
 
   function openInnolink() {
     setTab("innolink")
-    if (fields === null) {
-      listFields(runId).then(setFields).catch(() => setFields([]))
-    }
   }
 
   async function create(type: ExportType) {
@@ -126,6 +133,10 @@ export function LiveExport({ runId }: { runId: string }) {
   const banner = reviewBanner(approval)
   const advisoryDraft = approval !== "approved"
   const readiness = summarizeExportReadiness(pkg)
+  const readinessRows = fieldReadinessRows(fields ?? [], pkg)
+  // Never present anything as submission-ready while approval is missing or
+  // blockers exist ("Nicht zur Einreichung", M10.2 / correction 2).
+  const notForSubmission = advisoryDraft || readiness.blockerCount > 0
   const hint =
     readiness.reviewStatus === "nicht_durchgefuehrt"
       ? "Es wurde noch keine Qualitätsprüfung durchgeführt. Exporte werden als Entwurf gekennzeichnet."
@@ -165,6 +176,14 @@ export function LiveExport({ runId }: { runId: string }) {
               >
                 {EXPORT_REVIEW_LABELS[readiness.reviewStatus]}
               </span>
+              {notForSubmission && (
+                <Badge
+                  variant="outline"
+                  className="border-destructive/20 bg-destructive/10 text-destructive"
+                >
+                  {NOT_FOR_SUBMISSION}
+                </Badge>
+              )}
             </div>
             <dl className="grid grid-cols-3 gap-3 text-center">
               <div className="rounded-md border border-border px-2 py-2">
@@ -196,6 +215,57 @@ export function LiveExport({ runId }: { runId: string }) {
             </p>
           </section>
 
+          {/* Feld-Bereitschaft — per-field readiness for the MANUAL Innolink copy */}
+          <section
+            data-testid="field-readiness"
+            className="flex flex-col gap-3 rounded-lg border border-border bg-card px-5 py-4"
+          >
+            <h2 className="text-sm font-semibold text-foreground">Feld-Bereitschaft</h2>
+            {fields === null ? (
+              <Skeleton className="h-24 w-full" />
+            ) : readinessRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Für diesen Antrag liegen noch keine Feldentwürfe vor.
+              </p>
+            ) : (
+              <table className="w-full border-separate border-spacing-y-1 text-sm">
+                <caption className="sr-only">
+                  Bereitschaft der Portalfelder für die manuelle Übernahme
+                </caption>
+                <thead>
+                  <tr className="text-left text-xs text-muted-foreground">
+                    <th scope="col" className="font-medium">Portal-Feld</th>
+                    <th scope="col" className="font-medium">Status</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {readinessRows.map((row) => (
+                    <tr key={row.fieldId}>
+                      <td className="pr-3 text-foreground">{row.fieldName}</td>
+                      <td>
+                        <span
+                          className={cn(
+                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                            FIELD_READINESS_STYLE[row.status]
+                          )}
+                        >
+                          {FIELD_READINESS_LABELS[row.status]}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+            <p className="text-xs text-muted-foreground">{KOPIERBEREIT_LEGEND}</p>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Manuell im Portal zu erfassen:
+              </span>{" "}
+              {UNSUPPORTED_AREAS.join(", ")}.
+            </p>
+          </section>
+
           {/* Export cards */}
           <div className="grid gap-4 md:grid-cols-3">
             {CARDS.map((card) => {
@@ -207,8 +277,12 @@ export function LiveExport({ runId }: { runId: string }) {
                 <div
                   key={card.type}
                   className={cn(
-                    "flex flex-col gap-3 rounded-lg border bg-card p-4",
-                    card.recommended ? "border-primary/40 ring-1 ring-primary/10" : "border-border"
+                    "flex flex-col gap-3 rounded-lg border p-4",
+                    card.recommended
+                      ? "border-primary/40 bg-card ring-1 ring-primary/10"
+                      : card.type === "technical_evidence"
+                        ? "border-border bg-muted/30"
+                        : "border-border bg-card"
                   )}
                 >
                   <div className="flex items-start justify-between gap-2">
@@ -216,6 +290,11 @@ export function LiveExport({ runId }: { runId: string }) {
                     <div className="flex flex-col items-end gap-1">
                       {card.recommended && (
                         <Badge className="bg-primary/10 text-primary">Empfohlen</Badge>
+                      )}
+                      {card.type === "technical_evidence" && (
+                        <Badge variant="outline" className="text-muted-foreground">
+                          Für Audit/Evaluation
+                        </Badge>
                       )}
                       {draft && <Badge variant="outline">ENTWURF</Badge>}
                     </div>

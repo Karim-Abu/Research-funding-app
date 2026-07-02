@@ -1,7 +1,12 @@
 // Presentation helpers for the Projekte overview. Pure functions over the
 // existing DashboardProject shape — no backend calls, no API contract.
 
-import type { DashboardProject, ProjectCardStatus } from "./types"
+import type {
+  DashboardProject,
+  NextAction,
+  ProjectCardStatus,
+  WarningBadge,
+} from "./types"
 
 /** Tailwind classes per status, matching the app's status colour tokens. */
 export const PROJECT_STATUS_BADGE: Record<
@@ -37,6 +42,57 @@ function formatDeadline(iso: string): string {
     month: "short",
     year: "numeric",
   })
+}
+
+/** User-facing warning chips (text labels — never colour-only). */
+export const WARNING_BADGE_LABELS: Record<WarningBadge, string> = {
+  durchlauf_gestoppt: "Analyse gestoppt",
+  freigabe_offen: "Freigabe offen",
+}
+
+/** "Nächster Schritt" line per next action — answers "what should I do?". */
+export const NEXT_ACTION_LABELS: Record<NextAction | "view_progress", string> = {
+  upload_sources: "Quellen hochladen",
+  start_analysis: "Analyse starten",
+  review_analysis: "Analyse & Anforderungen prüfen",
+  continue_draft: "Entwurf weiterbearbeiten",
+  approve_review: "Qualitätsprüfung abschließen",
+  create_export: "Export erstellen",
+  resume_analysis: "Analyse fortsetzen",
+  view_progress: "Analyse läuft — Fortschritt ansehen",
+}
+
+export type ProjectFilter = "alle" | ProjectCardStatus | "demo"
+export type ProjectSort = "neueste" | "fortschritt" | "titel"
+
+export const PROJECT_FILTERS: { id: ProjectFilter; label: string }[] = [
+  { id: "alle", label: "Alle" },
+  { id: "in_bearbeitung", label: "In Bearbeitung" },
+  { id: "review_offen", label: "Review offen" },
+  { id: "blockiert", label: "Blockiert" },
+  { id: "demo", label: "Demo" },
+]
+
+/** Client-side search + filter + sort. User-created projects are first-class;
+ *  orientation comes from filters, never from count-based warnings. */
+export function filterAndSortProjects(
+  cards: DashboardProject[],
+  opts: { query: string; filter: ProjectFilter; sort: ProjectSort }
+): DashboardProject[] {
+  const q = opts.query.trim().toLowerCase()
+  let out = cards.filter((c) => {
+    if (q && !c.title.toLowerCase().includes(q)) return false
+    if (opts.filter === "alle") return true
+    if (opts.filter === "demo") return Boolean(c.isDemo)
+    return (c.cardStatus ?? "in_bearbeitung") === opts.filter
+  })
+  if (opts.sort === "fortschritt") {
+    out = [...out].sort((a, b) => b.progressPercent - a.progressPercent)
+  } else if (opts.sort === "titel") {
+    out = [...out].sort((a, b) => a.title.localeCompare(b.title, "de"))
+  }
+  // "neueste" keeps the API order (newest first from the backend).
+  return out
 }
 
 /** Aggregate the compact overview shown above the project grid. */

@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy, Check, AlertTriangle } from "lucide-react"
+import { Copy, Check, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -34,6 +34,7 @@ export function FieldTransferCard({
   const [state, setState] = React.useState<CopyState>("idle")
   const [confirming, setConfirming] = React.useState<null | "plain" | "formatted">(null)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
+  const [advancedOpen, setAdvancedOpen] = React.useState(false)
 
   const text = field.current_version.text
   const warnings = fieldWarnings(field, review)
@@ -125,15 +126,42 @@ export function FieldTransferCard({
           </div>
         </div>
       ) : (
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" onClick={() => requestCopy("plain")}>
-            <Copy data-icon="inline-start" />
-            Text kopieren
-          </Button>
-          {formatted && (
-            <Button size="sm" variant="outline" onClick={() => requestCopy("formatted")}>
-              Formatiert kopieren (experimentell)
+        <div className="flex flex-col gap-1.5">
+          {/* Plain text is the primary, proven copy path. */}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" onClick={() => requestCopy("plain")}>
+              <Copy data-icon="inline-start" />
+              Text kopieren
             </Button>
+          </div>
+          {/* Experimental formatted copy stays behind an "Erweitert" disclosure. */}
+          {formatted && (
+            <div>
+              <button
+                type="button"
+                onClick={() => setAdvancedOpen((v) => !v)}
+                aria-expanded={advancedOpen}
+                className="flex items-center gap-1 rounded text-xs text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              >
+                {advancedOpen ? (
+                  <ChevronDown className="size-3.5" />
+                ) : (
+                  <ChevronRight className="size-3.5" />
+                )}
+                Erweitert
+              </button>
+              {advancedOpen && (
+                <div className="mt-1.5">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => requestCopy("formatted")}
+                  >
+                    Formatiert kopieren (experimentell)
+                  </Button>
+                </div>
+              )}
+            </div>
           )}
         </div>
       )}

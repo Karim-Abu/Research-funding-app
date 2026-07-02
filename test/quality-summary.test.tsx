@@ -67,6 +67,11 @@ describe("QualitySummary", () => {
     expect(screen.getByTestId("reliability-blockers")).toHaveTextContent(
       /Nicht belegte Aussage/
     )
+    // M10.2: coverage ≠ sufficiency + "risky is a signal, not an app failure".
+    expect(
+      screen.getByText(/Abdeckung .*nicht dasselbe wie Suffizienz/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/kein Fehler der Anwendung/)).toBeInTheDocument()
     // No provider/model/confidence-percentage leakage.
     expect(
       screen.queryByText(/anthropic|haiku|firecrawl|confidence|Konfidenz|%/i)
