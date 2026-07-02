@@ -10,6 +10,15 @@ guarantee anything. Known limitations at the M10 feature freeze:
 - **No automatic application approval.** Approval is a deliberate human action gated by
   deterministic + reliability blockers.
 - **No real NDA (D3) processing.** D3 is blocked from all external tools in the MVP.
+- **Deterministic query sanitization is risk reduction, not a secrecy guarantee.** The
+  Search Query Firewall removes only what it can detect (project lexicon + generic
+  patterns); arbitrary confidential tokens (codenames, product names, secret-like strings)
+  that are not in the lexicon survive into the sanitized query. The raw submitted D1/D2
+  query is never stored or sent (hash only); the sanitized query is used only after
+  firewall screening + human approval and **may still contain undetected confidential
+  terms**. D2 live-provider execution therefore remains **default-off** and requires
+  explicit governance approval and reviewer diligence
+  (see [Search_Query_Firewall.md](../security/Search_Query_Firewall.md)).
 - **No guarantee of factual correctness without human review.** Generated drafts are
   advisory; every claim requires human verification.
 - **Deterministic evidence sufficiency is conservative and heuristic.** The M9K sufficiency

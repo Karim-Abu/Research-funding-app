@@ -258,3 +258,38 @@ readiness is High.
 - **Can wait post-beta:** F2 doc clarification can ship with/before the evaluation; F4
   (migration-head pinning), F5 (verify_all summary aliasing), F6 (report wording +
   dataset-id label) are post-beta hygiene.
+
+---
+
+## M10.1 remediation status (added 2026-07-02)
+
+The two evaluation-gating findings were remediated in **Milestone 10.1** (see
+[Milestone_10_1_Audit_Remediation_Report.md](../milestones/Milestone_10_1_Audit_Remediation_Report.md)):
+
+- **F1 — remediated.** New smoke
+  `test_m10_smoke.py::test_no_raw_d2_query_reaches_research_task_or_provider_payload`
+  proves the sanitized-**approval** path (preview → human approval → task → fake provider):
+  `ResearchTask.query_text` equals the approved sanitized query, the fake provider received
+  exactly that query (spy provider — the test fails if the raw query were ever sent), and
+  the submitted raw markers reach no persistence surface. `test_no_raw_log` now covers the
+  deterministic **block path** and additionally checks `ResearchTask.query_text`. Notably,
+  extending the checked surfaces confirmed F2 in practice: out-of-lexicon tokens in a raw
+  query survive sanitization by design, which is why the two paths are tested separately
+  and honestly.
+- **F3 — remediated (Option A).** A stale reliability summary now yields a run-level
+  `reliability_stale` approval-blocking reason (`reliability/approval.py::
+  reliability_blocker_reasons`) and a visible run-level blocker ReviewFinding in the normal
+  `ReviewPackage.findings` (`sync_stale_finding`, synced by `refresh_package` and resolved
+  by a fresh pass). The Review Center shows "Qualitätsprüfung veraltet — bitte erneut
+  ausführen." Regression tests:
+  `test_review_approval.py::test_stale_reliability_blocks_approval_or_requires_fresh_pass`,
+  vitest `live-review.test.tsx`, Playwright `e2e/reliability-stale.spec.ts`. No finalized
+  contract changed (ReviewFinding-based surfacing; no new ReviewPackage field).
+- **F2 — clarified.** Precise limits documented in `docs/security/Search_Query_Firewall.md`
+  ("Limits of deterministic sanitization"), `docs/evaluation/Known_Limitations.md` and
+  `docs/evaluation/Provider_Mode_Matrix.md`; the M10 report's no-raw-log wording was
+  corrected (F6).
+- F4/F5 remain open post-beta hygiene items.
+
+**Post-remediation recommendation:** with F1 + F3 fixed and verified, the supervised user
+evaluation can start (still supervised beta; still not production).

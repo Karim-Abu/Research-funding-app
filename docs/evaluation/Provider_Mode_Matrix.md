@@ -17,3 +17,9 @@ architecture, not deployed**; no production Azure compliance is claimed.
   implied by `AGENT_FAKE_PROVIDER`.
 - D3 (NDA) and UNKNOWN are blocked from all external tools in every mode.
 - No provider vector stores are used for confidential data in any mode.
+- **D1/D2 web research (modes 2/4):** the raw submitted query is never stored or sent (hash
+  only); the provider receives the firewall-**sanitized**, human-approved query. Deterministic
+  sanitization is **risk reduction, not a secrecy guarantee** — undetected confidential terms
+  can survive into the sanitized query. `D2_WEB_RESEARCH_ENABLED` therefore stays default-off;
+  enabling live D2 research requires explicit governance approval and reviewer diligence
+  (see [Search_Query_Firewall.md](../security/Search_Query_Firewall.md)).

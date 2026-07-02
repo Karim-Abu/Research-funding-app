@@ -101,6 +101,63 @@ describe("LiveReview", () => {
     )
   })
 
+  it("shows the stale-reliability banner and blocks approval (M10.1, F3)", async () => {
+    server.use(
+      http.get("/api/runs/r1/review", () =>
+        HttpResponse.json(
+          pkg({
+            blocker_count: 1,
+            findings: [
+              {
+                finding_id: "rel-stale", profile_id: "M9K.reliability_assurance",
+                field_id: null, requirement_id: null,
+                severity: "blocker",
+                description:
+                  "Qualitätsprüfung veraltet: der Entwurf wurde nach dem letzten " +
+                  "Reliability-Lauf geändert.",
+                suggested_improvement: null, status: "open", advisory: false,
+              },
+            ],
+          })
+        )
+      )
+    )
+    render(<LiveReview runId="r1" />)
+    const banner = await screen.findByTestId("reliability-stale-banner")
+    expect(banner).toHaveTextContent(
+      "Qualitätsprüfung veraltet — bitte erneut ausführen."
+    )
+    expect(screen.getByRole("button", { name: /Review freigeben/ })).toBeDisabled()
+  })
+
+  it("shows no stale-reliability banner for claim-bound reliability findings", async () => {
+    server.use(
+      http.get("/api/runs/r1/review", () =>
+        HttpResponse.json(
+          pkg({
+            blocker_count: 1,
+            findings: [
+              {
+                finding_id: "rel-claim", profile_id: "M9K.reliability_assurance",
+                field_id: "SOL.INNOVATION_SOLUTION.EDITOR", requirement_id: null,
+                severity: "blocker",
+                description: "Nicht belegte Aussage: bitte belegen oder abschwächen.",
+                suggested_improvement: null, status: "open", advisory: false,
+              },
+            ],
+          })
+        )
+      )
+    )
+    render(<LiveReview runId="r1" />)
+    await waitFor(() =>
+      expect(
+        screen.getAllByText(/Nicht belegte Aussage/).length
+      ).toBeGreaterThan(0)
+    )
+    expect(screen.queryByTestId("reliability-stale-banner")).toBeNull()
+  })
+
   it("groups A3 findings under KI-gestützte Hinweise, blocks approval, hides provider", async () => {
     server.use(
       http.get("/api/runs/r1/review", () =>

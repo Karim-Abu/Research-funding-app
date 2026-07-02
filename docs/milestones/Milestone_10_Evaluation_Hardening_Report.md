@@ -79,9 +79,14 @@ reliability/market/review rows. Details:
   downloadable, non-empty; technical-evidence JSON carries the reliability `quality_summary`
   and contains **no** `claim_text` / raw prompts / provider payloads / raw queries / secrets.
 - **No-raw-log smoke** (`test_no_raw_log`) — synthetic markers (partner, codename, budget, raw
-  D2 query, secret token) carried through the D2 firewall path never appear in
-  `AuditEvent`/`ControlResult`/`ToolInvocation`/`UsageRecord`/logs/export; only hashes + the
-  sanitized query remain. `RedactingFilter` scrubs query markers from logs.
+  D2 query, secret token) carried through the D2 firewall **block path** never appear in
+  `AuditEvent`/`ControlResult`/`ToolInvocation`/`UsageRecord`/`ResearchTask.query_text`/logs;
+  only hashes remain. `RedactingFilter` scrubs query markers from logs.
+  *(Corrected in M10.1, audit F1/F6: the original wording claimed provider-payload coverage
+  this test did not provide. The sanitized-**approval** path — including
+  `ResearchTask.query_text` and the fake provider's received request — is proven since M10.1
+  by `test_no_raw_d2_query_reaches_research_task_or_provider_payload`; see
+  [Milestone_10_1_Audit_Remediation_Report.md](Milestone_10_1_Audit_Remediation_Report.md).)*
 
 ## Provider mode matrix
 [docs/evaluation/Provider_Mode_Matrix.md](../evaluation/Provider_Mode_Matrix.md): deterministic

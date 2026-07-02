@@ -245,8 +245,12 @@ def test_changed_draft_marks_summary_stale(db):
     draft.current_version_id = new_v
     db.commit()
     assert rapproval.is_stale(db, run)
-    # A stale summary's blockers must not govern approval.
-    assert rapproval.reliability_blocker_reasons(db, run) == []
+    # A stale summary's claim-bound blockers must not govern approval (corr 3/13); since
+    # M10.1 (F3) the staleness itself yields a single run-level reason instead, so approval
+    # requires a fresh pass.
+    reasons = rapproval.reliability_blocker_reasons(db, run)
+    assert not any(r.startswith("reliability_blocker:") for r in reasons)
+    assert reasons == [f"reliability_stale:{run.run_id}"]
 
 
 # --- scope-bound approval blocking ----------------------------------------

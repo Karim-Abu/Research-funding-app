@@ -13,7 +13,9 @@ intended_tool, purpose=None, source_context_ids=None) -> FirewallResult` with:
 
 - `raw_query_hash` — SHA256 of the normalized query (NFKC + casefold + whitespace
   collapse). Correlates preview ↔ create without persisting the raw text.
-- `sanitized_query` — public-safe query (sensitive spans removed/generalized).
+- `sanitized_query` — the query with all **detected** sensitive spans removed/generalized.
+  Sanitization is **risk reduction, not a secrecy guarantee** — see
+  [Limits of deterministic sanitization](#limits-of-deterministic-sanitization-m101-audit-f2).
 - `redaction_summary` — `[{category, label, count}]`, **category metadata only, never raw
   values**.
 - `risk_score` (0–10) → mapped to a coarse `low|medium|high` label for the UI.
@@ -73,11 +75,33 @@ Properties: **single-use**; **changing the query** (different hash) → `expired
 rejected/expired/used → refused; every decision writes a metadata-only `CTRL.QUERY_FIREWALL`
 ControlResult + AuditEvent; all rows are **workspace-scoped** (cross-workspace → 403/404).
 
+## Limits of deterministic sanitization (M10.1, audit F2)
+
+The firewall is deterministic and local — it removes what it can **detect**: the
+project-specific lexicon (title, partner names, representatives, aliases, budget) plus the
+generic patterns (e-mail, phone, currency, NDA markers, keyword dictionary). It **cannot**
+detect arbitrary confidential content that is not in the lexicon or matched by a pattern:
+internal codenames, product names, secret-like tokens, or short technical IP terms survive
+into the `sanitized_query`, which is stored in `ResearchTask.query_text` and — for D2 with
+live research enabled — sent to the provider. The precise guarantee is therefore:
+
+1. The **raw submitted D1/D2 query is not stored and not sent** — it is hashed and discarded.
+2. External calls use the `sanitized_query` only after firewall screening **plus** single-use
+   human approval of the visible sanitized text.
+3. The `sanitized_query` **may still contain undetected confidential terms** — deterministic
+   sanitization reduces risk; it does not guarantee complete secrecy.
+4. **D2 live-provider execution therefore remains default-off**; enabling it requires
+   explicit governance approval and reviewer diligence on every approved query.
+
+The human approving the sanitized query is a load-bearing control, not a formality.
+
 ## D2 live-provider flag
 
 `D2_WEB_RESEARCH_ENABLED` (default `false`): even an approved sanitized D2/D1 query reaches
 a **live** Firecrawl only when this flag is on. Otherwise the fake provider is used
 (dev/test) or the executor blocks with `d2_live_web_research_disabled`. D0 is unaffected.
+Enabling this flag for productive confidential use requires explicit governance approval
+(see the limits section above).
 
 ## UI
 

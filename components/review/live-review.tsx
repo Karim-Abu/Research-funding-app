@@ -41,6 +41,7 @@ import {
   classifyFinding,
   aiFindings,
   deterministicFindings,
+  reliabilityStaleFinding,
   AI_FINDINGS_LABEL,
   AI_FINDINGS_DESCRIPTION,
   type DedupedFinding,
@@ -141,6 +142,7 @@ export function LiveReview({ runId }: { runId: string }) {
 
   const reasons = disabledReasons(pkg)
   const approvable = reasons.length === 0 && pkg.approval_status !== "approved"
+  const staleReliability = reliabilityStaleFinding(pkg)
   const summary = summarizeReview(pkg)
   const breakdown = blockerBreakdown(pkg)
   const hasBlockers = breakdown.blocker > 0
@@ -186,6 +188,17 @@ export function LiveReview({ runId }: { runId: string }) {
         >
           Es liegen ungeprüfte Änderungen vor. Bitte führen Sie eine erneute
           Prüfung durch, bevor Sie freigeben.
+        </p>
+      )}
+      {staleReliability && (
+        <p
+          role="status"
+          data-testid="reliability-stale-banner"
+          className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-sm text-amber-900"
+        >
+          Qualitätsprüfung veraltet — bitte erneut ausführen. Der Entwurf wurde
+          seit der letzten Zuverlässigkeitsprüfung geändert; vor einer Freigabe
+          ist eine neue Zuverlässigkeitsprüfung nötig.
         </p>
       )}
       {notice && (

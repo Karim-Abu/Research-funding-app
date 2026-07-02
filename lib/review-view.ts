@@ -35,6 +35,27 @@ export function isAiFinding(finding: ReviewFindingDto): boolean {
   return (finding.profile_id ?? "").startsWith("A3.")
 }
 
+// ---------------------------------------------------------------------------
+// Reliability staleness (M10.1, audit F3). The backend surfaces a stale
+// reliability pass as a run-level M9K blocker finding; claim-bound reliability
+// findings always carry a field_id, so profile + missing field identifies it.
+// ---------------------------------------------------------------------------
+export const RELIABILITY_PROFILE_ID = "M9K.reliability_assurance"
+
+export function reliabilityStaleFinding(
+  pkg: ReviewPackageDto
+): ReviewFindingDto | null {
+  return (
+    pkg.findings.find(
+      (f) =>
+        f.profile_id === RELIABILITY_PROFILE_ID &&
+        !f.field_id &&
+        f.status === "open" &&
+        f.severity === "blocker"
+    ) ?? null
+  )
+}
+
 /** The advisory KI findings in a package, in their existing order. */
 export function aiFindings(pkg: ReviewPackageDto): ReviewFindingDto[] {
   return pkg.findings.filter(isAiFinding)

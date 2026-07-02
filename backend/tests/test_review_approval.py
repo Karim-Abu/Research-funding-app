@@ -128,3 +128,63 @@ def test_run_scope_blocked_by_missing_partner(client):
     res = approve(client, csrf, run_id, scope="run", scope_id=run_id)
     assert res.status_code == 409
     assert "blocker_issue" in res.json()["detail"]
+
+
+def _wait_op(client, op_id: str) -> str:
+    for _ in range(60):
+        status = client.get(f"/api/v1/operations/{op_id}").json()["status"]
+        if status in ("succeeded", "failed", "cancelled"):
+            return status
+    return "timeout"
+
+
+_RELIABILITY_PROFILE = "M9K.reliability_assurance"
+
+
+def test_stale_reliability_blocks_approval_or_requires_fresh_pass(client):
+    """M10.1 (F3): once a reliability pass has run, a draft edit makes its summary stale;
+    approval must then be blocked — visibly, via a run-level blocker finding in the normal
+    ReviewPackage — until a fresh pass runs. A fresh pass resolves the stale state and
+    approval again follows the current findings."""
+    csrf, _pid, run_id = setup_completed_run(client)
+    clean_field(client, csrf, run_id, ABSTRACT,
+                "Wir sind der weltweit erste Anbieter im Markt der Kunden.")
+    assert run_recheck(client, csrf, run_id).status_code == 202
+
+    # Reliability pass on the current draft → claim-bound blocker exists, nothing stale.
+    rel = client.post(f"/api/v1/runs/{run_id}/reliability", headers=mut(csrf))
+    assert rel.status_code == 202, rel.text
+    assert _wait_op(client, rel.json()["operation_id"]) == "succeeded"
+    pkg = get_review(client, run_id)
+    m9k = [f for f in pkg["findings"] if f["profile_id"] == _RELIABILITY_PROFILE]
+    assert any(f["severity"] == "blocker" and f["field_id"] for f in m9k)
+    assert not any(f["field_id"] is None for f in m9k)  # no stale finding yet
+
+    # Edit the draft → summary stale; a deterministic recheck does NOT re-run the pass,
+    # so the stale state must surface in the package and block approval.
+    clean_field(client, csrf, run_id, ABSTRACT,
+                "Wir sind der weltweit erste Anbieter im Markt der neuen Kunden.")
+    assert run_recheck(client, csrf, run_id).status_code == 202
+    pkg = get_review(client, run_id)
+    stale = [f for f in pkg["findings"]
+             if f["profile_id"] == _RELIABILITY_PROFILE and f["field_id"] is None]
+    assert len(stale) == 1
+    assert stale[0]["severity"] == "blocker" and stale[0]["status"] == "open"
+    assert pkg["approval_status"] == "blocked"
+
+    res = approve(client, csrf, run_id, scope="run", scope_id=run_id)
+    assert res.status_code == 409
+    assert res.json()["code"] == "approval_blocked"
+    assert "reliability_stale" in res.json()["detail"]
+
+    # A fresh pass resolves the stale finding; approval follows current findings again.
+    rel = client.post(f"/api/v1/runs/{run_id}/reliability", headers=mut(csrf))
+    assert _wait_op(client, rel.json()["operation_id"]) == "succeeded"
+    pkg = get_review(client, run_id)
+    assert not any(f["profile_id"] == _RELIABILITY_PROFILE and f["field_id"] is None
+                   for f in pkg["findings"])
+    res = approve(client, csrf, run_id, scope="run", scope_id=run_id)
+    assert res.status_code == 409  # still blocked — by current findings, not staleness
+    detail = res.json()["detail"]
+    assert "reliability_stale" not in detail
+    assert "reliability_blocker:" in detail

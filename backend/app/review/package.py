@@ -273,8 +273,9 @@ RELIABILITY = "M9K.reliability_assurance"
 
 
 def _reliability_blocks(db: Session, run: AnalysisRun) -> bool:
-    """Scope-bound reliability blocker (Milestone 9K). Lazy import avoids a cycle; only
-    counts M9K blockers whose claim belongs to the current non-stale RunQualitySummary."""
+    """Reliability blocker (Milestone 9K / M10.1). Lazy import avoids a cycle; counts M9K
+    blockers whose claim belongs to the current non-stale RunQualitySummary, plus the
+    run-level reliability_stale reason when a pass ran but the draft changed since (F3)."""
     from app.reliability import approval as reliability_approval
 
     return reliability_approval.has_reliability_blocker(db, run)
@@ -385,6 +386,11 @@ def refresh_package(
         apply_findings(db, run)
     if clear_recheck:
         run.recheck_required = False
+    # M10.1 (F3): materialize/resolve the run-level reliability-stale blocker finding so a
+    # changed draft is visible in the package and requires a fresh pass before approval.
+    from app.reliability import approval as reliability_approval
+
+    reliability_approval.sync_stale_finding(db, run)
     scope_hash = compute_scope_hash(db, run)
     version = package_version(scope_hash)
     blocker, warning, stale = counts(db, run)

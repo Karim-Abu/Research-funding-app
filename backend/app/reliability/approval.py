@@ -1,12 +1,15 @@
-"""Scope-bound reliability approval gating (Milestone 9K, corr 3/13).
+"""Scope-bound reliability approval gating (Milestone 9K, corr 3/13; M10.1 F3).
 
-A reliability blocker governs approval **only** when its target claim belongs to the
-current, non-stale RunQualitySummary (i.e. the draft has not changed since the pass). A
-stale summary contributes a non-blocking ``reliability_stale`` note instead, and a run that
-never ran a reliability pass is unaffected. Imported by the review layer via lazy imports to
-avoid an import cycle.
+A reliability blocker's *claim-bound* reason governs approval **only** when its target claim
+belongs to the current, non-stale RunQualitySummary (i.e. the draft has not changed since
+the pass). Since M10.1 a stale summary additionally yields a run-level ``reliability_stale``
+blocking reason and a visible run-level ReviewFinding: once a pass has run, a changed draft
+requires a fresh pass before approval. A run that never ran a reliability pass is
+unaffected. Imported by the review layer via lazy imports to avoid an import cycle.
 """
 from __future__ import annotations
+
+import uuid
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -14,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.db.models import AnalysisRun, DraftClaim, ReviewFinding, RunQualitySummary
 from app.reliability import RELIABILITY_PROFILE_ID
 from app.reliability.scope import compute_reliability_scope_hash
+from app.repositories import audit
 
 
 def latest_summary(db: Session, run: AnalysisRun) -> RunQualitySummary | None:
@@ -44,11 +48,15 @@ def reliability_blocker_reasons(
     db: Session, run: AnalysisRun, field_ids: set[str] | None = None
 ) -> list[str]:
     """Approval-blocking reasons from OPEN reliability blocker findings whose target claim
-    belongs to the current non-stale summary (corr 13). Empty when no current summary."""
+    belongs to the current non-stale summary (corr 13), plus — M10.1 (F3) — a run-level
+    ``reliability_stale`` reason whenever a pass ran but its summary no longer reflects the
+    current inputs. The stale reason applies to run AND field approvals (fail closed)."""
+    reasons: list[str] = []
+    if is_stale(db, run):
+        reasons.append(f"reliability_stale:{run.run_id}")
     summary = current_summary(db, run)
     if summary is None:
-        return []
-    reasons: list[str] = []
+        return reasons
     findings = db.scalars(
         select(ReviewFinding).where(
             ReviewFinding.run_id == run.run_id,
@@ -71,3 +79,66 @@ def reliability_blocker_reasons(
 
 def has_reliability_blocker(db: Session, run: AnalysisRun) -> bool:
     return bool(reliability_blocker_reasons(db, run))
+
+
+def stale_finding_code(run: AnalysisRun) -> str:
+    return f"reliability:stale:{run.run_id}"
+
+
+def sync_stale_finding(db: Session, run: AnalysisRun) -> None:
+    """Idempotently surface staleness as a run-level blocker ReviewFinding (M10.1, F3) so it
+    is visible in the normal ReviewPackage. Open while ``is_stale``; resolved (never
+    deleted) once a fresh pass makes the summary current again. Run-level identity:
+    profile=M9K + ``field_id=None`` + ``target_type="run"`` — claim-bound gate findings
+    always carry a field_id, so the review UI can distinguish them without new contract
+    fields. Caller owns commit."""
+    # SessionLocal runs with autoflush=False: a summary the caller just built (fresh pass)
+    # must be flushed to be visible to the staleness check, or it would be re-opened here.
+    db.flush()
+    code = stale_finding_code(run)
+    row = db.scalar(
+        select(ReviewFinding).where(
+            ReviewFinding.run_id == run.run_id,
+            ReviewFinding.source == "agent",
+            ReviewFinding.profile_id == RELIABILITY_PROFILE_ID,
+            ReviewFinding.finding_code == code,
+        )
+    )
+    if is_stale(db, run):
+        if row is None:
+            row = ReviewFinding(
+                finding_id=str(uuid.uuid4()), run_id=run.run_id,
+                workspace_id=run.workspace_id, profile_id=RELIABILITY_PROFILE_ID,
+                field_id=None, requirement_id=None, severity="blocker",
+                description=(
+                    "Qualitätsprüfung veraltet: der Entwurf wurde nach dem letzten "
+                    "Reliability-Lauf geändert. Bitte die Reliability-Prüfung erneut "
+                    "ausführen, bevor freigegeben wird."
+                ),
+                suggested_improvement=None, status="open", advisory=False,
+                source="agent", finding_code=code,
+                target_type="run", target_id=run.run_id,
+                recommended_next_action=None,
+            )
+            db.add(row)
+            audit.record(
+                db, workspace_id=run.workspace_id, actor_user_id=None,
+                action="reliability.finding_created", target_type="review_finding",
+                target_id=row.finding_id,
+                detail={"code": code, "severity": "blocker"},
+            )
+        elif row.status != "open":
+            row.status = "open"
+            audit.record(
+                db, workspace_id=run.workspace_id, actor_user_id=None,
+                action="reliability.finding_updated", target_type="review_finding",
+                target_id=row.finding_id, detail={"status": "open"},
+            )
+    elif row is not None and row.status == "open":
+        row.status = "resolved"
+        audit.record(
+            db, workspace_id=run.workspace_id, actor_user_id=None,
+            action="reliability.finding_updated", target_type="review_finding",
+            target_id=row.finding_id, detail={"status": "resolved"},
+        )
+    db.flush()
