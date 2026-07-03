@@ -24,9 +24,13 @@ import {
   type ReviewPackageDto,
   type ReviewFindingDto,
 } from "@/lib/review"
+import { StatusHelp } from "@/components/status/status-help"
 import {
   REVIEW_FALLBACKS,
   HUMAN_IN_THE_LOOP_NOTE,
+  REVIEW_PROGRESS_NOTE,
+  APPROVAL_SCOPE_NOTE,
+  REVIEW_TILE_HELP,
   REVIEW_SEVERITY_LABELS,
   REVIEW_SEVERITY_STYLE,
   GROUP_STATUS_LABELS,
@@ -37,6 +41,7 @@ import {
   fieldLabel,
   dedupeFindings,
   blockerRelevance,
+  groupBlockersByField,
   REVIEW_GROUP_LABELS,
   classifyFinding,
   aiFindings,
@@ -100,7 +105,7 @@ export function LiveReview({ runId }: { runId: string }) {
     setError(null)
     try {
       await createApproval(runId, pkg, "run", runId)
-      setNotice("Review freigegeben.")
+      setNotice("Prüfung abgeschlossen.")
       load()
     } catch (e) {
       setError(e instanceof ReviewError ? e.message : "Freigabe fehlgeschlagen.")
@@ -168,9 +173,11 @@ export function LiveReview({ runId }: { runId: string }) {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
+          {/* Recheck always re-runs the WHOLE quality check — there is no
+              per-finding recheck in the contract. */}
           <Button variant="outline" onClick={recheck} disabled={busy}>
             <RefreshCw data-icon="inline-start" />
-            Erneut prüfen
+            Gesamte Prüfung erneut ausführen
           </Button>
           {!hasBlockers && (
             <Button render={<a href="/export" />} nativeButton={false}>
@@ -251,16 +258,9 @@ export function LiveReview({ runId }: { runId: string }) {
         </div>
       </section>
 
-      {/* Blocker cards */}
+      {/* Blocker cards — grouped by portal field, top 3 groups first */}
       {blockerFindings.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-foreground">Blocker</h2>
-          <div className="flex flex-col gap-3">
-            {blockerFindings.map((f) => (
-              <BlockerCard key={f.finding_id} finding={f} onRecheck={recheck} />
-            ))}
-          </div>
-        </section>
+        <BlockerSection blockerFindings={blockerFindings} />
       )}
 
       {/* Deduplicated hints */}
@@ -350,11 +350,15 @@ function NextStepsCard({
   for (const group of groups) {
     if (steps.length >= 3) break
     if (group.status !== "nicht_bestanden") continue
+    const firstField = group.findings.find((f) => f.field_id)?.field_id
+    const editorHref = firstField
+      ? `/editor?field=${encodeURIComponent(firstField)}`
+      : "/editor"
     steps.push({
       key: group.key,
       text: `${group.label}: ${group.findings.length} Punkt(e) klären.`,
       action: (
-        <Button size="xs" variant="outline" render={<a href="/editor" />} nativeButton={false}>
+        <Button size="xs" variant="outline" render={<a href={editorHref} />} nativeButton={false}>
           Im Entwurf öffnen
         </Button>
       ),
@@ -369,7 +373,7 @@ function NextStepsCard({
       <h2 className="text-sm font-semibold text-foreground">Nächste Schritte</h2>
       {steps.length === 0 ? (
         <p className="text-sm text-muted-foreground">
-          Keine offenen Schritte — prüfen Sie den Entwurf final und geben Sie das Review frei.
+          Keine offenen Schritte — prüfen Sie den Entwurf final und schliessen Sie die Prüfung ab.
         </p>
       ) : (
         <ol className="flex flex-col gap-1.5">
@@ -394,36 +398,44 @@ function ReviewSummaryBar({
 }: {
   summary: ReturnType<typeof summarizeReview>
 }) {
-  const tiles: { label: string; value: number; accent?: string }[] = [
-    { label: "Bestanden", value: summary.bestanden, accent: "text-status-fulfilled" },
-    { label: "Teilweise", value: summary.teilweise, accent: "text-status-partial" },
+  const tiles: { label: string; value: number; help: string; accent?: string }[] = [
+    { label: "Bestanden", value: summary.bestanden, help: REVIEW_TILE_HELP.bestanden, accent: "text-status-fulfilled" },
+    { label: "Teilweise bestanden", value: summary.teilweise, help: REVIEW_TILE_HELP.teilweise, accent: "text-status-partial" },
     {
       label: "Nicht bestanden",
       value: summary.nichtBestanden,
+      help: REVIEW_TILE_HELP.nichtBestanden,
       accent: summary.nichtBestanden > 0 ? "text-destructive" : undefined,
     },
     {
       label: "Blocker",
       value: summary.blocker,
+      help: REVIEW_TILE_HELP.blocker,
       accent: summary.blocker > 0 ? "text-destructive" : undefined,
     },
-    { label: "Hinweise", value: summary.hinweise },
-    { label: "Prüfung nötig", value: summary.pruefungNoetig, accent: summary.pruefungNoetig > 0 ? "text-status-partial" : undefined },
+    { label: "Hinweise", value: summary.hinweise, help: REVIEW_TILE_HELP.hinweise },
+    { label: "Prüfung nötig", value: summary.pruefungNoetig, help: REVIEW_TILE_HELP.pruefungNoetig, accent: summary.pruefungNoetig > 0 ? "text-status-partial" : undefined },
   ]
   return (
-    <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-      {tiles.map((t) => (
-        <div
-          key={t.label}
-          className="flex flex-col gap-0.5 rounded-lg border border-border bg-card px-3 py-2.5"
-        >
-          <dd className={cn("text-lg font-semibold leading-none text-foreground", t.accent)}>
-            {t.value}
-          </dd>
-          <dt className="text-[11px] leading-tight text-muted-foreground">{t.label}</dt>
-        </div>
-      ))}
-    </dl>
+    <div className="flex flex-col gap-1.5">
+      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+        {tiles.map((t) => (
+          <div
+            key={t.label}
+            className="flex flex-col gap-0.5 rounded-lg border border-border bg-card px-3 py-2.5"
+          >
+            <dd className={cn("text-lg font-semibold leading-none text-foreground", t.accent)}>
+              {t.value}
+            </dd>
+            <dt className="flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
+              <span className="min-w-0">{t.label}</span>
+              <StatusHelp label={t.label} text={t.help} />
+            </dt>
+          </div>
+        ))}
+      </dl>
+      <p className="text-xs text-muted-foreground">{REVIEW_PROGRESS_NOTE}</p>
+    </div>
   )
 }
 
@@ -507,9 +519,11 @@ function ApprovalPanel({
         {/* Human-controlled approval — never auto-approves. */}
         <Button size="sm" onClick={onApprove} disabled={busy || !approvable}>
           <CheckCircle2 data-icon="inline-start" />
-          Review freigeben
+          Prüfung abschliessen
         </Button>
       </div>
+
+      <p className="text-xs text-muted-foreground">{APPROVAL_SCOPE_NOTE}</p>
 
       {!approvable && !approved && reasons.length > 0 && (
         <ul className="text-xs text-muted-foreground">
@@ -531,6 +545,37 @@ function GroupAccordion({
   group: ReturnType<typeof groupFindings>[number]
 }) {
   const [open, setOpen] = React.useState(group.status !== "bestanden")
+
+  // Passed groups without findings have no details — render a static row
+  // instead of an expandable accordion that would open empty.
+  if (group.findings.length === 0) {
+    return (
+      <section className="overflow-hidden rounded-lg border border-border bg-card">
+        <div className="flex w-full items-center gap-3 px-4 py-3">
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
+              GROUP_STATUS_STYLE[group.status]
+            )}
+          >
+            {GROUP_STATUS_LABELS[group.status]}
+          </span>
+          <span className="min-w-0 flex-1">
+            <span className="block text-sm font-medium text-foreground">
+              {group.label}
+            </span>
+            <span className="block truncate text-xs text-muted-foreground">
+              {group.description}
+            </span>
+          </span>
+          <span className="shrink-0 text-xs text-muted-foreground">
+            Keine offenen Befunde in dieser Prüfung.
+          </span>
+        </div>
+      </section>
+    )
+  }
+
   return (
     <section className="overflow-hidden rounded-lg border border-border bg-card">
       <button
@@ -561,9 +606,7 @@ function GroupAccordion({
           </span>
         </span>
         <span className="shrink-0 text-xs text-muted-foreground">
-          {group.findings.length === 0
-            ? "Keine Befunde"
-            : `${group.findings.length} Befund(e)`}
+          {`${group.findings.length} Befund(e)`}
         </span>
       </button>
       {open && group.findings.length > 0 && (
@@ -598,17 +641,54 @@ function GroupAccordion({
 }
 
 // ---------------------------------------------------------------------------
+// Blocker section — grouped by portal field, top 3 groups first, rest behind
+// a collapsible toggle so long lists stay scannable.
+// ---------------------------------------------------------------------------
+function BlockerSection({ blockerFindings }: { blockerFindings: ReviewFindingDto[] }) {
+  const [showAll, setShowAll] = React.useState(false)
+  const groups = groupBlockersByField(blockerFindings)
+  const visible = showAll ? groups : groups.slice(0, 3)
+  const hidden = groups.length - visible.length
+  const hiddenCount = groups
+    .slice(3)
+    .reduce((sum, g) => sum + g.findings.length, 0)
+
+  return (
+    <section className="flex flex-col gap-3">
+      <h2 className="text-sm font-semibold text-foreground">
+        Blocker ({blockerFindings.length})
+      </h2>
+      <div className="flex flex-col gap-4">
+        {visible.map((group) => (
+          <div key={group.label} className="flex flex-col gap-2">
+            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              {group.label} · {group.findings.length} Blocker
+            </h3>
+            {group.findings.map((f) => (
+              <BlockerCard key={f.finding_id} finding={f} />
+            ))}
+          </div>
+        ))}
+      </div>
+      {hidden > 0 && !showAll && (
+        <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
+          {hiddenCount} weitere Blocker in {hidden}{" "}
+          {hidden === 1 ? "Feld" : "Feldern"} anzeigen
+        </Button>
+      )}
+    </section>
+  )
+}
+
+// ---------------------------------------------------------------------------
 // Blocker card
 // ---------------------------------------------------------------------------
-function BlockerCard({
-  finding,
-  onRecheck,
-}: {
-  finding: ReviewFindingDto
-  onRecheck: () => void
-}) {
+function BlockerCard({ finding }: { finding: ReviewFindingDto }) {
   const group = classifyFinding(finding)
   const isEvidence = group === "belege"
+  const editorHref = finding.field_id
+    ? `/editor?field=${encodeURIComponent(finding.field_id)}`
+    : "/editor"
   return (
     <article
       id={`blocker-${finding.finding_id}`}
@@ -639,12 +719,23 @@ function BlockerCard({
         <dd className="text-foreground">{blockerRelevance(finding)}</dd>
       </dl>
 
+      {/* One primary correction path; no per-finding recheck (the contract
+          only supports re-running the whole check). */}
       <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Button variant="outline" size="xs" render={<a href="/editor" />} nativeButton={false}>
+        <Button variant="outline" size="xs" render={<a href={editorHref} />} nativeButton={false}>
           Im Entwurf öffnen
         </Button>
         {finding.requirement_id && (
-          <Button variant="ghost" size="xs" render={<a href="/anforderungen" />} nativeButton={false}>
+          <Button
+            variant="ghost"
+            size="xs"
+            render={
+              <a
+                href={`/anforderungen?requirement=${encodeURIComponent(finding.requirement_id)}`}
+              />
+            }
+            nativeButton={false}
+          >
             In Anforderungen öffnen
           </Button>
         )}
@@ -653,9 +744,6 @@ function BlockerCard({
             Evidenz prüfen
           </Button>
         )}
-        <Button variant="ghost" size="xs" onClick={onRecheck}>
-          Erneut prüfen
-        </Button>
       </div>
     </article>
   )
@@ -687,6 +775,19 @@ function AiFindingCard({ finding }: { finding: ReviewFindingDto }) {
 
 function DedupedHint({ hint }: { hint: DedupedFinding }) {
   const [open, setOpen] = React.useState(false)
+  const group = classifyFinding(hint.findings[0])
+  const firstWithField = hint.findings.find((f) => f.field_id)
+  // Every hint gets at least one sensible action (M10.2 / E13).
+  const action =
+    group === "belege"
+      ? { label: "Belege prüfen", href: "/quellen?tab=evidenz" }
+      : firstWithField
+        ? {
+            label: "Im Entwurf öffnen",
+            href: `/editor?field=${encodeURIComponent(firstWithField.field_id!)}`,
+          }
+        : { label: "Im Entwurf öffnen", href: "/editor" }
+
   return (
     <div className="rounded-md border border-border bg-card px-4 py-2.5">
       <div className="flex items-start justify-between gap-3">
@@ -703,14 +804,45 @@ function DedupedHint({ hint }: { hint: DedupedFinding }) {
             aria-expanded={open}
             className="shrink-0 text-xs font-medium text-primary hover:underline"
           >
-            Details anzeigen
+            Betroffene Felder anzeigen ({hint.count})
           </button>
         )}
       </div>
+      <div className="mt-1.5">
+        <Button variant="ghost" size="xs" render={<a href={action.href} />} nativeButton={false}>
+          {action.label}
+        </Button>
+      </div>
       {open && hint.count > 1 && (
         <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-xs text-muted-foreground">
-          {hint.findings.map((f) => (
-            <li key={f.finding_id}>• {fieldLabel(f.field_id)}</li>
+          {/* Same field (or "no field") listed once with a count — no
+              repeated identical lines without added value. */}
+          {[...hint.findings
+            .reduce((map, f) => {
+              const label = fieldLabel(f.field_id)
+              const entry = map.get(label) ?? {
+                label,
+                fieldId: f.field_id ?? null,
+                count: 0,
+              }
+              entry.count += 1
+              return map.set(label, entry)
+            }, new Map<string, { label: string; fieldId: string | null; count: number }>())
+            .values()].map((entry) => (
+            <li key={entry.label} className="flex items-center gap-2">
+              <span>
+                • {entry.label}
+                {entry.count > 1 ? ` (${entry.count} ×)` : ""}
+              </span>
+              {entry.fieldId && (
+                <a
+                  href={`/editor?field=${encodeURIComponent(entry.fieldId)}`}
+                  className="text-primary underline-offset-2 hover:underline"
+                >
+                  Im Entwurf öffnen
+                </a>
+              )}
+            </li>
           ))}
         </ul>
       )}

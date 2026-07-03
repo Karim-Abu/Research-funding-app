@@ -153,3 +153,83 @@
     @apply font-sans;
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * Rich-text editor content (Entwurf). Scoped strictly under .rf-rich-editor so
+ * Tailwind preflight resets don't flatten headings/lists inside the Tiptap
+ * contenteditable, and no other screen is affected.
+ * ------------------------------------------------------------------------- */
+.rf-rich-editor:focus {
+  outline: none;
+}
+.rf-rich-editor p {
+  margin: 0 0 0.75rem;
+}
+.rf-rich-editor h1 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  line-height: 1.25;
+  margin: 0 0 0.5rem;
+}
+.rf-rich-editor h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  line-height: 1.3;
+  margin: 0 0 0.5rem;
+}
+.rf-rich-editor h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  line-height: 1.35;
+  margin: 0 0 0.5rem;
+}
+.rf-rich-editor ul,
+.rf-rich-editor ol {
+  margin: 0 0 0.75rem;
+  padding-left: 1.5rem;
+}
+.rf-rich-editor ul {
+  list-style: disc;
+}
+.rf-rich-editor ol {
+  list-style: decimal;
+}
+.rf-rich-editor li {
+  margin: 0.15rem 0;
+}
+.rf-rich-editor li > p {
+  margin: 0;
+}
+.rf-rich-editor a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.rf-rich-editor blockquote {
+  border-left: 2px solid var(--border);
+  padding-left: 0.75rem;
+  color: var(--muted-foreground);
+  margin: 0 0 0.75rem;
+}
+/* Tiptap Placeholder (empty-state ghost text) */
+.rf-rich-editor p.is-editor-empty:first-child::before {
+  content: attr(data-placeholder);
+  color: var(--muted-foreground);
+  float: left;
+  height: 0;
+  pointer-events: none;
+}
+
+/* Deep-link focus: brief ring fade on the targeted card (Anforderungen,
+   Quellen, Entwurf). Applied transiently via JS, removed after ~2s. */
+@keyframes deeplink-highlight-fade {
+  0% {
+    box-shadow: 0 0 0 3px var(--ring);
+  }
+  100% {
+    box-shadow: 0 0 0 3px transparent;
+  }
+}
+.deeplink-highlight {
+  animation: deeplink-highlight-fade 2s ease-out forwards;
+}

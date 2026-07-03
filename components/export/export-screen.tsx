@@ -560,7 +560,7 @@ export function ExportScreen({
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-blocker" />
               <p className="text-sm text-foreground">
-                {`Export nicht möglich: ${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Punkt" : "Punkte"} offen — im Review entscheiden.`}
+                {`Export nicht möglich: ${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Punkt" : "Punkte"} offen — in der Qualitätsprüfung entscheiden.`}
               </p>
             </div>
           )}

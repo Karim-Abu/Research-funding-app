@@ -3,6 +3,11 @@
 // Market information is always a working hypothesis with an evidence status —
 // never presented as truth.
 
+import type {
+  MarketComparisonDto,
+  MarketComparisonItemDto,
+} from "./market-comparison"
+
 // ---------------------------------------------------------------------------
 // Evidence/market status — distinct from requirement ("Erfüllt") and evidence
 // verification ("Verifiziert") wording.
@@ -110,6 +115,31 @@ export function summarizeMarketReadiness(data: MarketDataset): MarketReadiness {
     sourceCount: competitorSources + diffSources,
     openQuestionCount: data.openQuestions.length,
   }
+}
+
+// ---------------------------------------------------------------------------
+// Live comparison → market status. Pure derivation for the Markt tab header.
+// ---------------------------------------------------------------------------
+export function comparisonToMarketStatus(
+  comparison: MarketComparisonDto | null
+): MarketStatus {
+  if (!comparison || comparison.status === "failed") return "nicht_analysiert"
+  if (comparison.status === "stale") return "veraltet"
+  if (comparison.items.length === 0) return "quelle_fehlt"
+  const backed = comparison.items.filter(
+    (i) => i.confidence_label === "source_backed"
+  ).length
+  if (backed === comparison.items.length) return "belegt"
+  return backed > 0 ? "teilweise_belegt" : "quelle_fehlt"
+}
+
+/**
+ * German sentence for "Als Argument übernehmen" — inserted into the LOCAL
+ * editor buffer only (never auto-saved; the user reviews and saves).
+ */
+export function marketArgumentSentence(item: MarketComparisonItemDto): string {
+  const diff = (item.differentiation_relevance ?? "").trim().replace(/\.?$/, ".")
+  return `Abgrenzung zu ${item.name}: ${diff}`
 }
 
 // ---------------------------------------------------------------------------

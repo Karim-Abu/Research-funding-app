@@ -25,6 +25,11 @@ export interface Source {
   errorHint?: string
   /** Optional short context used in details dialogs. */
   note?: string
+  /**
+   * Datenklasse of the source. Missing/unknown values are always treated as
+   * confidential (never silently imported across projects).
+   */
+  dataClass?: DataClass
 }
 
 export const dummySources: Source[] = [
@@ -92,6 +97,7 @@ export const importableSourceProjects: ImportableSourceProject[] = [
         status: "processed",
         addedBy: "Anna Keller",
         addedAt: "12.06.2026",
+        dataClass: "internal",
       },
       {
         id: "mat-src-2",
@@ -100,6 +106,7 @@ export const importableSourceProjects: ImportableSourceProject[] = [
         status: "processed",
         addedBy: "Tobias Frei",
         addedAt: "18.06.2026",
+        dataClass: "confidential",
       },
     ],
   },
@@ -114,6 +121,7 @@ export const importableSourceProjects: ImportableSourceProject[] = [
         status: "processed",
         addedBy: "Mara Stucki",
         addedAt: "05.06.2026",
+        dataClass: "public",
       },
       {
         id: "sen-src-2",
@@ -122,6 +130,7 @@ export const importableSourceProjects: ImportableSourceProject[] = [
         status: "processed",
         addedBy: "Anna Keller",
         addedAt: "09.06.2026",
+        dataClass: "public",
       },
     ],
   },
@@ -130,6 +139,8 @@ export const importableSourceProjects: ImportableSourceProject[] = [
     title: "Digitale Zwillinge in der Medizintechnik",
     sources: [
       {
+        // Deliberately without dataClass — exercises the "unknown is treated
+        // as confidential" import path.
         id: "med-src-1",
         name: "Regulatorische Hinweise MDR.pdf",
         type: "PDF",

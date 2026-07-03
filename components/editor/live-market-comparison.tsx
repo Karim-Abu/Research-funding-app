@@ -1,43 +1,57 @@
 "use client"
 
 // Compact, read-only market-comparison context for the Value Creation editor (M9I-B).
-// Shows source-backed items + open questions from the latest comparison. No actions, no
-// draft mutation, no provider/model/confidence — the full table lives in Quellen.
+// Shows a derived status, source-backed items + open questions from the latest
+// comparison, and offers the wide comparison sheet as the working surface.
+// No draft mutation here, no provider/model/confidence.
 
-import * as React from "react"
 import { Info } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
+import type { MarketComparisonDto } from "@/lib/market-comparison"
 import {
-  getLatestComparison,
-  type MarketComparisonDto,
-} from "@/lib/market-comparison"
+  comparisonToMarketStatus,
+  MARKET_STATUS_LABELS,
+  MARKET_STATUS_STYLE,
+} from "@/lib/market-view"
 
-export function LiveMarketComparison({ projectId }: { projectId: string }) {
-  const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
-  const [loaded, setLoaded] = React.useState(false)
+interface LiveMarketComparisonProps {
+  comparison: MarketComparisonDto | null
+  /** True once the latest-comparison request has settled (data or none). */
+  loaded: boolean
+  /** Opens the wide comparison sheet (table + "Als Argument übernehmen"). */
+  onOpenComparison?: () => void
+}
 
-  React.useEffect(() => {
-    let active = true
-    void getLatestComparison(projectId)
-      .then((c) => {
-        if (active) setComparison(c)
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (active) setLoaded(true)
-      })
-    return () => {
-      active = false
-    }
-  }, [projectId])
-
+export function LiveMarketComparison({
+  comparison,
+  loaded,
+  onOpenComparison,
+}: LiveMarketComparisonProps) {
   if (!loaded) return null
 
+  const status = comparisonToMarketStatus(comparison)
   const sourceBacked =
     comparison?.items.filter((i) => i.confidence_label === "source_backed") ?? []
+  const hasItems = (comparison?.items.length ?? 0) > 0
 
   return (
     <div className="flex flex-col gap-3" data-testid="live-market-comparison">
+      <div className="flex items-center justify-between gap-2">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Markt &amp; Wettbewerb
+        </h4>
+        <span
+          className={cn(
+            "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+            MARKET_STATUS_STYLE[status]
+          )}
+        >
+          {MARKET_STATUS_LABELS[status]}
+        </span>
+      </div>
+
       <p className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-[11px] text-muted-foreground">
         <Info className="mt-0.5 size-3.5 shrink-0" />
         Hinweise aus öffentlichen Quellen — fachlich zu prüfen. Kein automatischer
@@ -88,6 +102,30 @@ export function LiveMarketComparison({ projectId }: { projectId: string }) {
           </ul>
         </div>
       )}
+
+      <div className="flex flex-wrap gap-2 border-t border-border pt-2">
+        <Button
+          size="xs"
+          variant="outline"
+          onClick={onOpenComparison}
+          disabled={!hasItems || !onOpenComparison}
+          title={
+            hasItems
+              ? "Vollständige Vergleichstabelle mit Übernahme-Aktionen"
+              : "Noch kein Marktvergleich mit Einträgen vorhanden — erstellen Sie ihn unter Quellen."
+          }
+        >
+          Marktvergleich öffnen
+        </Button>
+        <Button
+          size="xs"
+          variant="ghost"
+          render={<a href="/quellen" />}
+          nativeButton={false}
+        >
+          Quellen öffnen
+        </Button>
+      </div>
     </div>
   )
 }

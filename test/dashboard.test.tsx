@@ -98,10 +98,12 @@ describe("projects overview", () => {
     )
 
     await screen.findByText(/kreislauffaehiger Verbundwerkstoffe/)
-    expect(screen.getByRole("heading", { name: "Projekte" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("heading", { name: "Projektübersicht" })
+    ).toBeInTheDocument()
     expect(screen.getByText("Aktive Projekte")).toBeInTheDocument()
-    // "Review offen" appears as summary tile AND as filter chip since M10.2.
-    expect(screen.getAllByText("Review offen").length).toBeGreaterThan(0)
+    // "Prüfung offen" appears as summary tile AND as filter chip since M10.2.
+    expect(screen.getAllByText("Prüfung offen").length).toBeGreaterThan(0)
     expect(screen.getByText("Blocker")).toBeInTheDocument()
     expect(screen.getByText("Nächste Frist")).toBeInTheDocument()
     // 2 card badges + 1 filter chip (M10.2).

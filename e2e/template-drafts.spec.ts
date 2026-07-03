@@ -116,12 +116,26 @@ test("M6 template drafts: edit, persist, link, stale, conflict", async ({ page }
   }, projectId)
   await page.goto("/editor")
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({ timeout: 20_000 })
+  // Rich-text toolbar rendered (smoke): the editor is a document, not a form box.
+  await expect(page.getByRole("button", { name: "Fett" })).toBeVisible({ timeout: 20_000 })
+  // The editor is a Tiptap contenteditable — type real keystrokes so ProseMirror
+  // updates its state (fill() can desync a contenteditable).
   const editor = page.getByLabel("Entwurf Application name")
-  await editor.fill("Projekt Müller & Söhne über Förderfähigkeit")
+  await editor.click()
+  await page.keyboard.press("ControlOrMeta+A")
+  await page.keyboard.press("Delete")
+  await editor.pressSequentially("Projekt Müller & Söhne über Förderfähigkeit")
   await page.getByRole("button", { name: "Speichern" }).click()
   await expect(page.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)).toBeVisible({ timeout: 20_000 })
+
+  // Switching fields must not tear down the editor under the toolbar (regression:
+  // "Cannot read properties of null (reading 'can')"). The toolbar must survive.
+  await page.getByRole("button", { name: "Application Name in English" }).click()
+  await expect(page.getByRole("button", { name: "Fett" })).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByText(/Cannot read properties of null/)).toHaveCount(0)
+
   await page.reload()
-  await expect(page.getByLabel("Entwurf Application name")).toHaveValue(
+  await expect(page.getByLabel("Entwurf Application name")).toContainText(
     "Projekt Müller & Söhne über Förderfähigkeit",
     { timeout: 20_000 }
   )

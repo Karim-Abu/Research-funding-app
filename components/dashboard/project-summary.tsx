@@ -21,7 +21,7 @@ export function ProjectSummaryBar({ projects }: ProjectSummaryBarProps) {
   }[] = [
     { label: "Aktive Projekte", value: summary.activeCount, icon: FolderKanban },
     {
-      label: "Review offen",
+      label: "Prüfung offen",
       value: summary.reviewOpenCount,
       icon: ClipboardCheck,
       accent: summary.reviewOpenCount > 0 ? "text-status-partial" : undefined,

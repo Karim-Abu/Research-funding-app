@@ -50,9 +50,21 @@ describe("LiveReview", () => {
     await waitFor(() =>
       expect(screen.getByText("Feld enthält Platzhalter.")).toBeInTheDocument()
     )
-    const approve = screen.getByRole("button", { name: /Review freigeben/ })
+    const approve = screen.getByRole("button", { name: /Prüfung abschliessen/ })
     expect(approve).toBeDisabled()
     expect(screen.getByText(/1 Blocker offen/)).toBeInTheDocument()
+    // The blocker card (and Nächste Schritte) deep-link into the concrete
+    // draft field (?field=…).
+    const editorLinks = screen.getAllByRole("button", { name: "Im Entwurf öffnen" })
+    expect(
+      editorLinks.some(
+        (el) => el.getAttribute("href") === "/editor?field=INTRO.APP.ABSTRACT"
+      )
+    ).toBe(true)
+    // No per-finding recheck — only the whole-run recheck exists.
+    expect(
+      screen.getByRole("button", { name: "Gesamte Prüfung erneut ausführen" })
+    ).toBeInTheDocument()
   })
 
   it("enables approval when clean and shows recheck notice when required", async () => {
@@ -68,7 +80,7 @@ describe("LiveReview", () => {
       ).toBeInTheDocument()
     )
     // recheck_required blocks approval.
-    expect(screen.getByRole("button", { name: /Review freigeben/ })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /Prüfung abschliessen/ })).toBeDisabled()
     expect(screen.getByText(/Erneute Prüfung erforderlich/)).toBeInTheDocument()
   })
 
@@ -93,11 +105,11 @@ describe("LiveReview", () => {
       )
     )
     render(<LiveReview runId="r1" />)
-    const approve = await screen.findByRole("button", { name: /Review freigeben/ })
+    const approve = await screen.findByRole("button", { name: /Prüfung abschliessen/ })
     expect(approve).toBeEnabled()
     fireEvent.click(approve)
     await waitFor(() =>
-      expect(screen.getByText("Review freigegeben.")).toBeInTheDocument()
+      expect(screen.getByText("Prüfung abgeschlossen.")).toBeInTheDocument()
     )
   })
 
@@ -160,7 +172,7 @@ describe("LiveReview", () => {
     expect(banner).toHaveTextContent(
       "Qualitätsprüfung veraltet — bitte erneut ausführen."
     )
-    expect(screen.getByRole("button", { name: /Review freigeben/ })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /Prüfung abschliessen/ })).toBeDisabled()
   })
 
   it("shows no stale-reliability banner for claim-bound reliability findings", async () => {
@@ -224,7 +236,7 @@ describe("LiveReview", () => {
     // Deterministic finding stays out of the KI section.
     expect(aiSection).not.toHaveTextContent("Deterministischer Hinweis.")
     // A3 blocker disables approval.
-    expect(screen.getByRole("button", { name: /Review freigeben/ })).toBeDisabled()
+    expect(screen.getByRole("button", { name: /Prüfung abschliessen/ })).toBeDisabled()
     // No model/provider/confidence leaks anywhere.
     expect(screen.queryByText(/anthropic|openai|gpt|claude|sonnet|confidence|Konfidenz/i)).toBeNull()
   })

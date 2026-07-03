@@ -27,13 +27,16 @@ import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
   EXPORT_REVIEW_LABELS,
   EXPORT_REVIEW_STYLE,
+  FIELD_NEXT_ACTION,
   FIELD_READINESS_LABELS,
   FIELD_READINESS_STYLE,
   KOPIERBEREIT_LEGEND,
   NO_AUTO_SUBMIT_NOTE,
   NOT_FOR_SUBMISSION,
   fieldReadinessRows,
+  readinessSummary,
   summarizeExportReadiness,
+  type FieldReadiness,
 } from "@/lib/export-view"
 import { UNSUPPORTED_AREAS } from "@/lib/portal-transfer"
 
@@ -73,14 +76,14 @@ type CardState = "idle" | "creating" | "ready" | "error"
 
 function reviewBanner(status: ApprovalStatus | null): { text: string; tone: string } {
   if (status === "approved")
-    return { text: "Review freigegeben – keine Einreichfreigabe.", tone: "emerald" }
+    return { text: "Prüfung abgeschlossen – keine Einreichfreigabe.", tone: "emerald" }
   if (status === "stale")
     return {
-      text: "Die Review-Freigabe ist veraltet. Exporte werden als ENTWURF gekennzeichnet.",
+      text: "Die Prüfungs-Freigabe ist veraltet. Exporte werden als ENTWURF gekennzeichnet.",
       tone: "amber",
     }
   return {
-    text: "Noch nicht review-freigegeben – Exporte werden als ENTWURF gekennzeichnet.",
+    text: "Die Qualitätsprüfung ist noch nicht abgeschlossen – Exporte werden als ENTWURF gekennzeichnet.",
     tone: "amber",
   }
 }
@@ -93,6 +96,7 @@ export function LiveExport({ runId }: { runId: string }) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [tab, setTab] = React.useState<"optionen" | "innolink">("optionen")
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
+  const [readinessFilter, setReadinessFilter] = React.useState<FieldReadiness | "all">("all")
 
   React.useEffect(() => {
     getReview(runId)
@@ -228,34 +232,89 @@ export function LiveExport({ runId }: { runId: string }) {
                 Für diesen Antrag liegen noch keine Feldentwürfe vor.
               </p>
             ) : (
-              <table className="w-full border-separate border-spacing-y-1 text-sm">
-                <caption className="sr-only">
-                  Bereitschaft der Portalfelder für die manuelle Übernahme
-                </caption>
-                <thead>
-                  <tr className="text-left text-xs text-muted-foreground">
-                    <th scope="col" className="font-medium">Portal-Feld</th>
-                    <th scope="col" className="font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {readinessRows.map((row) => (
-                    <tr key={row.fieldId}>
-                      <td className="pr-3 text-foreground">{row.fieldName}</td>
-                      <td>
-                        <span
+              <>
+                <p className="text-sm text-foreground">{readinessSummary(readinessRows)}</p>
+                {/* Filter chips — only states that actually occur. */}
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Feld-Bereitschaft filtern">
+                  {(["all", ...new Set(readinessRows.map((r) => r.status))] as (FieldReadiness | "all")[]).map(
+                    (chip) => {
+                      const active = readinessFilter === chip
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setReadinessFilter(chip)}
                           className={cn(
-                            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-                            FIELD_READINESS_STYLE[row.status]
+                            "inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium transition-colors",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                           )}
                         >
-                          {FIELD_READINESS_LABELS[row.status]}
-                        </span>
-                      </td>
+                          {chip === "all" ? "Alle" : FIELD_READINESS_LABELS[chip]}
+                        </button>
+                      )
+                    }
+                  )}
+                </div>
+                <table className="w-full border-separate border-spacing-y-1 text-sm">
+                  <caption className="sr-only">
+                    Bereitschaft der Portalfelder für die manuelle Übernahme
+                  </caption>
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th scope="col" className="font-medium">Portal-Feld</th>
+                      <th scope="col" className="font-medium">Status</th>
+                      <th scope="col" className="font-medium">Nächste Aktion</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
+                  </thead>
+                  <tbody>
+                    {readinessRows
+                      .filter((row) => readinessFilter === "all" || row.status === readinessFilter)
+                      .map((row) => {
+                        const action = FIELD_NEXT_ACTION[row.status]
+                        // Editor actions target the concrete field (?field=…).
+                        const href =
+                          action.href === "/editor"
+                            ? `/editor?field=${encodeURIComponent(row.fieldId)}`
+                            : action.href
+                        return (
+                          <tr key={row.fieldId}>
+                            <td className="pr-3 text-foreground">{row.fieldName}</td>
+                            <td className="pr-3">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                  FIELD_READINESS_STYLE[row.status]
+                                )}
+                              >
+                                {FIELD_READINESS_LABELS[row.status]}
+                              </span>
+                            </td>
+                            <td>
+                              {href ? (
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  render={<a href={href} />}
+                                  nativeButton={false}
+                                >
+                                  {action.label}
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="xs" onClick={openInnolink}>
+                                  {action.label}
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </>
             )}
             <p className="text-xs text-muted-foreground">{KOPIERBEREIT_LEGEND}</p>
             <p className="text-xs text-muted-foreground">
@@ -325,7 +384,7 @@ export function LiveExport({ runId }: { runId: string }) {
                     </Button>
                   ) : (
                     <Button size="sm" variant="outline" className="mt-auto" onClick={() => create(card.type)}>
-                      Erstellen
+                      {notForSubmission ? "Export als Entwurf erstellen" : "Erstellen"}
                     </Button>
                   )}
                   {errors[card.type] && (

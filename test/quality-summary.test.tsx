@@ -63,7 +63,7 @@ describe("QualitySummary", () => {
     await waitFor(() =>
       expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
     )
-    expect(screen.getByText("Risiko")).toBeInTheDocument()
+    expect(screen.getByText("Qualitätsrisiko")).toBeInTheDocument()
     expect(screen.getByTestId("reliability-blockers")).toHaveTextContent(
       /Nicht belegte Aussage/
     )

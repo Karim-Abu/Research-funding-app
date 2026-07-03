@@ -1,7 +1,13 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
+
+vi.mock(
+  "@/components/editor/rich-text-editor",
+  async () => await import("./mocks/rich-text-editor")
+)
+
 import { LiveEditor } from "@/components/editor/live-editor"
 
 const SOL = "SOL.INNOVATION_SOLUTION.EDITOR"
@@ -80,9 +86,16 @@ function suggestionResult() {
   }
 }
 
+// The A2 control lives in the KI-Vorschlag pane → switch to KI-Assist first
+// (the pane is CSS-hidden in Bearbeiten; jsdom would find it anyway, but the
+// test should follow the real user flow).
+async function openKiAssist() {
+  fireEvent.click(await screen.findByRole("button", { name: "KI-Assist" }))
+}
+
 async function clickGenerate() {
-  // Scope to the A2 control (the shared shell renders a disabled placeholder
-  // AI button with a similar name).
+  await openKiAssist()
+  // Scope to the A2 control inside the KI pane.
   const control = await screen.findByTestId("a2-suggestion-control")
   fireEvent.click(
     within(control).getByRole("button", { name: /KI-Vorschlag erstellen/ })
@@ -93,6 +106,7 @@ function baseMock(fields: Record<string, unknown>[]) {
   server.use(
     http.get("/api/runs/r1/fields", () => HttpResponse.json(fields)),
     http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+    http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
     http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg())),
     http.get(`/api/runs/r1/fields/${SOL}`, () => HttpResponse.json(solDraft())),
   )
@@ -103,6 +117,7 @@ describe("LiveEditor A2 suggestions", () => {
     baseMock([abstractDraft()])
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Abstract")
+    await openKiAssist()
     // The default-selected field is the Abstract → no A2 control, but the
     // availability is explained instead of silent (M10.2).
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
@@ -114,6 +129,7 @@ describe("LiveEditor A2 suggestions", () => {
   it("renders the empty-state hint for the SOL field", async () => {
     baseMock([solDraft()])
     render(<LiveEditor runId="r1" />)
+    await openKiAssist()
     await screen.findByTestId("a2-suggestion-control")
     expect(
       screen.getByText("KI-Vorschlag für diesen Abschnitt noch nicht erstellt.")
@@ -162,6 +178,7 @@ describe("LiveEditor A2 suggestions", () => {
     server.use(
       http.get("/api/runs/r1/fields", () => HttpResponse.json([vcDraft()])),
       http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
       http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg())),
       http.get(`/api/runs/r1/fields/${VC}`, () => HttpResponse.json(vcDraft())),
       http.post(`/api/runs/r1/fields/${VC}/redrafts`, () =>

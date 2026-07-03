@@ -97,14 +97,45 @@ export function hasPlaceholder(text: string): boolean {
   return placeholderRegex().test(text)
 }
 
-/** Index of the first placeholder, or -1. Used to focus/scroll the textarea. */
-export function firstPlaceholderIndex(text: string): number {
-  const match = placeholderRegex().exec(text)
-  return match ? match.index : -1
+export interface PlaceholderMatch {
+  start: number
+  end: number
+}
+
+/** All placeholder ranges, in order — drives the count + "next" cycling UX. */
+export function placeholderMatches(text: string): PlaceholderMatch[] {
+  const re = placeholderRegex()
+  const matches: PlaceholderMatch[] = []
+  let m: RegExpExecArray | null
+  while ((m = re.exec(text)) !== null) {
+    matches.push({ start: m.index, end: m.index + m[0].length })
+    if (m[0].length === 0) re.lastIndex += 1
+  }
+  return matches
+}
+
+/**
+ * Focus the textarea and select a range so the placeholder is visibly marked
+ * (not just a cursor jump). The scroll position is estimated from the line
+ * count — the one presentation-DOM helper in this module, shared by the shell
+ * banner and the review-hint actions.
+ */
+export function selectTextareaRange(
+  node: HTMLTextAreaElement,
+  text: string,
+  match: PlaceholderMatch
+): void {
+  node.focus()
+  node.setSelectionRange(match.start, match.end)
+  const lineBefore = text.slice(0, match.start).split("\n").length
+  node.scrollTop = Math.max(0, (lineBefore - 2) * 20)
 }
 
 export const PLACEHOLDER_TITLE = "Platzhalter vorhanden"
-export const PLACEHOLDER_PROBLEM = "Der Text enthält noch offene Angaben."
+
+export function placeholderCountText(count: number): string {
+  return count === 1 ? "1 offene Angabe im Text." : `${count} offene Angaben im Text.`
+}
 
 // AI actions are not wired to a backend yet — communicate that honestly.
 export const AI_ACTION_HINT = "Im Mock-Modus lokal simuliert · echte KI-Überarbeitung folgt später."

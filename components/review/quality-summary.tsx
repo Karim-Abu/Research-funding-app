@@ -16,7 +16,12 @@ import {
   type ReliabilityViewDto,
 } from "@/lib/reliability"
 
-const FLAG_LABEL: Record<string, string> = { ok: "In Ordnung", risky: "Risiko" }
+const FLAG_LABEL: Record<string, string> = { ok: "In Ordnung", risky: "Qualitätsrisiko" }
+
+// Explains why the four metrics don't necessarily add up — not every claim
+// requires evidence, and the categories track different check states.
+const METRICS_LEGEND =
+  "Nicht jede Aussage ist evidenzpflichtig; die Kategorien bilden unterschiedliche Prüfzustände ab. Die Zahlen müssen sich deshalb nicht zur Gesamtzahl aufsummieren."
 
 export function QualitySummary({ runId }: { runId: string }) {
   const [view, setView] = React.useState<ReliabilityViewDto | null>(null)
@@ -107,15 +112,17 @@ export function QualitySummary({ runId }: { runId: string }) {
             <Metric label="Zu prüfen" value={summary.review_required_count} />
             <Metric label="Nicht belegt" value={summary.unsupported_claims} />
           </dl>
-          <p className="mt-2 text-xs text-muted-foreground">
+          <p className="mt-2 text-xs text-muted-foreground">{METRICS_LEGEND}</p>
+          <p className="mt-1 text-xs text-muted-foreground">
             Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis der inhaltlichen
             Wahrheit. Konfliktende Belege: {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
             {summary.false_consensus_risk_count}. Semantische Drift: {summary.semantic_drift_count}.
           </p>
           <p className="mt-1 text-xs text-muted-foreground">
             Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie Suffizienz (der Beleg
-            scheint die Aussage zu stützen). «Risiko» ist ein Risikosignal für die menschliche
-            Prüfung — kein Fehler der Anwendung.
+            scheint die Aussage zu stützen). «Qualitätsrisiko» ist ein Risikosignal für die
+            menschliche Prüfung — kein Fehler der Anwendung und keine Aussage zur
+            Förderwahrscheinlichkeit.
           </p>
 
           {blockers.length > 0 && (

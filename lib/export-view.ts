@@ -114,6 +114,27 @@ export interface FieldReadinessRow {
   status: FieldReadiness
 }
 
+// "Nächste Aktion" per readiness state — one clear step instead of a bare
+// status. href null = handled locally (open the Innolink copy view tab).
+export const FIELD_NEXT_ACTION: Record<
+  FieldReadiness,
+  { label: string; href: string | null }
+> = {
+  kopierbereit: { label: "In Kopieransicht öffnen", href: null },
+  platzhalter_offen: { label: "Im Entwurf bearbeiten", href: "/editor" },
+  ueberarbeiten: { label: "Prüfung aktualisieren", href: "/review" },
+  beleg_fehlt: { label: "Beleg in Quellen ergänzen", href: "/quellen" },
+}
+
+/** Copy progress as work progress — never a submission/funding statement. */
+export function readinessSummary(rows: FieldReadinessRow[]): string {
+  const ready = rows.filter((r) => r.status === "kopierbereit").length
+  if (rows.length === 0) return "Noch keine unterstützten Feldtexte vorhanden."
+  if (ready === 0)
+    return `Aktuell ist kein Feld vollständig kopierbereit (0 von ${rows.length} unterstützten Feldern).`
+  return `${ready} von ${rows.length} unterstützten Feldern kopierbereit.`
+}
+
 const EVIDENCE_FINDING_RE = /beleg|evidenz|fundstelle|quelle/i
 
 /** Per-field readiness rows, precedence: Platzhalter → Beleg fehlt →

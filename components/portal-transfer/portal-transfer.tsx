@@ -1,20 +1,33 @@
 "use client"
 
 import * as React from "react"
-import { Info } from "lucide-react"
+import { AlertTriangle, Info } from "lucide-react"
 import { FieldTransferCard } from "@/components/portal-transfer/field-transfer-card"
 import {
   COVERAGE_STATEMENT,
   CLIPBOARD_PRIVACY_NOTE,
   UNSUPPORTED_AREAS,
+  fieldWarnings,
   groupBySection,
+  type WarningCode,
 } from "@/lib/portal-transfer"
+import { fieldReadinessRows, readinessSummary } from "@/lib/export-view"
 import type { PortalFieldDraftDto } from "@/lib/fields"
 import type { ReviewPackageDto } from "@/lib/review"
 
 const PAGE_DISCLAIMER =
   "Diese Ansicht erleichtert die manuelle, feldweise Übernahme nach Innolink. " +
   "Es wird nichts automatisch übertragen oder eingereicht."
+
+// Shared warning summary shown once above the cards instead of repeating the
+// same sentences on every card.
+const WARNING_SUMMARY_LABELS: Record<WarningCode, (n: number) => string> = {
+  open: (n) => `${n} ${n === 1 ? "Feld enthält" : "Felder enthalten"} noch offene Angaben`,
+  limit: (n) =>
+    `${n} ${n === 1 ? "Feld überschreitet" : "Felder überschreiten"} das Innolink-Zeichenlimit`,
+  review: (n) =>
+    `Die Prüfungs-Freigabe ist nicht aktuell (betrifft ${n} ${n === 1 ? "Feld" : "Felder"})`,
+}
 
 export function PortalTransfer({
   fields,
@@ -30,12 +43,22 @@ export function PortalTransfer({
   /** When rendered inside the Export screen, the page header is provided there. */
   embedded?: boolean
 }) {
-  const [copied, setCopied] = React.useState<Set<string>>(new Set())
+  // Session-only copy log — deliberately not persisted (Beta decision).
+  const [copiedAt, setCopiedAt] = React.useState<Map<string, Date>>(new Map())
   const markCopied = React.useCallback((fieldId: string) => {
-    setCopied((prev) => new Set(prev).add(fieldId))
+    setCopiedAt((prev) => new Map(prev).set(fieldId, new Date()))
   }, [])
 
   const groups = groupBySection(fields)
+  const readinessRows = fieldReadinessRows(fields, review)
+
+  // Aggregate identical warnings once, instead of repeating them per card.
+  const warningCounts = new Map<WarningCode, number>()
+  for (const field of fields) {
+    for (const w of fieldWarnings(field, review)) {
+      warningCounts.set(w.code, (warningCounts.get(w.code) ?? 0) + 1)
+    }
+  }
 
   return (
     <div className={embedded ? "flex flex-col gap-5" : "mx-auto flex max-w-4xl flex-col gap-5"}>
@@ -59,8 +82,35 @@ export function PortalTransfer({
 
       {mockMode && (
         <p className="text-xs text-muted-foreground">
-          Hinweis: Review-Status ist in der Demo-Ansicht nicht verfügbar.
+          Hinweis: Der Prüfungs-Status ist in der Demo-Ansicht nicht verfügbar.
         </p>
+      )}
+
+      {/* Copy progress + shared warning summary (work progress, no funding statement). */}
+      {fields.length > 0 && (
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-foreground" data-testid="copy-progress">
+            {readinessSummary(readinessRows)}{" "}
+            <span className="text-muted-foreground">
+              {copiedAt.size} {copiedAt.size === 1 ? "Feld" : "Felder"} in dieser
+              Sitzung kopiert.
+            </span>
+          </p>
+          {warningCounts.size > 0 && (
+            <div
+              role="status"
+              className="flex items-start gap-2 rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              <AlertTriangle className="mt-0.5 size-3.5 shrink-0" />
+              <span>
+                {[...warningCounts.entries()]
+                  .map(([code, n]) => WARNING_SUMMARY_LABELS[code](n))
+                  .join(" · ")}
+                . Details stehen an den betroffenen Feldern.
+              </span>
+            </div>
+          )}
+        </div>
       )}
 
       {fields.length === 0 ? (
@@ -76,7 +126,7 @@ export function PortalTransfer({
                 key={field.field_id}
                 field={field}
                 review={review}
-                copied={copied.has(field.field_id)}
+                copiedAt={copiedAt.get(field.field_id) ?? null}
                 onCopied={markCopied}
               />
             ))}
@@ -90,7 +140,9 @@ export function PortalTransfer({
         <p className="text-xs text-muted-foreground">{COVERAGE_STATEMENT}</p>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <h3 className="text-xs font-semibold">Bereit für die feldweise Übernahme</h3>
+            {/* "Unterstützt" heisst: die Beta kennt das Feld — nicht, dass der
+                Text bereits kopierbereit ist (siehe Fortschritt oben). */}
+            <h3 className="text-xs font-semibold">Von der Beta unterstützte Felder</h3>
             <ul className="mt-1 flex flex-col gap-0.5 text-xs text-muted-foreground">
               {fields.length === 0 ? (
                 <li>Keine unterstützten Feldtexte vorhanden.</li>

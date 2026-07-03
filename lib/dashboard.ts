@@ -68,7 +68,7 @@ export type ProjectSort = "neueste" | "fortschritt" | "titel"
 export const PROJECT_FILTERS: { id: ProjectFilter; label: string }[] = [
   { id: "alle", label: "Alle" },
   { id: "in_bearbeitung", label: "In Bearbeitung" },
-  { id: "review_offen", label: "Review offen" },
+  { id: "review_offen", label: "Prüfung offen" },
   { id: "blockiert", label: "Blockiert" },
   { id: "demo", label: "Demo" },
 ]

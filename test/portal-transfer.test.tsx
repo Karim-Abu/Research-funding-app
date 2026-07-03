@@ -110,7 +110,8 @@ describe("PortalTransfer", () => {
     // Nothing else (field id, label, section, counts) leaked into the copy.
     const copied = writeText.mock.calls[0][0]
     expect(copied).toBe("Reiner Feldtext üöä.")
-    await waitFor(() => expect(screen.getByText("Kopiert")).toBeInTheDocument())
+    // Session-only copy state with timestamp (M10.2 / F8).
+    await waitFor(() => expect(screen.getByText(/Kopiert am/)).toBeInTheDocument())
   })
 
   it("shows a visible placeholder warning and confirms before copying", async () => {
@@ -125,10 +126,17 @@ describe("PortalTransfer", () => {
       ),
     ]
     render(<PortalTransfer fields={fields} review={reviewPkg()} />)
+    // Shared warning banner + compact per-card badge (M10.2 / F4).
     expect(
-      screen.getByText("Dieser Feldtext enthält noch offene Angaben.")
+      screen.getByText(/1 Feld enthält noch offene Angaben/)
     ).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Text kopieren" }))
+    expect(screen.getByText("Offene Angaben")).toBeInTheDocument()
+    // Open fields lead back into the draft; copying needs a deliberate step.
+    expect(
+      screen.getByRole("button", { name: "Im Entwurf bearbeiten" })
+    ).toHaveAttribute("href", "/editor?field=INTRO.APP.ABSTRACT")
+    expect(screen.queryByRole("button", { name: "Text kopieren" })).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Trotzdem kopieren…" }))
     // Confirmation appears; copy not yet performed.
     const confirm = await screen.findByRole("button", { name: "Trotzdem kopieren" })
     expect(writeText).not.toHaveBeenCalled()
@@ -145,10 +153,16 @@ describe("PortalTransfer", () => {
     render(
       <PortalTransfer fields={fields} review={reviewPkg({ approval_status: "stale" })} />
     )
+    // Aggregated once in the shared banner …
     expect(
-      screen.getByText("Der Text überschreitet das Innolink-Zeichenlimit.")
+      screen.getByText(/1 Feld überschreitet das Innolink-Zeichenlimit/)
     ).toBeInTheDocument()
-    expect(screen.getByText("Die Review-Freigabe ist nicht aktuell.")).toBeInTheDocument()
+    expect(
+      screen.getByText(/Prüfungs-Freigabe ist nicht aktuell \(betrifft 1 Feld\)/)
+    ).toBeInTheDocument()
+    // … and flagged compactly on the card.
+    expect(screen.getByText("Zeichenlimit überschritten")).toBeInTheDocument()
+    expect(screen.getByText("Prüfung nicht aktuell")).toBeInTheDocument()
   })
 
   it("renders the empty state when no copyable drafts exist", () => {
@@ -166,7 +180,7 @@ describe("PortalTransfer", () => {
       <PortalTransfer fields={fields} review={null} mockMode />
     )
     expect(
-      screen.getByText(/Review-Status ist in der Demo-Ansicht nicht verfügbar/)
+      screen.getByText(/Prüfungs-Status ist in der Demo-Ansicht nicht verfügbar/)
     ).toBeInTheDocument()
     const text = container.textContent ?? ""
     // No false submission claim. ("nichts … eingereicht" is the correct disclaimer.)

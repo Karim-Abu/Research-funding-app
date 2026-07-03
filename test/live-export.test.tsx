@@ -63,7 +63,9 @@ describe("LiveExport", () => {
     mockReview("blocked")
     render(<LiveExport runId="r1" />)
     await waitFor(() =>
-      expect(screen.getByText(/Noch nicht review-freigegeben/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Qualitätsprüfung ist noch nicht abgeschlossen/)
+      ).toBeInTheDocument()
     )
     expect(screen.getAllByText("ENTWURF").length).toBe(3)
   })
@@ -73,7 +75,7 @@ describe("LiveExport", () => {
     render(<LiveExport runId="r1" />)
     await waitFor(() =>
       expect(
-        screen.getByText("Review freigegeben – keine Einreichfreigabe.")
+        screen.getByText("Prüfung abgeschlossen – keine Einreichfreigabe.")
       ).toBeInTheDocument()
     )
     expect(screen.queryByText("ENTWURF")).not.toBeInTheDocument()

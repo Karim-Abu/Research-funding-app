@@ -12,8 +12,9 @@ export const REQ_FALLBACK = {
   title: "Unbenannte Anforderung",
   category: "Weitere Anforderungen",
   evidence: "Noch kein Beleg verknüpft",
-  portal: "Kein Portal-Feld zugeordnet",
-  human: "Noch nicht menschlich geprüft",
+  portal: "Keinem konkreten Portalfeld zugeordnet",
+  human: "Menschliche Prüfung offen",
+  relevance: "Diese Anforderung beeinflusst die Vollständigkeit oder Prüfbarkeit des Antrags.",
 } as const
 
 // ---------------------------------------------------------------------------
@@ -24,10 +25,26 @@ export type ReqBucket = "fulfilled" | "partial" | "open" | "blocked"
 
 export const REQ_BUCKET_LABELS: Record<ReqBucket, string> = {
   fulfilled: "Erfüllt",
-  partial: "Teilweise",
+  partial: "Teilweise erfüllt",
   open: "Offen",
   blocked: "Blocker",
 }
+
+// Short, non-technical explanations for the summary tiles. Rendered via an
+// accessible trigger (click/focus, not hover-only) — see StatusHelp.
+export const REQ_TILE_HELP = {
+  fulfilled:
+    "Das System hat für diesen Punkt ausreichende Angaben oder Belege gefunden. Die menschliche Prüfung bleibt massgebend.",
+  partial:
+    "Es liegen Angaben oder Belege vor, aber sie decken den Punkt noch nicht vollständig ab.",
+  open: "Dieser Punkt wurde noch nicht bearbeitet oder es fehlen Angaben.",
+  blocked:
+    "Dieser Punkt verhindert aktuell die Freigabe oder Einreichungsreife des Entwurfs.",
+  humanNeeded:
+    "Das System hat einen Befund erstellt, aber eine Person muss ihn bestätigen oder korrigieren.",
+  noEvidence:
+    "Die Aussage ist noch nicht mit einer Quelle verknüpft. Ergänzen Sie einen Beleg oder schwächen Sie die Aussage ab.",
+} as const
 
 export const REQ_BUCKET_STYLE: Record<ReqBucket, { chip: string; text: string }> = {
   fulfilled: {
@@ -87,7 +104,7 @@ export const EVIDENCE_STATE_LABELS: Record<EvidenceState, string> = {
 export type HumanState = "confirmed" | "needed" | "not_required"
 export const HUMAN_STATE_LABELS: Record<HumanState, string> = {
   confirmed: "Menschlich bestätigt",
-  needed: "Menschliche Prüfung nötig",
+  needed: "Menschliche Prüfung offen",
   not_required: "Nicht nötig",
 }
 
@@ -114,9 +131,9 @@ export const REQ_FILTER_ORDER: ReqFilter[] = [
 export const REQ_FILTER_LABELS: Record<ReqFilter, string> = {
   all: "Alle",
   blocked: "Blocker",
-  partial: "Teilweise",
+  partial: "Teilweise erfüllt",
   open: "Offen",
-  human_needed: "Menschliche Prüfung nötig",
+  human_needed: "Menschliche Prüfung offen",
   no_evidence: "Ohne Beleg",
 }
 
@@ -189,4 +206,95 @@ export function categorize(requirementId: string): string {
   if (/\bPS\b|PROJECT|SETUP|PLAN|TIMELINE|MILESTONE/.test(id)) return "Project Setup"
   if (/SUMMARY|SUBMIT|ABSTRACT|INTRO/.test(id)) return "Summary & Submit"
   return REQ_FALLBACK.category
+}
+
+// ---------------------------------------------------------------------------
+// "Warum relevant?" — category-derived, honest one-liners (the contract has no
+// per-requirement relevance field). Generic fallback in REQ_FALLBACK.relevance.
+// ---------------------------------------------------------------------------
+const CATEGORY_RELEVANCE: Record<string, string> = {
+  "Fördervoraussetzungen / Eligibility":
+    "Ohne erfüllte Fördervoraussetzungen kann das Projekt nicht als Innosuisse-Innovationsprojekt eingereicht werden.",
+  "Budget & Beiträge":
+    "Budget und Beiträge müssen plausibel sein, damit der Antrag geprüft werden kann.",
+  "Organisation & Partner":
+    "Ein Innovationsprojekt braucht typischerweise einen beitragsberechtigten Schweizer Forschungspartner und einen Umsetzungspartner.",
+}
+
+export function relevanceFor(category: string): string {
+  return CATEGORY_RELEVANCE[category] ?? REQ_FALLBACK.relevance
+}
+
+// ---------------------------------------------------------------------------
+// Primary action per requirement — one clear CTA depending on the problem.
+// Routing confidence is tiered (never keyword-first):
+//   1. explicit view-model signals (evidence state)
+//   2. recommended_next_action texts from open_issues
+//   3. known requirement-id types of the beta profile
+//   4. title keywords as last fallback
+// When unsure, route neutrally to the Qualitätsprüfung instead of guessing.
+// ---------------------------------------------------------------------------
+export interface ReqAction {
+  label: string
+  href: string
+}
+
+export const REQ_NEUTRAL_ACTION: ReqAction = {
+  label: "In Qualitätsprüfung öffnen",
+  href: "/review",
+}
+
+const PARTNER_ACTION: ReqAction = { label: "Im Intake Partner ergänzen", href: "/intake" }
+const BUDGET_ACTION: ReqAction = { label: "Im Intake Budget ergänzen", href: "/intake" }
+const DRAFT_ACTION: ReqAction = { label: "Im Entwurf bearbeiten", href: "/editor" }
+const SOURCE_ACTION: ReqAction = { label: "Quelle ergänzen", href: "/quellen" }
+
+const PARTNER_RE = /forschungspartner|umsetzungspartner|partner/i
+const BUDGET_RE = /budget|barbeitrag|beitrag|kosten|finanzierung|chf/i
+const DRAFT_RE = /platzhalter|entwurf|feldtext|portalfeld|ausfüllen|ergänzen sie.*(feld|text)/i
+const SOURCE_RE = /quelle|beleg|evidenz|fundstelle|nachweis/i
+
+export function primaryActionFor(v: {
+  requirementId: string
+  title: string
+  bucket: ReqBucket
+  evidenceState: EvidenceState
+  humanState: HumanState
+  firstAnchorId: string | null
+  /** recommended_next_action / description texts from open_issues. */
+  openPoints: string[]
+}): ReqAction | null {
+  // Fulfilled requirements need no corrective action.
+  if (v.bucket === "fulfilled") {
+    return v.firstAnchorId
+      ? {
+          label: "Beleg ansehen",
+          href: `/quellen?tab=evidenz&anchor=${encodeURIComponent(v.firstAnchorId)}`,
+        }
+      : null
+  }
+
+  // 1. Explicit view-model signal: missing evidence is unambiguous.
+  if (v.evidenceState === "missing") return SOURCE_ACTION
+
+  // 2. Structured hint from the contract: recommended next actions.
+  const hints = v.openPoints.join(" ")
+  if (hints) {
+    if (PARTNER_RE.test(hints)) return PARTNER_ACTION
+    if (BUDGET_RE.test(hints)) return BUDGET_ACTION
+    if (SOURCE_RE.test(hints)) return SOURCE_ACTION
+    if (DRAFT_RE.test(hints)) return DRAFT_ACTION
+  }
+
+  // 3. Known requirement-id types of the beta profile.
+  const id = v.requirementId.toUpperCase()
+  if (/PARTNER/.test(id)) return PARTNER_ACTION
+  if (/BUDGET|COST|KOST|FINANC|BEITRAG/.test(id)) return BUDGET_ACTION
+
+  // 4. Title keywords — last, weakest signal.
+  if (PARTNER_RE.test(v.title)) return PARTNER_ACTION
+  if (BUDGET_RE.test(v.title)) return BUDGET_ACTION
+
+  // Unsure → neutral: confirm/clarify in the Qualitätsprüfung.
+  return REQ_NEUTRAL_ACTION
 }

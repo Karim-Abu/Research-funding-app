@@ -102,10 +102,10 @@ export default function DashboardPage() {
         <div className="mb-8 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-1">
             <h1 className="text-2xl font-semibold text-foreground text-balance">
-              Projekte
+              Projektübersicht
             </h1>
             <p className="text-sm text-muted-foreground">
-              {`Willkommen zurück, ${(user?.name ?? currentUser.name).split(" ")[0]} — Ihre Innosuisse-Anträge im Überblick.`}
+              {`Willkommen zurück, ${(user?.name ?? currentUser.name).split(" ")[0]} — wählen Sie einen Antrag aus, um ihn zu bearbeiten.`}
             </p>
           </div>
           <Button onClick={() => router.push("/intake")}>

@@ -2,11 +2,13 @@
 
 import { CheckCircle2, AlertTriangle, Circle, XCircle, UserCheck, FileX2, Search } from "lucide-react"
 import { Input } from "@/components/ui/input"
+import { StatusHelp } from "@/components/status/status-help"
 import { cn } from "@/lib/utils"
 import {
   REQ_BUCKET_LABELS,
   REQ_BUCKET_STYLE,
   REQ_FILTER_LABELS,
+  REQ_TILE_HELP,
   type ReqBucket,
   type ReqFilter,
   type ReqSummary,
@@ -51,17 +53,18 @@ interface SummaryTile {
   label: string
   value: number
   icon: typeof CheckCircle2
+  help: string
   accent?: string
 }
 
 export function RequirementSummaryBar({ summary }: { summary: ReqSummary }) {
   const tiles: SummaryTile[] = [
-    { label: "Erfüllt", value: summary.fulfilled, icon: CheckCircle2, accent: REQ_BUCKET_STYLE.fulfilled.text },
-    { label: "Teilweise", value: summary.partial, icon: AlertTriangle, accent: REQ_BUCKET_STYLE.partial.text },
-    { label: "Offen", value: summary.open, icon: Circle },
-    { label: "Blocker", value: summary.blocked, icon: XCircle, accent: summary.blocked > 0 ? REQ_BUCKET_STYLE.blocked.text : undefined },
-    { label: "Menschliche Prüfung nötig", value: summary.humanNeeded, icon: UserCheck, accent: summary.humanNeeded > 0 ? REQ_BUCKET_STYLE.partial.text : undefined },
-    { label: "Ohne Beleg", value: summary.noEvidence, icon: FileX2 },
+    { label: REQ_BUCKET_LABELS.fulfilled, value: summary.fulfilled, icon: CheckCircle2, help: REQ_TILE_HELP.fulfilled, accent: REQ_BUCKET_STYLE.fulfilled.text },
+    { label: REQ_BUCKET_LABELS.partial, value: summary.partial, icon: AlertTriangle, help: REQ_TILE_HELP.partial, accent: REQ_BUCKET_STYLE.partial.text },
+    { label: REQ_BUCKET_LABELS.open, value: summary.open, icon: Circle, help: REQ_TILE_HELP.open },
+    { label: REQ_BUCKET_LABELS.blocked, value: summary.blocked, icon: XCircle, help: REQ_TILE_HELP.blocked, accent: summary.blocked > 0 ? REQ_BUCKET_STYLE.blocked.text : undefined },
+    { label: "Menschliche Prüfung offen", value: summary.humanNeeded, icon: UserCheck, help: REQ_TILE_HELP.humanNeeded, accent: summary.humanNeeded > 0 ? REQ_BUCKET_STYLE.partial.text : undefined },
+    { label: "Ohne Beleg", value: summary.noEvidence, icon: FileX2, help: REQ_TILE_HELP.noEvidence },
   ]
 
   return (
@@ -79,8 +82,9 @@ export function RequirementSummaryBar({ summary }: { summary: ReqSummary }) {
             <dd className={cn("text-base font-semibold leading-none text-foreground", tile.accent)}>
               {tile.value}
             </dd>
-            <dt className="mt-1 truncate text-[11px] leading-tight text-muted-foreground">
-              {tile.label}
+            <dt className="mt-1 flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
+              <span className="truncate">{tile.label}</span>
+              <StatusHelp label={tile.label} text={tile.help} />
             </dt>
           </div>
         </div>

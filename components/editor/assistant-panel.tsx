@@ -8,6 +8,7 @@ import { ReqBucketBadge } from "@/components/anforderungen/requirements-controls
 import { MarketCompetitionPanel } from "@/components/editor/market-competition-panel"
 import { DRAFT_EVIDENCE_LABELS, DRAFT_EVIDENCE_STYLE } from "@/lib/draft-view"
 import type { MarketDataset } from "@/lib/market-view"
+import type { MarketComparisonDto } from "@/lib/market-comparison"
 import type { AssistantTab, DraftFieldViewModel } from "@/lib/draft-viewmodel"
 
 const TABS: [AssistantTab, string][] = [
@@ -21,29 +22,51 @@ const TABS: [AssistantTab, string][] = [
 interface AssistantPanelProps {
   vm: DraftFieldViewModel
   defaultTab: AssistantTab
+  /** Controlled active tab (live uses this for "Belege öffnen" shortcuts). */
+  tab?: AssistantTab
+  onTabChange?: (tab: AssistantTab) => void
   market: {
     data: MarketDataset | null
     relevant: boolean
     live: boolean
     projectId?: string
     onApply?: (improvement: string, text: string) => void
+    /** M10.3: latest live comparison + capability gate + sheet opener. */
+    comparison?: MarketComparisonDto | null
+    comparisonLoaded?: boolean
+    comparisonEnabled?: boolean
+    onOpenComparison?: () => void
   }
   suggestionExists: boolean
   /** Live supplies its evidence + linking UI; mock falls back to the VM list. */
   belegeContent?: React.ReactNode
+  /** Live supplies the joined per-field requirements; mock falls back to the VM list. */
+  anforderungenContent?: React.ReactNode
   /** Both modes supply the comment-tab body (mock: thread; live: findings + box + approve). */
   kommentareContent: React.ReactNode
+  /** Rendered under the version list (live: "history not available" note). */
+  versionsFootnote?: React.ReactNode
 }
 
 export function AssistantPanel({
   vm,
   defaultTab,
+  tab: controlledTab,
+  onTabChange,
   market,
   suggestionExists,
   belegeContent,
+  anforderungenContent,
   kommentareContent,
+  versionsFootnote,
 }: AssistantPanelProps) {
-  const [tab, setTab] = React.useState<AssistantTab>(defaultTab)
+  const [internalTab, setInternalTab] = React.useState<AssistantTab>(defaultTab)
+  const tab = controlledTab ?? internalTab
+
+  function selectTab(next: AssistantTab) {
+    setInternalTab(next)
+    onTabChange?.(next)
+  }
 
   return (
     <div className="flex gap-3">
@@ -54,7 +77,7 @@ export function AssistantPanel({
             type="button"
             role="tab"
             aria-selected={tab === key}
-            onClick={() => setTab(key)}
+            onClick={() => selectTab(key)}
             className={cn(
               "rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors",
               tab === key
@@ -75,6 +98,10 @@ export function AssistantPanel({
           live={market.live}
           projectId={market.projectId}
           onApply={market.onApply}
+          comparison={market.comparison ?? null}
+          comparisonLoaded={market.comparisonLoaded ?? false}
+          comparisonEnabled={market.comparisonEnabled ?? false}
+          onOpenComparison={market.onOpenComparison}
         />
       )}
 
@@ -118,23 +145,27 @@ export function AssistantPanel({
 
       {tab === "anforderungen" && (
         <Section title="Betroffene Anforderungen">
-          {vm.requirementItems.length === 0 ? (
-            <p className="text-xs text-muted-foreground">
-              Noch keine Anforderungen mit diesem Feld verknüpft.
-            </p>
-          ) : (
-            <ul className="flex flex-col gap-2">
-              {vm.requirementItems.map((req) => (
-                <li key={req.id} className="flex items-center justify-between gap-2">
-                  <span className="min-w-0 flex-1 truncate text-xs text-foreground">{req.title}</span>
-                  <ReqBucketBadge bucket={req.status} />
-                </li>
-              ))}
-            </ul>
+          {anforderungenContent ?? (
+            <>
+              {vm.requirementItems.length === 0 ? (
+                <p className="text-xs text-muted-foreground">
+                  Noch keine Anforderungen mit diesem Feld verknüpft.
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-2">
+                  {vm.requirementItems.map((req) => (
+                    <li key={req.id} className="flex items-center justify-between gap-2">
+                      <span className="min-w-0 flex-1 truncate text-xs text-foreground">{req.title}</span>
+                      <ReqBucketBadge bucket={req.status} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <a href="/anforderungen" className="mt-1 inline-block text-xs font-medium text-primary hover:underline">
+                In Anforderungen öffnen
+              </a>
+            </>
           )}
-          <a href="/anforderungen" className="mt-1 inline-block text-xs font-medium text-primary hover:underline">
-            In Anforderungen öffnen
-          </a>
         </Section>
       )}
 
@@ -172,6 +203,7 @@ export function AssistantPanel({
               ))}
             </ul>
           )}
+          {versionsFootnote}
         </Section>
       )}
 

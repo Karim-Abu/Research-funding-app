@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Copy, Check, AlertTriangle, ChevronDown, ChevronRight } from "lucide-react"
+import { Copy, Check, ChevronDown, ChevronRight, Pencil } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import {
@@ -14,21 +14,31 @@ import {
   fieldWarnings,
   isComposite,
   sectionLabel,
+  type WarningCode,
 } from "@/lib/portal-transfer"
 import type { PortalFieldDraftDto } from "@/lib/fields"
 import type { ReviewPackageDto } from "@/lib/review"
 
 type CopyState = "idle" | "copied" | "error"
 
+// Compact badge labels — the shared banner above the cards carries the full
+// sentences; per card we only flag which problems apply.
+const WARNING_BADGE: Record<WarningCode, string> = {
+  open: "Offene Angaben",
+  limit: "Zeichenlimit überschritten",
+  review: "Prüfung nicht aktuell",
+}
+
 export function FieldTransferCard({
   field,
   review,
-  copied,
+  copiedAt,
   onCopied,
 }: {
   field: PortalFieldDraftDto
   review: ReviewPackageDto | null
-  copied: boolean
+  /** When this field was copied in the current session (not persisted). */
+  copiedAt: Date | null
   onCopied: (fieldId: string) => void
 }) {
   const [state, setState] = React.useState<CopyState>("idle")
@@ -38,11 +48,14 @@ export function FieldTransferCard({
 
   const text = field.current_version.text
   const warnings = fieldWarnings(field, review)
+  const copyReady = warnings.length === 0
   const placeholderCount = countPlaceholders(text)
   const limit = field.character_limit
   const overLimit = limit != null && field.character_count > limit
   const formatted = formattedCopySupported()
   const modified = new Date(field.current_version.created_at).toLocaleString("de-CH")
+  // Deep link into the draft editor with this field preselected.
+  const editorHref = `/editor?field=${encodeURIComponent(field.field_id)}`
 
   async function doCopy(kind: "plain" | "formatted") {
     setConfirming(null)
@@ -75,10 +88,10 @@ export function FieldTransferCard({
           </span>
           <h3 className="text-sm font-semibold">{field.field_name}</h3>
         </div>
-        {copied && (
+        {copiedAt && (
           <Badge variant="secondary" className="shrink-0">
             <Check className="mr-1 size-3" />
-            Kopiert
+            {`Kopiert am ${copiedAt.toLocaleDateString("de-CH", { day: "2-digit", month: "2-digit" })}, ${copiedAt.toLocaleTimeString("de-CH", { hour: "2-digit", minute: "2-digit" })}`}
           </Badge>
         )}
       </div>
@@ -88,7 +101,7 @@ export function FieldTransferCard({
         {text}
       </div>
 
-      <div className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
         <span className={overLimit ? "text-destructive" : undefined}>
           {field.character_count}
           {limit != null ? ` / ${limit}` : ""} Zeichen
@@ -96,26 +109,29 @@ export function FieldTransferCard({
         {placeholderCount > 0 && <span>{placeholderCount} Platzhalter</span>}
         {field.open_issue_count > 0 && <span>{field.open_issue_count} offene Hinweise</span>}
         <span>Zuletzt geändert: {modified}</span>
+        {/* Compact warning badges — full sentences live in the shared banner. */}
+        {warnings.map((w) => (
+          <Badge
+            key={w.code}
+            variant="outline"
+            className="border-amber-300 bg-amber-50 text-amber-900"
+          >
+            {WARNING_BADGE[w.code]}
+          </Badge>
+        ))}
       </div>
-
-      {/* Warnings are always visible on the card (not only in the confirm step). */}
-      {warnings.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {warnings.map((w) => (
-            <li
-              key={w.code}
-              className="flex items-start gap-1 rounded border border-amber-300 bg-amber-50 px-2 py-1 text-xs text-amber-900"
-            >
-              <AlertTriangle className="mt-0.5 size-3 shrink-0" />
-              {w.message}
-            </li>
-          ))}
-        </ul>
-      )}
 
       {confirming ? (
         <div className="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-900">
-          <span>Es liegen offene Hinweise vor. Möchten Sie den aktuellen Entwurf trotzdem kopieren?</span>
+          <span>
+            Dieses Feld enthält noch offene Angaben. Kopieren Sie es nur bewusst
+            als Entwurf.
+          </span>
+          <ul className="flex flex-col gap-0.5">
+            {warnings.map((w) => (
+              <li key={w.code}>• {w.message}</li>
+            ))}
+          </ul>
           <div className="flex gap-2">
             <Button size="sm" onClick={() => doCopy(confirming)}>
               Trotzdem kopieren
@@ -127,12 +143,40 @@ export function FieldTransferCard({
         </div>
       ) : (
         <div className="flex flex-col gap-1.5">
-          {/* Plain text is the primary, proven copy path. */}
+          {/* Button weighting depends on readiness: copy-ready fields lead with
+              the copy action; open fields lead back into the draft. */}
           <div className="flex flex-wrap items-center gap-2">
-            <Button size="sm" onClick={() => requestCopy("plain")}>
-              <Copy data-icon="inline-start" />
-              Text kopieren
-            </Button>
+            {copyReady ? (
+              <>
+                <Button size="sm" onClick={() => requestCopy("plain")}>
+                  <Copy data-icon="inline-start" />
+                  Text kopieren
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  render={<a href={editorHref} />}
+                  nativeButton={false}
+                >
+                  Im Entwurf öffnen
+                </Button>
+              </>
+            ) : (
+              <>
+                <Button
+                  size="sm"
+                  render={<a href={editorHref} />}
+                  nativeButton={false}
+                >
+                  <Pencil data-icon="inline-start" />
+                  Im Entwurf bearbeiten
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => requestCopy("plain")}>
+                  <Copy data-icon="inline-start" />
+                  Trotzdem kopieren…
+                </Button>
+              </>
+            )}
           </div>
           {/* Experimental formatted copy stays behind an "Erweitert" disclosure. */}
           {formatted && (

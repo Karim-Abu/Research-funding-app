@@ -38,6 +38,8 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
+import { DATA_CLASS_LABELS } from "@/lib/types"
+import type { SourceUsage } from "@/lib/evidence"
 import {
   importableSourceProjects,
   URL_SOURCE_KIND_LABELS,
@@ -90,6 +92,13 @@ interface SourceTableProps {
   openDetailsForId?: string | null
   /** Called when the externally requested details dialog closes. */
   onDetailsOpenChange?: (open: boolean) => void
+  /**
+   * View-scoped usage per source id (Fundstellen + Anforderungen der aktuellen
+   * Analyse). Absent = usage unknown on this screen.
+   */
+  sourceUsage?: Map<string, SourceUsage>
+  /** Navigate to the Evidenz tab (used from the details dialog). */
+  onShowEvidence?: () => void
 }
 
 const SOURCE_STATUS_CONFIG: Record<
@@ -223,6 +232,8 @@ export function SourceTable({
   importProjects = importableSourceProjects,
   openDetailsForId = null,
   onDetailsOpenChange,
+  sourceUsage,
+  onShowEvidence,
 }: SourceTableProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
@@ -500,6 +511,9 @@ export function SourceTable({
 
       <SourceDetailsDialog
         source={detailsSource}
+        usage={detailsSource ? sourceUsage?.get(detailsSource.id) : undefined}
+        usageKnown={Boolean(sourceUsage)}
+        onShowEvidence={onShowEvidence}
         onOpenChange={(open) => {
           if (!open) {
             setDetailsSource(null)
@@ -1018,6 +1032,34 @@ function TextSourceDialog({
   )
 }
 
+// Missing/unknown Datenklasse is always treated as confidential — sources are
+// never imported across projects without a deliberate confirmation.
+function isSensitiveSource(source: Source): boolean {
+  return source.dataClass == null || source.dataClass === "confidential"
+}
+
+function SourceDataClassPill({ source }: { source: Source }) {
+  if (source.dataClass) {
+    return (
+      <span
+        className={cn(
+          "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
+          source.dataClass === "confidential"
+            ? "border-status-partial/40 bg-status-partial/8 text-foreground"
+            : "border-border bg-muted/40 text-muted-foreground"
+        )}
+      >
+        {DATA_CLASS_LABELS[source.dataClass]}
+      </span>
+    )
+  }
+  return (
+    <span className="inline-flex items-center gap-1 rounded-full border border-status-partial/40 bg-status-partial/8 px-2 py-0.5 text-xs text-foreground">
+      Datenklasse unbekannt — wie vertraulich behandelt
+    </span>
+  )
+}
+
 function ImportSourcesDialog({
   open,
   onOpenChange,
@@ -1034,12 +1076,15 @@ function ImportSourcesDialog({
   const [selectedIds, setSelectedIds] = React.useState<Set<string>>(new Set())
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  // Confidential/unknown sources require an explicit second confirmation.
+  const [confirmingSensitive, setConfirmingSensitive] = React.useState(false)
 
   React.useEffect(() => {
     if (open) {
       setProjectId(firstProjectId)
       setSelectedIds(new Set())
       setError(null)
+      setConfirmingSensitive(false)
     }
   }, [open, firstProjectId])
 
@@ -1047,8 +1092,10 @@ function ImportSourcesDialog({
     projects.find((item) => item.id === projectId) ?? projects[0] ?? null
   const selectedSources =
     project?.sources.filter((source) => selectedIds.has(source.id)) ?? []
+  const sensitiveSelected = selectedSources.filter(isSensitiveSource)
 
   function toggleSource(id: string, checked: boolean) {
+    setConfirmingSensitive(false)
     setSelectedIds((prev) => {
       const next = new Set(prev)
       if (checked) next.add(id)
@@ -1059,6 +1106,12 @@ function ImportSourcesDialog({
 
   async function submit() {
     if (!project || selectedSources.length === 0) return
+    // Never import confidential/unknown sources silently: first click reveals
+    // the warning, only the explicit confirmation performs the import.
+    if (sensitiveSelected.length > 0 && !confirmingSensitive) {
+      setConfirmingSensitive(true)
+      return
+    }
     setBusy(true)
     setError(null)
     try {
@@ -1082,7 +1135,8 @@ function ImportSourcesDialog({
           <DialogTitle>Aus anderem Projekt übernehmen</DialogTitle>
           <DialogDescription>
             Wählen Sie vorhandene Beispielquellen aus und übernehmen Sie sie in
-            diesen Antrag.
+            diesen Antrag. Prüfen Sie die Datenklasse, bevor Sie Quellen aus
+            einem anderen Projekt verwenden.
           </DialogDescription>
         </DialogHeader>
         {project ? (
@@ -1130,6 +1184,7 @@ function ImportSourcesDialog({
                     </span>
                     <span className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                       <SourceTypePill type={source.type} />
+                      <SourceDataClassPill source={source} />
                       <span>{source.addedBy}</span>
                       <span>{source.addedAt}</span>
                     </span>
@@ -1137,6 +1192,25 @@ function ImportSourcesDialog({
                 </label>
               ))}
             </div>
+            {confirmingSensitive && sensitiveSelected.length > 0 && (
+              <div
+                role="alert"
+                className="flex flex-col gap-1 rounded-lg border border-status-partial/40 bg-status-partial/8 px-3 py-2 text-sm text-foreground"
+              >
+                <p className="font-medium">
+                  Vertrauliche oder nicht klassifizierte Quellen ausgewählt
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  {sensitiveSelected.length}{" "}
+                  {sensitiveSelected.length === 1
+                    ? "Quelle ist als vertraulich gekennzeichnet oder hat keine eindeutige Datenklasse"
+                    : "Quellen sind als vertraulich gekennzeichnet oder haben keine eindeutige Datenklasse"}{" "}
+                  und {sensitiveSelected.length === 1 ? "wird" : "werden"} wie
+                  vertraulich behandelt. Übernehmen Sie sie nur, wenn Sie sicher
+                  sind, dass sie in diesem Antrag verwendet werden dürfen.
+                </p>
+              </div>
+            )}
             {error && (
               <p role="alert" className="text-sm text-destructive">
                 {error}
@@ -1164,7 +1238,9 @@ function ImportSourcesDialog({
           >
             {busy
               ? "Wird übernommen..."
-              : "Ausgewählte Quellen übernehmen"}
+              : confirmingSensitive && sensitiveSelected.length > 0
+                ? "Übernahme bewusst bestätigen"
+                : "Ausgewählte Quellen übernehmen"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1174,9 +1250,17 @@ function ImportSourcesDialog({
 
 function SourceDetailsDialog({
   source,
+  usage,
+  usageKnown,
+  onShowEvidence,
   onOpenChange,
 }: {
   source: Source | null
+  /** View-scoped usage of this source, when the screen has the data. */
+  usage?: SourceUsage
+  /** Whether usage data for this view has been loaded at all. */
+  usageKnown?: boolean
+  onShowEvidence?: () => void
   onOpenChange: (open: boolean) => void
 }) {
   return (
@@ -1214,6 +1298,55 @@ function SourceDetailsDialog({
                 {source.note}
               </p>
             )}
+
+            {/* Usage — honest, view-scoped numbers only (never presented as a
+                complete cross-project total). */}
+            <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/30 px-3 py-2">
+              <p className="text-sm font-medium text-foreground">Verwendung</p>
+              {usageKnown ? (
+                usage && usage.anchors > 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    In der aktuellen Analyse verwendet für{" "}
+                    <span className="font-medium text-foreground">
+                      {usage.anchors}{" "}
+                      {usage.anchors === 1 ? "Fundstelle" : "Fundstellen"}
+                    </span>
+                    {" · "}
+                    <span className="font-medium text-foreground">
+                      {usage.requirements}{" "}
+                      {usage.requirements === 1 ? "Anforderung" : "Anforderungen"}
+                    </span>
+                    .
+                  </p>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Diese Quelle wurde in der aktuellen Analyse noch nicht als
+                    Evidenz verwendet.
+                  </p>
+                )
+              ) : (
+                <p className="text-sm text-muted-foreground">
+                  Die Verwendung als Evidenz wird nach einer abgeschlossenen
+                  Analyse angezeigt.
+                </p>
+              )}
+              {onShowEvidence && (
+                <div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      onOpenChange(false)
+                      onShowEvidence()
+                    }}
+                  >
+                    <Link2 data-icon="inline-start" />
+                    Verknüpfte Fundstellen anzeigen
+                  </Button>
+                </div>
+              )}
+            </div>
 
             {isProblemStatus(source.status) && (
               <div className="rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-3">

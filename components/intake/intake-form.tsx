@@ -365,7 +365,77 @@ export function IntakeForm() {
               </Alert>
             )}
 
-            {/* ── SECTION 1: Projekt ─────────────────────────────────── */}
+            {/* ── SECTION 1: Vertraulichkeit ─────────────────────────── */}
+            {/* Deliberately FIRST: the Datenklasse must be clear before the
+                user types a sensitive Projektidee (G1). */}
+            <div className="flex flex-col gap-6">
+              <SectionHeading
+                title="Vertraulichkeit"
+                subtitle="Bitte zuerst festlegen — bestimmt, welche Dienste genutzt werden dürfen"
+              />
+
+              <RadioGroup
+                value={data.vertraulichkeit}
+                onValueChange={(v) =>
+                  set("vertraulichkeit", v as DataClass)
+                }
+                aria-invalid={!!errors.vertraulichkeit}
+                className="flex flex-col gap-3"
+              >
+                {VERTRAULICHKEIT_OPTIONS.map((opt) => {
+                  const selected = data.vertraulichkeit === opt.value
+                  return (
+                    <label
+                      key={opt.value}
+                      htmlFor={`vtrl-${opt.value}`}
+                      className={cn(
+                        "flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors",
+                        selected
+                          ? "border-primary bg-accent/40"
+                          : "border-border hover:border-primary/40 hover:bg-accent/20"
+                      )}
+                    >
+                      <RadioGroupItem
+                        id={`vtrl-${opt.value}`}
+                        value={opt.value}
+                        className="mt-0.5 shrink-0"
+                      />
+                      <div className="flex min-w-0 flex-col gap-1">
+                        <span className="text-sm font-medium text-foreground">
+                          {opt.title}
+                        </span>
+                        <span className="text-xs text-muted-foreground">
+                          {opt.description}
+                        </span>
+                        <div className="mt-1 flex flex-col gap-1">
+                          <ConsequenceLine
+                            label="Externe KI-Dienste"
+                            value={opt.ki}
+                          />
+                          <ConsequenceLine
+                            label="Webrecherche"
+                            value={opt.web}
+                          />
+                        </div>
+                      </div>
+                    </label>
+                  )
+                })}
+              </RadioGroup>
+
+              <FieldError message={errors.vertraulichkeit} />
+
+              {/* Summary line after selection */}
+              {data.vertraulichkeit && (
+                <p className="rounded-md bg-accent/40 px-4 py-2.5 text-sm text-foreground">
+                  {VERTRAULICHKEIT_SUMMARY[data.vertraulichkeit as DataClass]}
+                </p>
+              )}
+            </div>
+
+            <Separator className="my-8" />
+
+            {/* ── SECTION 2: Projekt ─────────────────────────────────── */}
             <div className="flex flex-col gap-6">
               <SectionHeading
                 title="Projekt"
@@ -392,6 +462,19 @@ export function IntakeForm() {
                 <FieldError message={errors.titel} />
               </div>
 
+              {/* Vertraulichkeit steht bewusst über diesem Abschnitt; der
+                  Hinweis erscheint nur, wenn sie übersprungen wurde. */}
+              {!data.vertraulichkeit && (
+                <p
+                  role="note"
+                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+                >
+                  Bitte wählen Sie zuerst oben die Vertraulichkeit, bevor Sie
+                  sensible Projektideen eingeben. Die Stufe bestimmt, welche
+                  externen Dienste genutzt werden dürfen.
+                </p>
+              )}
+
               {/* Projektidee */}
               <div className="flex flex-col gap-1.5">
                 <Label htmlFor="projektidee">
@@ -400,15 +483,20 @@ export function IntakeForm() {
                     *
                   </span>
                 </Label>
+                <p id="projektidee-hilfe" className="text-xs text-muted-foreground">
+                  Beschreiben Sie kurz: Welches Problem wird gelöst? Was ist neu
+                  gegenüber dem heutigen Stand? Wer nutzt die Lösung? Welche
+                  Rolle hat der Umsetzungspartner? Was soll am Ende entstehen?
+                </p>
                 <Textarea
                   id="projektidee"
                   value={data.projektidee}
                   onChange={(e) => set("projektidee", e.target.value)}
                   maxLength={PROJEKTIDEE_MAX}
                   rows={5}
-                  placeholder="Was ist die Innovation? Für wen? Was ist neu daran?"
+                  placeholder="z. B.: Problem — … · Neu daran — … · Nutzerinnen/Nutzer — … · Rolle des Umsetzungspartners — … · Ergebnis — …"
                   aria-invalid={!!errors.projektidee}
-                  aria-describedby="projektidee-count"
+                  aria-describedby="projektidee-hilfe projektidee-count"
                   disabled={saving}
                   className="resize-y"
                 />
@@ -456,7 +544,7 @@ export function IntakeForm() {
 
             <Separator className="my-8" />
 
-            {/* ── SECTION 2: Rahmen ──────────────────────────────────── */}
+            {/* ── SECTION 3: Rahmen ──────────────────────────────────── */}
             <div className="flex flex-col gap-6">
               <SectionHeading
                 title="Rahmen"
@@ -480,14 +568,27 @@ export function IntakeForm() {
                     </TooltipContent>
                   </Tooltip>
                 </div>
-                <div className="flex h-10 items-center rounded-md border border-border bg-muted/50 px-3 text-sm text-muted-foreground select-none">
-                  Innosuisse Beta-Profil — ausgewählte Portalfelder
+                <div className="flex flex-col gap-0.5 rounded-md border border-border bg-muted/50 px-3 py-2 select-none">
+                  <span className="text-sm text-foreground">
+                    Innosuisse Innovationsprojekt mit Umsetzungspartner
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Beta-Profil: unterstützt aktuell ausgewählte Portalfelder,
+                    nicht das vollständige Innolink-Formular.
+                  </span>
                 </div>
               </div>
 
               {/* Partner */}
               <div className="flex flex-col gap-3">
                 <Label>Projektpartner</Label>
+                <p className="text-xs text-muted-foreground">
+                  Für ein Standard-Innosuisse-Innovationsprojekt braucht es
+                  typischerweise mindestens einen beitragsberechtigten Schweizer
+                  Forschungspartner und einen Umsetzungspartner mit
+                  Wertschöpfung in der Schweiz. Details wie Land, Kontaktperson
+                  oder Beiträge erfassen Sie später im Bereich «Partner».
+                </p>
                 {data.partner.length > 0 && (
                   <div className="flex flex-col gap-2">
                     {data.partner.map((p) => (
@@ -556,87 +657,33 @@ export function IntakeForm() {
 
               {/* Budgetrahmen */}
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="budget">Budgetrahmen (CHF)</Label>
+                <Label htmlFor="budget">Grob geschätzter Budgetrahmen (CHF)</Label>
+                <p id="budget-hilfe" className="text-xs text-muted-foreground">
+                  Eine grobe Schätzung des Gesamtbudgets genügt.
+                  Innosuisse-relevante Beiträge wie Umsetzungspartneranteil und
+                  Barbeitrag werden später separat geprüft.
+                </p>
                 <Input
                   id="budget"
                   value={data.budgetrahmen}
                   onChange={(e) => set("budgetrahmen", e.target.value)}
                   placeholder="z. B. 350000"
                   aria-invalid={!!errors.budgetrahmen}
+                  aria-describedby="budget-hilfe"
                   inputMode="decimal"
                   disabled={saving}
                   className="max-w-[240px]"
                 />
                 <FieldError message={errors.budgetrahmen} />
               </div>
-            </div>
 
-            <Separator className="my-8" />
-
-            {/* ── SECTION 3: Vertraulichkeit ─────────────────────────── */}
-            <div className="flex flex-col gap-6">
-              <SectionHeading
-                title="Vertraulichkeit"
-                subtitle="Bestimmt, welche Dienste genutzt werden dürfen"
-              />
-
-              <RadioGroup
-                value={data.vertraulichkeit}
-                onValueChange={(v) =>
-                  set("vertraulichkeit", v as DataClass)
-                }
-                aria-invalid={!!errors.vertraulichkeit}
-                className="flex flex-col gap-3"
-              >
-                {VERTRAULICHKEIT_OPTIONS.map((opt) => {
-                  const selected = data.vertraulichkeit === opt.value
-                  return (
-                    <label
-                      key={opt.value}
-                      htmlFor={`vtrl-${opt.value}`}
-                      className={cn(
-                        "flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors",
-                        selected
-                          ? "border-primary bg-accent/40"
-                          : "border-border hover:border-primary/40 hover:bg-accent/20"
-                      )}
-                    >
-                      <RadioGroupItem
-                        id={`vtrl-${opt.value}`}
-                        value={opt.value}
-                        className="mt-0.5 shrink-0"
-                      />
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="text-sm font-medium text-foreground">
-                          {opt.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {opt.description}
-                        </span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          <ConsequenceLine
-                            label="Externe KI-Dienste"
-                            value={opt.ki}
-                          />
-                          <ConsequenceLine
-                            label="Webrecherche"
-                            value={opt.web}
-                          />
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
-              </RadioGroup>
-
-              <FieldError message={errors.vertraulichkeit} />
-
-              {/* Summary line after selection */}
-              {data.vertraulichkeit && (
-                <p className="rounded-md bg-accent/40 px-4 py-2.5 text-sm text-foreground">
-                  {VERTRAULICHKEIT_SUMMARY[data.vertraulichkeit as DataClass]}
-                </p>
-              )}
+              {/* Frist & Projektdauer — not in the backend contract yet.
+                  TODO(contract): add planned duration / desired start /
+                  relevant deadline once the project DTO supports them. */}
+              <p className="text-xs text-muted-foreground">
+                Frist und Projektdauer werden in der Beta noch nicht
+                strukturiert erfasst.
+              </p>
             </div>
 
             {/* Bottom padding so sticky footer doesn't overlap last content */}

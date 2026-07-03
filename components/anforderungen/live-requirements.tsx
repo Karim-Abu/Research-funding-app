@@ -26,11 +26,14 @@ import {
   REQ_FALLBACK,
   REQ_CATEGORY_ORDER,
   REQ_FILTER_ORDER,
+  REQ_NEUTRAL_ACTION,
   EVIDENCE_STATE_LABELS,
   HUMAN_STATE_LABELS,
   categorize,
   liveStatusToBucket,
   matchesFilter,
+  primaryActionFor,
+  relevanceFor,
   summarize,
   type EvidenceState,
   type HumanState,
@@ -41,6 +44,7 @@ import {
 // Normalized row the screen renders — derived purely in the frontend.
 interface LiveRow {
   id: string
+  requirementId: string
   title: string
   reasoning: string
   bucket: ReqBucket
@@ -71,6 +75,7 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     .filter((t): t is string => Boolean(t?.trim()))
   return {
     id: a.assessment_id,
+    requirementId: a.requirement_id,
     title: a.title?.trim() || REQ_FALLBACK.title,
     reasoning: a.reasoning?.trim() || "Keine Begründung vorhanden.",
     bucket,
@@ -82,13 +87,21 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
   }
 }
 
-export function LiveRequirements({ runId }: { runId: string }) {
+export function LiveRequirements({
+  runId,
+  focusRequirementId,
+}: {
+  runId: string
+  /** Deep link (?requirement=…): expand, scroll to and highlight this row. */
+  focusRequirementId?: string | null
+}) {
   const [items, setItems] = React.useState<RequirementAssessmentDto[] | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [filter, setFilter] = React.useState<ReqFilter>("all")
   const [search, setSearch] = React.useState("")
   const [expanded, setExpanded] = React.useState<Set<string>>(new Set())
   const [closedGroups, setClosedGroups] = React.useState<Set<string>>(new Set())
+  const focusHandledRef = React.useRef(false)
 
   const load = React.useCallback(() => {
     setError(null)
@@ -99,6 +112,26 @@ export function LiveRequirements({ runId }: { runId: string }) {
   }, [runId])
 
   React.useEffect(() => load(), [load])
+
+  // Deep link: once the data is there, expand the targeted row (matched by
+  // requirement_id or assessment_id), scroll to it and highlight it briefly.
+  React.useEffect(() => {
+    if (!focusRequirementId || focusHandledRef.current || !items) return
+    const match = items.find(
+      (a) =>
+        a.requirement_id === focusRequirementId ||
+        a.assessment_id === focusRequirementId
+    )
+    if (!match) return
+    focusHandledRef.current = true
+    setExpanded((prev) => new Set(prev).add(match.assessment_id))
+    requestAnimationFrame(() => {
+      const el = document.getElementById(`req-${match.assessment_id}`)
+      el?.scrollIntoView({ behavior: "smooth", block: "center" })
+      el?.classList.add("deeplink-highlight")
+      setTimeout(() => el?.classList.remove("deeplink-highlight"), 2200)
+    })
+  }, [focusRequirementId, items])
 
   function toggleSet(
     setter: React.Dispatch<React.SetStateAction<Set<string>>>,
@@ -294,7 +327,7 @@ export function LiveRequirements({ runId }: { runId: string }) {
                   <span className="font-medium text-foreground">
                     {openTotal} offene{openTotal === 1 ? "r Punkt" : " Punkte"}
                   </span>{" "}
-                  {openTotal === 1 ? "wird" : "werden"} ins Review übernommen.
+                  {openTotal === 1 ? "erscheint" : "erscheinen"} automatisch in der Qualitätsprüfung.
                 </>
               )}
             </p>
@@ -365,7 +398,18 @@ function LiveRequirementRow({
 
       {expanded && (
         <div className="flex flex-col gap-4 border-t border-border bg-muted/20 px-5 pb-5 pt-4">
-          <p className="text-sm leading-relaxed text-foreground">{row.reasoning}</p>
+          {/* System finding — clearly separated from the human decision. */}
+          <div className="flex flex-col gap-1">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+              Systembefund
+            </p>
+            <p className="text-sm leading-relaxed text-foreground">{row.reasoning}</p>
+          </div>
+
+          <p className="text-xs text-muted-foreground">
+            <span className="font-medium text-foreground">Warum relevant?</span>{" "}
+            {relevanceFor(row.category)}
+          </p>
 
           {/* Status row: evidence + human review */}
           <div className="flex flex-wrap gap-2">
@@ -399,51 +443,62 @@ function LiveRequirementRow({
             </div>
           )}
 
-          {/* Portal field — no portal mapping in the contract yet */}
-          <p className="text-xs text-muted-foreground">
-            Betroffenes Portal-Feld: {REQ_FALLBACK.portal}
-          </p>
+          {/* Portal field — no portal mapping in the contract yet.
+              TODO(contract): map requirements onto portal fields once the
+              backend exposes the relationship. */}
+          <p className="text-xs text-muted-foreground">{REQ_FALLBACK.portal}.</p>
 
-          {/* Actions — guidance links only; confirmation/decisions live in the
-              Review (no write-back from this screen). */}
-          <div className="flex flex-wrap items-center gap-2">
-            {row.evidenceState === "present" && row.firstAnchorId ? (
-              <Button
-                variant="outline"
-                size="sm"
-                render={
-                  <a
-                    href={`/quellen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`}
-                  />
-                }
-                nativeButton={false}
-              >
-                Beleg ansehen
-              </Button>
-            ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                render={<a href="/quellen" />}
-                nativeButton={false}
-              >
-                Quelle ergänzen
-              </Button>
-            )}
-            <Button variant="outline" size="sm" render={<a href="/review" />} nativeButton={false}>
-              In Review übernehmen
-            </Button>
-            {row.humanState === "needed" && (
-              <Button variant="ghost" size="sm" render={<a href="/review" />} nativeButton={false}>
-                Kommentar im Review erfassen
-              </Button>
-            )}
-            <span className="text-xs text-muted-foreground">
-              Bestätigung und Korrektur erfolgen im Review.
-            </span>
-          </div>
+          {/* Actions — one primary CTA per problem type; guidance links only.
+              Confirmation/decisions live in the Qualitätsprüfung (no
+              write-back from this screen). */}
+          <LiveRowActions row={row} />
         </div>
       )}
+    </div>
+  )
+}
+
+// ---------------------------------------------------------------------------
+// Row actions — exactly one primary CTA, secondaries stay quiet (ghost).
+// ---------------------------------------------------------------------------
+function LiveRowActions({ row }: { row: LiveRow }) {
+  const primary = primaryActionFor(row)
+  const evidenceHref = row.firstAnchorId
+    ? `/quellen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`
+    : null
+
+  // Secondaries: evidence link + neutral review link, unless the primary
+  // already covers them.
+  const secondaries: { label: string; href: string }[] = []
+  if (evidenceHref && primary?.href !== evidenceHref) {
+    secondaries.push({ label: "Beleg ansehen", href: evidenceHref })
+  }
+  if (primary?.href !== REQ_NEUTRAL_ACTION.href) {
+    secondaries.push(REQ_NEUTRAL_ACTION)
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {primary && (
+        <Button size="sm" render={<a href={primary.href} />} nativeButton={false}>
+          {primary.label}
+        </Button>
+      )}
+      {secondaries.map((action) => (
+        <Button
+          key={action.label}
+          variant="ghost"
+          size="sm"
+          render={<a href={action.href} />}
+          nativeButton={false}
+        >
+          {action.label}
+        </Button>
+      ))}
+      <span className="text-xs text-muted-foreground">
+        Befunde erscheinen automatisch in der Qualitätsprüfung. Bestätigung und
+        Korrektur erfolgen dort.
+      </span>
     </div>
   )
 }

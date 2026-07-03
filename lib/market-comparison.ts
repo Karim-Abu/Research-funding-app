@@ -75,6 +75,46 @@ export interface MarketComparisonDto {
   items: MarketComparisonItemDto[]
 }
 
+// ---------------------------------------------------------------------------
+// User-facing labels (shared by the Quellen table, the editor's Markt tab and
+// the market-comparison sheet). Raw enum values never reach the UI.
+// ---------------------------------------------------------------------------
+export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
+  competitor: "Konkurrent",
+  alternative_solution: "Alternative Lösung",
+  substitute: "Substitut",
+  incumbent_process: "Bestehender Prozess",
+  reference_solution: "Referenzlösung",
+  unknown: "Unklar",
+}
+
+export const ITEM_RELATION_LABELS: Record<ItemRelation, string> = {
+  similar: "ähnlich",
+  complementary: "komplementär",
+  competing: "konkurrierend",
+  reference: "Referenz",
+  unclear: "unklar",
+}
+
+export const CONFIDENCE_LABELS: Record<ConfidenceLabel, string> = {
+  source_backed: "Quelle erwähnt",
+  needs_review: "Unklar — prüfen",
+  insufficient_evidence: "Nicht ausreichend belegt",
+}
+
+export const CONFIDENCE_STYLE: Record<ConfidenceLabel, string> = {
+  source_backed: "bg-status-fulfilled/12 text-status-fulfilled",
+  needs_review: "bg-status-partial/12 text-status-partial",
+  insufficient_evidence: "bg-muted text-muted-foreground",
+}
+
+export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
+  proposed: "Vorgeschlagen",
+  accepted: "Übernommen",
+  rejected: "Abgelehnt",
+  needs_human_review: "Prüfung nötig",
+}
+
 const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",

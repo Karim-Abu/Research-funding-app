@@ -158,7 +158,7 @@ function OverrideDialog({ open, onOpenChange, rowTitle, onConfirm }: OverrideDia
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="verified">Erfüllt</SelectItem>
-                <SelectItem value="partial">Teilweise</SelectItem>
+                <SelectItem value="partial">Teilweise erfüllt</SelectItem>
                 <SelectItem value="open">Offen</SelectItem>
               </SelectContent>
             </Select>

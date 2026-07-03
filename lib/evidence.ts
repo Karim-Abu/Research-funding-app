@@ -66,6 +66,15 @@ export const EVIDENCE_LINK_STATUS_LABELS: Record<EvidenceLinkStatus, string> = {
   removed: "Entfernt",
 }
 
+// Short source-type chips (shared by the Evidenz screen and the editor's
+// Belege tab).
+export const EVIDENCE_SOURCE_TYPE_LABELS: Record<EvidenceSourceType, string> = {
+  pdf: "PDF",
+  docx: "DOCX",
+  txt: "Text",
+  url: "URL",
+}
+
 // "Fundstelle bestätigt" = the quote exists verbatim in the source. It does NOT
 // mean the statement has been fachlich (substantively) approved.
 export const VERIFIED_EXPLANATION =
@@ -74,14 +83,14 @@ export const VERIFIED_EXPLANATION =
 // Shorter inline hint used directly on the Evidenz screens.
 export const EVIDENCE_VERIFIED_HINT =
   "«Fundstelle bestätigt» bedeutet, dass der Text in der Quelle auffindbar ist — " +
-  "keine inhaltliche Freigabe. Die fachliche Bewertung erfolgt im Review."
+  "keine inhaltliche Freigabe. Die fachliche Bewertung erfolgt in der Qualitätsprüfung."
 
 // ---------------------------------------------------------------------------
 // User-friendly fallbacks (Mock + Live). Never show raw backend values.
 // ---------------------------------------------------------------------------
 export const REQUIREMENT_FALLBACK = "Keine zugeordnete Anforderung"
 export const FUNDSTELLE_FALLBACK = "Fundstelle nicht genau bestimmt"
-export const REVIEWER_FALLBACK = "Noch nicht menschlich geprüft"
+export const REVIEWER_FALLBACK = "Menschliche Prüfung offen"
 
 // ---------------------------------------------------------------------------
 // Unified evidence filter (works for both VerificationStatus and MachineStatus)
@@ -169,6 +178,45 @@ export function formatReviewer(
   const when = at ? ` · ${formatWhen(at)}` : ""
   if (looksLikeId(trimmed)) return `Menschlich geprüft${when}`
   return `Geprüft von ${trimmed}${when}`
+}
+
+// ---------------------------------------------------------------------------
+// Source usage — how a source is used as evidence (Fundstellen + linked
+// requirements). Computed client-side from already-available run data; callers
+// must label the numbers as view-scoped ("in der aktuellen Analyse"), never as
+// a complete cross-project total.
+// ---------------------------------------------------------------------------
+export interface SourceUsage {
+  anchors: number
+  requirements: number
+}
+
+export function computeSourceUsage(
+  anchors: Pick<EvidenceAnchorDto, "anchor_id" | "source_id">[],
+  requirements: { evidence_links: { anchor_id: string }[] }[]
+): Map<string, SourceUsage> {
+  const bySource = new Map<string, SourceUsage>()
+  const anchorToSource = new Map<string, string>()
+  for (const anchor of anchors) {
+    anchorToSource.set(anchor.anchor_id, anchor.source_id)
+    const usage = bySource.get(anchor.source_id) ?? { anchors: 0, requirements: 0 }
+    usage.anchors += 1
+    bySource.set(anchor.source_id, usage)
+  }
+  // Each requirement counts at most once per source.
+  for (const requirement of requirements) {
+    const sources = new Set<string>()
+    for (const link of requirement.evidence_links) {
+      const sourceId = anchorToSource.get(link.anchor_id)
+      if (sourceId) sources.add(sourceId)
+    }
+    for (const sourceId of sources) {
+      const usage = bySource.get(sourceId) ?? { anchors: 0, requirements: 0 }
+      usage.requirements += 1
+      bySource.set(sourceId, usage)
+    }
+  }
+  return bySource
 }
 
 export async function listEvidence(

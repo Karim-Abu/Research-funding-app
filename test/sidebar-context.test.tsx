@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react"
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { beforeEach, describe, expect, it, vi } from "vitest"
 import { AppProviders } from "@/components/providers/app-providers"
@@ -11,6 +11,39 @@ vi.mock("next/navigation", () => ({
 }))
 
 const user = { name: "Anna Keller", displayRole: "Lead", role: "lead_admin" as const }
+const shellProjects = [{ id: "project-a", title: "Verbundwerkstoffe (Demo)" }]
+
+function setCompactViewport(matches: boolean) {
+  Object.defineProperty(window, "matchMedia", {
+    writable: true,
+    value: vi.fn().mockImplementation((query: string) => ({
+      matches,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+}
+
+function renderMockShell() {
+  return render(
+    <AppProviders mode="mock">
+      <AppShell user={user} projects={shellProjects} activeProjectId="project-a">
+        <div>content</div>
+      </AppShell>
+    </AppProviders>
+  )
+}
+
+async function flushProviderEffects() {
+  await act(async () => {
+    await Promise.resolve()
+  })
+}
 
 function project(id: string, title: string) {
   return {
@@ -36,6 +69,8 @@ function project(id: string, title: string) {
 describe("active Antrag context (M10.2)", () => {
   beforeEach(() => {
     window.sessionStorage.clear()
+    window.localStorage.clear()
+    setCompactViewport(false)
     server.use(
       http.get("/api/session", () =>
         HttpResponse.json({
@@ -104,5 +139,66 @@ describe("active Antrag context (M10.2)", () => {
     expect(screen.getAllByText("Zuerst Antrag auswählen").length).toBeGreaterThan(0)
     // Intake stays reachable to create a new Antrag.
     expect(screen.getByRole("link", { name: "Intake" })).toBeInTheDocument()
+  })
+
+  it("starts expanded on desktop and collapses to the icon rail", async () => {
+    renderMockShell()
+    await flushProviderEffects()
+
+    const toggle = screen.getByRole("button", { name: "Minimieren" })
+    expect(toggle).toHaveAttribute("aria-expanded", "true")
+    expect(screen.getByText("Funding Programme")).toBeInTheDocument()
+    expect(screen.getByTestId("sidebar-active-project")).toHaveTextContent(
+      "Verbundwerkstoffe (Demo)"
+    )
+
+    fireEvent.click(toggle)
+
+    expect(window.localStorage.getItem("rf_sidebar_collapsed")).toBe("true")
+    expect(screen.getByRole("button", { name: "Erweitern" })).toHaveAttribute(
+      "aria-expanded",
+      "false"
+    )
+    expect(screen.queryByText("Funding Programme")).toBeNull()
+    expect(screen.getByRole("link", { name: "Quellen" })).toBeInTheDocument()
+  })
+
+  it("restores the persisted collapsed state", async () => {
+    window.localStorage.setItem("rf_sidebar_collapsed", "true")
+    const { unmount } = renderMockShell()
+    await flushProviderEffects()
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Erweitern" })).toHaveAttribute(
+        "aria-expanded",
+        "false"
+      )
+    )
+    expect(screen.queryByText("Funding Programme")).toBeNull()
+
+    unmount()
+    renderMockShell()
+    await flushProviderEffects()
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Erweitern" })).toBeInTheDocument()
+    )
+  })
+
+  it("starts collapsed on compact screens when no preference is stored", async () => {
+    setCompactViewport(true)
+
+    renderMockShell()
+    await flushProviderEffects()
+
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "Erweitern" })).toHaveAttribute(
+        "aria-expanded",
+        "false"
+      )
+    )
+    expect(window.localStorage.getItem("rf_sidebar_collapsed")).toBeNull()
+    expect(screen.queryByText("Funding Programme")).toBeNull()
+    expect(screen.getByRole("link", { name: "Quellen" })).toBeInTheDocument()
   })
 })

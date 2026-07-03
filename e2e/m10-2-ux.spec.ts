@@ -108,14 +108,15 @@ test("M10.2: orientation, links and readiness across the core screens", async ({
   await expect(
     page.getByRole("heading", { name: /Anforderungen & Fördervoraussetzungen/ })
   ).toBeVisible({ timeout: 20_000 })
-  // Expand the first requirement row and expect a guidance action.
+  // Expand the first requirement row and expect a guidance action. The neutral
+  // fallback CTA is present unless the primary action already covers it; the
+  // Systembefund label separates system finding from human decision.
   const firstRow = page
     .locator('div[id^="req-"] > button[aria-expanded="false"]')
     .first()
   await firstRow.click()
-  await expect(
-    page.getByRole("button", { name: "In Review übernehmen" }).first()
-  ).toBeVisible()
+  await expect(page.getByText("Systembefund").first()).toBeVisible()
+  await expect(page.getByText(/Warum relevant\?/).first()).toBeVisible()
 
   // --- Review: Nächste Schritte ---------------------------------------------
   await page.goto("/review")

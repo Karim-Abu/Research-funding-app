@@ -47,13 +47,19 @@ describe("LiveRequirements actions (M10.2)", () => {
       "href",
       "/quellen?tab=evidenz&anchor=an42"
     )
-    // Guidance-only human review: link into the Review, no inline mutation.
+    // Partner requirement → primary CTA routes to the intake partner section.
     expect(
-      screen.getByRole("button", { name: "Kommentar im Review erfassen" })
+      screen.getByRole("button", { name: "Im Intake Partner ergänzen" })
+    ).toHaveAttribute("href", "/intake")
+    // Guidance-only human review: neutral link into the Qualitätsprüfung.
+    expect(
+      screen.getByRole("button", { name: "In Qualitätsprüfung öffnen" })
     ).toHaveAttribute("href", "/review")
+    // The old generic buttons are gone.
+    expect(screen.queryByRole("button", { name: "In Review übernehmen" })).toBeNull()
     expect(
-      screen.getByRole("button", { name: "In Review übernehmen" })
-    ).toBeInTheDocument()
+      screen.queryByRole("button", { name: "Kommentar im Review erfassen" })
+    ).toBeNull()
   })
 
   it("offers 'Quelle ergänzen' when no evidence is linked", async () => {

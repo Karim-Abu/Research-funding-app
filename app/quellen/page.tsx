@@ -70,6 +70,12 @@ import { createProcessingConfirmation } from "@/lib/processing-confirmations"
 import { pollOperation, type PollHandle } from "@/lib/operations"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
+import {
+  computeSourceUsage,
+  listEvidence,
+  type SourceUsage,
+} from "@/lib/evidence"
+import { listRequirements } from "@/lib/requirements"
 
 // Map a live contract SourceDocument onto the existing table row shape.
 const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
@@ -282,10 +288,14 @@ function QuellenPageContent() {
     searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
   // Deep link from Anforderungen ("Beleg ansehen"): focus one evidence card.
   const focusAnchorId = searchParams.get("anchor")
+  // Deep link (?source=…): open that source's details directly.
+  const sourceFromUrl = searchParams.get("source")
 
   const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
   // Evidence → source navigation: switch tab + open that source's details.
-  const [sourceDetailId, setSourceDetailId] = React.useState<string | null>(null)
+  const [sourceDetailId, setSourceDetailId] = React.useState<string | null>(
+    sourceFromUrl
+  )
   // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
   // this route, so follow URL changes after mount as well.
   React.useEffect(() => {
@@ -690,6 +700,32 @@ function QuellenPageContent() {
     []
   )
 
+  // View-scoped source usage (Fundstellen + Anforderungen of the completed
+  // run) for the source-details dialog. undefined = not available.
+  const [sourceUsage, setSourceUsage] = React.useState<
+    Map<string, SourceUsage> | undefined
+  >(undefined)
+  React.useEffect(() => {
+    if (!liveMode || !completedRunId) {
+      setSourceUsage(undefined)
+      return
+    }
+    let cancelled = false
+    Promise.all([
+      listEvidence(completedRunId),
+      listRequirements(completedRunId),
+    ])
+      .then(([anchors, requirements]) => {
+        if (!cancelled) setSourceUsage(computeSourceUsage(anchors, requirements))
+      })
+      .catch(() => {
+        if (!cancelled) setSourceUsage(undefined)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liveMode, completedRunId])
+
   // Resolve the latest completed run so the Evidenz tab can show live evidence.
   React.useEffect(() => {
     if (!liveMode || !projectId) {
@@ -864,6 +900,8 @@ function QuellenPageContent() {
                   onDetailsOpenChange={(open) => {
                     if (!open) setSourceDetailId(null)
                   }}
+                  sourceUsage={sourceUsage}
+                  onShowEvidence={() => handleTabChange("evidenz")}
                 />
                 {projectId && capabilities?.features?.web_research && (
                   <PublicResearchPanel
@@ -880,6 +918,7 @@ function QuellenPageContent() {
               <SourceTable
                 sources={dummySources}
                 currentUserName={currentUser.name}
+                onShowEvidence={() => handleTabChange("evidenz")}
               />
             )}
           </TabsContent>

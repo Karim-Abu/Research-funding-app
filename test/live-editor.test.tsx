@@ -1,7 +1,15 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
+
+// Tiptap needs real DOM ranges jsdom lacks → swap the editor for a textarea
+// stub (real editor covered by Playwright). Keeps value/selection assertions.
+vi.mock(
+  "@/components/editor/rich-text-editor",
+  async () => await import("./mocks/rich-text-editor")
+)
+
 import { LiveEditor } from "@/components/editor/live-editor"
 
 function draft(overrides: Record<string, unknown> = {}) {
@@ -49,6 +57,7 @@ function mock(opts: { patch?: () => Response; review?: () => Response } = {}) {
   server.use(
     http.get("/api/runs/r1/fields", () => HttpResponse.json([draft()])),
     http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+    http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
     http.get("/api/runs/r1/review", () =>
       opts.review ? opts.review() : HttpResponse.json(reviewPkg())
     ),
@@ -75,6 +84,32 @@ function mock(opts: { patch?: () => Response; review?: () => Response } = {}) {
 }
 
 describe("LiveEditor", () => {
+  it("preselects the deep-linked field (?field=…) instead of the first one", async () => {
+    const second = draft({
+      draft_id: "d2",
+      field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+      field_name: "Innovation & Lösung",
+      current_version: {
+        draft_version_id: "v2",
+        text: "Text der Lösung.",
+        character_count: 16,
+        created_by: "user",
+        created_at: new Date().toISOString(),
+        content_hash: "h2",
+      },
+    })
+    server.use(
+      http.get("/api/runs/r1/fields", () => HttpResponse.json([draft(), second])),
+      http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg()))
+    )
+    render(<LiveEditor runId="r1" initialFieldId="SOL.INNOVATION_SOLUTION.EDITOR" />)
+    await waitFor(() =>
+      expect(screen.getByDisplayValue("Text der Lösung.")).toBeInTheDocument()
+    )
+  })
+
   it("renders the template draft with badge, hint and Unicode text", async () => {
     mock()
     render(<LiveEditor runId="r1" />)

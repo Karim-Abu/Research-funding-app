@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { AppShell } from "@/components/shell/app-shell"
 import { DraftWorkspace } from "@/components/editor/draft-workspace"
 import { LiveEditor } from "@/components/editor/live-editor"
@@ -20,6 +21,10 @@ const editorStepStatus = [
 ] as const
 
 function LiveEditorContainer() {
+  // Deep link (?field=…) from Qualitätsprüfung/Export — parsed here (not in
+  // LiveEditor) so component tests don't need a router mock.
+  const searchParams = useSearchParams()
+  const initialFieldId = searchParams.get("field")
   const [runId, setRunId] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState(false)
 
@@ -46,7 +51,7 @@ function LiveEditorContainer() {
       </div>
     )
   }
-  return <LiveEditor runId={runId} />
+  return <LiveEditor runId={runId} initialFieldId={initialFieldId} />
 }
 
 export default function EditorPage() {
@@ -59,7 +64,14 @@ export default function EditorPage() {
       currentStep={5}
       stepStatus={[...editorStepStatus]}
     >
-      {mode === "live" ? <LiveEditorContainer /> : <DraftWorkspace />}
+      {mode === "live" ? (
+        // useSearchParams requires a Suspense boundary in the App Router.
+        <React.Suspense fallback={null}>
+          <LiveEditorContainer />
+        </React.Suspense>
+      ) : (
+        <DraftWorkspace />
+      )}
     </AppShell>
   )
 }

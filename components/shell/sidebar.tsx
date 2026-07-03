@@ -73,6 +73,8 @@ interface SidebarProps {
   onToggle: () => void
   /** Title of the active Antrag; null → project-scoped links are disabled. */
   activeProjectTitle?: string | null
+  /** User-facing status line for the active Antrag (e.g. "In Bearbeitung"). */
+  activeProjectStatusLabel?: string | null
 }
 
 function pathActive(pathname: string, href: string): boolean {
@@ -88,14 +90,17 @@ export function Sidebar({
   collapsed,
   onToggle,
   activeProjectTitle = null,
+  activeProjectStatusLabel = null,
 }: SidebarProps) {
   const pathname = usePathname()
   const hasProject = activeProjectTitle !== null && activeProjectTitle !== ""
+  const navigationId = "primary-sidebar-navigation"
+  const toggleLabel = collapsed ? "Erweitern" : "Minimieren"
 
   return (
     <aside
       className={cn(
-        "flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200",
+        "relative flex shrink-0 flex-col border-r border-sidebar-border bg-sidebar transition-[width] duration-200",
         collapsed ? "w-16" : "w-60"
       )}
     >
@@ -117,7 +122,11 @@ export function Sidebar({
         </Link>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-1 overflow-y-auto p-2">
+      <nav
+        id={navigationId}
+        aria-label="Hauptnavigation"
+        className="flex flex-1 flex-col gap-1 overflow-y-auto p-2 pb-16"
+      >
         {collapsed ? (
           collapsedItems.map((item) =>
             hasProject || PROJECT_INDEPENDENT.has(item.label) || item.label === "Projekte" ? (
@@ -159,20 +168,43 @@ export function Sidebar({
             <DisabledRow item={{ label: "SNF", icon: Landmark }} />
             <DisabledRow item={{ label: "Horizon Europe", icon: Globe }} />
 
-            {/* Aktueller Antrag — always names the selected application. */}
+            {/* Aktueller Antrag — compact card naming the selected
+                application; the workflow links below always refer to it. */}
             <SectionLabel>Aktueller Antrag</SectionLabel>
-            <p
+            <div
               data-testid="sidebar-active-project"
               className={cn(
-                "truncate px-3 pb-1 text-xs",
+                "mx-1 mb-1 rounded-md border px-2.5 py-2",
                 hasProject
-                  ? "font-medium text-sidebar-foreground"
-                  : "text-sidebar-foreground/50"
+                  ? "border-sidebar-border bg-sidebar-accent/50"
+                  : "border-dashed border-sidebar-border"
               )}
-              title={activeProjectTitle ?? undefined}
             >
-              {hasProject ? activeProjectTitle : "Kein Antrag ausgewählt"}
-            </p>
+              {hasProject ? (
+                <>
+                  <p
+                    className="truncate text-xs font-medium text-sidebar-foreground"
+                    title={activeProjectTitle ?? undefined}
+                  >
+                    {activeProjectTitle}
+                  </p>
+                  {activeProjectStatusLabel && (
+                    <p className="mt-0.5 text-[11px] text-sidebar-foreground/70">
+                      Status: {activeProjectStatusLabel}
+                    </p>
+                  )}
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-sidebar-foreground/60">
+                    Kein Antrag ausgewählt
+                  </p>
+                  <p className="mt-0.5 text-[11px] text-sidebar-foreground/50">
+                    In der Projektübersicht einen Antrag wählen.
+                  </p>
+                </>
+              )}
+            </div>
             {currentApplication.map((item) =>
               hasProject || PROJECT_INDEPENDENT.has(item.label) ? (
                 <ExpandedLink
@@ -196,23 +228,27 @@ export function Sidebar({
         )}
       </nav>
 
-      <div className="border-t border-sidebar-border p-2">
-        <button
-          type="button"
-          onClick={onToggle}
-          className={cn(
-            "flex min-h-[44px] w-full items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/70 outline-none transition-colors hover:bg-sidebar-accent/60 hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring",
-            collapsed && "justify-center px-0"
-          )}
-        >
-          {collapsed ? (
-            <PanelLeftOpen className="size-5 shrink-0" />
-          ) : (
-            <PanelLeftClose className="size-5 shrink-0" />
-          )}
-          {!collapsed && <span>Minimieren</span>}
-        </button>
-      </div>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <button
+              type="button"
+              onClick={onToggle}
+              aria-label={toggleLabel}
+              aria-controls={navigationId}
+              aria-expanded={!collapsed}
+              className="absolute bottom-4 right-3 z-20 flex size-9 items-center justify-center rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground/75 shadow-sm outline-none transition-colors hover:bg-sidebar-accent hover:text-sidebar-foreground focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+            >
+              {collapsed ? (
+                <PanelLeftOpen className="size-5 shrink-0" />
+              ) : (
+                <PanelLeftClose className="size-5 shrink-0" />
+              )}
+            </button>
+          }
+        />
+        <TooltipContent side="right">{toggleLabel}</TooltipContent>
+      </Tooltip>
     </aside>
   )
 }

@@ -12,7 +12,7 @@ import type {
 // ---------------------------------------------------------------------------
 export const REVIEW_FALLBACKS = {
   title: "Unbenannter Prüfbefund",
-  field: "Keine direkte Feldzuordnung",
+  field: "Keinem konkreten Portalfeld zugeordnet",
   status: "Noch nicht geprüft",
   evidence: "Noch kein Beleg verknüpft",
   noReview: "Noch keine Qualitätsprüfung durchgeführt",
@@ -20,6 +20,32 @@ export const REVIEW_FALLBACKS = {
 
 export const HUMAN_IN_THE_LOOP_NOTE =
   "Die Qualitätsprüfung unterstützt die fachliche Kontrolle. Die finale Entscheidung bleibt beim Menschen."
+
+// Progress framing — the summary shows work/check progress, never a funding
+// likelihood. Shown directly under the summary tiles.
+export const REVIEW_PROGRESS_NOTE =
+  "Bearbeitungs- und Prüfstand — keine Aussage zur Förderwahrscheinlichkeit."
+
+// Clarifies that completing the review is an internal step, not a submission.
+export const APPROVAL_SCOPE_NOTE =
+  "Diese Freigabe bestätigt nur die interne Prüfung. Der Antrag wird nicht eingereicht."
+
+// Short, non-technical explanations for the six summary tiles. Rendered via an
+// accessible trigger (click/focus, not hover-only) — see StatusHelp.
+export const REVIEW_TILE_HELP = {
+  bestanden:
+    "So viele Prüfbereiche haben aktuell keine offenen Befunde. Das ist eine Systemprüfung — keine menschliche Freigabe.",
+  teilweise:
+    "Prüfbereiche mit Hinweisen, aber ohne blockierende Befunde.",
+  nichtBestanden:
+    "Prüfbereiche mit mindestens einem blockierenden Befund.",
+  blocker:
+    "Einzelne Punkte, die Freigabe und Export verhindern, bis sie geklärt sind.",
+  hinweise:
+    "Empfehlungen und kleinere Auffälligkeiten. Sie blockieren nicht, sollten aber geprüft werden.",
+  pruefungNoetig:
+    "Anforderungen, bei denen eine Person den Systembefund bestätigen oder Angaben ergänzen muss.",
+} as const
 
 // ---------------------------------------------------------------------------
 // KI-gestützte Hinweise (A3 evidence-consistency findings, Milestone 9G).
@@ -33,6 +59,32 @@ export const AI_FINDINGS_DESCRIPTION =
 /** A finding produced by an A3 review agent (profile_id like "A3.…"). */
 export function isAiFinding(finding: ReviewFindingDto): boolean {
   return (finding.profile_id ?? "").startsWith("A3.")
+}
+
+// ---------------------------------------------------------------------------
+// Section-comment types (Entwurf → Kommentare). The contract has no comment
+// type field, so the chosen type is stored as a visible prefix in the comment
+// text itself ("[Frage] …") and parsed back for display. "Hinweis" is the
+// default and stays unprefixed.
+// ---------------------------------------------------------------------------
+export const COMMENT_TYPES = ["Hinweis", "Frage", "Änderung nötig"] as const
+export type CommentType = (typeof COMMENT_TYPES)[number]
+
+const COMMENT_TYPE_RE = /^\[(Hinweis|Frage|Änderung nötig)\]\s*/
+
+/** Prefix the comment text with the chosen type (default type stays plain). */
+export function commentWithType(type: CommentType, text: string): string {
+  return type === "Hinweis" ? text : `[${type}] ${text}`
+}
+
+/** Split a stored comment back into type badge + display text. */
+export function parseCommentType(description: string): {
+  type: CommentType | null
+  text: string
+} {
+  const m = COMMENT_TYPE_RE.exec(description)
+  if (!m) return { type: null, text: description }
+  return { type: m[1] as CommentType, text: description.slice(m[0].length) }
 }
 
 // ---------------------------------------------------------------------------
@@ -144,7 +196,7 @@ export type GroupStatus = "bestanden" | "teilweise" | "nicht_bestanden"
 
 export const GROUP_STATUS_LABELS: Record<GroupStatus, string> = {
   bestanden: "Bestanden",
-  teilweise: "Teilweise",
+  teilweise: "Teilweise bestanden",
   nicht_bestanden: "Nicht bestanden",
 }
 
@@ -280,6 +332,34 @@ export function dedupeFindings(findings: ReviewFindingDto[]): DedupedFinding[] {
     }
   }
   return [...map.values()]
+}
+
+// ---------------------------------------------------------------------------
+// Blocker grouping by portal field — keeps long blocker lists scannable
+// (top groups first, rest collapsible).
+// ---------------------------------------------------------------------------
+export interface BlockerFieldGroup {
+  /** Readable field label (never a raw id). */
+  label: string
+  findings: ReviewFindingDto[]
+}
+
+export function groupBlockersByField(
+  findings: ReviewFindingDto[]
+): BlockerFieldGroup[] {
+  const map = new Map<string, BlockerFieldGroup>()
+  for (const f of findings) {
+    const label = fieldLabel(f.field_id)
+    const entry = map.get(label)
+    if (entry) entry.findings.push(f)
+    else map.set(label, { label, findings: [f] })
+  }
+  // Most affected fields first; unassigned findings last.
+  return [...map.values()].sort((a, b) => {
+    if (a.label === REVIEW_FALLBACKS.field) return 1
+    if (b.label === REVIEW_FALLBACKS.field) return -1
+    return b.findings.length - a.findings.length
+  })
 }
 
 /** Why a blocker matters — short, group-aware sentence (no debug wording). */

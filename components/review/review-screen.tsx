@@ -63,7 +63,7 @@ function gateStatusToMachineStatus(s: GateRowDto["status"]): MachineStatus {
 
 function gateLabel(s: GateRowDto["status"]) {
   if (s === "passed") return "Bestanden"
-  if (s === "partial") return "Teilweise"
+  if (s === "partial") return "Teilweise bestanden"
   return "Nicht bestanden"
 }
 
@@ -121,6 +121,49 @@ function DonutChart({ percent }: { percent: number }) {
 function GateRowItem({ row }: { row: GateRowDto }) {
   const [expanded, setExpanded] = React.useState(false)
   const machineStatus = gateStatusToMachineStatus(row.status)
+  // No detail → nothing to expand; render a static row instead of an
+  // accordion that would open empty.
+  const expandable = Boolean(row.detail?.trim())
+
+  const rowContent = (
+    <>
+      <MachineStatusBadge
+        status={machineStatus}
+        label={gateLabel(row.status)}
+        className="mt-0.5 shrink-0"
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{row.label}</span>
+        <span className="text-xs text-muted-foreground">
+          {row.result || "Keine offenen Befunde in dieser Prüfung."}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 pl-2">
+        {row.stale && (
+          <span className="inline-flex items-center gap-1 rounded border border-status-partial/40 bg-status-partial/8 px-2 py-0.5 text-xs text-status-partial">
+            <Clock className="size-3" />
+            Stand: unvollständiger Durchlauf
+          </span>
+        )}
+        {expandable &&
+          (expanded ? (
+            <ChevronDown className="size-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 text-muted-foreground" />
+          ))}
+      </div>
+    </>
+  )
+
+  if (!expandable) {
+    return (
+      <div className="rounded-md border border-border bg-card">
+        <div className="flex w-full min-h-[52px] items-start gap-3 px-4 py-3">
+          {rowContent}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-md border border-border bg-card">
@@ -130,28 +173,7 @@ function GateRowItem({ row }: { row: GateRowDto }) {
         className="flex w-full min-h-[52px] items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         aria-expanded={expanded}
       >
-        <MachineStatusBadge
-          status={machineStatus}
-          label={gateLabel(row.status)}
-          className="mt-0.5 shrink-0"
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">{row.label}</span>
-          <span className="text-xs text-muted-foreground">{row.result}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pl-2">
-          {row.stale && (
-            <span className="inline-flex items-center gap-1 rounded border border-status-partial/40 bg-status-partial/8 px-2 py-0.5 text-xs text-status-partial">
-              <Clock className="size-3" />
-              Stand: unvollständiger Durchlauf
-            </span>
-          )}
-          {expanded ? (
-            <ChevronDown className="size-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-4 text-muted-foreground" />
-          )}
-        </div>
+        {rowContent}
       </button>
 
       {expanded && (
@@ -292,11 +314,11 @@ function ApprovalCard({
                     "cursor-not-allowed select-none opacity-60"
                   )}
                 >
-                  Review freigeben
+                  Prüfung abschliessen
                 </span>
               ) : (
                 <Button onClick={onApprove} className="shrink-0">
-                  Review freigeben
+                  Prüfung abschliessen
                 </Button>
               )}
               {!isBlocked && (

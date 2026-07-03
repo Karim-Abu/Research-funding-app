@@ -12,6 +12,8 @@ export interface User {
 export interface Project {
   id: string
   title: string
+  /** Optional user-facing status line for the sidebar card (view model). */
+  statusLabel?: string
 }
 
 // Workflow stepper -------------------------------------------------------
@@ -48,7 +50,7 @@ export const MACHINE_STATUS_LABELS: Record<MachineStatus, string> = {
 // Requirement-fulfilment wording (Anforderungen / Fördervoraussetzungen).
 export const REQUIREMENT_STATUS_LABELS: Record<MachineStatus, string> = {
   verified: "Erfüllt",
-  partial: "Teilweise",
+  partial: "Teilweise erfüllt",
   open: "Offen",
   blocker: "Blockierend",
 }
@@ -133,7 +135,7 @@ export type ProjectCardStatus =
 
 export const PROJECT_STATUS_LABELS: Record<ProjectCardStatus, string> = {
   in_bearbeitung: "In Bearbeitung",
-  review_offen: "Review offen",
+  review_offen: "Prüfung offen",
   blockiert: "Blockiert",
   eingereicht: "Eingereicht",
 }

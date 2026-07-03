@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Link2, RefreshCw, Trash2 } from "lucide-react"
+import { ExternalLink, Link2, RefreshCw, Sparkles, Trash2 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -25,8 +25,10 @@ import {
 } from "@/lib/fields"
 import {
   listEvidence,
+  formatFundstelle,
   VERIFICATION_LABELS,
   EVIDENCE_LINK_STATUS_LABELS,
+  EVIDENCE_SOURCE_TYPE_LABELS,
   type EvidenceAnchorDto,
 } from "@/lib/evidence"
 import {
@@ -37,20 +39,48 @@ import {
   type ReviewPackageDto,
   type ReviewFindingDto,
 } from "@/lib/review"
-import { isAiFinding } from "@/lib/review-view"
+import {
+  isAiFinding,
+  COMMENT_TYPES,
+  commentWithType,
+  parseCommentType,
+  type CommentType,
+} from "@/lib/review-view"
+import {
+  listRequirements,
+  type RequirementAssessmentDto,
+} from "@/lib/requirements"
+import {
+  liveStatusToBucket,
+  REQ_FALLBACK,
+  EVIDENCE_STATE_LABELS,
+  HUMAN_STATE_LABELS,
+} from "@/lib/requirements-view"
+import { ReqBucketBadge } from "@/components/anforderungen/requirements-controls"
+import type { RichTextEditorHandle } from "@/components/editor/rich-text-editor"
+import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import {
+  getLatestComparison,
+  type MarketComparisonDto,
+  type MarketComparisonItemDto,
+} from "@/lib/market-comparison"
+import { marketArgumentSentence } from "@/lib/market-view"
 import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
+import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
 import { getActiveProjectId } from "@/lib/intake-store"
-import { liveFieldToViewModel, pickDefaultTab } from "@/lib/draft-viewmodel"
-import { AI_GOALS, AI_LIVE_NOTICE } from "@/lib/draft-ai-actions"
+import {
+  liveFieldToViewModel,
+  pickDefaultTab,
+  type AssistantTab,
+} from "@/lib/draft-viewmodel"
 import {
   createRedraft,
   isA2Field,
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
-import { Sparkles } from "lucide-react"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -68,11 +98,21 @@ const SAVE_STATE_LABEL: Record<SaveState, string> = {
   saved: "Gespeichert",
 }
 
-export function LiveEditor({ runId }: { runId: string }) {
+export function LiveEditor({
+  runId,
+  initialFieldId,
+}: {
+  runId: string
+  /** Deep link (?field=…): preselect and focus this portal field on load. */
+  initialFieldId?: string | null
+}) {
   // M9I-B: the active project drives the read-only market-comparison context.
   const marketProjectId = getActiveProjectId() ?? undefined
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [anchors, setAnchors] = React.useState<EvidenceAnchorDto[]>([])
+  const [requirements, setRequirements] = React.useState<
+    RequirementAssessmentDto[] | null
+  >(null)
   const [selectedId, setSelectedId] = React.useState<string | null>(null)
   const [localText, setLocalText] = React.useState("")
   const [baseVersionId, setBaseVersionId] = React.useState("")
@@ -83,7 +123,16 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [commentText, setCommentText] = React.useState("")
+  const [commentType, setCommentType] = React.useState<CommentType>("Hinweis")
+  const [confirmResolveId, setConfirmResolveId] = React.useState<string | null>(null)
   const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
+  // Controlled assistant tab — lets review hints open the Belege tab directly.
+  const [assistantTab, setAssistantTab] = React.useState<AssistantTab | null>(null)
+  // M10.3: live market comparison for the Markt tab + wide sheet.
+  const [caps, setCaps] = React.useState<Capabilities | null>(null)
+  const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
+  const [comparisonLoaded, setComparisonLoaded] = React.useState(false)
+  const [marketSheetOpen, setMarketSheetOpen] = React.useState(false)
   // M9D/9E: A2 draft suggestions (Solution & Innovation + Value Creation fields).
   const [a2Suggestion, setA2Suggestion] = React.useState<A2Suggestion | null>(null)
   const [a2Loading, setA2Loading] = React.useState(false)
@@ -92,9 +141,37 @@ export function LiveEditor({ runId }: { runId: string }) {
   const [a2ReviewOpen, setA2ReviewOpen] = React.useState(false)
   const [a2Accepting, setA2Accepting] = React.useState(false)
   const autoSelectedRef = React.useRef(false)
+  const editorRef = React.useRef<RichTextEditorHandle>(null)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
   const showA2Controls = isA2Field(selected?.field_id)
+  const comparisonEnabled = caps?.features?.market_comparison === true
+
+  React.useEffect(() => {
+    let active = true
+    void getCapabilities().then((c) => {
+      if (active) setCaps(c)
+    })
+    return () => {
+      active = false
+    }
+  }, [])
+
+  React.useEffect(() => {
+    if (!comparisonEnabled || !marketProjectId) return
+    let active = true
+    getLatestComparison(marketProjectId)
+      .then((c) => {
+        if (active) setComparison(c)
+      })
+      .catch(() => undefined)
+      .finally(() => {
+        if (active) setComparisonLoaded(true)
+      })
+    return () => {
+      active = false
+    }
+  }, [comparisonEnabled, marketProjectId])
 
   function resetA2() {
     setA2Suggestion(null)
@@ -120,14 +197,27 @@ export function LiveEditor({ runId }: { runId: string }) {
         setAnchors(ev)
         if (drafts.length && !autoSelectedRef.current) {
           autoSelectedRef.current = true
-          selectField(drafts[0])
+          // Deep link (?field=…) wins over the default first field; unknown
+          // ids fall back silently to the first field.
+          const preferred = initialFieldId
+            ? drafts.find((d) => d.field_id === initialFieldId)
+            : undefined
+          selectField(preferred ?? drafts[0])
+          if (preferred) {
+            requestAnimationFrame(() => editorRef.current?.focus())
+          }
         }
       })
       .catch((e) =>
         setLoadError(e instanceof Error ? e.message : "Entwürfe konnten nicht geladen werden.")
       )
+    // Requirements feed the per-field "Betroffene Anforderungen" join; a
+    // failure degrades to the empty state instead of blocking the editor.
+    listRequirements(runId)
+      .then(setRequirements)
+      .catch(() => setRequirements([]))
     loadReview()
-  }, [runId, loadReview])
+  }, [runId, loadReview, initialFieldId])
 
   React.useEffect(() => load(), [load])
 
@@ -139,6 +229,8 @@ export function LiveEditor({ runId }: { runId: string }) {
     setErrorMsg(null)
     setRecheck(false)
     setFieldNotice(null)
+    setConfirmResolveId(null)
+    setAssistantTab(null)
     resetA2()
   }
 
@@ -265,13 +357,42 @@ export function LiveEditor({ runId }: { runId: string }) {
         target_type: "portal_field_draft",
         target_id: selected.draft_id,
         action: "request_changes",
-        comment: commentText.trim(),
+        // The chosen type is stored as a visible prefix in the comment text
+        // ("[Frage] …") — the contract has no comment-type field.
+        comment: commentWithType(commentType, commentText.trim()),
       })
       setCommentText("")
+      setCommentType("Hinweis")
       loadReview()
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Kommentar fehlgeschlagen.")
     }
+  }
+
+  /**
+   * "Als Argument übernehmen" — inserts the sentence as a new paragraph at the
+   * editor cursor (via the editor handle). The editor's onChange then updates
+   * the local buffer + dirty state. Never auto-saves.
+   */
+  function insertMarketArgument(item: MarketComparisonItemDto) {
+    editorRef.current?.insertTextAtCursor(marketArgumentSentence(item))
+  }
+
+  /** Contextual shortcut per review hint: placeholder → mark it; evidence → open Belege. */
+  function findingAction(
+    f: ReviewFindingDto
+  ): { label: string; onClick: () => void } | null {
+    const text = f.description.toLowerCase()
+    if (/platzhalter|\[\[|\btbd\b|\btodo\b|angabe ergänzen/.test(text)) {
+      return {
+        label: "Zum Platzhalter",
+        onClick: () => editorRef.current?.selectPlaceholder(0),
+      }
+    }
+    if (/beleg|evidenz|fundstelle|quelle/.test(text)) {
+      return { label: "Belege öffnen", onClick: () => setAssistantTab("belege") }
+    }
+    return null
   }
 
   async function resolveFinding(findingId: string) {
@@ -344,18 +465,34 @@ export function LiveEditor({ runId }: { runId: string }) {
   const linkedAnchorIds = new Set(
     draftLinks.filter((l) => l.status === "active").map((l) => l.anchor_id)
   )
+  const anchorById = new Map(anchors.map((a) => [a.anchor_id, a]))
+  const visibleLinks = draftLinks.filter((l) => l.status !== "removed")
+
+  // Requirements ↔ field join: open findings carry both field_id and
+  // requirement_id — the contract has no direct field↔requirement mapping.
+  const fieldRequirementIds = new Set(
+    selectedFindings
+      .map((f) => f.requirement_id)
+      .filter((id): id is string => Boolean(id))
+  )
+  const fieldRequirements = (requirements ?? []).filter((r) =>
+    fieldRequirementIds.has(r.requirement_id)
+  )
 
   const viewModels = fields.map((f) => liveFieldToViewModel(f, review))
   const activeVm = viewModels.find((v) => v.id === selected.field_id) ?? viewModels[0]
 
   const hasBlocker = (review?.blocker_count ?? 0) > 0 || selectedFindings.some((f) => f.severity === "blocker")
+  const hasBackedMarketData =
+    comparisonEnabled &&
+    (comparison?.items.some((i) => i.confidence_label === "source_backed") ?? false)
   const defaultTab = pickDefaultTab(activeVm, {
-    hasMarketData: false,
+    hasMarketData: hasBackedMarketData,
     hasFindings: selectedFindings.length > 0,
     hasBlocker,
   })
 
-  // --- Right panel: Belege (live evidence + linking) ---
+  // --- Right panel: Belege (live evidence cards + linking) ---
   const belegeContent = (
     <div className="flex flex-col gap-3">
       <p className="text-xs text-muted-foreground">{LINK_EXPLANATION}</p>
@@ -364,36 +501,97 @@ export function LiveEditor({ runId }: { runId: string }) {
           {STALE_LINK_NOTICE}
         </p>
       )}
-      {draftLinks.length > 0 && (
-        <ul className="flex flex-col gap-1">
-          {draftLinks.map((l) => (
-            <li
-              key={l.evidence_link_id}
-              className="flex items-center justify-between gap-2 rounded border border-border px-2 py-1 text-xs"
-            >
-              <span>
-                Verknüpfung{" "}
-                <span className="text-muted-foreground">
-                  ({EVIDENCE_LINK_STATUS_LABELS[l.status]})
-                </span>
-              </span>
-              {l.status !== "removed" && (
-                <Button
-                  variant="ghost"
-                  size="xs"
-                  aria-label="Verknüpfung entfernen"
-                  onClick={() => unlink(l.evidence_link_id)}
-                >
-                  <Trash2 className="size-3" />
-                </Button>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-      {anchors.length === 0 ? (
+      {visibleLinks.length === 0 ? (
         <p className="text-xs text-muted-foreground">
           Noch keine Belege mit diesem Feld verknüpft.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {visibleLinks.map((l) => {
+            const anchor = anchorById.get(l.anchor_id)
+            const claim = l.claim_text?.trim() || anchor?.quote || "Aussage nicht verfügbar"
+            const isUrl = anchor?.source_type === "url"
+            const humanChecked = anchor?.verification_status === "human_verified"
+            return (
+              <li
+                key={l.evidence_link_id}
+                className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2"
+              >
+                <p className="text-xs leading-relaxed text-foreground">{claim}</p>
+                <p className="text-[11px] text-muted-foreground">
+                  {anchor ? (
+                    <>
+                      {anchor.source_name}
+                      <span className="ml-1.5 rounded bg-muted px-1 py-0.5">
+                        {EVIDENCE_SOURCE_TYPE_LABELS[anchor.source_type]}
+                      </span>
+                      {" · "}
+                      {formatFundstelle(anchor)}
+                    </>
+                  ) : (
+                    "Quelle nicht mehr verfügbar"
+                  )}
+                </p>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {anchor && (
+                    <Badge
+                      variant={
+                        anchor.verification_status === "exact_verified" || humanChecked
+                          ? "default"
+                          : "outline"
+                      }
+                    >
+                      {VERIFICATION_LABELS[anchor.verification_status]}
+                    </Badge>
+                  )}
+                  {l.status === "stale" && (
+                    <Badge variant="outline">{EVIDENCE_LINK_STATUS_LABELS.stale}</Badge>
+                  )}
+                  {anchor && !humanChecked && (
+                    <span className="text-[11px] text-muted-foreground">
+                      fachliche Prüfung offen
+                    </span>
+                  )}
+                </div>
+                <div className="flex flex-wrap items-center gap-3">
+                  {anchor && (
+                    <a
+                      href={
+                        isUrl
+                          ? anchor.source_name
+                          : `/quellen?tab=evidenz&anchor=${encodeURIComponent(anchor.anchor_id)}`
+                      }
+                      {...(isUrl ? { target: "_blank", rel: "noopener noreferrer" } : {})}
+                      className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
+                    >
+                      <ExternalLink className="size-3" />
+                      Quelle öffnen
+                    </a>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => unlink(l.evidence_link_id)}
+                    className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-destructive"
+                  >
+                    <Trash2 className="size-3" />
+                    Verknüpfung entfernen
+                  </button>
+                </div>
+              </li>
+            )
+          })}
+        </ul>
+      )}
+
+      <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Weitere Belege verknüpfen
+      </h4>
+      {anchors.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Für diesen Lauf liegen noch keine Belege vor.{" "}
+          <a href="/quellen" className="font-medium text-primary hover:underline">
+            Quellen öffnen
+          </a>
         </p>
       ) : (
         anchors.map((a) => (
@@ -421,6 +619,62 @@ export function LiveEditor({ runId }: { runId: string }) {
     </div>
   )
 
+  // --- Right panel: Anforderungen (per-field join via review findings) ---
+  const anforderungenContent =
+    requirements === null ? (
+      <Skeleton className="h-16 w-full" />
+    ) : fieldRequirements.length === 0 ? (
+      <div className="flex flex-col gap-2">
+        <p className="text-xs text-muted-foreground">
+          Keine Anforderungen mit diesem Feld verknüpft. Dieses Feld kann trotzdem
+          für die Fördervoraussetzungen relevant sein.
+        </p>
+        <Button
+          variant="outline"
+          size="sm"
+          className="self-start"
+          render={<a href="/anforderungen" />}
+          nativeButton={false}
+        >
+          Anforderungen prüfen
+        </Button>
+      </div>
+    ) : (
+      <ul className="flex flex-col gap-2">
+        {fieldRequirements.map((r) => {
+          const bucket = liveStatusToBucket(r.status)
+          const hasEvidence = r.evidence_links.length > 0
+          const humanNeeded = r.basis !== "human_override" && bucket !== "fulfilled"
+          return (
+            <li
+              key={r.assessment_id}
+              className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2"
+            >
+              <div className="flex items-start justify-between gap-2">
+                <span className="min-w-0 flex-1 text-xs font-medium text-foreground">
+                  {r.title?.trim() || REQ_FALLBACK.title}
+                </span>
+                <ReqBucketBadge bucket={bucket} />
+              </div>
+              <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[11px] text-muted-foreground">
+                <span>
+                  {hasEvidence ? EVIDENCE_STATE_LABELS.present : EVIDENCE_STATE_LABELS.missing}
+                </span>
+                {humanNeeded && <span>{HUMAN_STATE_LABELS.needed}</span>}
+                {r.stale && <span className="text-status-partial">Prüfung veraltet</span>}
+              </div>
+              <a
+                href={`/anforderungen?requirement=${encodeURIComponent(r.requirement_id)}`}
+                className="text-[11px] font-medium text-primary hover:underline"
+              >
+                In Anforderungen öffnen
+              </a>
+            </li>
+          )
+        })}
+      </ul>
+    )
+
   // --- Right panel: Kommentare (review hints + comment box + approve) ---
   const kommentareContent = (
     <div className="flex flex-col gap-3">
@@ -434,42 +688,112 @@ export function LiveEditor({ runId }: { runId: string }) {
           </p>
         ) : (
           <ul className="flex flex-col gap-1">
-            {selectedFindings.map((f) => (
-              <li
-                key={f.finding_id}
-                className="flex items-start justify-between gap-2 rounded border border-border px-2 py-1 text-xs"
-              >
-                <span>
-                  <Badge
-                    variant={f.severity === "blocker" ? "destructive" : "outline"}
-                    className="mr-1 align-middle"
-                  >
-                    {f.severity === "blocker" ? "Blocker" : "Hinweis"}
-                  </Badge>
-                  {isAiFinding(f) && (
-                    <Badge variant="outline" className="mr-1 align-middle">
-                      KI-Prüfung
-                    </Badge>
+            {selectedFindings.map((f) => {
+              const parsed = parseCommentType(f.description)
+              const action = findingAction(f)
+              const confirming = confirmResolveId === f.finding_id
+              return (
+                <li
+                  key={f.finding_id}
+                  className="flex flex-col gap-1.5 rounded border border-border px-2 py-1.5 text-xs"
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <span>
+                      <Badge
+                        variant={f.severity === "blocker" ? "destructive" : "outline"}
+                        className="mr-1 align-middle"
+                      >
+                        {f.severity === "blocker" ? "Blocker" : (parsed.type ?? "Hinweis")}
+                      </Badge>
+                      {isAiFinding(f) && (
+                        <Badge variant="outline" className="mr-1 align-middle">
+                          KI-Prüfung
+                        </Badge>
+                      )}
+                      {parsed.text}
+                    </span>
+                    {!confirming && (
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => setConfirmResolveId(f.finding_id)}
+                      >
+                        Erledigt
+                      </Button>
+                    )}
+                  </div>
+                  {action && !confirming && (
+                    <button
+                      type="button"
+                      onClick={action.onClick}
+                      className="self-start text-[11px] font-medium text-primary hover:underline"
+                    >
+                      {action.label}
+                    </button>
                   )}
-                  {f.description}
-                </span>
-                <Button variant="ghost" size="xs" onClick={() => resolveFinding(f.finding_id)}>
-                  Erledigt
-                </Button>
-              </li>
-            ))}
+                  {confirming && (
+                    <div className="flex flex-wrap items-center gap-2 border-t border-border pt-1.5">
+                      <span className="text-[11px] text-muted-foreground">
+                        Als erledigt markieren? Der Hinweis wird aus der Liste entfernt.
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="xs"
+                        onClick={() => {
+                          setConfirmResolveId(null)
+                          void resolveFinding(f.finding_id)
+                        }}
+                      >
+                        Bestätigen
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="xs"
+                        onClick={() => setConfirmResolveId(null)}
+                      >
+                        Abbrechen
+                      </Button>
+                    </div>
+                  )}
+                </li>
+              )
+            })}
           </ul>
         )}
       </section>
 
-      <Textarea
-        value={commentText}
-        onChange={(e) => setCommentText(e.target.value)}
-        rows={2}
-        aria-label="Kommentar zum Abschnitt"
-        placeholder="Kommentar zum Abschnitt hinzufügen …"
-        className="text-sm"
-      />
+      <div className="flex flex-col gap-1">
+        <div
+          role="group"
+          aria-label="Kommentar-Typ"
+          className="flex flex-wrap items-center gap-1"
+        >
+          <span className="text-[11px] text-muted-foreground">Typ:</span>
+          {COMMENT_TYPES.map((t) => (
+            <button
+              key={t}
+              type="button"
+              aria-pressed={commentType === t}
+              onClick={() => setCommentType(t)}
+              className={
+                commentType === t
+                  ? "rounded-full border border-primary/40 bg-primary/10 px-2 py-0.5 text-[11px] font-medium text-primary"
+                  : "rounded-full border border-border bg-card px-2 py-0.5 text-[11px] text-muted-foreground hover:text-foreground"
+              }
+            >
+              {t}
+            </button>
+          ))}
+        </div>
+        <Textarea
+          value={commentText}
+          onChange={(e) => setCommentText(e.target.value)}
+          rows={2}
+          aria-label="Kommentar zum Abschnitt"
+          placeholder="Kommentar zum Abschnitt hinzufügen …"
+          className="min-h-[96px] bg-white text-slate-950 border border-slate-200 rounded-md p-3"
+        />
+      </div>
       <div className="flex items-center justify-between gap-2">
         <Button size="sm" variant="outline" onClick={addComment} disabled={!commentText.trim()}>
           Kommentar hinzufügen
@@ -479,6 +803,14 @@ export function LiveEditor({ runId }: { runId: string }) {
         </Button>
       </div>
       {fieldNotice && <p role="status" className="text-xs text-emerald-700">{fieldNotice}</p>}
+      {!fieldApprovable && review?.recheck_required && (
+        <p className="text-xs text-muted-foreground">
+          Freigabe erst nach erneuter Prüfung möglich.{" "}
+          <a href="/review" className="font-medium text-primary hover:underline">
+            Zur Qualitätsprüfung
+          </a>
+        </p>
+      )}
       {!fieldApprovable && review && !review.recheck_required && (
         <p className="text-xs text-muted-foreground">
           Freigabe möglich, sobald keine Blocker-Hinweise für diesen Abschnitt offen sind.
@@ -532,7 +864,23 @@ export function LiveEditor({ runId }: { runId: string }) {
       }
       noticeSlot={
         <>
-          {showA2Controls && (
+          {recheck && (
+            <p
+              role="status"
+              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
+            >
+              {RECHECK_NOTICE}
+            </p>
+          )}
+          {errorMsg && <p role="alert" className="text-xs text-destructive">{errorMsg}</p>}
+        </>
+      }
+      editorRef={editorRef}
+      serverText={selected.current_version.text}
+      projectId={marketProjectId}
+      kiContent={
+        <div className="flex flex-col gap-2">
+          {showA2Controls ? (
             <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
               <div className="flex items-center gap-2">
                 <Button
@@ -562,8 +910,7 @@ export function LiveEditor({ runId }: { runId: string }) {
               )}
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
             </div>
-          )}
-          {!showA2Controls && (
+          ) : (
             <p
               className="text-xs text-muted-foreground"
               data-testid="a2-field-unavailable"
@@ -572,36 +919,38 @@ export function LiveEditor({ runId }: { runId: string }) {
               die Abschnitte «Lösung &amp; Innovation» und «Wertschöpfung».
             </p>
           )}
-          {recheck && (
-            <p
-              role="status"
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-            >
-              {RECHECK_NOTICE}
-            </p>
-          )}
-          {errorMsg && <p role="alert" className="text-xs text-destructive">{errorMsg}</p>}
-        </>
+          <p className="text-[11px] text-muted-foreground">
+            Vorschläge werden nie automatisch übernommen — Sie prüfen, übernehmen
+            oder verwerfen selbst.
+          </p>
+        </div>
       }
-      aiActions={AI_GOALS}
-      aiEnabled={false}
-      aiHint={AI_LIVE_NOTICE}
-      onAiAction={() => undefined}
-      suggestion={null}
-      onAcceptAll={() => undefined}
-      onAcceptParagraph={() => undefined}
-      onToggleCompare={() => undefined}
-      compareOpen={false}
-      onDiscard={() => undefined}
       assistant={
         <AssistantPanel
           key={selected.field_id}
           vm={activeVm}
           defaultTab={defaultTab}
-          market={{ data: null, relevant: activeVm.isMarketRelevant, live: true, projectId: marketProjectId }}
+          tab={assistantTab ?? undefined}
+          onTabChange={setAssistantTab}
+          market={{
+            data: null,
+            relevant: activeVm.isMarketRelevant,
+            live: true,
+            projectId: marketProjectId,
+            comparison,
+            comparisonLoaded,
+            comparisonEnabled,
+            onOpenComparison: () => setMarketSheetOpen(true),
+          }}
           suggestionExists={false}
           belegeContent={belegeContent}
+          anforderungenContent={anforderungenContent}
           kommentareContent={kommentareContent}
+          versionsFootnote={
+            <p className="text-xs text-muted-foreground">
+              Versionshistorie ist in dieser Beta noch nicht verfügbar.
+            </p>
+          }
         />
       }
       conflictDialog={conflictDialog}
@@ -624,6 +973,12 @@ export function LiveEditor({ runId }: { runId: string }) {
           accepting={a2Accepting}
         />
       )}
+      <MarketComparisonSheet
+        open={marketSheetOpen}
+        onOpenChange={setMarketSheetOpen}
+        comparison={comparison}
+        onInsertArgument={insertMarketArgument}
+      />
     </>
   )
 }

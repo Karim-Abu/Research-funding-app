@@ -6,8 +6,9 @@ import { Topbar } from "./topbar"
 import { WorkflowStepper } from "./workflow-stepper"
 import { useSession } from "@/components/providers/app-providers"
 import { getActiveProjectId, setActiveProjectId } from "@/lib/intake-store"
-import { listProjects } from "@/lib/projects"
-import type { Project, StepStatus, User } from "@/lib/types"
+import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
+import { listProjects, toDashboardCard } from "@/lib/projects"
+import { PROJECT_STATUS_LABELS, type Project, type StepStatus, type User } from "@/lib/types"
 
 interface AppShellProps {
   user: User
@@ -20,6 +21,9 @@ interface AppShellProps {
   stepperVariant?: "full" | "mini"
   children: React.ReactNode
 }
+
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "rf_sidebar_collapsed"
+const SIDEBAR_COMPACT_MEDIA_QUERY = "(max-width: 1023px)"
 
 export function AppShell({
   user,
@@ -55,7 +59,17 @@ export function AppShell({
     listProjects()
       .then((items) => {
         if (!active) return
-        setLiveProjects(items.map((p) => ({ id: p.project_id, title: p.title })))
+        setLiveProjects(
+          items.map((p) => ({
+            id: p.project_id,
+            title: p.title,
+            // Sidebar card status line — same derivation as the dashboard.
+            statusLabel:
+              PROJECT_STATUS_LABELS[
+                toDashboardCard(p).cardStatus ?? "in_bearbeitung"
+              ],
+          }))
+        )
       })
       .catch(() => {
         if (active) setLiveProjects([])
@@ -71,14 +85,46 @@ export function AppShell({
     if (stored) setProjectId(stored)
   }, [mode])
 
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      if (stored === "true" || stored === "false") {
+        setCollapsed(stored === "true")
+        return
+      }
+      setCollapsed(
+        window.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
+      )
+    } catch {
+      setCollapsed(false)
+    }
+  }, [])
+
   const shellProjects = mode === "live" ? (liveProjects ?? []) : projects
   const activeProject =
     shellProjects.find((p) => p.id === projectId) ?? null
+
+  function handleSidebarToggle() {
+    setCollapsed((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem(
+          SIDEBAR_COLLAPSED_STORAGE_KEY,
+          String(next)
+        )
+      } catch {
+        // Keep the UI responsive even when browser storage is unavailable.
+      }
+      return next
+    })
+  }
 
   function handleProjectChange(id: string) {
     setProjectId(id)
     if (mode === "live") {
       setActiveProjectId(id)
+      // Switching Antrag → drop the previous application's formatting cache.
+      clearAllRichEditorSessionCache()
       // Screens read the active Antrag on mount — a full reload re-anchors
       // every open view to the newly selected application.
       window.location.reload()
@@ -86,12 +132,13 @@ export function AppShell({
   }
 
   return (
-    <div className="flex h-screen min-w-[1280px] overflow-hidden bg-background">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-background">
       <Sidebar
         role={effectiveUser.role}
         collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
+        onToggle={handleSidebarToggle}
         activeProjectTitle={activeProject?.title ?? null}
+        activeProjectStatusLabel={activeProject?.statusLabel ?? null}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar

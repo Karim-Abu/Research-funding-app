@@ -19,6 +19,7 @@ import {
   listEvidence,
   VERIFICATION_LABELS,
   EVIDENCE_VERIFIED_HINT,
+  EVIDENCE_SOURCE_TYPE_LABELS,
   REQUIREMENT_FALLBACK,
   REVIEWER_FALLBACK,
   formatFundstelle,
@@ -31,13 +32,6 @@ import {
   type VerificationStatus,
 } from "@/lib/evidence"
 import { listRequirements } from "@/lib/requirements"
-
-const SOURCE_TYPE_LABEL: Record<string, string> = {
-  pdf: "PDF",
-  docx: "DOCX",
-  txt: "Text",
-  url: "URL",
-}
 
 // Colour + icon per verification status (green / orange / red). Labels stay in
 // VERIFICATION_LABELS so the wording remains "Fundstelle bestätigt" etc.
@@ -222,7 +216,7 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                         anchor.source_name
                       )}
                       <span className="ml-2 rounded bg-muted px-1.5 py-0.5">
-                        {SOURCE_TYPE_LABEL[anchor.source_type] ?? anchor.source_type}
+                        {EVIDENCE_SOURCE_TYPE_LABELS[anchor.source_type] ?? anchor.source_type}
                       </span>
                     </span>
                     <span className="text-xs text-muted-foreground">
@@ -257,6 +251,16 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
 
                 {/* Actions */}
                 <div className="mt-3 flex flex-wrap items-center gap-3">
+                  {/* Human review is decided in the Qualitätsprüfung — this
+                      screen stays read-only (no mark-reviewed endpoint here). */}
+                  {!reviewer && (
+                    <a
+                      href="/review"
+                      className="inline-flex items-center gap-1 text-xs font-medium text-muted-foreground underline-offset-2 hover:text-foreground hover:underline"
+                    >
+                      In Qualitätsprüfung öffnen
+                    </a>
+                  )}
                   {isUrlSource && (
                     <a
                       href={anchor.source_name}

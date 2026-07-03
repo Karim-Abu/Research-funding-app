@@ -20,6 +20,3 @@ export const AI_GOALS: AiGoal[] = [
   { key: "competition", label: "Konkurrenzabgrenzung" },
   { key: "science", label: "Wissenschaftliche Fundierung" },
 ]
-
-/** Shown in the KI panel when AI rewriting has no backend connection (live). */
-export const AI_LIVE_NOTICE = "KI-Überarbeitung ist in diesem Modus noch nicht verbunden."

@@ -5,8 +5,16 @@
 import type { DraftFieldStatus, DraftEvidenceStatus } from "./draft-view"
 import type { MarketStatus } from "./market-view"
 import type { ReqBucket } from "./requirements-view"
-import type { PortalFieldDraftDto } from "./fields"
+import type { CreatedBy, PortalFieldDraftDto } from "./fields"
 import type { ReviewPackageDto } from "./review"
+
+// Readable origin of a draft version — the raw created_by enum never reaches
+// the UI.
+export const CREATED_BY_LABELS: Record<CreatedBy, string> = {
+  agent: "KI-Vorschlag (übernommen)",
+  user: "Manuell bearbeitet",
+  template: "Strukturvorlage",
+}
 
 export interface VMPerson {
   name: string
@@ -160,7 +168,18 @@ export function liveFieldToViewModel(
     requirementItems: [],
     responsible: undefined,
     reviewer: undefined,
-    versions: [],
+    // No history endpoint in the contract — show the current version honestly.
+    versions: [
+      {
+        id: dto.current_version.draft_version_id,
+        label: CREATED_BY_LABELS[dto.current_version.created_by],
+        timestamp: dto.current_version.created_at
+          ? `Gespeichert am ${new Date(dto.current_version.created_at).toLocaleString("de-CH")}`
+          : "Zeitpunkt unbekannt",
+        author: `${dto.current_version.character_count.toLocaleString("de-CH")} Zeichen`,
+        current: true,
+      },
+    ],
   }
 }
 

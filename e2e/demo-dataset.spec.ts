@@ -46,7 +46,7 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   expect(
     await page.getByRole("button", { name: "Weiterarbeiten" }).count()
   ).toBeGreaterThanOrEqual(2)
-  await expect(page.getByRole("button", { name: "Review freigeben" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Prüfung abschliessen" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 
   const projects = (await (await page.request.get("/api/projects")).json()).items as Array<{
@@ -80,13 +80,17 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     fieldsA.flatMap((field) => field.evidence_links).filter((link) => link.status === "active").length
   ).toBeGreaterThanOrEqual(2)
 
-  await page.getByText(/Verbundwerkstoffe \(Demo\)/).click()
+  // Click the card heading — a plain text locator can also match the (hidden)
+  // project-selector list entry and trip Playwright's strict mode.
+  await page.getByRole("heading", { name: /Verbundwerkstoffe \(Demo\)/ }).click()
   await expect(page).toHaveURL(/\/editor/, { timeout: 20_000 })
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
   })
-  // The evidence panel is a tab — open "Belege" to see the linkage section
-  // ("Verknüpfte Belege"). Active links for this run are asserted via the API above.
+  // The evidence panel is a tab in the context panel. Since M10.3 the panel
+  // starts collapsed while writing — switch to "Prüfen" (forces it open),
+  // then open "Belege" to see the linkage section.
+  await page.getByRole("button", { name: "Prüfen" }).click()
   await page.getByRole("tab", { name: "Belege" }).first().click()
   await expect(page.getByText(/Verkn/).first()).toBeVisible({ timeout: 20_000 })
   await page.reload()
@@ -95,7 +99,7 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   })
 
   await page.goto("/")
-  await page.getByText(/Produktionsanlagen \(Demo\)/).click()
+  await page.getByRole("heading", { name: /Produktionsanlagen \(Demo\)/ }).click()
   await expect(page).toHaveURL(/\/anforderungen/, { timeout: 20_000 })
   await expect(page.getByText(/rdervoraussetzungen/).first()).toBeVisible({
     timeout: 20_000,
@@ -109,6 +113,6 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   })
 
   await page.goto("/")
-  await expect(page.getByRole("button", { name: "Review freigeben" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Prüfung abschliessen" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 })

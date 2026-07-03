@@ -15,41 +15,13 @@ import {
   getLatestComparison,
   MarketComparisonError,
   updateItemStatus,
-  type ConfidenceLabel,
-  type ItemCategory,
-  type ItemRelation,
+  ITEM_CATEGORY_LABELS,
+  ITEM_RELATION_LABELS,
+  CONFIDENCE_LABELS,
+  CONFIDENCE_STYLE,
   type ItemStatus,
   type MarketComparisonDto,
 } from "@/lib/market-comparison"
-
-const CATEGORY_LABELS: Record<ItemCategory, string> = {
-  competitor: "Konkurrent",
-  alternative_solution: "Alternative Lösung",
-  substitute: "Substitut",
-  incumbent_process: "Bestehender Prozess",
-  reference_solution: "Referenzlösung",
-  unknown: "Unklar",
-}
-
-const RELATION_LABELS: Record<ItemRelation, string> = {
-  similar: "ähnlich",
-  complementary: "komplementär",
-  competing: "konkurrierend",
-  reference: "Referenz",
-  unclear: "unklar",
-}
-
-const CONFIDENCE_LABELS: Record<ConfidenceLabel, string> = {
-  source_backed: "Quelle erwähnt",
-  needs_review: "Unklar — prüfen",
-  insufficient_evidence: "Nicht ausreichend belegt",
-}
-
-const CONFIDENCE_STYLE: Record<ConfidenceLabel, string> = {
-  source_backed: "bg-status-complete/12 text-status-complete",
-  needs_review: "bg-status-partial/12 text-status-partial",
-  insufficient_evidence: "bg-muted text-muted-foreground",
-}
 
 type State = "loading" | "idle" | "generating" | "ready" | "error"
 
@@ -147,7 +119,7 @@ export function MarketComparisonSection({ projectId }: { projectId: string }) {
       </p>
 
       {error && (
-        <p role="alert" className="mb-3 text-sm text-status-incomplete">
+        <p role="alert" className="mb-3 text-sm text-destructive">
           {error}
         </p>
       )}
@@ -178,13 +150,13 @@ export function MarketComparisonSection({ projectId }: { projectId: string }) {
                 <tr key={item.item_id} className="border-b border-border/60 align-top">
                   <td className="py-2 pr-3 font-medium text-foreground">{item.name}</td>
                   <td className="py-2 pr-3 text-muted-foreground">
-                    {CATEGORY_LABELS[item.category]}
+                    {ITEM_CATEGORY_LABELS[item.category]}
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">
                     {item.description ?? "—"}
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">
-                    {RELATION_LABELS[item.relation_to_project]}
+                    {ITEM_RELATION_LABELS[item.relation_to_project]}
                   </td>
                   <td className="py-2 pr-3 text-muted-foreground">
                     {item.differentiation_relevance ?? "—"}
