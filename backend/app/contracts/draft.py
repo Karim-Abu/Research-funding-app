@@ -11,7 +11,7 @@ from app.contracts.evidence import EvidenceLink
 from app.contracts.requirement import OpenIssue
 
 DraftStatus = Literal["draft", "needs_review", "reviewed", "blocked", "stale"]
-CreatedBy = Literal["agent", "user", "template"]
+CreatedBy = Literal["agent", "user", "template", "carried_over"]
 
 
 class DraftVersion(BaseModel):

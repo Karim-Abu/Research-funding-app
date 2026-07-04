@@ -126,6 +126,36 @@ describe("LiveEditor", () => {
     expect(screen.queryByText(/Geprüft von/)).not.toBeInTheDocument()
   })
 
+  it("labels a carried-over version 'Übernommen aus vorherigem Durchlauf'", async () => {
+    const carried = draft({
+      current_version: {
+        draft_version_id: "v9",
+        text: "Kurzfassung aus dem vorherigen Durchlauf.",
+        character_count: 41,
+        created_by: "carried_over",
+        created_at: new Date().toISOString(),
+        content_hash: "h9",
+      },
+      open_issue_count: 0,
+    })
+    server.use(
+      http.get("/api/runs/r1/fields", () => HttpResponse.json([carried])),
+      http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg()))
+    )
+    render(<LiveEditor runId="r1" />)
+    await waitFor(() =>
+      expect(
+        screen.getByDisplayValue("Kurzfassung aus dem vorherigen Durchlauf.")
+      ).toBeInTheDocument()
+    )
+    expect(
+      screen.getByText("Übernommen aus vorherigem Durchlauf")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Strukturvorlage")).not.toBeInTheDocument()
+  })
+
   it("preserves local text and shows the conflict dialog on 409", async () => {
     mock({ patch: () => HttpResponse.json({ code: "stale_base_version" }, { status: 409 }) })
     render(<LiveEditor runId="r1" />)

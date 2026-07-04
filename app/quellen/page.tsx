@@ -655,23 +655,14 @@ function QuellenPageContent() {
           await refreshSources()
           return
         } catch {
-          // Fall back to a transparent frontend row when the beta deployment
-          // still reports URL import as unavailable.
+          // URL import unavailable in this deployment — fall through to the
+          // page-level hint instead of fabricating a source row.
         }
       }
 
-      setLocalSourceRows((prev) => [
-        {
-          id: localSourceId("url"),
-          name: url,
-          type: "URL",
-          status: "uploaded",
-          addedBy: currentUser.name,
-          addedAt: "soeben",
-          note: `${URL_SOURCE_KIND_LABELS[kind]} · Verarbeitung ausstehend.`,
-        },
-        ...prev,
-      ])
+      setApiError(
+        "URL-Import ist in dieser Umgebung nicht verfügbar. Kopieren Sie den Webseiteninhalt und fügen Sie ihn als Textquelle ein."
+      )
     },
     [capabilities, projectId, refreshSources, sourceClassification]
   )

@@ -153,7 +153,9 @@ describe("Versionen tab (current version card)", () => {
     await screen.findByLabelText("Entwurf Abstract")
     fireEvent.click(screen.getByRole("tab", { name: "Versionen" }))
 
-    expect(await screen.findByText("Manuell bearbeitet")).toBeInTheDocument()
+    // Provenance appears twice since Slice 2: as the editor badge and in the
+    // version card — assert presence, not uniqueness.
+    expect((await screen.findAllByText("Manuell bearbeitet")).length).toBeGreaterThan(0)
     expect(screen.getByText("Aktuell")).toBeInTheDocument()
     expect(screen.getByText(/Gespeichert am/)).toBeInTheDocument()
     expect(

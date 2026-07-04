@@ -58,7 +58,7 @@ const currentApplication: NavLink[] = [
   // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
   // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
   { label: "Export", href: "/export", icon: Download },
-  { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
+  { label: "Kosten & Laufzeit (Demo)", href: "/kosten", icon: Wallet },
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.

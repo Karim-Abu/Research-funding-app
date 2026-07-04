@@ -71,6 +71,7 @@ import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-di
 import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
 import { getActiveProjectId } from "@/lib/intake-store"
 import {
+  CREATED_BY_LABELS,
   liveFieldToViewModel,
   pickDefaultTab,
   type AssistantTab,
@@ -858,7 +859,11 @@ export function LiveEditor({
       onSave={save}
       saveDisabled={saveState === "saving" || saveState === "saved" || overLimit}
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
-      deinTextBadge={<Badge variant="secondary">Strukturvorlage</Badge>}
+      deinTextBadge={
+        <Badge variant="secondary">
+          {CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf"}
+        </Badge>
+      }
       deinTextHint={
         <p className="text-xs text-muted-foreground">Bitte fachlich prüfen und ergänzen.</p>
       }

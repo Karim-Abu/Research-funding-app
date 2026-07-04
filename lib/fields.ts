@@ -7,7 +7,7 @@ import type { EvidenceLinkDto } from "./evidence"
 import type { OpenIssueDto } from "./requirements"
 
 export type DraftStatus = "draft" | "needs_review" | "reviewed" | "blocked" | "stale"
-export type CreatedBy = "agent" | "user" | "template"
+export type CreatedBy = "agent" | "user" | "template" | "carried_over"
 
 export interface DraftVersionDto {
   draft_version_id: string

@@ -14,6 +14,7 @@ export const CREATED_BY_LABELS: Record<CreatedBy, string> = {
   agent: "KI-Vorschlag (übernommen)",
   user: "Manuell bearbeitet",
   template: "Strukturvorlage",
+  carried_over: "Übernommen aus vorherigem Durchlauf",
 }
 
 export interface VMPerson {

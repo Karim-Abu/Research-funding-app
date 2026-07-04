@@ -70,6 +70,11 @@ class Settings(BaseSettings):
     run_default_max_redrafts: int = 2
     run_default_timeout_seconds: int = 600
 
+    # Draft carry-over (Slice 2, Council E1-A): a new run reuses the latest
+    # meaningful (user/agent/carried_over) draft version of the newest prior
+    # run per field instead of rebuilding the template. Off → template-only.
+    draft_carry_over_enabled: bool = True
+
     # Deterministic exports (Milestone 8) --------------------------------
     export_storage_dir: str = "var/exports"
     max_export_bytes: int = 25 * 1024 * 1024

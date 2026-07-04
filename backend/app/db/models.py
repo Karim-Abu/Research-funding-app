@@ -809,7 +809,7 @@ class PortalFieldDraft(Base):
 
 class DraftVersion(Base):
     """Immutable text version of a PortalFieldDraft (openapi DraftVersion).
-    created_by enum: template | user (M6 never sets agent)."""
+    created_by enum: template | user | agent | carried_over."""
 
     __tablename__ = "draft_versions"
 
@@ -819,7 +819,7 @@ class DraftVersion(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     character_count: Mapped[int] = mapped_column(nullable=False)
-    # Contract enum: agent | user | template
+    # Contract enum: agent | user | template | carried_over
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     # Internal audit only (not exposed): predecessor version + originating op.

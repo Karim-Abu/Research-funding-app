@@ -162,8 +162,8 @@ export function CompletedAnalysisBanner({
       <div className="flex items-start gap-2">
         <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-fulfilled" />
         <p className="text-sm text-foreground">
-          Analyse abgeschlossen — 12 Belege gefunden, 19 Anforderungen erkannt
-          (Dummy)
+          Analyse abgeschlossen. Öffnen Sie Anforderungen und Evidenz für die
+          Ergebnisse.
         </p>
       </div>
       <div className="flex items-center gap-2">
