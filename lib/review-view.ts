@@ -265,6 +265,33 @@ export function summarizeReview(pkg: ReviewPackageDto): ReviewSummary {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Bearbeitungs- und Prüfstand — ring metric over the quality-check groups.
+// Honest denominator: groupFindings() always yields every group in
+// REVIEW_GROUP_ORDER, so total is structurally complete (still derived from
+// groups.length, never hardcoded). Blocker/Hinweise/Prüfung nötig have no
+// denominator and deliberately stay OUT of the ring (legend only).
+// ---------------------------------------------------------------------------
+export interface ReviewProgress {
+  total: number
+  bestanden: number
+  teilweise: number
+  nichtBestanden: number
+}
+
+export function reviewProgress(groups: ReviewGroup[]): ReviewProgress {
+  return {
+    total: groups.length,
+    bestanden: groups.filter((g) => g.status === "bestanden").length,
+    teilweise: groups.filter((g) => g.status === "teilweise").length,
+    nichtBestanden: groups.filter((g) => g.status === "nicht_bestanden").length,
+  }
+}
+
+// Title help for the progress card — explicit non-funding framing.
+export const PROGRESS_CARD_HELP =
+  "Diese Anzeige beschreibt den Bearbeitungs- und Prüfstand. Sie ist keine Aussage zur Förderwahrscheinlichkeit."
+
 // Extra counters for the approval/blocker panel.
 export interface BlockerBreakdown {
   blocker: number

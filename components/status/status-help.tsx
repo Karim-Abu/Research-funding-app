@@ -2,7 +2,7 @@
 
 // Accessible inline help for status tiles and badges. Uses a Popover with a
 // real button trigger so the explanation works with keyboard, touch and
-// screen readers — not hover-only.
+// screen readers — hover (openOnHover) is an addition, never the only path.
 
 import { Info } from "lucide-react"
 import {
@@ -26,6 +26,8 @@ export function StatusHelp({
   return (
     <Popover>
       <PopoverTrigger
+        openOnHover
+        delay={200}
         aria-label={`Erklärung zu „${label}“`}
         className={cn(
           "inline-flex size-4 shrink-0 items-center justify-center rounded-full text-muted-foreground outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",

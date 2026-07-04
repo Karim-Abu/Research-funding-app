@@ -65,6 +65,30 @@ describe("LiveReview", () => {
     expect(
       screen.getByRole("button", { name: "Gesamte Prüfung erneut ausführen" })
     ).toBeInTheDocument()
+    // Bearbeitungs- und Prüfstand card: ring over the 8 quality-check groups.
+    const card = screen.getByTestId("review-progress-card")
+    expect(card).toHaveTextContent("Bearbeitungs- und Prüfstand")
+    // 1 blocker finding → 1 group nicht bestanden, 7 of 8 bestanden.
+    expect(card).toHaveTextContent("7 / 8")
+    expect(card).toHaveTextContent("Prüfbereiche bestanden")
+    // All six status values stay readable in the legend.
+    for (const label of [
+      "Bestanden",
+      "Teilweise bestanden",
+      "Nicht bestanden",
+      "Blocker",
+      "Hinweise",
+      "Prüfung nötig",
+    ]) {
+      expect(card).toHaveTextContent(label)
+    }
+    // Non-funding framing: note line + accessible title help.
+    expect(card).toHaveTextContent(/keine Aussage zur Förderwahrscheinlichkeit/)
+    expect(
+      screen.getByRole("button", {
+        name: "Erklärung zu „Bearbeitungs- und Prüfstand“",
+      })
+    ).toBeInTheDocument()
   })
 
   it("enables approval when clean and shows recheck notice when required", async () => {

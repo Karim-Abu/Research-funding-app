@@ -24,13 +24,12 @@ import {
   type ReviewPackageDto,
   type ReviewFindingDto,
 } from "@/lib/review"
-import { StatusHelp } from "@/components/status/status-help"
+import { ReviewProgressCard } from "@/components/review/review-progress-card"
 import {
   REVIEW_FALLBACKS,
   HUMAN_IN_THE_LOOP_NOTE,
-  REVIEW_PROGRESS_NOTE,
   APPROVAL_SCOPE_NOTE,
-  REVIEW_TILE_HELP,
+  reviewProgress,
   REVIEW_SEVERITY_LABELS,
   REVIEW_SEVERITY_STYLE,
   GROUP_STATUS_LABELS,
@@ -218,8 +217,13 @@ export function LiveReview({ runId }: { runId: string }) {
         </p>
       )}
 
-      {/* Summary */}
-      <ReviewSummaryBar summary={summary} />
+      {/* Bearbeitungs- und Prüfstand — ring over the quality-check groups
+          plus the six status values (with accessible help). */}
+      <ReviewProgressCard
+        summary={summary}
+        progress={reviewProgress(groups)}
+        recheckRequired={pkg.recheck_required}
+      />
 
       {/* Nächste Schritte — the top actions derived from the current package */}
       <NextStepsCard
@@ -387,55 +391,6 @@ function NextStepsCard({
         </ol>
       )}
     </section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Summary bar
-// ---------------------------------------------------------------------------
-function ReviewSummaryBar({
-  summary,
-}: {
-  summary: ReturnType<typeof summarizeReview>
-}) {
-  const tiles: { label: string; value: number; help: string; accent?: string }[] = [
-    { label: "Bestanden", value: summary.bestanden, help: REVIEW_TILE_HELP.bestanden, accent: "text-status-fulfilled" },
-    { label: "Teilweise bestanden", value: summary.teilweise, help: REVIEW_TILE_HELP.teilweise, accent: "text-status-partial" },
-    {
-      label: "Nicht bestanden",
-      value: summary.nichtBestanden,
-      help: REVIEW_TILE_HELP.nichtBestanden,
-      accent: summary.nichtBestanden > 0 ? "text-destructive" : undefined,
-    },
-    {
-      label: "Blocker",
-      value: summary.blocker,
-      help: REVIEW_TILE_HELP.blocker,
-      accent: summary.blocker > 0 ? "text-destructive" : undefined,
-    },
-    { label: "Hinweise", value: summary.hinweise, help: REVIEW_TILE_HELP.hinweise },
-    { label: "Prüfung nötig", value: summary.pruefungNoetig, help: REVIEW_TILE_HELP.pruefungNoetig, accent: summary.pruefungNoetig > 0 ? "text-status-partial" : undefined },
-  ]
-  return (
-    <div className="flex flex-col gap-1.5">
-      <dl className="grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
-        {tiles.map((t) => (
-          <div
-            key={t.label}
-            className="flex flex-col gap-0.5 rounded-lg border border-border bg-card px-3 py-2.5"
-          >
-            <dd className={cn("text-lg font-semibold leading-none text-foreground", t.accent)}>
-              {t.value}
-            </dd>
-            <dt className="flex items-center gap-1 text-[11px] leading-tight text-muted-foreground">
-              <span className="min-w-0">{t.label}</span>
-              <StatusHelp label={t.label} text={t.help} />
-            </dt>
-          </div>
-        ))}
-      </dl>
-      <p className="text-xs text-muted-foreground">{REVIEW_PROGRESS_NOTE}</p>
-    </div>
   )
 }
 
