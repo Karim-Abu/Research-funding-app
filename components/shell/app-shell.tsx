@@ -5,7 +5,10 @@ import { Sidebar } from "./sidebar"
 import { Topbar } from "./topbar"
 import { WorkflowStepper } from "./workflow-stepper"
 import { useSession } from "@/components/providers/app-providers"
-import type { Project, StepStatus, User } from "@/lib/types"
+import { getActiveProjectId, setActiveProjectId } from "@/lib/intake-store"
+import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
+import { listProjects, toDashboardCard } from "@/lib/projects"
+import { PROJECT_STATUS_LABELS, type Project, type StepStatus, type User } from "@/lib/types"
 
 interface AppShellProps {
   user: User
@@ -19,6 +22,9 @@ interface AppShellProps {
   children: React.ReactNode
 }
 
+const SIDEBAR_COLLAPSED_STORAGE_KEY = "rf_sidebar_collapsed"
+const SIDEBAR_COMPACT_MEDIA_QUERY = "(max-width: 1023px)"
+
 export function AppShell({
   user,
   projects,
@@ -30,10 +36,11 @@ export function AppShell({
 }: AppShellProps) {
   const [collapsed, setCollapsed] = React.useState(false)
   const [projectId, setProjectId] = React.useState(activeProjectId)
+  const [liveProjects, setLiveProjects] = React.useState<Project[] | null>(null)
 
   // In live mode the authenticated session user takes precedence over the
   // prop (mock identity); in mock mode the passed user is used unchanged.
-  const { status, user: sessionUser } = useSession()
+  const { status, user: sessionUser, mode } = useSession()
   const effectiveUser: User =
     status === "authenticated" && sessionUser
       ? {
@@ -43,19 +50,102 @@ export function AppShell({
         }
       : user
 
+  // Live mode: the shell resolves the real project list + the active Antrag
+  // itself (sessionStorage), so every screen shows the same, correct context —
+  // pages keep passing mock data for the mock mode only.
+  React.useEffect(() => {
+    if (mode !== "live") return
+    let active = true
+    listProjects()
+      .then((items) => {
+        if (!active) return
+        setLiveProjects(
+          items.map((p) => ({
+            id: p.project_id,
+            title: p.title,
+            // Sidebar card status line — same derivation as the dashboard.
+            statusLabel:
+              PROJECT_STATUS_LABELS[
+                toDashboardCard(p).cardStatus ?? "in_bearbeitung"
+              ],
+          }))
+        )
+      })
+      .catch(() => {
+        if (active) setLiveProjects([])
+      })
+    return () => {
+      active = false
+    }
+  }, [mode])
+
+  React.useEffect(() => {
+    if (mode !== "live") return
+    const stored = getActiveProjectId()
+    if (stored) setProjectId(stored)
+  }, [mode])
+
+  React.useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      if (stored === "true" || stored === "false") {
+        setCollapsed(stored === "true")
+        return
+      }
+      setCollapsed(
+        window.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
+      )
+    } catch {
+      setCollapsed(false)
+    }
+  }, [])
+
+  const shellProjects = mode === "live" ? (liveProjects ?? []) : projects
+  const activeProject =
+    shellProjects.find((p) => p.id === projectId) ?? null
+
+  function handleSidebarToggle() {
+    setCollapsed((current) => {
+      const next = !current
+      try {
+        window.localStorage.setItem(
+          SIDEBAR_COLLAPSED_STORAGE_KEY,
+          String(next)
+        )
+      } catch {
+        // Keep the UI responsive even when browser storage is unavailable.
+      }
+      return next
+    })
+  }
+
+  function handleProjectChange(id: string) {
+    setProjectId(id)
+    if (mode === "live") {
+      setActiveProjectId(id)
+      // Switching Antrag → drop the previous application's formatting cache.
+      clearAllRichEditorSessionCache()
+      // Screens read the active Antrag on mount — a full reload re-anchors
+      // every open view to the newly selected application.
+      window.location.reload()
+    }
+  }
+
   return (
-    <div className="flex h-screen min-w-[1280px] overflow-hidden bg-background">
+    <div className="flex h-screen min-w-0 overflow-hidden bg-background">
       <Sidebar
         role={effectiveUser.role}
         collapsed={collapsed}
-        onToggle={() => setCollapsed((c) => !c)}
+        onToggle={handleSidebarToggle}
+        activeProjectTitle={activeProject?.title ?? null}
+        activeProjectStatusLabel={activeProject?.statusLabel ?? null}
       />
       <div className="flex min-w-0 flex-1 flex-col">
         <Topbar
           user={effectiveUser}
-          projects={projects}
+          projects={shellProjects}
           activeProjectId={projectId}
-          onProjectChange={setProjectId}
+          onProjectChange={handleProjectChange}
         />
         {currentStep && stepStatus && (
           <WorkflowStepper

@@ -131,6 +131,33 @@ export async function createTextSource(
   return (await res.json()) as SourceDocumentDto
 }
 
+export async function createUrlSource(
+  projectId: string,
+  url: string,
+  name: string | null,
+  classification: DataClassification
+): Promise<SourceDocumentDto> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/sources/url`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey(),
+        ...csrfHeaders(),
+      },
+      body: JSON.stringify({
+        url,
+        name,
+        data_classification: classification,
+        user_confirmed_public: true,
+      }),
+    }
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as SourceDocumentDto
+}
+
 export async function deleteSource(sourceId: string): Promise<void> {
   const res = await fetch(`/api/sources/${encodeURIComponent(sourceId)}`, {
     method: "DELETE",

@@ -39,9 +39,14 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     timeout: 20_000,
   })
   await expect(page.getByText(/Produktionsanlagen \(Demo\)/)).toBeVisible()
-  await expect(page.getByRole("button", { name: "Entwurf weiterbearbeiten" }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: /Analyse/ }).first()).toBeVisible()
-  await expect(page.getByRole("button", { name: "Review freigeben" })).toHaveCount(0)
+  // Each project card carries a single primary-action button ("Weiterarbeiten");
+  // the per-project next_action (continue_draft vs review_analysis) is asserted via
+  // the API below. Both demo projects expose the action.
+  await expect(page.getByRole("button", { name: "Weiterarbeiten" }).first()).toBeVisible()
+  expect(
+    await page.getByRole("button", { name: "Weiterarbeiten" }).count()
+  ).toBeGreaterThanOrEqual(2)
+  await expect(page.getByRole("button", { name: "Prüfung abschliessen" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 
   const projects = (await (await page.request.get("/api/projects")).json()).items as Array<{
@@ -75,30 +80,39 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     fieldsA.flatMap((field) => field.evidence_links).filter((link) => link.status === "active").length
   ).toBeGreaterThanOrEqual(2)
 
-  await page.getByText(/Verbundwerkstoffe \(Demo\)/).click()
+  // Click the card heading — a plain text locator can also match the (hidden)
+  // project-selector list entry and trip Playwright's strict mode.
+  await page.getByRole("heading", { name: /Verbundwerkstoffe \(Demo\)/ }).click()
   await expect(page).toHaveURL(/\/editor/, { timeout: 20_000 })
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
   })
-  await expect(page.getByText(/Verkn/).first()).toBeVisible()
+  // The evidence panel is a tab in the context panel. Since M10.3 the panel
+  // starts collapsed while writing — switch to "Prüfen" (forces it open),
+  // then open "Belege" to see the linkage section.
+  await page.getByRole("button", { name: "Prüfen" }).click()
+  await page.getByRole("tab", { name: "Belege" }).first().click()
+  await expect(page.getByText(/Verkn/).first()).toBeVisible({ timeout: 20_000 })
   await page.reload()
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
   })
 
   await page.goto("/")
-  await page.getByText(/Produktionsanlagen \(Demo\)/).click()
+  await page.getByRole("heading", { name: /Produktionsanlagen \(Demo\)/ }).click()
   await expect(page).toHaveURL(/\/anforderungen/, { timeout: 20_000 })
   await expect(page.getByText(/rdervoraussetzungen/).first()).toBeVisible({
     timeout: 20_000,
   })
-  await expect(page.getByText(/Blockiert|Angaben/).first()).toBeVisible()
+  // Blocked project: the blocker-aware footer ("… Blocker verhindern aktuell den
+  // nächsten Schritt") is shown only when blockers exist.
+  await expect(page.getByText(/verhinder/).first()).toBeVisible()
   await page.reload()
-  await expect(page.getByText(/Blockiert|Angaben/).first()).toBeVisible({
+  await expect(page.getByText(/verhinder/).first()).toBeVisible({
     timeout: 20_000,
   })
 
   await page.goto("/")
-  await expect(page.getByRole("button", { name: "Review freigeben" })).toHaveCount(0)
+  await expect(page.getByRole("button", { name: "Prüfung abschliessen" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 })

@@ -21,6 +21,7 @@ def record(
     run_id: str | None = None,
     tool_invocation_id: str | None = None,
     agent_invocation_id: str | None = None,
+    research_task_id: str | None = None,
 ) -> ControlResult:
     result = ControlResult(
         control_result_id=str(uuid.uuid4()),
@@ -34,6 +35,7 @@ def record(
         run_id=run_id,
         tool_invocation_id=tool_invocation_id,
         agent_invocation_id=agent_invocation_id,
+        research_task_id=research_task_id,
     )
     db.add(result)
     db.flush()

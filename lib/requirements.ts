@@ -45,7 +45,7 @@ export interface RequirementAssessmentDto {
 // German user-facing labels (recommended in the milestone spec).
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
   fulfilled: "Erfüllt",
-  partial: "Teilweise",
+  partial: "Teilweise erfüllt",
   open: "Offen",
   needs_input: "Angaben nötig",
   blocked: "Blockiert",

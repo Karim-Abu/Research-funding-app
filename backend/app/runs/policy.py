@@ -1,34 +1,27 @@
-"""Run policy: processing_mode validation + immutable RunPolicySnapshot."""
+"""Run policy: the immutable RunPolicySnapshot. The cloud-processing gate lives in
+``app/runs/cloud_policy.py`` (Milestone 9D.2)."""
 from __future__ import annotations
 
-from app.api.errors import ProblemException
+from typing import TYPE_CHECKING
+
 from app.config.settings import Settings
 from app.contracts.run import RunSettings
 from app.db.models import RunPolicySnapshot
 
+if TYPE_CHECKING:
+    from app.runs.cloud_policy import CloudDecision
+
 POLICY_VERSION = "1.1.0"
 
 
-def validate_processing_mode(mode: str) -> None:
-    """Honest handling — never silently downgrade cloud_assisted.
-
-    M3 performs no external provider calls. `deterministic_only` and
-    `local_only` are accepted. `cloud_assisted` requires an approved provider
-    route, which is not available in the evaluation beta (Data Policy), so it is
-    rejected with a contract 403.
-    """
-    if mode == "cloud_assisted":
-        raise ProblemException(
-            status=403,
-            code="cloud_processing_unavailable",
-            title="Forbidden",
-            detail="Cloud-assisted processing is not available in this deployment.",
-        )
-
-
 def build_policy_snapshot(
-    run_id: str, settings: RunSettings, app_settings: Settings
+    run_id: str,
+    settings: RunSettings,
+    app_settings: Settings,
+    cloud_decision: "CloudDecision | None" = None,
 ) -> RunPolicySnapshot:
+    confirmation = cloud_decision.confirmation if cloud_decision else None
+    route_class = cloud_decision.provider_route_class if cloud_decision else None
     return RunPolicySnapshot(
         run_id=run_id,
         processing_mode=settings.processing_mode,
@@ -38,6 +31,8 @@ def build_policy_snapshot(
         max_retries=app_settings.run_default_max_retries,
         max_redrafts=app_settings.run_default_max_redrafts,
         timeout_seconds=app_settings.run_default_timeout_seconds,
-        allowed_routes=[],
+        allowed_routes=[route_class] if route_class else [],
         policy_version=POLICY_VERSION,
+        cloud_confirmation_id=confirmation.confirmation_id if confirmation else None,
+        provider_route_class=route_class,
     )

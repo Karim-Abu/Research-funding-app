@@ -9,18 +9,23 @@ import {
   FileJson,
   FileText,
   FileType2,
+  Info,
   Loader2,
   RotateCcw,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { FeedbackDialog } from "@/components/export/feedback-dialog"
+import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import { cn } from "@/lib/utils"
+import { NO_AUTO_SUBMIT_NOTE } from "@/lib/export-view"
 import {
   EXPORT_CARDS,
   KIND_LABEL,
   PAGE_SCENARIOS,
   PRIOR_EXPORTS,
+  mockInnolinkFields,
   type ApprovalBannerState,
   type ExportCard,
   type ExportCardStatus,
@@ -153,6 +158,11 @@ function ExportCardItem({
       </div>
 
       {/* ENTWURF tag */}
+      {isLeading && (
+        <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+          Empfohlen
+        </span>
+      )}
       {isDraft && (
         <span className="inline-flex w-fit items-center rounded border border-status-partial/40 bg-status-partial/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-status-partial">
           Entwurf
@@ -262,6 +272,11 @@ function ExportCardDownloadItem({
         </div>
       </div>
 
+      {isLeading && (
+        <span className="inline-flex w-fit items-center rounded-full bg-primary/10 px-2 py-0.5 text-[11px] font-semibold text-primary">
+          Empfohlen
+        </span>
+      )}
       {isDraft && (
         <span className="inline-flex w-fit items-center rounded border border-status-partial/40 bg-status-partial/10 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wider text-status-partial">
           Entwurf
@@ -508,13 +523,21 @@ export function ExportScreen({
       <div className="flex flex-col gap-2">
         <h1 className="text-xl font-semibold text-foreground">Export</h1>
         <p className="text-sm text-muted-foreground">
-          Exportieren Sie Arbeitsdokumente für die Weiterarbeit und den Übertrag ins Innosuisse-Portal.
+          Erstellen Sie ein editierbares Arbeitsdokument oder übernehmen Sie geprüfte Feldinhalte manuell nach Innolink.
         </p>
         {dataClass && <DataClassBadge dataClass={dataClass} />}
       </div>
 
       {/* Approval banner */}
       <ApprovalBanner state={approvalState} />
+
+      <Tabs defaultValue="optionen">
+        <TabsList>
+          <TabsTrigger value="optionen">Exportoptionen</TabsTrigger>
+          <TabsTrigger value="innolink">Innolink-Kopieransicht</TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="optionen" className="mt-4 flex flex-col gap-6">
 
       {/* Nothing to export state */}
       {nothingToExport ? (
@@ -537,7 +560,7 @@ export function ExportScreen({
             >
               <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-blocker" />
               <p className="text-sm text-foreground">
-                {`Export nicht möglich: ${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Punkt" : "Punkte"} offen — im Review entscheiden.`}
+                {`Export nicht möglich: ${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Punkt" : "Punkte"} offen — in der Qualitätsprüfung entscheiden.`}
               </p>
             </div>
           )}
@@ -575,6 +598,21 @@ export function ExportScreen({
           <PriorExportsList exports={PRIOR_EXPORTS} approvalState={approvalState} />
         </>
       )}
+        </TabsContent>
+
+        <TabsContent value="innolink" className="mt-4 flex flex-col gap-4">
+          <p className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            {NO_AUTO_SUBMIT_NOTE}
+          </p>
+          <PortalTransfer
+            fields={mockInnolinkFields}
+            review={null}
+            mockMode
+            embedded
+          />
+        </TabsContent>
+      </Tabs>
 
       {/* Sticky bottom disclaimer — stays in flow inside the scrollable main */}
       <div className="sticky bottom-0 -mx-6 mt-auto border-t border-border bg-background/95 px-6 py-4 backdrop-blur-sm">

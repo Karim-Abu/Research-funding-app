@@ -152,13 +152,309 @@ class EvidenceCandidateMappingResult(BaseModel):
     conflicts: list[EvidenceConflictRecord] = []
 
 
+# --- A2 Solution & Innovation field drafting (Milestone 9D) -----------------
+
+
+class PortalFieldProfileView(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    label: str
+    character_limit: int | None = None
+    mandatory_questions: list[str] = []
+    guidance: str | None = None
+
+
+class EvidenceLinkRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    anchor_id: str
+    quote: str
+    source_name: str
+    verification_status: str
+    page: int | None = None
+    section: str | None = None
+    requirement_id: str | None = None
+
+
+class OpenIssueRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_id: str
+    issue_type: str
+    severity: str
+    description: str
+    target_type: str
+    target_id: str
+
+
+class StructuredProjectDataResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_title: str | None = None
+    funding_instrument_profile_id: str | None = None
+    partner_count: int = 0
+
+
+class FieldDraftingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    profile_id: str
+    field_profiles: list[PortalFieldProfileView]
+    confirmed_facts: list[ExtractedFactRecord]
+    verified_evidence: list[EvidenceLinkRecord]
+    structured_project_data: StructuredProjectDataResult
+    open_issues: list[OpenIssueRecord]
+    language: str
+
+
+class DraftCandidateRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    suggested_text: str
+    rationale: str | None = None
+    evidence_anchor_ids: list[str] = []
+    open_issue_ids: list[str] = []
+    character_count: int | None = None
+
+
+class PlaceholderRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    reason: str | None = None
+
+
+class PortalFieldDraftBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    draft_candidates: list[DraftCandidateRecord]
+    placeholders: list[PlaceholderRecord]
+    field_level_warnings: list[OpenIssueRecord] = []
+
+
+# --- A3 Evidence & Consistency review (Milestone 9G) ------------------------
+
+FindingSeverity = Literal["blocker", "warning", "info"]
+FindingStatus = Literal["open", "resolved", "overridden", "dismissed"]
+
+
+class DraftVersionRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    draft_version_id: str
+    text: str
+    created_by: str | None = None
+    character_count: int | None = None
+
+
+class RequirementAssessmentRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    requirement_id: str
+    status: str
+    basis: str | None = None
+
+
+class RuleResultRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule_id: str
+    status: str
+    requirement_id: str | None = None
+
+
+class CriticReviewInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    profile_ids: list[str]
+    current_drafts: list[DraftVersionRecord]
+    requirements: list[RequirementAssessmentRecord]
+    rule_results: list[RuleResultRecord]
+    evidence_links: list[EvidenceLinkRecord]
+    # M9G/corr-1: confirmed facts ONLY. Proposed A1 facts are passed as marked
+    # context text, never here. Usually empty in the current system.
+    confirmed_facts: list[ExtractedFactRecord]
+    structured_project_data: StructuredProjectDataResult
+
+
+class ReviewFindingRecord(BaseModel):
+    """One advisory A3 finding. ``extra="forbid"`` rejects any attempt to carry an
+    approval decision, confidence value, draft-replacement text, or a
+    requirement/evidence status mutation (those keys are simply not present)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    origin_profile_id: str
+    severity: FindingSeverity
+    description: str
+    status: FindingStatus = "open"
+    field_id: str | None = None
+    requirement_id: str | None = None
+    evidence_anchor_id: str | None = None
+    evidence_link_id: str | None = None
+    evidence_status: str | None = None
+    suggested_improvement: str | None = None
+    recommended_next_action: str | None = None
+
+
+class ProfileReviewSummaryRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    profile_id: str
+    finding_count: int | None = None
+    limitations: list[str] = []
+
+
+class ReviewFindingBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[ReviewFindingRecord]
+    profile_summaries: list[ProfileReviewSummaryRecord]
+    overall_limitations: list[str] = []
+
+
+# --- A1 PublicCompetenceResearch (Milestone 9I-A) --------------------------
+
+EvidenceType = Literal[
+    "institutional_profile", "publication", "public_project",
+    "professional_competence", "track_record",
+]
+
+
+class PublicCompetenceResearchInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    research_task_id: str
+    project_id: str
+    research_result_source_version_ids: list[str]
+    requested_partner_roles: list[str]
+    competence_needs: list[str]
+
+
+class ProfessionalEvidenceRecord(BaseModel):
+    """One public professional-evidence claim. ``source_version_id`` ties the claim to
+    an imported public SourceVersion; the persistence layer assigns the public id and
+    source_id. Advisory only — never a confirmed fact."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    evidence_type: EvidenceType
+    subject_name: str
+    organisation: str | None = None
+    claim: str
+    source_url: str
+    source_title: str
+    accessed_at: str | None = None
+    source_version_id: str | None = None
+
+
+class PartnerRoleSuggestionRecord(BaseModel):
+    """Advisory partner-role suggestion. Evidence is referenced by 0-based index into
+    the bundle's ``professional_evidence`` array (the model never invents ids)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role_name: str
+    competence_gap: str
+    suggested_subject_name: str | None = None
+    suggested_organisation: str | None = None
+    professional_evidence_indexes: list[int] = []
+
+
+class IdentityMatchRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    subject_name: str
+    status: Literal["matched", "ambiguous", "unresolved"]
+    note: str | None = None
+
+
+class PublicCompetenceResearchResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    professional_evidence: list[ProfessionalEvidenceRecord]
+    partner_role_suggestions: list[PartnerRoleSuggestionRecord]
+    unresolved_identity_matches: list[IdentityMatchRecord] = []
+    warnings: list[str] = []
+
+
 # --- registry + helpers ----------------------------------------------------
+
+# --- MC MarketComparison (Milestone 9I-B, beta-internal, code-only schemas) ------
+
+MarketCategory = Literal[
+    "competitor", "alternative_solution", "substitute", "incumbent_process",
+    "reference_solution", "unknown",
+]
+MarketRelation = Literal["similar", "complementary", "competing", "reference", "unclear"]
+
+
+class MarketCandidateFragment(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fragment_id: str
+    source_version_id: str
+    source_document_id: str
+    text: str
+
+
+class MarketComparisonInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    comparison_id: str
+    project_title: str
+    # ONLY imported public fragments are fed to the model (never draft/private text).
+    candidate_fragments: list[MarketCandidateFragment]
+
+
+class MarketComparisonItemRecord(BaseModel):
+    """One structured comparison item. Evidence is referenced by ``source_fragment_id`` +
+    an exact ``quote`` copied from that fragment; the model never invents ids/offsets and
+    never asserts market facts without a quote (verified deterministically downstream)."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str
+    category: MarketCategory = "unknown"
+    description: str | None = None
+    target_customer_segment: str | None = None
+    offering_summary: str | None = None
+    strengths: str | None = None
+    weaknesses: str | None = None
+    differentiation_relevance: str | None = None
+    relation_to_project: MarketRelation = "unclear"
+    source_fragment_id: str | None = None
+    source_document_id: str | None = None
+    quote: str | None = None
+
+
+class MarketComparisonResult(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    items: list[MarketComparisonItemRecord]
+    research_gaps: list[str] = []
+    warnings: list[str] = []
+
 
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ProjectFactExtractionInput@v1": ProjectFactExtractionInput,
     "ProjectFactExtractionResult@v1": ProjectFactExtractionResult,
     "EvidenceCandidateMappingInput@v1": EvidenceCandidateMappingInput,
     "EvidenceCandidateMappingResult@v1": EvidenceCandidateMappingResult,
+    "FieldDraftingInput@v1": FieldDraftingInput,
+    "PortalFieldDraftBundle@v1": PortalFieldDraftBundle,
+    "CriticReviewInput@v1": CriticReviewInput,
+    "ReviewFindingBundle@v1": ReviewFindingBundle,
+    "PublicCompetenceResearchInput@v1": PublicCompetenceResearchInput,
+    "PublicCompetenceResearchResult@v1": PublicCompetenceResearchResult,
+    "MarketComparisonInput@v1": MarketComparisonInput,
+    "MarketComparisonResult@v1": MarketComparisonResult,
 }
 
 

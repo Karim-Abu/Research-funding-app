@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { useSearchParams } from "next/navigation"
 import { RefreshCw } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { RequirementsScreen } from "@/components/anforderungen/requirements-screen"
@@ -25,11 +26,14 @@ const stepStatus = [
   "upcoming",
   "upcoming",
   "upcoming",
-  "upcoming",
 ] as const
 
 // --- Live mode: render the run-scoped RequirementAssessments ----------------
 function LiveAnforderungen() {
+  // Deep link (?requirement=…) from the Qualitätsprüfung — parsed here (not in
+  // LiveRequirements) so component tests don't need a router mock.
+  const searchParams = useSearchParams()
+  const focusRequirementId = searchParams.get("requirement")
   const [runId, setRunId] = React.useState<string | null>(null)
   const [resolved, setResolved] = React.useState(false)
 
@@ -57,7 +61,7 @@ function LiveAnforderungen() {
       stepStatus={[...stepStatus]}
     >
       {!resolved ? null : runId ? (
-        <LiveRequirements runId={runId} />
+        <LiveRequirements runId={runId} focusRequirementId={focusRequirementId} />
       ) : (
         <div className="mx-auto max-w-3xl px-6 py-16 text-center">
           <p className="text-sm text-muted-foreground">
@@ -127,5 +131,13 @@ function MockAnforderungen() {
 
 export default function AnforderungenPage() {
   const { mode } = useSession()
-  return mode === "live" ? <LiveAnforderungen /> : <MockAnforderungen />
+  if (mode === "live") {
+    // useSearchParams requires a Suspense boundary in the App Router.
+    return (
+      <React.Suspense fallback={null}>
+        <LiveAnforderungen />
+      </React.Suspense>
+    )
+  }
+  return <MockAnforderungen />
 }

@@ -1,5 +1,8 @@
 // Dummy-Daten für den Export-Screen. Keine echten Daten, keine Backend-Aufrufe.
 
+import { draftFields } from "./draft-mock-data"
+import type { DraftStatus, PortalFieldDraftDto } from "./fields"
+
 export type ApprovalBannerState = "approved" | "not_approved" | "stale"
 
 export type ExportCardStatus = "ready" | "generating" | "error"
@@ -47,7 +50,7 @@ export const EXPORT_CARDS: ExportCard[] = [
     id: "word",
     kind: "word",
     title: "Word-Arbeitsdokument",
-    subtitle: "Für die Weiterarbeit und den Übertrag ins Portal",
+    subtitle: "Editierbares Arbeitsdokument zur Weiterbearbeitung im Antragsteam.",
     status: "ready",
     leading: true,
   },
@@ -99,3 +102,39 @@ export const KIND_LABEL: Record<ExportKind, string> = {
   markdown: "Markdown",
   json_audit: "Technischer Nachweis",
 }
+
+// ---------------------------------------------------------------------------
+// Innolink copy view (mock): reuse the editor's portal fields, mapped onto the
+// PortalFieldDraftDto shape the FieldTransferCard expects. No backend.
+// ---------------------------------------------------------------------------
+const DRAFT_STATUS_TO_PORTAL: Record<string, DraftStatus> = {
+  ready: "reviewed",
+  needs_review: "needs_review",
+  no_evidence: "needs_review",
+  blocked: "blocked",
+  open: "draft",
+}
+
+export const mockInnolinkFields: PortalFieldDraftDto[] = draftFields.map((f) => {
+  const text = f.text
+  const count = [...text].length
+  return {
+    draft_id: f.id,
+    field_id: f.id,
+    field_name: f.name,
+    status: DRAFT_STATUS_TO_PORTAL[f.status] ?? "draft",
+    current_version: {
+      draft_version_id: `${f.id}-v1`,
+      text,
+      character_count: count,
+      created_by: "user",
+      created_at: "2026-06-25T09:42:00.000Z",
+      content_hash: "mock",
+    },
+    character_count: count,
+    character_limit: f.charLimit ?? null,
+    open_issue_count: f.openPoints.length,
+    evidence_links: [],
+    open_issues: [],
+  }
+})

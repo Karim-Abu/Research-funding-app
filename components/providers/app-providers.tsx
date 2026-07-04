@@ -13,6 +13,7 @@ import {
   logout as apiLogout,
   type SessionUser,
 } from "@/lib/session"
+import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
 
 type Status = "loading" | "authenticated" | "unauthenticated"
 
@@ -86,6 +87,8 @@ export function AppProviders({
 
   const logout = React.useCallback(async () => {
     await apiLogout()
+    // Proposal text lives in the rich-editor session cache — clear it on logout.
+    clearAllRichEditorSessionCache()
     setUser(null)
     setStatus("unauthenticated")
   }, [])

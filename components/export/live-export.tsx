@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Link from "next/link"
 import {
   Download,
   FileText,
@@ -9,29 +8,66 @@ import {
   FileJson,
   Loader2,
   ClipboardCopy,
+  Info,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { cn } from "@/lib/utils"
 import {
   createExport,
   downloadExport,
   type ExportArtifactDto,
   type ExportType,
 } from "@/lib/exports"
-import { getReview, type ApprovalStatus } from "@/lib/review"
+import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
+import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
+import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
+import {
+  EXPORT_REVIEW_LABELS,
+  EXPORT_REVIEW_STYLE,
+  FIELD_NEXT_ACTION,
+  FIELD_READINESS_LABELS,
+  FIELD_READINESS_STYLE,
+  KOPIERBEREIT_LEGEND,
+  NO_AUTO_SUBMIT_NOTE,
+  NOT_FOR_SUBMISSION,
+  fieldReadinessRows,
+  readinessSummary,
+  summarizeExportReadiness,
+  type FieldReadiness,
+} from "@/lib/export-view"
+import { UNSUPPORTED_AREAS } from "@/lib/portal-transfer"
 
 const PAGE_DISCLAIMER =
   "Dies ist keine Einreichfreigabe. Die Einreichung erfolgt durch Sie im " +
   "Innosuisse-Portal. Diese Plattform reicht nichts automatisch ein."
 
-const CARDS: { type: ExportType; title: string; subtitle: string; icon: typeof FileText }[] = [
-  { type: "docx", title: "Word-Arbeitsdokument", subtitle: "DOCX", icon: FileText },
-  { type: "markdown", title: "Markdown-Zusammenfassung", subtitle: "Markdown", icon: FileCode },
+const CARDS: {
+  type: ExportType
+  title: string
+  subtitle: string
+  icon: typeof FileText
+  recommended?: boolean
+}[] = [
+  {
+    type: "docx",
+    title: "Word-Arbeitsdokument",
+    subtitle: "Editierbares Arbeitsdokument pro Portalabschnitt zur Weiterbearbeitung im Antragsteam.",
+    icon: FileText,
+    recommended: true,
+  },
+  {
+    type: "markdown",
+    title: "Markdown-Zusammenfassung",
+    subtitle: "Kompakte textbasierte Übersicht für Dokumentation oder interne Notizen.",
+    icon: FileCode,
+  },
   {
     type: "technical_evidence",
     title: "Technischer Nachweis",
-    subtitle: "JSON für Audit und Weiterverarbeitung",
+    subtitle: "Strukturierte Daten mit Evidenz, Status und Prüfinformationen für Audit und Evaluation.",
     icon: FileJson,
   },
 ]
@@ -40,29 +76,47 @@ type CardState = "idle" | "creating" | "ready" | "error"
 
 function reviewBanner(status: ApprovalStatus | null): { text: string; tone: string } {
   if (status === "approved")
-    return { text: "Review freigegeben – keine Einreichfreigabe.", tone: "emerald" }
+    return { text: "Prüfung abgeschlossen – keine Einreichfreigabe.", tone: "emerald" }
   if (status === "stale")
     return {
-      text: "Die Review-Freigabe ist veraltet. Exporte werden als ENTWURF gekennzeichnet.",
+      text: "Die Prüfungs-Freigabe ist veraltet. Exporte werden als ENTWURF gekennzeichnet.",
       tone: "amber",
     }
   return {
-    text: "Noch nicht review-freigegeben – Exporte werden als ENTWURF gekennzeichnet.",
+    text: "Die Qualitätsprüfung ist noch nicht abgeschlossen – Exporte werden als ENTWURF gekennzeichnet.",
     tone: "amber",
   }
 }
 
 export function LiveExport({ runId }: { runId: string }) {
+  const [pkg, setPkg] = React.useState<ReviewPackageDto | null>(null)
   const [approval, setApproval] = React.useState<ApprovalStatus | null>(null)
   const [state, setState] = React.useState<Record<string, CardState>>({})
   const [artifacts, setArtifacts] = React.useState<Record<string, ExportArtifactDto>>({})
   const [errors, setErrors] = React.useState<Record<string, string>>({})
+  const [tab, setTab] = React.useState<"optionen" | "innolink">("optionen")
+  const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
+  const [readinessFilter, setReadinessFilter] = React.useState<FieldReadiness | "all">("all")
 
   React.useEffect(() => {
     getReview(runId)
-      .then((pkg) => setApproval(pkg.approval_status))
-      .catch(() => setApproval(null))
+      .then((p) => {
+        setPkg(p)
+        setApproval(p.approval_status)
+      })
+      .catch(() => {
+        setPkg(null)
+        setApproval(null)
+      })
+    // Field drafts feed the Feld-Bereitschaft overview (and the Innolink tab).
+    listFields(runId)
+      .then(setFields)
+      .catch(() => setFields([]))
   }, [runId])
+
+  function openInnolink() {
+    setTab("innolink")
+  }
 
   async function create(type: ExportType) {
     setState((s) => ({ ...s, [type]: "creating" }))
@@ -82,92 +136,304 @@ export function LiveExport({ runId }: { runId: string }) {
 
   const banner = reviewBanner(approval)
   const advisoryDraft = approval !== "approved"
+  const readiness = summarizeExportReadiness(pkg)
+  const readinessRows = fieldReadinessRows(fields ?? [], pkg)
+  // Never present anything as submission-ready while approval is missing or
+  // blockers exist ("Nicht zur Einreichung", M10.2 / correction 2).
+  const notForSubmission = advisoryDraft || readiness.blockerCount > 0
+  const hint =
+    readiness.reviewStatus === "nicht_durchgefuehrt"
+      ? "Es wurde noch keine Qualitätsprüfung durchgeführt. Exporte werden als Entwurf gekennzeichnet."
+      : readiness.reviewStatus === "blockiert"
+        ? "Der Antrag enthält noch blockierende Punkte. Prüfen Sie diese vor dem Export."
+        : "Der Antrag ist bereit für den Export. Bitte prüfen Sie die Inhalte final vor der Verwendung."
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5">
-      <h1 className="text-lg font-semibold">Export</h1>
-
-      <p
-        role="status"
-        className={`rounded-md border px-3 py-2 text-sm ${
-          banner.tone === "emerald"
-            ? "border-emerald-300 bg-emerald-50 text-emerald-900"
-            : "border-amber-300 bg-amber-50 text-amber-900"
-        }`}
-      >
-        {banner.text}
-      </p>
-
-      <div className="grid gap-4 md:grid-cols-3">
-        {CARDS.map((card) => {
-          const cardState = state[card.type] ?? "idle"
-          const artifact = artifacts[card.type]
-          // After creation, the artifact's draft_marked is authoritative.
-          const draft = artifact ? artifact.draft_marked : advisoryDraft
-          const Icon = card.icon
-          return (
-            <div
-              key={card.type}
-              className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <Icon className="size-6 text-muted-foreground" />
-                {draft && <Badge variant="outline">ENTWURF</Badge>}
-              </div>
-              <div>
-                <h2 className="text-sm font-semibold">{card.title}</h2>
-                <p className="text-xs text-muted-foreground">{card.subtitle}</p>
-              </div>
-
-              {cardState === "ready" && artifact ? (
-                <div className="flex flex-col gap-1">
-                  <Button size="sm" onClick={() => downloadExport(artifact)}>
-                    <Download data-icon="inline-start" />
-                    Bereit zum Herunterladen
-                  </Button>
-                  <span className="truncate text-xs text-muted-foreground">
-                    {artifact.filename}
-                  </span>
-                </div>
-              ) : cardState === "creating" ? (
-                <Button size="sm" disabled>
-                  <Loader2 className="mr-1 size-4 animate-spin" />
-                  Wird erstellt …
-                </Button>
-              ) : cardState === "error" ? (
-                <Button size="sm" variant="outline" onClick={() => create(card.type)}>
-                  Fehler – erneut versuchen
-                </Button>
-              ) : (
-                <Button size="sm" variant="outline" onClick={() => create(card.type)}>
-                  Erstellen
-                </Button>
-              )}
-              {errors[card.type] && (
-                <p role="alert" className="text-xs text-destructive">
-                  {errors[card.type]}
-                </p>
-              )}
-            </div>
-          )
-        })}
+      <div className="flex flex-col gap-1">
+        <h1 className="text-balance text-2xl font-semibold text-foreground">Export</h1>
+        <p className="text-sm text-muted-foreground">
+          Erstellen Sie ein editierbares Arbeitsdokument oder übernehmen Sie
+          geprüfte Feldinhalte manuell nach Innolink.
+        </p>
       </div>
 
-      {/* Innolink transfer view — opens the copy assistant; creates no export. */}
-      <Link
-        href="/portal-transfer"
-        className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent/50"
+      <Tabs
+        value={tab}
+        onValueChange={(v) => (v === "innolink" ? openInnolink() : setTab("optionen"))}
       >
-        <ClipboardCopy className="size-6 text-muted-foreground" />
-        <div>
-          <h2 className="text-sm font-semibold">Innolink-Übernahme</h2>
-          <p className="text-xs text-muted-foreground">
-            Feldweise Inhalte zum manuellen Kopieren nach Innolink vorbereiten.
-          </p>
-        </div>
-      </Link>
+        <TabsList>
+          <TabsTrigger value="optionen">Exportoptionen</TabsTrigger>
+          <TabsTrigger value="innolink">Innolink-Kopieransicht</TabsTrigger>
+        </TabsList>
 
-      <p className="text-xs text-muted-foreground">{PAGE_DISCLAIMER}</p>
+        <TabsContent value="optionen" className="mt-4 flex flex-col gap-5">
+          {/* Status card */}
+          <section className="flex flex-col gap-3 rounded-lg border border-border bg-card px-5 py-4">
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-sm font-medium text-foreground">Qualitätsprüfung</span>
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                  EXPORT_REVIEW_STYLE[readiness.reviewStatus]
+                )}
+              >
+                {EXPORT_REVIEW_LABELS[readiness.reviewStatus]}
+              </span>
+              {notForSubmission && (
+                <Badge
+                  variant="outline"
+                  className="border-destructive/20 bg-destructive/10 text-destructive"
+                >
+                  {NOT_FOR_SUBMISSION}
+                </Badge>
+              )}
+            </div>
+            <dl className="grid grid-cols-3 gap-3 text-center">
+              <div className="rounded-md border border-border px-2 py-2">
+                <dd className={cn("text-lg font-semibold", readiness.blockerCount > 0 && "text-destructive")}>
+                  {readiness.blockerCount}
+                </dd>
+                <dt className="text-[11px] text-muted-foreground">Blocker</dt>
+              </div>
+              <div className="rounded-md border border-border px-2 py-2">
+                <dd className="text-lg font-semibold text-status-fulfilled">{readiness.fieldsReady}</dd>
+                <dt className="text-[11px] text-muted-foreground">Felder bereit</dt>
+              </div>
+              <div className="rounded-md border border-border px-2 py-2">
+                <dd className="text-lg font-semibold text-foreground">{readiness.fieldsOpen}</dd>
+                <dt className="text-[11px] text-muted-foreground">Offene Punkte</dt>
+              </div>
+            </dl>
+            <p className="text-sm text-muted-foreground">{hint}</p>
+            <p
+              role="status"
+              className={cn(
+                "rounded-md border px-3 py-2 text-sm",
+                banner.tone === "emerald"
+                  ? "border-emerald-300 bg-emerald-50 text-emerald-900"
+                  : "border-amber-300 bg-amber-50 text-amber-900"
+              )}
+            >
+              {banner.text}
+            </p>
+          </section>
+
+          {/* Feld-Bereitschaft — per-field readiness for the MANUAL Innolink copy */}
+          <section
+            data-testid="field-readiness"
+            className="flex flex-col gap-3 rounded-lg border border-border bg-card px-5 py-4"
+          >
+            <h2 className="text-sm font-semibold text-foreground">Feld-Bereitschaft</h2>
+            {fields === null ? (
+              <Skeleton className="h-24 w-full" />
+            ) : readinessRows.length === 0 ? (
+              <p className="text-sm text-muted-foreground">
+                Für diesen Antrag liegen noch keine Feldentwürfe vor.
+              </p>
+            ) : (
+              <>
+                <p className="text-sm text-foreground">{readinessSummary(readinessRows)}</p>
+                {/* Filter chips — only states that actually occur. */}
+                <div className="flex flex-wrap gap-2" role="group" aria-label="Feld-Bereitschaft filtern">
+                  {(["all", ...new Set(readinessRows.map((r) => r.status))] as (FieldReadiness | "all")[]).map(
+                    (chip) => {
+                      const active = readinessFilter === chip
+                      return (
+                        <button
+                          key={chip}
+                          type="button"
+                          aria-pressed={active}
+                          onClick={() => setReadinessFilter(chip)}
+                          className={cn(
+                            "inline-flex h-7 items-center rounded-full border px-2.5 text-xs font-medium transition-colors",
+                            "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring",
+                            active
+                              ? "border-primary bg-primary/10 text-primary"
+                              : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                          )}
+                        >
+                          {chip === "all" ? "Alle" : FIELD_READINESS_LABELS[chip]}
+                        </button>
+                      )
+                    }
+                  )}
+                </div>
+                <table className="w-full border-separate border-spacing-y-1 text-sm">
+                  <caption className="sr-only">
+                    Bereitschaft der Portalfelder für die manuelle Übernahme
+                  </caption>
+                  <thead>
+                    <tr className="text-left text-xs text-muted-foreground">
+                      <th scope="col" className="font-medium">Portal-Feld</th>
+                      <th scope="col" className="font-medium">Status</th>
+                      <th scope="col" className="font-medium">Nächste Aktion</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {readinessRows
+                      .filter((row) => readinessFilter === "all" || row.status === readinessFilter)
+                      .map((row) => {
+                        const action = FIELD_NEXT_ACTION[row.status]
+                        // Editor actions target the concrete field (?field=…).
+                        const href =
+                          action.href === "/editor"
+                            ? `/editor?field=${encodeURIComponent(row.fieldId)}`
+                            : action.href
+                        return (
+                          <tr key={row.fieldId}>
+                            <td className="pr-3 text-foreground">{row.fieldName}</td>
+                            <td className="pr-3">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
+                                  FIELD_READINESS_STYLE[row.status]
+                                )}
+                              >
+                                {FIELD_READINESS_LABELS[row.status]}
+                              </span>
+                            </td>
+                            <td>
+                              {href ? (
+                                <Button
+                                  variant="ghost"
+                                  size="xs"
+                                  render={<a href={href} />}
+                                  nativeButton={false}
+                                >
+                                  {action.label}
+                                </Button>
+                              ) : (
+                                <Button variant="ghost" size="xs" onClick={openInnolink}>
+                                  {action.label}
+                                </Button>
+                              )}
+                            </td>
+                          </tr>
+                        )
+                      })}
+                  </tbody>
+                </table>
+              </>
+            )}
+            <p className="text-xs text-muted-foreground">{KOPIERBEREIT_LEGEND}</p>
+            <p className="text-xs text-muted-foreground">
+              <span className="font-medium text-foreground">
+                Manuell im Portal zu erfassen:
+              </span>{" "}
+              {UNSUPPORTED_AREAS.join(", ")}.
+            </p>
+          </section>
+
+          {/* Export cards */}
+          <div className="grid gap-4 md:grid-cols-3">
+            {CARDS.map((card) => {
+              const cardState = state[card.type] ?? "idle"
+              const artifact = artifacts[card.type]
+              const draft = artifact ? artifact.draft_marked : advisoryDraft
+              const Icon = card.icon
+              return (
+                <div
+                  key={card.type}
+                  className={cn(
+                    "flex flex-col gap-3 rounded-lg border p-4",
+                    card.recommended
+                      ? "border-primary/40 bg-card ring-1 ring-primary/10"
+                      : card.type === "technical_evidence"
+                        ? "border-border bg-muted/30"
+                        : "border-border bg-card"
+                  )}
+                >
+                  <div className="flex items-start justify-between gap-2">
+                    <Icon className="size-6 text-muted-foreground" />
+                    <div className="flex flex-col items-end gap-1">
+                      {card.recommended && (
+                        <Badge className="bg-primary/10 text-primary">Empfohlen</Badge>
+                      )}
+                      {card.type === "technical_evidence" && (
+                        <Badge variant="outline" className="text-muted-foreground">
+                          Für Audit/Evaluation
+                        </Badge>
+                      )}
+                      {draft && <Badge variant="outline">ENTWURF</Badge>}
+                    </div>
+                  </div>
+                  <div>
+                    <h2 className="text-sm font-semibold">{card.title}</h2>
+                    <p className="text-xs text-muted-foreground">{card.subtitle}</p>
+                  </div>
+
+                  {cardState === "ready" && artifact ? (
+                    <div className="mt-auto flex flex-col gap-1">
+                      <Button size="sm" onClick={() => downloadExport(artifact)}>
+                        <Download data-icon="inline-start" />
+                        Bereit zum Herunterladen
+                      </Button>
+                      <span className="truncate text-xs text-muted-foreground">
+                        {artifact.filename}
+                      </span>
+                    </div>
+                  ) : cardState === "creating" ? (
+                    <Button size="sm" className="mt-auto" disabled>
+                      <Loader2 className="mr-1 size-4 animate-spin" />
+                      Wird erstellt …
+                    </Button>
+                  ) : cardState === "error" ? (
+                    <Button size="sm" variant="outline" className="mt-auto" onClick={() => create(card.type)}>
+                      Fehler – erneut versuchen
+                    </Button>
+                  ) : (
+                    <Button size="sm" variant="outline" className="mt-auto" onClick={() => create(card.type)}>
+                      {notForSubmission ? "Export als Entwurf erstellen" : "Erstellen"}
+                    </Button>
+                  )}
+                  {errors[card.type] && (
+                    <p role="alert" className="text-xs text-destructive">
+                      {errors[card.type]}
+                    </p>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+
+          {/* Innolink copy view — opens the assistant; creates no export. */}
+          <button
+            type="button"
+            onClick={openInnolink}
+            className="flex items-center gap-3 rounded-lg border border-border bg-card p-4 text-left transition-colors hover:bg-accent/50"
+          >
+            <ClipboardCopy className="size-6 text-muted-foreground" />
+            <div className="flex-1">
+              <h2 className="text-sm font-semibold">Innolink-Kopieransicht</h2>
+              <p className="text-xs text-muted-foreground">
+                Feldweise Inhalte prüfen und manuell in das Innolink-Portal kopieren.
+              </p>
+            </div>
+            <span className="shrink-0 rounded-full border border-border px-2 py-0.5 text-[11px] text-muted-foreground">
+              Hilfsansicht
+            </span>
+          </button>
+
+          <p className="text-xs text-muted-foreground">{PAGE_DISCLAIMER}</p>
+        </TabsContent>
+
+        <TabsContent value="innolink" className="mt-4 flex flex-col gap-4">
+          <p className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
+            <Info className="mt-0.5 size-4 shrink-0" />
+            {NO_AUTO_SUBMIT_NOTE}
+          </p>
+          {fields === null ? (
+            <div className="flex flex-col gap-3">
+              {[0, 1, 2].map((i) => (
+                <Skeleton key={i} className="h-28 w-full rounded-lg" />
+              ))}
+            </div>
+          ) : (
+            <PortalTransfer fields={fields} review={pkg} embedded />
+          )}
+        </TabsContent>
+      </Tabs>
     </div>
   )
 }

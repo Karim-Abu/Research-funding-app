@@ -1,9 +1,11 @@
 "use client"
 
 import Link from "next/link"
+import { usePathname } from "next/navigation"
 import { HelpCircle } from "lucide-react"
 import { ProjectSelector } from "./project-selector"
 import { UserMenu } from "./user-menu"
+import { useSession } from "@/components/providers/app-providers"
 import type { Project, User } from "@/lib/types"
 
 interface TopbarProps {
@@ -19,14 +21,35 @@ export function Topbar({
   activeProjectId,
   onProjectChange,
 }: TopbarProps) {
+  const { mode } = useSession()
+  // On the Projektübersicht the cards themselves select the Antrag — showing
+  // the switcher there suggested the user was already inside one.
+  const pathname = usePathname()
+  const onOverview = pathname === "/"
   return (
     <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-card px-4">
-      {/* Left: project selector */}
-      <ProjectSelector
-        projects={projects}
-        activeProjectId={activeProjectId}
-        onChange={onProjectChange}
-      />
+      {/* Left: project selector (hidden on the overview) + demo-data hint */}
+      <div className="flex min-w-0 items-center gap-3">
+        {onOverview ? (
+          <span className="text-sm text-muted-foreground">
+            Projektübersicht — Antrag zum Bearbeiten auswählen
+          </span>
+        ) : (
+          <ProjectSelector
+            projects={projects}
+            activeProjectId={activeProjectId}
+            onChange={onProjectChange}
+          />
+        )}
+        {mode === "mock" && (
+          <span
+            className="hidden shrink-0 items-center rounded-full border border-border bg-muted/50 px-2.5 py-0.5 text-[11px] font-medium text-muted-foreground sm:inline-flex"
+            title="Beispieldaten · keine echten Antragsdaten"
+          >
+            Demo-Daten · keine echten Antragsdaten
+          </span>
+        )}
+      </div>
 
       {/* Right: Hilfe link + user menu. Nothing else — no search, no notifications. */}
       <div className="flex items-center gap-2">

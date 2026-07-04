@@ -91,6 +91,29 @@ class Settings(BaseSettings):
     # in addition to the profile's max_input_fragments). Deterministic truncation
     # at fragment boundaries keeps the model-facing payload minimal.
     a1_context_char_budget: int = 24000
+    # Milestone 9D: dev/test-only deterministic fake agent provider for A2 draft
+    # suggestions (no network/key). Off in production — A2 then uses the real
+    # adapters and is simply unavailable without a configured key.
+    agent_fake_provider: bool = False
+
+    # Milestone 9I-A: public web research. Keys are env-only, never defaulted/logged.
+    # web_research_enabled gates the whole feature; a missing Firecrawl key + no fake
+    # simply reports the feature unavailable (no crash). The web fake provider has its
+    # OWN flag — it is NOT implied by agent_fake_provider (binding correction 5).
+    web_research_enabled: bool = False
+    firecrawl_api_key: str | None = None
+    web_research_fake_provider: bool = False
+    # Milestone 9J: even an approved, firewall-sanitized D2 (confidential) query must not
+    # reach a LIVE web provider unless this flag is explicitly enabled. Default off; the
+    # D2 sanitized-query flow otherwise routes to the fake provider / is blocked. D0
+    # public/synthetic web research is unaffected (stays live-capable).
+    d2_web_research_enabled: bool = False
+    # Deployment/technical limits for web research (NOT funding rules).
+    web_search_max_results: int = 10
+    web_fetch_max_bytes: int = 5 * 1024 * 1024
+    web_fetch_max_redirects: int = 5
+    web_research_timeout_seconds: int = 60
+    web_research_max_credits: int = 50
 
     # Seed data (dev defaults; override via env) -------------------------
     seed_workspace_id: str = "ws-demo"

@@ -180,7 +180,9 @@ test("M7 review: edit → recheck → field approval → stale; missing partner 
   // UI smoke: the live Review-Center renders for the active project.
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), a.projectId)
   await page.goto("/review")
-  await expect(page.getByRole("heading", { name: "Review-Center" })).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.getByRole("heading", { name: "Qualitätsprüfung", exact: true })
+  ).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText(/ungeprüfte Änderungen/)).toBeVisible()
 
   // --- Project B: missing research partner stays blocked -------------------
@@ -195,6 +197,8 @@ test("M7 review: edit → recheck → field approval → stale; missing partner 
 
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), b.projectId)
   await page.goto("/review")
-  await expect(page.getByRole("heading", { name: "Review-Center" })).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.getByRole("heading", { name: "Qualitätsprüfung", exact: true })
+  ).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText("Blockiert")).toBeVisible()
 })

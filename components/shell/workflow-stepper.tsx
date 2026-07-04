@@ -9,7 +9,7 @@ import { workflowSteps } from "@/lib/mock-data"
 
 interface WorkflowStepperProps {
   currentStep: number
-  /** Status for each of the 8 steps, in order. */
+  /** Status for each workflow step, in order. */
   stepStatus: StepStatus[]
   variant?: "full" | "mini"
   className?: string
@@ -49,7 +49,7 @@ export function WorkflowStepper({
         </div>
         <span className="text-xs text-muted-foreground">
           <span className="font-medium text-foreground">
-            {`Schritt ${currentStep} von 8`}
+            {`Schritt ${currentStep} von ${workflowSteps.length}`}
           </span>
           {current && ` — ${current.label}: ${current.subLabel}`}
         </span>

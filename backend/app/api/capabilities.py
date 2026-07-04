@@ -35,7 +35,18 @@ def get_capabilities(
         "review": True,
         # Milestone 8: deterministic DOCX/Markdown/technical-evidence exports.
         "export": True,
-        "web_research": False,
+        # Milestone 9I-A: public web research. Truthful — true only when enabled AND a
+        # provider (real Firecrawl or the dedicated web fake) is configured. url_import
+        # stays false: web import is an internal Research path, not free-form URL import.
+        "web_research": settings.web_research_enabled
+        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        # Milestone 9I-B: market/competitor comparison (beta-internal) — available with
+        # web research (it is built from imported public sources).
+        "market_comparison": settings.web_research_enabled
+        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        # Milestone 9K: deterministic MAS reliability & value assurance (beta-internal) —
+        # available whenever the review layer is (no provider dependency).
+        "reliability": True,
     }
     return Capabilities(
         api_version=settings.api_version,

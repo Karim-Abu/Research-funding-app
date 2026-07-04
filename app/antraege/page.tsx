@@ -4,7 +4,7 @@ export default function Page() {
   return (
     <PlaceholderScreen
       title="Antragsübersicht"
-      description="Die Antragsübersicht wird in der Beta später ergänzt. Nutzen Sie aktuell das Dashboard."
+      description="Die Antragsübersicht wird in der Beta später ergänzt. Nutzen Sie aktuell die Projekte-Übersicht."
     />
   )
 }

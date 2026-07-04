@@ -4,6 +4,7 @@ import { server } from "./server"
 import { setBackendMode } from "@/lib/app-mode"
 import { login } from "@/lib/session"
 import {
+  createUrlSource,
   createTextSource,
   deleteSource,
   listSources,
@@ -90,6 +91,30 @@ describe("sources client (live mode)", () => {
     )
     const res = await createTextSource("p1", "Note", "content", CLASSIFICATION)
     expect(res.status).toBe("processed")
+  })
+
+  it("creates a URL source when the backend capability is available", async () => {
+    let body: Record<string, unknown> | null = null
+    server.use(
+      http.post("/api/projects/p1/sources/url", async ({ request }) => {
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          sourceDoc({ type: "url", status: "uploaded" }),
+          { status: 202 }
+        )
+      })
+    )
+    const res = await createUrlSource(
+      "p1",
+      "https://www.innosuisse.admin.ch/innovation-projects",
+      "Webseite: Innosuisse",
+      CLASSIFICATION
+    )
+    expect(res.type).toBe("url")
+    expect(body!.url).toBe("https://www.innosuisse.admin.ch/innovation-projects")
+    expect(body!.name).toBe("Webseite: Innosuisse")
+    expect(body!.user_confirmed_public).toBe(true)
+    expect(body!.data_classification).toEqual(CLASSIFICATION)
   })
 
   it("maps 415 to a user-safe error", async () => {

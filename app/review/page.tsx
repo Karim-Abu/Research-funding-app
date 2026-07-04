@@ -29,7 +29,6 @@ const stepStatus: StepStatus[] = [
   "done",
   "current",
   "upcoming",
-  "upcoming",
 ]
 
 // Set to true only during internal prototyping — never in the evaluation view.
@@ -61,10 +60,17 @@ function LiveReviewContainer() {
   }
   if (!runId) {
     return (
-      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+      <div className="mx-auto flex max-w-3xl flex-col items-center gap-4 px-6 py-16 text-center">
+        <h1 className="text-xl font-semibold text-foreground">
+          Noch keine Qualitätsprüfung durchgeführt
+        </h1>
         <p className="text-sm text-muted-foreground">
-          Es liegt noch keine abgeschlossene Analyse vor. Starten Sie zunächst die
-          Analyse.
+          Starten Sie die Prüfung, um Pflichtfelder, Belege, Zeichenlimits und
+          offene Punkte zu kontrollieren.
+        </p>
+        <p className="text-xs text-muted-foreground">
+          Die automatische Prüfung wird verfügbar, sobald eine Analyse
+          abgeschlossen ist.
         </p>
       </div>
     )

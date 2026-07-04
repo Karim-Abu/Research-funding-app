@@ -15,12 +15,16 @@ from app.api import (
     evidence,
     exports,
     fields,
+    firewall,
     health,
     me,
     operations,
+    market,
     partners,
     projects,
+    reliability,
     requirements,
+    research,
     review,
     runs,
     sources,
@@ -60,6 +64,11 @@ async def lifespan(_: FastAPI):
     from app.agents.registry import get_agent_registry
 
     get_agent_registry()
+    # Milestone 9I-B: inject the beta-internal market-comparison profile (code-only;
+    # no finalized contract modified).
+    from app.market.agent_profile import ensure_registered as _register_market_profile
+
+    _register_market_profile()
     # Single-instance recovery: fail anything left mid-processing on restart.
     from app.exports.executor import recover_interrupted_exports
     from app.ingestion.pipeline import recover_interrupted
@@ -94,6 +103,7 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
     health, auth, me, capabilities, projects, sources, runs, operations,
-    partners, requirements, evidence, fields, review, exports,
+    partners, requirements, evidence, fields, review, exports, research, market,
+    firewall, reliability,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

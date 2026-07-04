@@ -408,7 +408,7 @@ def _verify_project_presence(db: Session, settings) -> None:
             )
 
 
-def seed_demo_data(*, reset: bool = False) -> None:
+def seed_demo_data(*, reset: bool = False, evaluation: bool = False) -> None:
     settings = get_settings()
     _guard(settings)
     seed_base()
@@ -433,7 +433,16 @@ def seed_demo_data(*, reset: bool = False) -> None:
                 _apply_evidence_links(db, run, demo)
         _verify_project_presence(db, settings)
         db.commit()
-        logger.info("demo seed complete version=%s projects=%d", SEED_VERSION, len(DEMO_PROJECTS))
+        # Milestone 10: evaluation-only enrichment (VC draft, reliability blocker,
+        # source-backed market item, reliability pass). Plain --reset never runs this.
+        if evaluation:
+            from app.demo.evaluation import apply_evaluation
+
+            apply_evaluation(db)
+        logger.info(
+            "demo seed complete version=%s projects=%d evaluation=%s",
+            SEED_VERSION, len(DEMO_PROJECTS), evaluation,
+        )
     finally:
         db.close()
 
@@ -441,10 +450,14 @@ def seed_demo_data(*, reset: bool = False) -> None:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--reset", action="store_true")
+    parser.add_argument(
+        "--evaluation", action="store_true",
+        help="Also apply the M10 evaluation enrichment (superset of the demo seed).",
+    )
     args = parser.parse_args(argv)
     configure_logging(get_settings().log_level)
     try:
-        seed_demo_data(reset=args.reset)
+        seed_demo_data(reset=args.reset, evaluation=args.evaluation)
     except Exception as exc:  # noqa: BLE001
         logger.error("demo seed failed: %s", exc)
         return 1

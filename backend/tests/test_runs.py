@@ -158,11 +158,13 @@ def test_active_run_blocks_second(client):
     assert res.json()["code"] == "active_run_exists"
 
 
-def test_processing_mode_cloud_rejected(client):
+def test_processing_mode_cloud_requires_confirmation(client):
+    # M9D.2: cloud_assisted is no longer hard-rejected — it now requires an explicit
+    # one-run confirmation. Without one, run creation is blocked (not silently downgraded).
     csrf, project_id, _ = _setup(client)
     res = _create_run(client, project_id, csrf, body=_run_body("cloud_assisted"))
-    assert res.status_code == 403
-    assert res.json()["code"] == "cloud_processing_unavailable"
+    assert res.status_code == 422
+    assert res.json()["code"] == "cloud_confirmation_required"
 
 
 # --- lifecycle / cancel / resume -----------------------------------------

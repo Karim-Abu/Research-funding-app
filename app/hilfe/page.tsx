@@ -1,6 +1,23 @@
 "use client"
 
 import { AppShell } from "@/components/shell/app-shell"
+import { Button } from "@/components/ui/button"
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from "@/components/ui/dialog"
+import { ContactForm } from "@/components/contact-form"
 import {
   currentUser,
   projects,
@@ -21,7 +38,7 @@ export default function HilfePage() {
 
         <section className="mb-8">
           <h2 className="mb-2 text-base font-semibold text-foreground">
-            Der Workflow in 8 Schritten
+            Der Workflow in 7 Schritten
           </h2>
           <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
             Die Plattform führt Sie Schritt für Schritt von der Projektidee bis
@@ -101,9 +118,42 @@ export default function HilfePage() {
           </ul>
         </section>
 
-        <p className="border-t border-border pt-6 text-sm font-medium text-foreground">
+        <p className="mb-8 border-t border-border pt-6 text-sm font-medium text-foreground">
           Die Einreichung erfolgt durch Sie im Innosuisse-Portal.
         </p>
+
+        <section>
+          <div className="mb-2 flex items-center justify-between gap-4">
+            <h2 className="text-base font-semibold text-foreground">
+              Support kontaktieren
+            </h2>
+            <Dialog>
+              <DialogTrigger render={<Button variant="outline" size="sm" />}>
+                In Dialog öffnen
+              </DialogTrigger>
+              <DialogContent className="sm:max-w-md">
+                <DialogHeader>
+                  <DialogTitle>Support kontaktieren</DialogTitle>
+                  <DialogDescription>
+                    Schildern Sie Ihr Anliegen — wir melden uns per E-Mail.
+                  </DialogDescription>
+                </DialogHeader>
+                <ContactForm />
+              </DialogContent>
+            </Dialog>
+          </div>
+          <Card>
+            <CardHeader>
+              <CardTitle>Fragen oder Feedback?</CardTitle>
+              <CardDescription>
+                Schildern Sie Ihr Anliegen — wir melden uns per E-Mail.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <ContactForm />
+            </CardContent>
+          </Card>
+        </section>
       </div>
     </AppShell>
   )

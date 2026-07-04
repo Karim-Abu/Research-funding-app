@@ -23,12 +23,13 @@ import {
 import { DraftEditor } from "@/components/editor/draft-editor"
 import { MachineStatusBadge } from "@/components/status/machine-status-badge"
 import { cn } from "@/lib/utils"
-import type {
-  EvidenceAnchorDto,
-  IssueDto,
-  IssueSeverity,
-  PortalFieldDraftDto,
-  ReviewDecisionDto,
+import {
+  ISSUE_SEVERITY_LABELS,
+  type EvidenceAnchorDto,
+  type IssueDto,
+  type IssueSeverity,
+  type PortalFieldDraftDto,
+  type ReviewDecisionDto,
 } from "@/lib/backend-contract"
 
 // ---------------------------------------------------------------------------
@@ -58,17 +59,17 @@ const ISSUE_SEVERITY_CONFIG: Record<
   { label: string; className: string; icon: React.ElementType }
 > = {
   blocker: {
-    label: "Blockierend",
+    label: ISSUE_SEVERITY_LABELS.blocker,
     className: "bg-status-blocker/12 text-status-blocker",
     icon: XCircle,
   },
   warning: {
-    label: "Warnung",
+    label: ISSUE_SEVERITY_LABELS.warning,
     className: "bg-status-partial/12 text-status-partial",
     icon: AlertTriangle,
   },
   info: {
-    label: "Hinweis",
+    label: ISSUE_SEVERITY_LABELS.info,
     className: "bg-muted text-muted-foreground",
     icon: ChevronRight,
   },
@@ -158,7 +159,7 @@ export function FieldReview({
   const infos = issues.filter((i) => i.severity === "info")
 
   function fieldName(fieldId: string): string {
-    return fields.find((f) => f.fieldId === fieldId)?.name ?? fieldId
+    return fields.find((f) => f.fieldId === fieldId)?.name ?? "Unbenanntes Feld"
   }
 
   function toggleWarning(id: string) {

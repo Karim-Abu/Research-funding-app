@@ -243,7 +243,18 @@ def test_initial_versions_are_template_never_agent(client):
                  headers=unsafe_headers(csrf))
     db = SessionLocal()
     try:
-        versions = list(db.scalars(select(DraftVersion)))
+        # Scope to this run's drafts: other tests (M9D A2 accept) create agent
+        # versions in the shared test DB; this deterministic M6 run never does.
+        from app.db.models import PortalFieldDraft
+
+        draft_ids = [
+            d.draft_id for d in db.scalars(
+                select(PortalFieldDraft).where(PortalFieldDraft.run_id == run_id)
+            )
+        ]
+        versions = list(
+            db.scalars(select(DraftVersion).where(DraftVersion.draft_id.in_(draft_ids)))
+        )
         assert versions
         kinds = {v.created_by for v in versions}
         assert kinds <= {"template", "user"}

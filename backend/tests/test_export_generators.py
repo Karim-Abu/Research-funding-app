@@ -92,6 +92,61 @@ def test_markdown_deterministic_bytes_and_sections(client):
     assert "ENTWURF" in text  # draft
 
 
+def test_markdown_friendly_labels_and_grouped_points(client):
+    """M10.2 — applicant-friendly field headings + open points grouped by field."""
+    csrf, _pid, run_id = setup_completed_run(client)
+    artifact = make_export(client, csrf, run_id, "markdown")
+    text = download(client, artifact["export_id"]).content.decode("utf-8")
+    assert "### Business Targets & Business Model" in text
+    assert "### Innovation & Lösung" in text
+    # The registry's technical "Open Editor (…)" phrasing never becomes a heading.
+    assert "### Open Editor" not in text
+    tail = text[text.index("## Offene Punkte"):]
+    assert "### " in tail  # grouped under field / unassigned headings
+
+
+def test_grouped_open_points_groups_and_dedupes():
+    """M10.2 — pure helper: group by field label, dedupe identical lines."""
+    from app.exports.generators.common import grouped_open_points
+
+    snap = {
+        "fields": [{"field_id": "INTRO.APP.ABSTRACT", "field_name": "Abstract"}],
+        "open_issues": [
+            {
+                "target_type": "portal_field",
+                "target_id": "INTRO.APP.ABSTRACT",
+                "severity": "blocker",
+                "description": "Feld enthält Platzhalter.",
+            },
+            {
+                "target_type": "requirement",
+                "target_id": "REQ.X",
+                "severity": "warning",
+                "description": "Anforderung offen.",
+            },
+        ],
+        "review_findings": [
+            {
+                "field_id": "INTRO.APP.ABSTRACT",
+                "severity": "blocker",
+                "description": "Feld enthält Platzhalter.",
+                "status": "open",
+            },
+            {
+                "field_id": None,
+                "severity": "warning",
+                "description": "Erledigt.",
+                "status": "resolved",  # non-open findings never appear
+            },
+        ],
+    }
+    groups = grouped_open_points(snap)
+    assert groups[0][0] == "Abstract (wird in Aramis publiziert)"
+    assert groups[0][1] == ["2 × [blocker] Feld enthält Platzhalter."]
+    assert groups[-1][0] == "Weitere offene Punkte"
+    assert groups[-1][1] == ["[warning] Anforderung offen."]
+
+
 def test_markdown_filename_suffix(client):
     csrf, _pid, run_id = setup_completed_run(client)
     artifact = make_export(client, csrf, run_id, "markdown")

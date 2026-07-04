@@ -6,6 +6,8 @@ import { Play, ChevronDown, ChevronRight, XCircle } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import { SourceTable } from "@/components/quellen/source-table"
+import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
+import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
 import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
@@ -21,9 +23,11 @@ import {
   dummySources,
   dummyEvidence,
   dummyAnalysisSteps,
+  URL_SOURCE_KIND_LABELS,
   type AnalysisProgressStep,
   type PageAnalysisState,
   type Source,
+  type UrlSourceKind,
 } from "@/lib/quellen-mock-data"
 import {
   startRun as startLegacyRun,
@@ -50,17 +54,28 @@ import {
   listSources,
   uploadFiles,
   createTextSource,
+  createUrlSource,
   deleteSource,
   type SourceDocumentDto,
 } from "@/lib/sources"
 import { getCapabilities, type Capabilities } from "@/lib/capabilities"
-import { cancelRun, createRun, listProjectRuns } from "@/lib/runs"
+import {
+  cancelRun,
+  createRun,
+  listProjectRuns,
+  RunError,
+  type RunSettings,
+} from "@/lib/runs"
+import { createProcessingConfirmation } from "@/lib/processing-confirmations"
 import { pollOperation, type PollHandle } from "@/lib/operations"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
 import { dataClassificationFromFlat } from "@/lib/data-classification"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Label } from "@/components/ui/label"
+import {
+  computeSourceUsage,
+  listEvidence,
+  type SourceUsage,
+} from "@/lib/evidence"
+import { listRequirements } from "@/lib/requirements"
 
 // Map a live contract SourceDocument onto the existing table row shape.
 const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
@@ -73,118 +88,34 @@ const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
 function toSourceRow(s: SourceDocumentDto): Source {
   let errorHint: string | undefined
   if (s.status === "failed") {
-    errorHint = s.error_message ?? "Die Datei konnte nicht verarbeitet werden."
+    errorHint =
+      s.error_message ??
+      "Die Quelle konnte nicht verarbeitet werden. Bitte Format prüfen, erneut hochladen oder entfernen."
   } else if (s.status === "needs_manual_input") {
     errorHint =
-      "Kein durchsuchbarer Text gefunden — bitte Datei prüfen oder Inhalt als Text erfassen."
+      "Kein durchsuchbarer Text gefunden. Bitte Datei prüfen oder Inhalt als Text erfassen."
   }
   return {
     id: s.source_id,
     name: s.name,
     type: SOURCE_TYPE_LABEL[s.type] ?? "Text",
     status: s.status,
-    addedBy: "—",
+    addedBy: "Projektteam",
     addedAt: s.created_at
       ? new Date(s.created_at).toLocaleString("de-CH")
-      : "—",
+      : "Unbekannt",
     errorHint,
   }
 }
 
-// Minimal text-source form (live mode) — contract createTextSource.
-function TextSourceForm({
-  onAdd,
-  disabled,
-}: {
-  onAdd: (name: string, text: string) => Promise<void>
-  disabled?: boolean
-}) {
-  const [open, setOpen] = React.useState(false)
-  const [name, setName] = React.useState("")
-  const [text, setText] = React.useState("")
-  const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+function isLocalSourceId(id: string): boolean {
+  return id.startsWith("local-source-")
+}
 
-  async function submit() {
-    if (!name.trim() || !text.trim()) return
-    setBusy(true)
-    setError(null)
-    try {
-      await onAdd(name.trim(), text)
-      setName("")
-      setText("")
-      setOpen(false)
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Hinzufügen fehlgeschlagen.")
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  if (!open) {
-    return (
-      <Button
-        type="button"
-        variant="outline"
-        size="sm"
-        className="self-start"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
-      >
-        Text als Quelle hinzufügen
-      </Button>
-    )
-  }
-
-  return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border p-4">
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="text-source-name">Name</Label>
-        <Input
-          id="text-source-name"
-          value={name}
-          onChange={(e) => setName(e.target.value)}
-          placeholder="z. B. Gesprächsnotiz"
-          disabled={busy}
-        />
-      </div>
-      <div className="flex flex-col gap-1.5">
-        <Label htmlFor="text-source-text">Text</Label>
-        <Textarea
-          id="text-source-text"
-          value={text}
-          onChange={(e) => setText(e.target.value)}
-          rows={5}
-          placeholder="Inhalt der Textquelle…"
-          disabled={busy}
-        />
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-status-blocker">
-          {error}
-        </p>
-      )}
-      <div className="flex gap-2">
-        <Button
-          type="button"
-          size="sm"
-          onClick={submit}
-          disabled={busy || !name.trim() || !text.trim()}
-        >
-          Hinzufügen
-        </Button>
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          onClick={() => setOpen(false)}
-          disabled={busy}
-        >
-          Abbrechen
-        </Button>
-      </div>
-    </div>
-  )
+function localSourceId(kind: string): string {
+  return `local-source-${kind}-${Date.now()}-${Math.random()
+    .toString(16)
+    .slice(2)}`
 }
 
 // ---------------------------------------------------------------------------
@@ -307,7 +238,6 @@ const quellenStepStatus = [
   "upcoming",
   "upcoming",
   "upcoming",
-  "upcoming",
 ] as const
 
 // ---------------------------------------------------------------------------
@@ -356,8 +286,16 @@ function QuellenPageContent() {
   const searchParams = useSearchParams()
   const tabFromUrl: QuellenTab =
     searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
+  // Deep link from Anforderungen ("Beleg ansehen"): focus one evidence card.
+  const focusAnchorId = searchParams.get("anchor")
+  // Deep link (?source=…): open that source's details directly.
+  const sourceFromUrl = searchParams.get("source")
 
   const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
+  // Evidence → source navigation: switch tab + open that source's details.
+  const [sourceDetailId, setSourceDetailId] = React.useState<string | null>(
+    sourceFromUrl
+  )
   // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
   // this route, so follow URL changes after mount as well.
   React.useEffect(() => {
@@ -370,6 +308,11 @@ function QuellenPageContent() {
     router.replace(tab === "evidenz" ? "/quellen?tab=evidenz" : "/quellen", {
       scroll: false,
     })
+  }
+
+  function handleOpenSourceFromEvidence(sourceId: string) {
+    handleTabChange("quellen")
+    setSourceDetailId(sourceId)
   }
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
@@ -494,12 +437,39 @@ function QuellenPageContent() {
     setRunCost(undefined)
     try {
       if (liveMode && projectId) {
-        const accepted = await createRun(projectId, {
+        // Derive the processing mode from the run-settings opt-in. Cloud-KI is
+        // only used when the user enabled it AND explicitly confirmed for a
+        // public/synthetic project; otherwise the run stays deterministic.
+        const processedVersionIds = liveSources
+          .filter((s) => s.status === "processed" && s.current_source_version_id)
+          .map((s) => s.current_source_version_id as string)
+        const useCloud =
+          settings.ki &&
+          settings.cloudConfirmed === true &&
+          !isLocalOnly &&
+          processedVersionIds.length > 0
+
+        let runSettings: RunSettings = {
           processing_mode: "deterministic_only",
           max_cost_chf: settings.costLimit,
           max_llm_calls: 0,
           max_web_calls: 0,
-        })
+        }
+        if (useCloud) {
+          const confirmation = await createProcessingConfirmation(
+            projectId,
+            processedVersionIds
+          )
+          runSettings = {
+            processing_mode: "cloud_assisted",
+            max_cost_chf: settings.costLimit,
+            max_llm_calls: 25,
+            max_web_calls: 0,
+            source_version_ids: processedVersionIds,
+            internal_cloud_confirmation_id: confirmation.confirmation_id,
+          }
+        }
+        const accepted = await createRun(projectId, runSettings)
         runIdRef.current = accepted.resource_id
         setCurrentRunId(accepted.resource_id)
         operationPollRef.current = pollOperation(accepted.operation_id, {
@@ -539,9 +509,11 @@ function QuellenPageContent() {
       startPolling()
     } catch (e) {
       setAnalysisState("idle")
-      setApiError(
-        e instanceof ApiError ? e.message : BRIDGE_UNREACHABLE_MESSAGE
-      )
+      if (e instanceof RunError || e instanceof ApiError) {
+        setApiError(e.message)
+      } else {
+        setApiError(BRIDGE_UNREACHABLE_MESSAGE)
+      }
     }
   }
 
@@ -589,6 +561,7 @@ function QuellenPageContent() {
   const liveMode = mode === "live"
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
+  const [localSourceRows, setLocalSourceRows] = React.useState<Source[]>([])
   const [completedRunId, setCompletedRunId] = React.useState<string | null>(null)
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
@@ -598,6 +571,10 @@ function QuellenPageContent() {
     if (!liveMode) return
     setProjectId(getActiveProjectId())
     void getCapabilities().then(setCapabilities)
+  }, [liveMode])
+
+  React.useEffect(() => {
+    if (!liveMode) setLocalSourceRows([])
   }, [liveMode])
 
   const refreshSources = React.useCallback(async () => {
@@ -641,19 +618,113 @@ function QuellenPageContent() {
 
   const handleDeleteSource = React.useCallback(
     (id: string) => {
+      if (isLocalSourceId(id)) {
+        setLocalSourceRows((prev) => prev.filter((source) => source.id !== id))
+        return
+      }
       void deleteSource(id).then(refreshSources).catch(() => undefined)
     },
     [refreshSources]
   )
 
   const handleAddTextSource = React.useCallback(
-    async (name: string, text: string) => {
+    async ({ title, text }: { title: string; text: string }) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
-      await createTextSource(projectId, name, text, sourceClassification)
+      await createTextSource(projectId, title, text, sourceClassification)
       await refreshSources()
     },
     [projectId, sourceClassification, refreshSources]
   )
+
+  const handleAddUrlSource = React.useCallback(
+    async ({ url, kind }: { url: string; kind: UrlSourceKind }) => {
+      if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
+      const canUseBackendUrlImport = Boolean(
+        capabilities?.features?.url_import ||
+          capabilities?.supported_source_types.includes("url")
+      )
+
+      if (canUseBackendUrlImport) {
+        try {
+          await createUrlSource(
+            projectId,
+            url,
+            `${URL_SOURCE_KIND_LABELS[kind]}: ${url}`,
+            sourceClassification
+          )
+          await refreshSources()
+          return
+        } catch {
+          // Fall back to a transparent frontend row when the beta deployment
+          // still reports URL import as unavailable.
+        }
+      }
+
+      setLocalSourceRows((prev) => [
+        {
+          id: localSourceId("url"),
+          name: url,
+          type: "URL",
+          status: "uploaded",
+          addedBy: currentUser.name,
+          addedAt: "soeben",
+          note: `${URL_SOURCE_KIND_LABELS[kind]} · Verarbeitung ausstehend.`,
+        },
+        ...prev,
+      ])
+    },
+    [capabilities, projectId, refreshSources, sourceClassification]
+  )
+
+  const handleImportSources = React.useCallback(
+    ({
+      project,
+      sources,
+    }: {
+      project: { title: string }
+      sources: Source[]
+    }) => {
+      setLocalSourceRows((prev) => [
+        ...sources.map((source) => ({
+          ...source,
+          id: localSourceId("import"),
+          type: "Übernommen" as const,
+          status: "uploaded" as const,
+          addedBy: currentUser.name,
+          addedAt: "soeben",
+          note: `Aus „${project.title}“ übernommen. Verarbeitung ausstehend.`,
+        })),
+        ...prev,
+      ])
+    },
+    []
+  )
+
+  // View-scoped source usage (Fundstellen + Anforderungen of the completed
+  // run) for the source-details dialog. undefined = not available.
+  const [sourceUsage, setSourceUsage] = React.useState<
+    Map<string, SourceUsage> | undefined
+  >(undefined)
+  React.useEffect(() => {
+    if (!liveMode || !completedRunId) {
+      setSourceUsage(undefined)
+      return
+    }
+    let cancelled = false
+    Promise.all([
+      listEvidence(completedRunId),
+      listRequirements(completedRunId),
+    ])
+      .then(([anchors, requirements]) => {
+        if (!cancelled) setSourceUsage(computeSourceUsage(anchors, requirements))
+      })
+      .catch(() => {
+        if (!cancelled) setSourceUsage(undefined)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [liveMode, completedRunId])
 
   // Resolve the latest completed run so the Evidenz tab can show live evidence.
   React.useEffect(() => {
@@ -677,7 +748,7 @@ function QuellenPageContent() {
   }, [liveMode, projectId, liveSources])
 
   const sourceRows: Source[] = liveMode
-    ? liveSources.map(toSourceRow)
+    ? [...localSourceRows, ...liveSources.map(toSourceRow)]
     : dummySources
   const sourceCount = sourceRows.length
   const evidenceCount = dummyEvidence.length
@@ -819,23 +890,47 @@ function QuellenPageContent() {
                   sources={sourceRows}
                   controlled
                   onUploadFiles={handleUploadSources}
+                  onAddTextSource={handleAddTextSource}
+                  onAddUrlSource={handleAddUrlSource}
+                  onImportSources={handleImportSources}
                   onDeleteSource={handleDeleteSource}
                   acceptExtensions={[".pdf", ".docx", ".txt"]}
+                  currentUserName={currentUser.name}
+                  openDetailsForId={sourceDetailId}
+                  onDetailsOpenChange={(open) => {
+                    if (!open) setSourceDetailId(null)
+                  }}
+                  sourceUsage={sourceUsage}
+                  onShowEvidence={() => handleTabChange("evidenz")}
                 />
-                <TextSourceForm
-                  onAdd={handleAddTextSource}
-                  disabled={!projectId}
-                />
+                {projectId && capabilities?.features?.web_research && (
+                  <PublicResearchPanel
+                    projectId={projectId}
+                    dataClass={effectiveDataClass ?? "public"}
+                    onImported={refreshSources}
+                  />
+                )}
+                {projectId && capabilities?.features?.market_comparison && (
+                  <MarketComparisonSection projectId={projectId} />
+                )}
               </div>
             ) : (
-              <SourceTable sources={dummySources} />
+              <SourceTable
+                sources={dummySources}
+                currentUserName={currentUser.name}
+                onShowEvidence={() => handleTabChange("evidenz")}
+              />
             )}
           </TabsContent>
 
           <TabsContent value="evidenz">
             {liveMode ? (
               completedRunId ? (
-                <LiveEvidence runId={completedRunId} />
+                <LiveEvidence
+                  runId={completedRunId}
+                  focusAnchorId={focusAnchorId}
+                  onOpenSource={handleOpenSourceFromEvidence}
+                />
               ) : (
                 <p className="py-10 text-center text-sm text-muted-foreground">
                   Noch keine abgeschlossene Analyse. Starten Sie die Analyse, um

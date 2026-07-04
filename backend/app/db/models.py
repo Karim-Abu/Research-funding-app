@@ -298,6 +298,8 @@ class ControlResult(Base):
     tool_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Milestone 9A: links a control to the AgentInvocation that produced it.
     agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Milestone 9I-A: links a control to a public-web-research task.
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -431,6 +433,9 @@ class RunPolicySnapshot(Base):
     timeout_seconds: Mapped[int] = mapped_column(nullable=False, default=600)
     allowed_routes: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     policy_version: Mapped[str] = mapped_column(String, nullable=False)
+    # Milestone 9D.2: cloud-processing gate provenance frozen on the run.
+    cloud_confirmation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_route_class: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -440,9 +445,13 @@ class UsageRecord(Base):
     __tablename__ = "usage_records"
 
     usage_record_id: Mapped[str] = mapped_column(String, primary_key=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    # Nullable since Milestone 9I-A: public-web-research usage is scoped to a
+    # research_task, not an analysis run.
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
     )
+    # Milestone 9I-A: research-task-scoped usage (never aggregated under run_id=null).
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
     model: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -960,9 +969,13 @@ class ToolInvocation(Base):
 
     invocation_id: Mapped[str] = mapped_column(String, primary_key=True)
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    # Nullable since Milestone 9I-A: public-web-research tool calls are scoped to a
+    # research_task, not an analysis run.
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
     )
+    # Milestone 9I-A: research-task-scoped tool invocation.
+    research_task_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     tool_id: Mapped[str] = mapped_column(String, nullable=False)
     caller: Mapped[str] = mapped_column(String, nullable=False)
     input_hash: Mapped[str] = mapped_column(String, nullable=False)
@@ -1161,5 +1174,453 @@ class AgentEvidenceProposal(Base):
     verification_status: Mapped[str | None] = mapped_column(String, nullable=True)
     linked_assessment_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# A2 Solution & Innovation draft suggestions (Milestone 9D): advisory AI draft
+# suggestions for SOL.INNOVATION_SOLUTION.EDITOR. Internal only — no public
+# endpoint; surfaced through the async operation result. Immutable except the
+# status/decision fields. Accepting (only) creates a new DraftVersion.
+# ---------------------------------------------------------------------------
+
+
+class DraftSuggestion(Base):
+    """One advisory A2 draft suggestion produced via createRedraft (proposed →
+    accepted | rejected | expired | failed). Never auto-applied."""
+
+    __tablename__ = "draft_suggestions"
+
+    suggestion_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    draft_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    base_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    profile_id: Mapped[str] = mapped_column(String, nullable=False)
+    operation_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    agent_invocation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_route: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # proposed | accepted | rejected | expired | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    suggested_text: Mapped[str] = mapped_column(Text, nullable=False)
+    rationale: Mapped[str | None] = mapped_column(Text, nullable=True)
+    evidence_anchor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    open_issue_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    placeholders: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    character_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decided_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    accepted_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+
+
+# ---------------------------------------------------------------------------
+# Cloud-processing confirmation (Milestone 9D.2): a per-run user acknowledgement
+# that selected public/synthetic content may be sent to the configured cloud AI
+# for one cloud_assisted run. NOT an institutional approval. One-run, bound to the
+# source versions + policy version. Internal/confidential/NDA remain blocked.
+# ---------------------------------------------------------------------------
+
+
+class ProcessingConfirmation(Base):
+    """One-run cloud-processing confirmation (openapi ProcessingConfirmation)."""
+
+    __tablename__ = "processing_confirmations"
+
+    confirmation_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    # valid | used | revoked | expired
+    status: Mapped[str] = mapped_column(String, nullable=False, default="valid")
+    processing_mode: Mapped[str] = mapped_column(String, nullable=False)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    accepted_policy_version: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    provider_route_class: Mapped[str] = mapped_column(String, nullable=False)
+    confirmation_text_version: Mapped[str] = mapped_column(String, nullable=False)
+    data_classification_shown: Mapped[dict] = mapped_column(JSON, nullable=False)
+    expires_after_one_run: Mapped[bool] = mapped_column(nullable=False, default=True)
+    used_by_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# Public web research (Milestone 9I-A): ResearchTask + ResearchResult
+# ---------------------------------------------------------------------------
+
+
+class ResearchTask(Base):
+    """Explicit, user-initiated public web research task (Domain Model
+    ResearchTask). Internal table; the public surface is the openapi ResearchTask
+    schema. ``query_text`` only ever holds the user-confirmed public query — never
+    raw confidential/internal project text."""
+
+    __tablename__ = "research_tasks"
+
+    research_task_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Controlled enum: partner_role_suggestion | competence_gap_analysis |
+    # publication_track_record (openapi ResearchTaskCreate.purpose).
+    purpose: Mapped[str] = mapped_column(String, nullable=False)
+    # person | organisation | topic
+    subject_type: Mapped[str] = mapped_column(String, nullable=False)
+    subject_name: Mapped[str | None] = mapped_column(String, nullable=True)
+    # User-confirmed public query only (== ResearchTaskCreate.query_preview).
+    query_text: Mapped[str] = mapped_column(Text, nullable=False)
+    normalized_query_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # queued | running | succeeded | failed | blocked | cancelled
+    status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
+    preferred_domains: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    disallowed_domains: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    competence_needs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    requested_partner_roles: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    max_results: Mapped[int] = mapped_column(nullable=False, default=10)
+    max_pages: Mapped[int] = mapped_column(nullable=False, default=1)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    result_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Advisory A1 public-competence synthesis state (non-blocking): null | succeeded |
+    # failed | skipped. Used to enforce at-most-one successful synthesis per task.
+    a1_synthesis_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    internal_public_confirmation_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    # Milestone 9J — Search Query Firewall provenance. ``firewall_data_class`` is the
+    # derived D0–D3/UNKNOWN class at creation; ``firewall_approval_id`` links the
+    # single-use sanitized-query approval consumed for D1/D2 (null for D0).
+    firewall_data_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    firewall_approval_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ResearchResult(Base):
+    """A public web search candidate (Domain Model ResearchResult). Snippets are
+    NOT evidence; a result becomes source material only after explicit import as a
+    SourceDocument. ``professional_evidence`` / ``partner_role_suggestions`` hold
+    advisory A1 synthesis output (human-review required)."""
+
+    __tablename__ = "research_results"
+
+    result_id: Mapped[str] = mapped_column(String, primary_key=True)
+    research_task_id: Mapped[str] = mapped_column(
+        ForeignKey("research_tasks.research_task_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    source_url: Mapped[str] = mapped_column(String, nullable=False)
+    final_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    title: Mapped[str] = mapped_column(String, nullable=False)
+    snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    provider_rank: Mapped[int | None] = mapped_column(nullable=True)
+    retrieved_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    # candidate | imported | rejected | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="candidate")
+    # not_applicable | matched | ambiguous | unresolved
+    identity_match_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_applicable"
+    )
+    source_document_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    professional_evidence: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    partner_role_suggestions: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Market & competitor comparison (Milestone 9I-B): beta-internal, built only from
+# imported public sources. No finalized contract object — internal tables only.
+# ---------------------------------------------------------------------------
+
+
+class MarketComparison(Base):
+    """A structured market/competitor comparison built from imported public sources
+    (Domain has no contract object — beta-internal). Run-nullable; evidence comes from
+    standalone deterministic quote verification, never from snippets/provider payloads."""
+
+    __tablename__ = "market_comparisons"
+
+    comparison_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # Comparison is decoupled from any analysis run (rule: no run coupling).
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    research_task_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # draft | ready_for_review | stale | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    # Comparison-level open questions / caveats from the structuring step (advisory).
+    research_gaps: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    comparison_version: Mapped[int] = mapped_column(nullable=False, default=1)
+    source_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Once-per-comparison generation guard: null | succeeded | failed | skipped.
+    generation_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+class MarketComparisonItem(Base):
+    """One comparison row. Each item is either source_backed (>=1 verified quote ref)
+    or needs_human_review / insufficient_evidence. ``verified_quote_refs`` carries the
+    standalone deterministic verification; ``linked_evidence_anchor_id`` is set only when
+    a pre-existing EvidenceAnchor already covers the span (never fabricated)."""
+
+    __tablename__ = "market_comparison_items"
+
+    item_id: Mapped[str] = mapped_column(String, primary_key=True)
+    comparison_id: Mapped[str] = mapped_column(
+        ForeignKey("market_comparisons.comparison_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    name: Mapped[str] = mapped_column(String, nullable=False)
+    name_normalized: Mapped[str] = mapped_column(String, nullable=False)
+    # competitor | alternative_solution | substitute | incumbent_process |
+    # reference_solution | unknown
+    category: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    target_customer_segment: Mapped[str | None] = mapped_column(String, nullable=True)
+    offering_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    strengths: Mapped[str | None] = mapped_column(Text, nullable=True)
+    weaknesses: Mapped[str | None] = mapped_column(Text, nullable=True)
+    differentiation_relevance: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # similar | complementary | competing | reference | unclear
+    relation_to_project: Mapped[str] = mapped_column(
+        String, nullable=False, default="unclear"
+    )
+    # source_backed | needs_review | insufficient_evidence
+    confidence_label: Mapped[str] = mapped_column(
+        String, nullable=False, default="insufficient_evidence"
+    )
+    # proposed | accepted | rejected | needs_human_review
+    status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    source_document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # list of verified-quote reference dicts (rule 6). Never search snippets.
+    verified_quote_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
+# ---------------------------------------------------------------------------
+# Search Query Firewall approvals (Milestone 9J): beta-internal privacy control.
+# A single-use record of a firewall decision for a D1/D2 web-research query. The RAW
+# query is NEVER stored — only its hash + the sanitized public-safe query + a redaction
+# summary (categories/counts, no raw values). Changing the query changes the hash and
+# invalidates the approval. Workspace-scoped.
+# ---------------------------------------------------------------------------
+
+
+class SearchQueryApproval(Base):
+    """A firewall decision + (for confidential classes) a human approval of a sanitized
+    query. Never stores raw D1/D2/D3 query text (only ``raw_query_hash``)."""
+
+    __tablename__ = "search_query_approvals"
+
+    approval_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    actor_user_id: Mapped[str] = mapped_column(String, nullable=False)
+    # firecrawl | web_research (intended tool for the sanitized query).
+    intended_tool: Mapped[str] = mapped_column(String, nullable=False)
+    purpose: Mapped[str | None] = mapped_column(String, nullable=True)
+    # D0_PUBLIC | D1_INTERNAL | D2_CONFIDENTIAL_IDEA | D3_NDA_BLOCKED | UNKNOWN
+    data_class: Mapped[str] = mapped_column(String, nullable=False)
+    # SHA256 of the normalized RAW query. The raw query itself is never persisted.
+    raw_query_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    sanitized_query: Mapped[str] = mapped_column(Text, nullable=False)
+    risk_score: Mapped[int] = mapped_column(nullable=False, default=0)
+    # firewall decision: allow | require_human_approval | block
+    decision: Mapped[str] = mapped_column(String, nullable=False)
+    reasons: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # [{category, label, count}] — never raw removed values.
+    redaction_summary: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # pending | approved | rejected | expired | used
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    used_by_research_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+# ---------------------------------------------------------------------------
+# MAS reliability & value assurance (Milestone 9K): beta-internal, run-scoped.
+# Deterministic claim extraction + lineage + evidence-sufficiency + a per-run quality
+# summary. No finalized contract object. Reliability findings reuse ReviewFinding
+# (source="agent", profile_id="M9K.reliability_assurance"). ``claim_text`` is internal
+# only (same sensitivity as DraftVersion.text) — never in audit/logs/export.
+# ---------------------------------------------------------------------------
+
+
+class DraftClaim(Base):
+    """A single claim-like statement extracted from a run's current DraftVersion text.
+    Deterministic + position-aware ``claim_id`` so re-running a pass upserts rather than
+    duplicates. ``source_scope_hash`` binds the claim to the pass that produced it."""
+
+    __tablename__ = "draft_claims"
+
+    claim_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    draft_id: Mapped[str] = mapped_column(String, nullable=False)
+    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    field_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    start_char: Mapped[int] = mapped_column(nullable=False, default=0)
+    end_char: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Internal-only; same sensitivity as DraftVersion.text. Never audited/logged/exported.
+    claim_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # market | innovation | technical | partner_fit | value_creation | requirement |
+    # budget | generic
+    claim_type: Mapped[str] = mapped_column(String, nullable=False, default="generic")
+    # strong | moderate | weak
+    strength: Mapped[str] = mapped_column(String, nullable=False, default="moderate")
+    requires_evidence: Mapped[bool] = mapped_column(nullable=False, default=True)
+    # deterministic_sentence_rule | agent_assisted_if_available
+    extraction_method: Mapped[str] = mapped_column(
+        String, nullable=False, default="deterministic_sentence_rule"
+    )
+    source_text_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Binds the claim to its reliability pass (the RunQualitySummary.source_scope_hash).
+    source_scope_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ClaimLineage(Base):
+    """Per-claim provenance mapping + deterministic evidence-sufficiency status. One row
+    per DraftClaim. Never framed as semantic proof — ``sufficiency_status`` is an evidence
+    sufficiency *check* under defined criteria (needs human review when uncertain)."""
+
+    __tablename__ = "claim_lineages"
+
+    lineage_id: Mapped[str] = mapped_column(String, primary_key=True)
+    claim_id: Mapped[str] = mapped_column(
+        ForeignKey("draft_claims.claim_id"), nullable=False, index=True
+    )
+    run_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    # direct_evidence | indirect_evidence | weak_evidence | no_evidence |
+    # conflicting_evidence | needs_human_review
+    lineage_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="no_evidence"
+    )
+    # supports_claim | weakly_supports_claim | does_not_support_claim |
+    # insufficient_evidence | needs_human_review
+    sufficiency_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="insufficient_evidence"
+    )
+    # {extracted_fact_ids, evidence_anchor_ids, evidence_candidate_ids,
+    #  source_fragment_ids, draft_suggestion_id, market_item_ids, a3_finding_ids}
+    provenance: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    matched_terms: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class RunQualitySummary(Base):
+    """Deterministic per-run quality/reliability metrics for M10 evaluation. Coverage and
+    sufficiency are kept as SEPARATE metrics. Stale when any scoped input changes; a stale
+    summary must not be used as current quality evidence."""
+
+    __tablename__ = "run_quality_summaries"
+
+    summary_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # current | stale | failed
+    status: Mapped[str] = mapped_column(String, nullable=False, default="current")
+    # Excludes this pass's own M9K findings (corr 11) so a pass never staleifies itself.
+    source_scope_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    claim_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    supported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    weakly_supported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    unsupported_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    conflicting_claims: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Coverage = fraction of evidence-requiring claims with ANY linked evidence.
+    evidence_coverage: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # Correctness = sufficiency pass-rate over the checked sample (distinct from coverage).
+    evidence_correctness_sample_size: Mapped[int] = mapped_column(nullable=False, default=0)
+    evidence_correctness_sample_pass_rate: Mapped[float] = mapped_column(
+        Float, nullable=False, default=0.0
+    )
+    review_required_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    blocker_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    warning_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    fields_ready: Mapped[int] = mapped_column(nullable=False, default=0)
+    fields_needs_review: Mapped[int] = mapped_column(nullable=False, default=0)
+    false_consensus_risk_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    semantic_drift_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    raw_logging_detected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    tool_leakage_detected: Mapped[bool] = mapped_column(nullable=False, default=False)
+    # ok | risky (high coverage + low sufficiency ⇒ risky, not success).
+    quality_flag: Mapped[str] = mapped_column(String, nullable=False, default="ok")
+    cost_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    cost_placeholder: Mapped[bool] = mapped_column(nullable=False, default=True)
+    latency_seconds: Mapped[float | None] = mapped_column(Float, nullable=True)
+    summary_version: Mapped[str] = mapped_column(String, nullable=False)
+    generated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

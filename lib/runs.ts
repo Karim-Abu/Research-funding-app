@@ -20,6 +20,8 @@ export interface RunSettings {
   max_llm_calls: number
   max_web_calls: number
   source_version_ids?: string[]
+  /** References a one-run cloud-processing confirmation for a cloud_assisted run. */
+  internal_cloud_confirmation_id?: string
 }
 
 export interface AnalysisRunDto {

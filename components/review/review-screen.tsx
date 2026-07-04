@@ -24,6 +24,7 @@ import {
 } from "@/components/ui/dialog"
 import { MachineStatusBadge } from "@/components/status/machine-status-badge"
 import { FieldReview } from "@/components/review/field-review"
+import { ProgressRing } from "@/components/review/review-progress-card"
 import { cn } from "@/lib/utils"
 import type { MachineStatus } from "@/lib/types"
 import {
@@ -63,55 +64,8 @@ function gateStatusToMachineStatus(s: GateRowDto["status"]): MachineStatus {
 
 function gateLabel(s: GateRowDto["status"]) {
   if (s === "passed") return "Bestanden"
-  if (s === "partial") return "Teilweise"
+  if (s === "partial") return "Teilweise bestanden"
   return "Nicht bestanden"
-}
-
-// ---------------------------------------------------------------------------
-// Donut progress chart (inline SVG, no chart lib)
-// ---------------------------------------------------------------------------
-
-function DonutChart({ percent }: { percent: number }) {
-  const r = 32
-  const cx = 40
-  const cy = 40
-  const circumference = 2 * Math.PI * r
-  const filled = (percent / 100) * circumference
-  const gap = circumference - filled
-
-  return (
-    <svg
-      width="80"
-      height="80"
-      viewBox="0 0 80 80"
-      aria-hidden="true"
-      className="shrink-0"
-    >
-      {/* Track */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        strokeWidth="10"
-        className="stroke-border"
-      />
-      {/* Progress */}
-      <circle
-        cx={cx}
-        cy={cy}
-        r={r}
-        fill="none"
-        strokeWidth="10"
-        className="stroke-status-fulfilled"
-        strokeLinecap="round"
-        strokeDasharray={`${filled} ${gap}`}
-        strokeDashoffset={circumference / 4}
-        transform={`rotate(-90 ${cx} ${cy})`}
-        style={{ transformOrigin: `${cx}px ${cy}px` }}
-      />
-    </svg>
-  )
 }
 
 // ---------------------------------------------------------------------------
@@ -121,6 +75,49 @@ function DonutChart({ percent }: { percent: number }) {
 function GateRowItem({ row }: { row: GateRowDto }) {
   const [expanded, setExpanded] = React.useState(false)
   const machineStatus = gateStatusToMachineStatus(row.status)
+  // No detail → nothing to expand; render a static row instead of an
+  // accordion that would open empty.
+  const expandable = Boolean(row.detail?.trim())
+
+  const rowContent = (
+    <>
+      <MachineStatusBadge
+        status={machineStatus}
+        label={gateLabel(row.status)}
+        className="mt-0.5 shrink-0"
+      />
+      <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+        <span className="text-sm font-medium text-foreground">{row.label}</span>
+        <span className="text-xs text-muted-foreground">
+          {row.result || "Keine offenen Befunde in dieser Prüfung."}
+        </span>
+      </div>
+      <div className="flex shrink-0 items-center gap-2 pl-2">
+        {row.stale && (
+          <span className="inline-flex items-center gap-1 rounded border border-status-partial/40 bg-status-partial/8 px-2 py-0.5 text-xs text-status-partial">
+            <Clock className="size-3" />
+            Stand: unvollständiger Durchlauf
+          </span>
+        )}
+        {expandable &&
+          (expanded ? (
+            <ChevronDown className="size-4 text-muted-foreground" />
+          ) : (
+            <ChevronRight className="size-4 text-muted-foreground" />
+          ))}
+      </div>
+    </>
+  )
+
+  if (!expandable) {
+    return (
+      <div className="rounded-md border border-border bg-card">
+        <div className="flex w-full min-h-[52px] items-start gap-3 px-4 py-3">
+          {rowContent}
+        </div>
+      </div>
+    )
+  }
 
   return (
     <div className="rounded-md border border-border bg-card">
@@ -130,28 +127,7 @@ function GateRowItem({ row }: { row: GateRowDto }) {
         className="flex w-full min-h-[52px] items-start gap-3 px-4 py-3 text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
         aria-expanded={expanded}
       >
-        <MachineStatusBadge
-          status={machineStatus}
-          label={gateLabel(row.status)}
-          className="mt-0.5 shrink-0"
-        />
-        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
-          <span className="text-sm font-medium text-foreground">{row.label}</span>
-          <span className="text-xs text-muted-foreground">{row.result}</span>
-        </div>
-        <div className="flex shrink-0 items-center gap-2 pl-2">
-          {row.stale && (
-            <span className="inline-flex items-center gap-1 rounded border border-status-partial/40 bg-status-partial/8 px-2 py-0.5 text-xs text-status-partial">
-              <Clock className="size-3" />
-              Stand: unvollständiger Durchlauf
-            </span>
-          )}
-          {expanded ? (
-            <ChevronDown className="size-4 text-muted-foreground" />
-          ) : (
-            <ChevronRight className="size-4 text-muted-foreground" />
-          )}
-        </div>
+        {rowContent}
       </button>
 
       {expanded && (
@@ -292,11 +268,11 @@ function ApprovalCard({
                     "cursor-not-allowed select-none opacity-60"
                   )}
                 >
-                  Review freigeben
+                  Prüfung abschliessen
                 </span>
               ) : (
                 <Button onClick={onApprove} className="shrink-0">
-                  Review freigeben
+                  Prüfung abschliessen
                 </Button>
               )}
               {!isBlocked && (
@@ -507,7 +483,7 @@ export function ReviewScreen({
         {/* Page header */}
         <div className="mb-8 flex flex-col gap-2">
           <h1 className="text-balance text-2xl font-semibold text-foreground">
-            Review
+            Qualitätsprüfung
           </h1>
           <p className="text-sm text-muted-foreground">
             Qualitätsprüfungen, Hinweise und Freigabe für diesen Antrag.
@@ -516,21 +492,28 @@ export function ReviewScreen({
         </div>
 
         <div className="flex min-w-0 flex-col gap-10">
-            {/* Progress summary */}
+            {/* Progress summary — real gate counts, no hardcoded percent. */}
             <section aria-labelledby="progress-heading">
-              <div className="flex items-center gap-5">
-                <div className="relative flex items-center justify-center">
-                  <DonutChart percent={78} />
-                  <span className="pointer-events-none absolute text-[10px] font-semibold text-foreground leading-tight text-center">
-                    78 %
-                  </span>
-                </div>
+              <div className="flex flex-col items-center gap-4 sm:flex-row sm:gap-5">
+                <ProgressRing
+                  segments={[
+                    { value: passedCount, className: "text-status-fulfilled" },
+                    { value: partialCount, className: "text-status-partial" },
+                    { value: failedCount, className: "text-destructive" },
+                  ]}
+                  total={totalRows}
+                  centerValue={`${passedCount} / ${totalRows}`}
+                  centerLabel="Prüfbereiche bestanden"
+                  ariaLabel={`Bearbeitungs- und Prüfstand: ${passedCount} von ${totalRows} Prüfbereichen bestanden, ${partialCount} teilweise bestanden, ${failedCount} nicht bestanden.`}
+                  size={96}
+                  strokeWidth={9}
+                />
                 <div className="flex flex-col gap-1">
                   <h2
                     id="progress-heading"
                     className="text-sm font-medium text-foreground"
                   >
-                    Bearbeitungsstand: 78 %
+                    Bearbeitungs- und Prüfstand
                   </h2>
                   <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
                     <span>
@@ -540,7 +523,7 @@ export function ReviewScreen({
                     </span>
                     <span>
                       <span className="font-medium text-status-partial">
-                        {partialCount} Teilweise
+                        {partialCount} Teilweise bestanden
                       </span>
                     </span>
                     <span>
@@ -549,6 +532,10 @@ export function ReviewScreen({
                       </span>
                     </span>
                   </div>
+                  <p className="text-xs text-muted-foreground">
+                    Bearbeitungs- und Prüfstand — keine Aussage zur
+                    Förderwahrscheinlichkeit.
+                  </p>
                 </div>
               </div>
             </section>

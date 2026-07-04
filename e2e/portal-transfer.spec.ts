@@ -75,10 +75,17 @@ async function copyCard(page: import("@playwright/test").Page, fieldName: string
   const card = page.locator("article", {
     has: page.getByRole("heading", { name: fieldName, exact: true }),
   })
-  await card.getByRole("button", { name: "Text kopieren" }).click()
-  const confirm = card.getByRole("button", { name: "Trotzdem kopieren" })
+  // Copy-ready fields lead with "Text kopieren"; open fields require the
+  // deliberate "Trotzdem kopieren…" path (M10.2 / F5).
+  const plainCopy = card.getByRole("button", { name: "Text kopieren" })
+  if (await plainCopy.isVisible().catch(() => false)) {
+    await plainCopy.click()
+  } else {
+    await card.getByRole("button", { name: "Trotzdem kopieren…" }).click()
+  }
+  const confirm = card.getByRole("button", { name: "Trotzdem kopieren", exact: true })
   if (await confirm.isVisible().catch(() => false)) await confirm.click()
-  await expect(card.getByText("Kopiert")).toBeVisible()
+  await expect(card.getByText(/Kopiert am/)).toBeVisible()
 }
 
 test("M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage", async ({
@@ -106,23 +113,27 @@ test("M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage
   const abstract = fields.find((f) => f.field_id === ABSTRACT)!
   const composite = fields.find((f) => f.field_id === COMPOSITE)!
 
-  // Open via the Export Center → Innolink-Übernahme card.
+  // Open via the Export Center → "Innolink-Kopieransicht" tab (renders inline).
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), projectId)
   await page.goto("/export")
-  await page.getByRole("link", { name: /Innolink-Übernahme/ }).click()
-  await expect(page).toHaveURL(/\/portal-transfer/, { timeout: 20_000 })
-  await expect(page.getByRole("heading", { name: "Innolink-Übernahme" })).toBeVisible()
+  await page.getByRole("tab", { name: "Innolink-Kopieransicht" }).click()
+  // The transfer view renders inline (embedded; the page h1 is omitted) — the
+  // coverage panel confirms it loaded.
+  await expect(
+    page.getByRole("heading", { name: "Abdeckung der Übernahmeansicht" })
+  ).toBeVisible({ timeout: 20_000 })
 
   // Section groups in canonical order.
   for (const section of ["Einleitung", "Wertschöpfung", "Lösung & Innovation", "Projektplan"]) {
     await expect(page.getByRole("heading", { name: section, exact: true })).toBeVisible()
   }
 
-  // Copy the Abstract (a template placeholder → warning shown, confirm to copy).
+  // Copy the Abstract (a template placeholder → compact warning badge on the
+  // card; the full sentence appears in the shared banner + confirm step).
   await expect(
     page
       .locator("article", { has: page.getByRole("heading", { name: abstract.field_name }) })
-      .getByText("Dieser Feldtext enthält noch offene Angaben."),
+      .getByText("Offene Angaben"),
   ).toBeVisible()
   await copyCard(page, abstract.field_name)
   expect(normalize(await page.evaluate(() => navigator.clipboard.readText()))).toBe(

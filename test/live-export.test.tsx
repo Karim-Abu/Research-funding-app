@@ -25,6 +25,28 @@ function mockReview(status: string) {
   server.use(http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg(status))))
 }
 
+function field(id: string, name: string, text: string, openIssues = 0) {
+  return {
+    draft_id: `d-${id}`,
+    field_id: id,
+    field_name: name,
+    status: "template",
+    current_version: {
+      draft_version_id: `v-${id}`,
+      draft_id: `d-${id}`,
+      text,
+      character_count: text.length,
+      created_by: "system",
+      created_at: new Date().toISOString(),
+    },
+    character_count: text.length,
+    character_limit: 2000,
+    open_issue_count: openIssues,
+    evidence_links: [],
+    open_issues: [],
+  }
+}
+
 describe("LiveExport", () => {
   it("shows all three cards + the fixed no-submission disclaimer", async () => {
     mockReview("blocked")
@@ -41,7 +63,9 @@ describe("LiveExport", () => {
     mockReview("blocked")
     render(<LiveExport runId="r1" />)
     await waitFor(() =>
-      expect(screen.getByText(/Noch nicht review-freigegeben/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Qualitätsprüfung ist noch nicht abgeschlossen/)
+      ).toBeInTheDocument()
     )
     expect(screen.getAllByText("ENTWURF").length).toBe(3)
   })
@@ -51,10 +75,68 @@ describe("LiveExport", () => {
     render(<LiveExport runId="r1" />)
     await waitFor(() =>
       expect(
-        screen.getByText("Review freigegeben – keine Einreichfreigabe.")
+        screen.getByText("Prüfung abgeschlossen – keine Einreichfreigabe.")
       ).toBeInTheDocument()
     )
     expect(screen.queryByText("ENTWURF")).not.toBeInTheDocument()
+  })
+
+  it("shows the Feld-Bereitschaft overview with honest Kopierbereit semantics (M10.2)", async () => {
+    server.use(
+      http.get("/api/runs/r1/review", () =>
+        HttpResponse.json({
+          ...reviewPkg("blocked"),
+          blocker_count: 1,
+          findings: [
+            {
+              finding_id: "f-ev",
+              profile_id: "deterministic-review-1",
+              field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+              requirement_id: null,
+              severity: "blocker",
+              description: "Beleg fehlt für diese Aussage.",
+              suggested_improvement: null,
+              status: "open",
+              advisory: false,
+            },
+          ],
+        })
+      ),
+      http.get("/api/runs/r1/fields", () =>
+        HttpResponse.json([
+          field(
+            "INTRO.APP.ABSTRACT",
+            "Abstract",
+            "Sauberer Text ohne offene Angaben."
+          ),
+          field(
+            "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+            "Business Targets & Business Model",
+            "Text mit [[Angabe ergänzen: Zielmarkt]] Platzhalter."
+          ),
+          field(
+            "SOL.INNOVATION_SOLUTION.EDITOR",
+            "Innovation & Lösung",
+            "Text ohne Platzhalter, aber mit Beleg-Blocker."
+          ),
+        ])
+      )
+    )
+    render(<LiveExport runId="r1" />)
+
+    const section = await screen.findByTestId("field-readiness")
+    expect(section).toHaveTextContent("Feld-Bereitschaft")
+    expect(section).toHaveTextContent("Abstract")
+    expect(section).toHaveTextContent("Kopierbereit")
+    expect(section).toHaveTextContent("Platzhalter offen")
+    expect(section).toHaveTextContent("Beleg fehlt")
+    // Honest semantics: legend + explicit non-submission marker.
+    expect(section).toHaveTextContent(/keine fachliche Freigabe/)
+    expect(section).toHaveTextContent(/Manuell im Portal zu erfassen/)
+    expect(screen.getByText("Nicht zur Einreichung")).toBeInTheDocument()
+    // technical_evidence stays present, framed as audit artifact.
+    expect(screen.getByText("Für Audit/Evaluation")).toBeInTheDocument()
+    expect(screen.getByText("Technischer Nachweis")).toBeInTheDocument()
   })
 
   it("creates an export and uses the returned artifact's draft_marked", async () => {

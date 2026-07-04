@@ -15,7 +15,13 @@ from sqlalchemy.orm import Session
 from app.api.errors import ProblemException
 from app.contracts.draft import DraftVersion as DraftVersionSchema
 from app.contracts.draft import PortalFieldDraft as DraftSchema
-from app.db.models import AnalysisRun, DraftVersion, OpenIssue, PortalFieldDraft
+from app.db.models import (
+    AnalysisRun,
+    AsyncOperation,
+    DraftVersion,
+    OpenIssue,
+    PortalFieldDraft,
+)
 from app.drafts import (
     TEMPLATE_CATALOG_VERSION,
     build_template,
@@ -156,6 +162,41 @@ def create_initial_draft(
     return draft
 
 
+def _resolve_agent_acceptance(
+    db: Session,
+    run: AnalysisRun,
+    draft: PortalFieldDraft,
+    *,
+    base_version_id: str,
+    text: str,
+    source_operation_id: str | None,
+):
+    """Return the proposed DraftSuggestion iff `source_operation_id` legitimately
+    identifies it (M9D corr #3): the operation succeeded; it belongs to the same
+    run/workspace/draft/field and base_version_id; a still-proposed suggestion exists;
+    and its content_hash equals the accepted text. Else None (→ normal user edit)."""
+    if not source_operation_id:
+        return None
+    from app.repositories import draft_suggestions as suggestions_repo
+
+    suggestion = suggestions_repo.get_by_operation(db, source_operation_id)
+    if suggestion is None or suggestion.status != "proposed":
+        return None
+    if (
+        suggestion.run_id != run.run_id
+        or suggestion.workspace_id != run.workspace_id
+        or suggestion.draft_id != draft.draft_id
+        or suggestion.field_id != draft.field_id
+        or suggestion.base_version_id != base_version_id
+        or suggestion.content_hash != _content_hash(text)
+    ):
+        return None
+    operation = db.get(AsyncOperation, source_operation_id)
+    if operation is None or operation.status != "succeeded":
+        return None
+    return suggestion
+
+
 def apply_update(
     db: Session,
     run: AnalysisRun,
@@ -201,13 +242,29 @@ def apply_update(
     if base.text == text:
         return draft  # identical → no redundant version
 
+    # M9D: accepting an A2 suggestion (source_operation_id resolves to a still-proposed
+    # suggestion for this exact draft/base/text) creates an agent version; otherwise a
+    # normal user edit. Never mark arbitrary text created_by=agent.
+    accepted = _resolve_agent_acceptance(
+        db, run, draft, base_version_id=base_version_id, text=text,
+        source_operation_id=source_operation_id,
+    )
+    created_by = "agent" if accepted is not None else "user"
     version = _new_version(
-        db, draft.draft_id, text, "user",
+        db, draft.draft_id, text, created_by,
         base_version_id=base_version_id, source_operation_id=source_operation_id,
     )
     # The superseded version's active evidence links become stale.
     stale = evidence_repo.mark_draft_version_links_stale(db, base_version_id)
     draft.current_version_id = version.draft_version_id
+    if accepted is not None:
+        from app.repositories import draft_suggestions as suggestions_repo
+
+        suggestions_repo.mark_accepted(
+            db, accepted, accepted_draft_version_id=version.draft_version_id,
+            decided_by=actor_user_id,
+        )
+        suggestions_repo.expire_superseded(db, draft.draft_id, version.draft_version_id)
     draft.open_issue_count = _sync_field_issue(
         db, run, draft.field_id, is_empty(text) or has_placeholder(text)
     )

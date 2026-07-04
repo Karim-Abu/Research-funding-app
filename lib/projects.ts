@@ -11,6 +11,7 @@ import type {
   DashboardProject,
   IntakeFormData,
   NextAction,
+  ProjectCardStatus,
   WarningBadge,
 } from "./types"
 
@@ -118,16 +119,28 @@ export async function createProjectFromIntake(
   return (await res.json()) as ProjectDto
 }
 
-/** Map a contract project onto the existing dashboard card shape (no redesign). */
+/** Derive the high-level card status from the available workflow signals. */
+function toCardStatus(summary?: WorkflowSummaryDto | null): ProjectCardStatus {
+  if (summary?.warning_badge === "run_stopped") return "blockiert"
+  if (summary?.next_action === "approve_review") return "review_offen"
+  return "in_bearbeitung"
+}
+
+/** Map a contract project onto the dashboard card shape (frontend-only, no API change). */
 export function toDashboardCard(project: ProjectDto): DashboardProject {
   const summary = project.workflow_summary
   return {
     id: project.project_id,
     title: project.title,
     profileLabel: "Innosuisse Beta-Profil",
-    deadline: "—",
+    fundingProgram: "Innosuisse",
+    applicationType: "Innovationsprojekt",
+    deadline: "Frist: offen",
+    deadlineIso: null,
     progressPercent: summary?.bearbeitungsstand_percent ?? 0,
     currentStep: summary?.current_step ?? 1,
+    currentStepLabel: summary?.current_step_label ?? null,
+    cardStatus: toCardStatus(summary),
     lastEditedLabel: `Angelegt: ${new Date(
       project.created_at
     ).toLocaleDateString("de-CH")}`,
@@ -137,5 +150,6 @@ export function toDashboardCard(project: ProjectDto): DashboardProject {
       : undefined,
     analysisRunning: summary?.next_action === "view_progress",
     isDemo: project.title.trim().endsWith("(Demo)"),
+    people: [],
   }
 }

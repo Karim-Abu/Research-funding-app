@@ -11,6 +11,8 @@ from app.exports.generators.common import (
     DRAFT_BODY,
     DRAFT_HEADER,
     NO_SUBMISSION,
+    field_label,
+    grouped_open_points,
 )
 
 
@@ -66,7 +68,7 @@ def generate_markdown(snapshot: dict, snapshot_hash: str) -> bytes:
     lines.append("## Portalfelder")
     lines.append("")
     for field in snapshot["fields"]:
-        lines.append(f"### {field['field_name']}")
+        lines.append(f"### {field_label(field)}")
         lines.append("")
         lines.append(field["text"])
         lines.append("")
@@ -81,23 +83,17 @@ def generate_markdown(snapshot: dict, snapshot_hash: str) -> bytes:
 
     lines.append("## Offene Punkte")
     lines.append("")
-    issues = snapshot["open_issues"]
-    open_findings = [
-        f for f in snapshot["review_findings"] if f["status"] == "open"
-    ]
-    if not issues and not open_findings:
+    groups = grouped_open_points(snapshot)
+    if not groups:
         lines.append("Keine offenen Punkte erfasst.")
         lines.append("")
     else:
-        for issue in issues:
-            lines.append(
-                f"- [{issue['severity']}] {issue['description']}"
-            )
-        for finding in open_findings:
-            lines.append(
-                f"- [{finding['severity']}] {finding['description']}"
-            )
-        lines.append("")
+        for group, entries in groups:
+            lines.append(f"### {group}")
+            lines.append("")
+            for entry in entries:
+                lines.append(f"- {entry}")
+            lines.append("")
 
     lines.append("## Evidenzübersicht")
     lines.append("")

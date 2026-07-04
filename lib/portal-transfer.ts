@@ -26,6 +26,9 @@ export function sectionLabel(fieldId: string): string {
 }
 
 // Visible, machine-detectable placeholder syntax from M6: [[Angabe ergänzen: …]].
+// TODO(P2): This regex is stricter than the editor's placeholder detection in
+// lib/draft-view.ts (which also matches TODO/tbd/[[…]]). Unifying them changes
+// placeholder counts and field readiness — align deliberately, not silently.
 const PLACEHOLDER_RE = /\[\[Angabe ergänzen:[^\]]*\]\]/g
 
 export function countPlaceholders(text: string): number {
@@ -98,7 +101,7 @@ export function fieldWarnings(
     const approvalNotCurrent =
       review.recheck_required || review.approval_status !== "approved"
     if (approvalNotCurrent || blocker) {
-      warnings.push({ code: "review", message: "Die Review-Freigabe ist nicht aktuell." })
+      warnings.push({ code: "review", message: "Die Prüfungs-Freigabe ist nicht aktuell." })
     }
   }
   return warnings
