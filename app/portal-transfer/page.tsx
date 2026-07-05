@@ -9,6 +9,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import { getActiveProjectId, getCurrentRunId, loadIntake } from "@/lib/intake-store"
+import { getCapabilities } from "@/lib/capabilities"
 import { listProjectRuns } from "@/lib/runs"
 import { charCount, listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { getReview, type ReviewPackageDto } from "@/lib/review"
@@ -69,6 +70,10 @@ function LivePortalTransfer({ runId }: { runId: string }) {
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [error, setError] = React.useState<string | null>(null)
+  // Slice 3: whether copies are logged server-side. On a capabilities failure
+  // we still attempt logging (the endpoint is active; errors go the fail-open
+  // path) — only an explicit `false` disables the call.
+  const [copyEventsEnabled, setCopyEventsEnabled] = React.useState(true)
 
   const load = React.useCallback(() => {
     setError(null)
@@ -85,6 +90,11 @@ function LivePortalTransfer({ runId }: { runId: string }) {
   }, [runId])
 
   React.useEffect(() => load(), [load])
+  React.useEffect(() => {
+    getCapabilities()
+      .then((caps) => setCopyEventsEnabled(caps.features.copy_events !== false))
+      .catch(() => setCopyEventsEnabled(true))
+  }, [])
 
   if (error) {
     return (
@@ -112,6 +122,9 @@ function LivePortalTransfer({ runId }: { runId: string }) {
       fields={fields}
       review={review}
       confidentialReminder={isConfidential()}
+      runId={runId}
+      copyEventsEnabled={copyEventsEnabled}
+      onReload={load}
     />
   )
 }

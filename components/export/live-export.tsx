@@ -23,6 +23,7 @@ import {
 } from "@/lib/exports"
 import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
 import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
+import { getCapabilities } from "@/lib/capabilities"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
   EXPORT_REVIEW_LABELS,
@@ -97,6 +98,15 @@ export function LiveExport({ runId }: { runId: string }) {
   const [tab, setTab] = React.useState<"optionen" | "innolink">("optionen")
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [readinessFilter, setReadinessFilter] = React.useState<FieldReadiness | "all">("all")
+  // Slice 3: only an explicit `false` disables server-side copy logging.
+  const [copyEventsEnabled, setCopyEventsEnabled] = React.useState(true)
+
+  const loadFields = React.useCallback(() => {
+    // Field drafts feed the Feld-Bereitschaft overview (and the Innolink tab).
+    listFields(runId)
+      .then(setFields)
+      .catch(() => setFields([]))
+  }, [runId])
 
   React.useEffect(() => {
     getReview(runId)
@@ -108,11 +118,13 @@ export function LiveExport({ runId }: { runId: string }) {
         setPkg(null)
         setApproval(null)
       })
-    // Field drafts feed the Feld-Bereitschaft overview (and the Innolink tab).
-    listFields(runId)
-      .then(setFields)
-      .catch(() => setFields([]))
-  }, [runId])
+    loadFields()
+  }, [runId, loadFields])
+  React.useEffect(() => {
+    getCapabilities()
+      .then((caps) => setCopyEventsEnabled(caps.features.copy_events !== false))
+      .catch(() => setCopyEventsEnabled(true))
+  }, [])
 
   function openInnolink() {
     setTab("innolink")
@@ -430,7 +442,14 @@ export function LiveExport({ runId }: { runId: string }) {
               ))}
             </div>
           ) : (
-            <PortalTransfer fields={fields} review={pkg} embedded />
+            <PortalTransfer
+              fields={fields}
+              review={pkg}
+              embedded
+              runId={runId}
+              copyEventsEnabled={copyEventsEnabled}
+              onReload={loadFields}
+            />
           )}
         </TabsContent>
       </Tabs>

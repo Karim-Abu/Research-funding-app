@@ -75,6 +75,11 @@ class Settings(BaseSettings):
     # run per field instead of rebuilding the template. Off → template-only.
     draft_carry_over_enabled: bool = True
 
+    # Copy governance (Slice 3, Council E2-A): the Innolink copy view records a
+    # server-side CopyEvent per copy. Off → the UI copies without a server call
+    # (today's behavior); the endpoint itself stays active.
+    copy_events_enabled: bool = True
+
     # Deterministic exports (Milestone 8) --------------------------------
     export_storage_dir: str = "var/exports"
     max_export_bytes: int = 25 * 1024 * 1024

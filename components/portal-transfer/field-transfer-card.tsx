@@ -16,7 +16,12 @@ import {
   sectionLabel,
   type WarningCode,
 } from "@/lib/portal-transfer"
-import type { PortalFieldDraftDto } from "@/lib/fields"
+import {
+  FieldError,
+  recordCopyEvent,
+  type OverrideReasonCode,
+  type PortalFieldDraftDto,
+} from "@/lib/fields"
 import type { ReviewPackageDto } from "@/lib/review"
 
 type CopyState = "idle" | "copied" | "error"
@@ -29,22 +34,46 @@ const WARNING_BADGE: Record<WarningCode, string> = {
   review: "Prüfung nicht aktuell",
 }
 
+// Slice 3 (E2-A): predefined override reasons — a copy despite warnings needs
+// a documented reason; "Sonstiges" additionally needs a short free text.
+const OVERRIDE_REASONS: Array<{ code: OverrideReasonCode; label: string }> = [
+  { code: "portal_finalization", label: "Feld wird im Portal fertiggestellt" },
+  { code: "warning_not_relevant", label: "Hinweis betrifft dieses Feld nicht" },
+  { code: "coordination_draft", label: "Zwischenstand für Abstimmung" },
+  { code: "other", label: "Sonstiges" },
+]
+
+const LOG_FAILED_NOTE = "Übernahme konnte nicht protokolliert werden."
+const STALE_NOTE =
+  "Der Feldtext wurde zwischenzeitlich geändert und wird neu geladen. " +
+  "Bitte prüfen Sie den aktuellen Stand."
+
 export function FieldTransferCard({
   field,
   review,
   copiedAt,
   onCopied,
+  runId = null,
+  copyEventsEnabled = false,
+  onReload,
 }: {
   field: PortalFieldDraftDto
   review: ReviewPackageDto | null
-  /** When this field was copied in the current session (not persisted). */
+  /** When this field was copied (server CopyEvent time or session fallback). */
   copiedAt: Date | null
-  onCopied: (fieldId: string) => void
+  onCopied: (fieldId: string, at?: Date) => void
+  /** Slice 3: with runId + copyEventsEnabled each copy is recorded server-side. */
+  runId?: string | null
+  copyEventsEnabled?: boolean
+  onReload?: () => void
 }) {
   const [state, setState] = React.useState<CopyState>("idle")
   const [confirming, setConfirming] = React.useState<null | "plain" | "formatted">(null)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
+  const [infoMsg, setInfoMsg] = React.useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = React.useState(false)
+  const [reasonCode, setReasonCode] = React.useState<OverrideReasonCode | null>(null)
+  const [reasonNote, setReasonNote] = React.useState("")
 
   const text = field.current_version.text
   const warnings = fieldWarnings(field, review)
@@ -57,14 +86,63 @@ export function FieldTransferCard({
   // Deep link into the draft editor with this field preselected.
   const editorHref = `/editor?field=${encodeURIComponent(field.field_id)}`
 
+  // Server-side copy logging is active only on live pages with the feature
+  // enabled; without it the card behaves exactly as before (no network call).
+  const loggingActive = Boolean(runId) && copyEventsEnabled
+  const needsReason = loggingActive && warnings.length > 0
+  const reasonMissing =
+    needsReason &&
+    (reasonCode === null || (reasonCode === "other" && reasonNote.trim() === ""))
+
   async function doCopy(kind: "plain" | "formatted") {
-    setConfirming(null)
     setErrorMsg(null)
+    setInfoMsg(null)
+    let copiedAtDate: Date | undefined
+    if (loggingActive && runId) {
+      try {
+        const event = await recordCopyEvent(runId, field.field_id, {
+          draft_version_id: field.current_version.draft_version_id,
+          client_warnings: warnings.map((w) => w.code),
+          ...(needsReason && reasonCode
+            ? {
+                override_reason_code: reasonCode,
+                ...(reasonCode === "other"
+                  ? { override_reason_note: reasonNote.trim() }
+                  : {}),
+              }
+            : {}),
+        })
+        copiedAtDate = new Date(event.created_at)
+      } catch (e) {
+        if (e instanceof FieldError && e.status === 409) {
+          // The shown text is outdated — do NOT copy it; reload instead.
+          setConfirming(null)
+          setInfoMsg(STALE_NOTE)
+          onReload?.()
+          return
+        }
+        if (e instanceof FieldError && e.status === 422) {
+          // Missing reason — keep the dialog open so the user can pick one.
+          setInfoMsg(
+            reasonCode === "other"
+              ? "Bitte ergänzen Sie eine kurze Begründung."
+              : "Bitte wählen Sie einen Grund aus."
+          )
+          return
+        }
+        // Fail-open (E2-A): logging problems never block the copy itself.
+        setInfoMsg(LOG_FAILED_NOTE)
+      }
+    }
+    setConfirming(null)
+    setReasonCode(null)
+    setReasonNote("")
     try {
       if (kind === "formatted") await copyFormatted(text)
       else await copyPlain(text)
       setState("copied")
-      onCopied(field.field_id)
+      // "Kopiert am" only after the clipboard write actually succeeded.
+      onCopied(field.field_id, copiedAtDate)
     } catch {
       setState("error")
       setErrorMsg(
@@ -76,6 +154,13 @@ export function FieldTransferCard({
   function requestCopy(kind: "plain" | "formatted") {
     if (warnings.length > 0) setConfirming(kind)
     else doCopy(kind)
+  }
+
+  function cancelConfirm() {
+    setConfirming(null)
+    setInfoMsg(null)
+    setReasonCode(null)
+    setReasonNote("")
   }
 
   return (
@@ -132,13 +217,60 @@ export function FieldTransferCard({
               <li key={w.code}>• {w.message}</li>
             ))}
           </ul>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => doCopy(confirming)}>
+          {needsReason && (
+            <fieldset className="flex flex-col gap-1">
+              <legend className="font-semibold">
+                Grund für Übernahme trotz Hinweisen
+              </legend>
+              {OVERRIDE_REASONS.map((reason) => (
+                <label key={reason.code} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`copy-reason-${field.field_id}`}
+                    checked={reasonCode === reason.code}
+                    onChange={() => {
+                      setReasonCode(reason.code)
+                      setInfoMsg(null)
+                    }}
+                  />
+                  {reason.label}
+                </label>
+              ))}
+              {reasonCode === "other" && (
+                <div className="flex flex-col gap-1 pl-5">
+                  <input
+                    type="text"
+                    value={reasonNote}
+                    onChange={(e) => setReasonNote(e.target.value)}
+                    maxLength={200}
+                    placeholder="Kurze Begründung"
+                    aria-label="Kurze Begründung"
+                    className="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-foreground"
+                  />
+                  <span>Keine vertraulichen Inhalte eingeben.</span>
+                </div>
+              )}
+            </fieldset>
+          )}
+          {infoMsg && <p role="status">{infoMsg}</p>}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button
+              size="sm"
+              disabled={reasonMissing}
+              onClick={() => doCopy(confirming)}
+            >
               Trotzdem kopieren
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setConfirming(null)}>
+            <Button size="sm" variant="outline" onClick={cancelConfirm}>
               Abbrechen
             </Button>
+            {reasonMissing && (
+              <span>
+                {reasonCode === "other"
+                  ? "Bitte ergänzen Sie eine kurze Begründung."
+                  : "Bitte wählen Sie zuerst einen Grund aus."}
+              </span>
+            )}
           </div>
         </div>
       ) : (
@@ -213,6 +345,12 @@ export function FieldTransferCard({
       {state === "error" && errorMsg && (
         <p role="alert" className="text-xs text-destructive">
           {errorMsg}
+        </p>
+      )}
+      {/* Logging/stale notices outside the dialog (fail-open + 409 path). */}
+      {!confirming && infoMsg && (
+        <p role="status" className="text-xs text-amber-900">
+          {infoMsg}
         </p>
       )}
     </article>

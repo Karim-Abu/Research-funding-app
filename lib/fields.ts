@@ -115,6 +115,52 @@ export async function updateField(
   return (await res.json()) as PortalFieldDraftDto
 }
 
+// --- Copy governance (Slice 3, Council E2-A) --------------------------------
+// One server-side CopyEvent per Innolink copy action. The client never sends
+// the field text — only the version id, warning codes and (when warnings
+// apply) the override reason.
+
+export type CopyWarningCode = "open" | "limit" | "review"
+export type OverrideReasonCode =
+  | "portal_finalization"
+  | "warning_not_relevant"
+  | "coordination_draft"
+  | "other"
+
+export interface CopyEventDto {
+  copy_event_id: string
+  field_id: string
+  draft_version_id: string
+  client_warnings: CopyWarningCode[]
+  server_warnings: CopyWarningCode[]
+  override_reason_code: OverrideReasonCode | null
+  created_at: string
+}
+
+export interface CopyEventCreateDto {
+  draft_version_id: string
+  client_warnings: CopyWarningCode[]
+  override_reason_code?: OverrideReasonCode
+  override_reason_note?: string
+}
+
+export async function recordCopyEvent(
+  runId: string,
+  fieldId: string,
+  body: CopyEventCreateDto
+): Promise<CopyEventDto> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/copy-events`,
+    {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...csrfHeaders() },
+      body: JSON.stringify(body),
+    }
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as CopyEventDto
+}
+
 export async function createEvidenceLink(
   runId: string,
   fieldId: string,

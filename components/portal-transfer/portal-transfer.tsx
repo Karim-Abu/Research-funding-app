@@ -35,6 +35,9 @@ export function PortalTransfer({
   mockMode = false,
   confidentialReminder = false,
   embedded = false,
+  runId = null,
+  copyEventsEnabled = false,
+  onReload,
 }: {
   fields: PortalFieldDraftDto[]
   review: ReviewPackageDto | null
@@ -42,11 +45,18 @@ export function PortalTransfer({
   confidentialReminder?: boolean
   /** When rendered inside the Export screen, the page header is provided there. */
   embedded?: boolean
+  /** Slice 3: with runId + copyEventsEnabled each copy records a server-side
+   * CopyEvent (fail-open). Absent in mock mode → today's behavior. */
+  runId?: string | null
+  copyEventsEnabled?: boolean
+  /** Reload the field list after a stale-version conflict (409). */
+  onReload?: () => void
 }) {
-  // Session-only copy log — deliberately not persisted (Beta decision).
+  // Copy log per field. The timestamp comes from the server CopyEvent when
+  // available; the session-only fallback covers the fail-open path.
   const [copiedAt, setCopiedAt] = React.useState<Map<string, Date>>(new Map())
-  const markCopied = React.useCallback((fieldId: string) => {
-    setCopiedAt((prev) => new Map(prev).set(fieldId, new Date()))
+  const markCopied = React.useCallback((fieldId: string, at?: Date) => {
+    setCopiedAt((prev) => new Map(prev).set(fieldId, at ?? new Date()))
   }, [])
 
   const groups = groupBySection(fields)
@@ -128,6 +138,9 @@ export function PortalTransfer({
                 review={review}
                 copiedAt={copiedAt.get(field.field_id) ?? null}
                 onCopied={markCopied}
+                runId={mockMode ? null : runId}
+                copyEventsEnabled={copyEventsEnabled}
+                onReload={onReload}
               />
             ))}
           </section>

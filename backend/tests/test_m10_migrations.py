@@ -21,9 +21,9 @@ _KEY_TABLES = {
     "projects", "source_documents", "source_versions", "analysis_runs",
     "portal_field_drafts", "draft_versions", "evidence_anchors", "evidence_links",
     "review_findings", "search_query_approvals", "market_comparisons",
-    "draft_claims", "claim_lineages", "run_quality_summaries",
+    "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "e9124fbf91d8"  # project budget fields (Slice 1).
+_HEAD = "262f51ba5176"  # copy events (Slice 3).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -110,15 +110,17 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
-    assert "cash_contribution" in _project_columns(db)
-    # Down one (drops the Slice-1 budget columns), then back up. The
-    # reliability tables (one revision earlier) must survive the -1 step.
+    assert "copy_events" in _tables(db)
+    # Down one (drops the Slice-3 copy_events table), then back up. The
+    # Slice-1 budget columns (one revision earlier) must survive the -1 step.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "cash_contribution" not in _project_columns(db)
-    assert "duration_months" not in _project_columns(db)
+    assert "copy_events" not in _tables(db)
+    assert "cash_contribution" in _project_columns(db)
+    assert "duration_months" in _project_columns(db)
     assert "run_quality_summaries" in _tables(db)
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
+    assert "copy_events" in _tables(db)
     assert {
         "direct_total_project_costs_excluding_overhead",
         "implementation_own_contribution",

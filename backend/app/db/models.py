@@ -845,6 +845,38 @@ class DraftVersion(Base):
     )
 
 
+class CopyEvent(Base):
+    """Server-side record of one Innolink copy action (Slice 3, Council E2-A).
+
+    Governance metadata only: the content_hash is taken from the copied
+    DraftVersion (sha256 of its text) — the raw field text is NEVER stored
+    here, and the free-text note is never mirrored into audit events."""
+
+    __tablename__ = "copy_events"
+
+    copy_event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Warning codes (open | limit | review): as reported by the client vs.
+    # recomputed on the server — the union decides the override requirement.
+    client_warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    server_warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Contract enum: portal_finalization | warning_not_relevant |
+    # coordination_draft | other
+    override_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Free text only for reason "other"; max 200 chars, trimmed, event-only.
+    override_reason_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
 # ---------------------------------------------------------------------------
 # Review layer (Milestone 7): ReviewFinding, HumanDecision, ReviewApproval,
 # ReviewPackage. Deterministic review only — no A3/LLM findings.
