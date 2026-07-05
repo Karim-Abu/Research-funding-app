@@ -78,7 +78,8 @@ def test_eligible_partners_produce_partial_assessments(client):
     run_id, op_id = _start_run(client, project_id, csrf)
 
     assert client.get(f"/api/v1/runs/{run_id}").json()["status"] == "completed"
-    assert client.get(f"/api/v1/operations/{op_id}").json()["status"] == "succeeded"
+    assert client.get(
+        f"/api/v1/operations/{op_id}").json()["status"] == "succeeded"
 
     res = client.get(f"/api/v1/runs/{run_id}/requirements")
     assert res.status_code == 200, res.text
@@ -94,8 +95,10 @@ def test_eligible_partners_produce_partial_assessments(client):
     assert "REQ.INNO.DURATION.MAX18_WITHOUT_IMPLEMENTATION_PARTNER" not in statuses
     # Every status is a contract enum value; basis is a contract enum value.
     for a in assessments:
-        assert a["status"] in {"fulfilled", "partial", "open", "needs_input", "blocked"}
-        assert a["basis"] in {"deterministic_rule", "semantic_assessment", "hybrid"}
+        assert a["status"] in {"fulfilled", "partial",
+                               "open", "needs_input", "blocked"}
+        assert a["basis"] in {"deterministic_rule",
+                              "semantic_assessment", "hybrid"}
         assert a["stale"] is False
     # Non-fulfilled requirements carry an OpenIssue with a recommended action.
     partial = next(
@@ -124,7 +127,8 @@ def test_missing_partners_block_eligibility(client):
     _text_source(client, project_id, csrf)
     run_id, _ = _start_run(client, project_id, csrf)
 
-    statuses = _status_map(client.get(f"/api/v1/runs/{run_id}/requirements").json())
+    statuses = _status_map(client.get(
+        f"/api/v1/runs/{run_id}/requirements").json())
     assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "blocked"
     assert statuses["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"] == "blocked"
 

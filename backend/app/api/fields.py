@@ -247,7 +247,8 @@ def create_copy_event(
         server_warnings.append("open")
     if not within_limit(version.text, draft.character_limit):
         server_warnings.append("limit")
-    effective_warnings = sorted(set(payload.client_warnings) | set(server_warnings))
+    effective_warnings = sorted(
+        set(payload.client_warnings) | set(server_warnings))
 
     if effective_warnings and not payload.override_reason_code:
         raise ProblemException(

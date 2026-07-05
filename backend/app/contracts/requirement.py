@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict
 
 from app.contracts.evidence import EvidenceLink
 
-RequirementStatus = Literal["fulfilled", "partial", "open", "needs_input", "blocked"]
+RequirementStatus = Literal["fulfilled",
+                            "partial", "open", "needs_input", "blocked"]
 AssessmentBasis = Literal[
     "deterministic_rule", "semantic_assessment", "hybrid", "human_override"
 ]

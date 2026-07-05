@@ -31,7 +31,8 @@ EXPECTED_PROFILE_ID = "innosuisse_innovation_project_with_implementation_partner
 
 # RequirementAssessment.basis (openapi) — the registry assessment_basis must map
 # into one of these. human_override is reserved for human decisions (not M4).
-VALID_ASSESSMENT_BASIS = {"deterministic_rule", "semantic_assessment", "hybrid"}
+VALID_ASSESSMENT_BASIS = {"deterministic_rule",
+                          "semantic_assessment", "hybrid"}
 
 # M6 deterministic-draft field scope: agent-writable narrative/composite editors
 # that map to a singleton (non-repeated) structured path. Repeated work-package /
@@ -158,9 +159,11 @@ def _read_yaml(path: Path) -> dict[str, Any]:
     try:
         data = yaml.safe_load(path.read_text(encoding="utf-8"))
     except yaml.YAMLError as exc:  # malformed YAML
-        raise RegistryError(f"Registry file {path.name} is not valid YAML.") from exc
+        raise RegistryError(
+            f"Registry file {path.name} is not valid YAML.") from exc
     if not isinstance(data, dict):
-        raise RegistryError(f"Registry file {path.name} has no top-level mapping.")
+        raise RegistryError(
+            f"Registry file {path.name} has no top-level mapping.")
     return data
 
 
@@ -178,7 +181,8 @@ def _parse_rules(raw: dict[str, Any]) -> dict[str, RuleDef]:
         condition = entry.get("condition")
         mapping = entry.get("result_mapping")
         if not rule_id or not isinstance(condition, dict) or not isinstance(mapping, dict):
-            raise RegistryError(f"Rule {rule_id!r} is missing condition/result_mapping.")
+            raise RegistryError(
+                f"Rule {rule_id!r} is missing condition/result_mapping.")
         if "type" not in condition:
             raise RegistryError(f"Rule {rule_id!r} condition has no type.")
         if rule_id in rules:
@@ -303,7 +307,8 @@ def load_registry() -> Registry:
         evaluable.append(req.requirement_id)
 
     if not evaluable:
-        raise RegistryError("No evaluable requirements resolved from the registry.")
+        raise RegistryError(
+            "No evaluable requirements resolved from the registry.")
 
     return Registry(
         requirement_registry_version=req_version,
