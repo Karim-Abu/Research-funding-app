@@ -108,6 +108,14 @@ def test_eligible_partners_produce_partial_assessments(client):
     assert issue["recommended_next_action"]
     assert issue["status"] == "open"
     assert issue["severity"] in {"blocker", "warning", "info"}
+    # Slice 4 (E4-A): assessments expose the registry-declared field scope.
+    from app.registry import get_registry
+
+    registry_reqs = get_registry().requirements
+    for a in assessments:
+        expected = list(registry_reqs[a["requirement_id"]].affected_field_ids)
+        assert a["affected_field_ids"] == expected
+    assert partial["affected_field_ids"] == ["ORG.CP.IMPLEMENTATION_PARTNERS"]
 
 
 def test_missing_partners_block_eligibility(client):

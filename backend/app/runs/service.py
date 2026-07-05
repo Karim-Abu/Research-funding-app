@@ -36,7 +36,8 @@ def _assert_non_relaxing_classification(
 ) -> None:
     """Fail closed if the existing resolver ever relaxes sensitivity or NDA."""
     for classification in [project_classification, *source_classifications]:
-        checked, _ = resolve_effective_classification(classification or {}, effective)
+        checked, _ = resolve_effective_classification(
+            classification or {}, effective)
         if (
             checked.get("sensitivity") != effective.get("sensitivity")
             or bool(checked.get("nda_applies")) != bool(effective.get("nda_applies"))
@@ -57,7 +58,8 @@ def _effective_run_classification(project_classification: dict, versions: list[S
         )
     _assert_non_relaxing_classification(
         project_classification=project_classification,
-        source_classifications=[version.data_classification for version in versions],
+        source_classifications=[
+            version.data_classification for version in versions],
         effective=effective,
     )
     return effective
@@ -158,10 +160,12 @@ def prepare_run(
     project_snapshot.build_and_persist(
         db, run_id=actual_run_id, project=project, registry=registry
     )
-    db.add(build_policy_snapshot(actual_run_id, payload.settings, settings, cloud_decision))
+    db.add(build_policy_snapshot(actual_run_id,
+           payload.settings, settings, cloud_decision))
     if cloud_decision.confirmation is not None:
         # Consume the one-run confirmation now that the cloud run is committed.
-        confirmations_repo.mark_used(db, cloud_decision.confirmation, actual_run_id)
+        confirmations_repo.mark_used(
+            db, cloud_decision.confirmation, actual_run_id)
     db.add(
         UsageRecord(
             usage_record_id=str(uuid.uuid4()),

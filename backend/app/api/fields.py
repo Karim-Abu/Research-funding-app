@@ -8,6 +8,7 @@ from app.api.errors import ProblemException, correlation_id
 from app.contracts.copy_event import CopyEvent, CopyEventCreate
 from app.contracts.draft import DraftPatch, EvidenceLinkCreate, PortalFieldDraft, RedraftRequest
 from app.contracts.evidence import EvidenceLink
+from app.contracts.portal_field import DisplayMode, PortalFieldInfo
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun, DraftVersion
 from app.db.session import get_db
@@ -29,6 +30,28 @@ from app.agents.a2_fields import A2_FIELD_PROFILES
 router = APIRouter(tags=["Fields"])
 
 _NOT_FOUND = "Resource not found"
+
+# Deterministic support_mode → display_mode derivation (owner-confirmed,
+# Slice 4 / E4-A). Unknown support_mode values cannot occur in a validated
+# registry; fail-safe is "checklist" (= handle manually in the portal).
+_DISPLAY_MODE: dict[str, DisplayMode] = {
+    "draft_text": "draft",
+    "upload_validate": "upload",
+    "structured_input": "checklist",
+    "user_input_or_suggestion": "checklist",
+    "structured_input_or_readonly": "checklist",
+    "needs_verification": "checklist",
+    "action_only": "external_only",
+    "information_only": "external_only",
+}
+
+# Registry mandatory_status → required. Only unambiguous statuses map to a
+# boolean; needs_verification/conditional stay None (H32: never guess).
+_REQUIRED: dict[str, bool] = {
+    "required": True,
+    "optional": False,
+    "not_applicable": False,
+}
 
 
 def _require_run(db: Session, run_id: str, workspace_id: str) -> AnalysisRun:
@@ -80,6 +103,38 @@ def list_fields(
         if draft is not None:
             out.append(drafts_repo.to_contract(db, draft))
     return out
+
+
+@router.get("/runs/{run_id}/portal-fields", response_model=list[PortalFieldInfo])
+def list_portal_fields(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> list[PortalFieldInfo]:
+    """Read-only registry catalog of ALL portal fields (Slice 4, E4-A).
+
+    No DB access beyond the run-ownership check; the data source is the
+    validated registry, in canonical registry order.
+    """
+    _require_run(db, run_id, context.user.workspace_id)
+    fields = sorted(
+        get_registry().portal_fields.values(), key=lambda f: f.registry_index
+    )
+    return [
+        PortalFieldInfo(
+            field_id=field.field_id,
+            section=field.field_id.split(".")[0],
+            label=field.label_or_question,
+            character_limit=field.character_limit,
+            mandatory_status=field.mandatory_status,
+            required=_REQUIRED.get(field.mandatory_status),
+            support_mode=field.support_mode,
+            field_kind=field.field_kind,
+            display_mode=_DISPLAY_MODE.get(field.support_mode, "checklist"),
+            draft_available=field.is_m6_draft_field,
+        )
+        for field in fields
+    ]
 
 
 @router.get("/runs/{run_id}/fields/{field_id}", response_model=PortalFieldDraft)

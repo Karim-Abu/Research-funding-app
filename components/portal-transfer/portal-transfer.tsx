@@ -13,6 +13,9 @@ import {
 } from "@/lib/portal-transfer"
 import { fieldReadinessRows, readinessSummary } from "@/lib/export-view"
 import type { PortalFieldDraftDto } from "@/lib/fields"
+import { fieldModeLabel, type PortalFieldInfoDto } from "@/lib/portal-fields"
+import { SECTION_LABELS, SECTION_ORDER } from "@/lib/portal-transfer"
+import { Button } from "@/components/ui/button"
 import type { ReviewPackageDto } from "@/lib/review"
 
 const PAGE_DISCLAIMER =
@@ -37,6 +40,7 @@ export function PortalTransfer({
   embedded = false,
   runId = null,
   copyEventsEnabled = false,
+  portalFields = null,
   onReload,
 }: {
   fields: PortalFieldDraftDto[]
@@ -49,6 +53,9 @@ export function PortalTransfer({
    * CopyEvent (fail-open). Absent in mock mode → today's behavior. */
   runId?: string | null
   copyEventsEnabled?: boolean
+  /** Slice 4: full registry catalog. When present, a toggle offers the
+   * read-only "Alle Portalfelder" checklist; absent → today's view only. */
+  portalFields?: PortalFieldInfoDto[] | null
   /** Reload the field list after a stale-version conflict (409). */
   onReload?: () => void
 }) {
@@ -58,6 +65,9 @@ export function PortalTransfer({
   const markCopied = React.useCallback((fieldId: string, at?: Date) => {
     setCopiedAt((prev) => new Map(prev).set(fieldId, at ?? new Date()))
   }, [])
+  // Slice 4: "Unterstützte Felder" (default, today's view) vs "Alle Portalfelder".
+  const [showAllFields, setShowAllFields] = React.useState(false)
+  const hasCatalog = (portalFields?.length ?? 0) > 0
 
   const groups = groupBySection(fields)
   const readinessRows = fieldReadinessRows(fields, review)
@@ -94,6 +104,30 @@ export function PortalTransfer({
         <p className="text-xs text-muted-foreground">
           Hinweis: Der Prüfungs-Status ist in der Demo-Ansicht nicht verfügbar.
         </p>
+      )}
+
+      {/* Slice 4: view toggle — default stays today's supported-fields view. */}
+      {hasCatalog && (
+        <div className="flex items-center gap-2" role="group" aria-label="Feldansicht">
+          <Button
+            type="button"
+            size="sm"
+            variant={showAllFields ? "outline" : "default"}
+            aria-pressed={!showAllFields}
+            onClick={() => setShowAllFields(false)}
+          >
+            Unterstützte Felder
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            variant={showAllFields ? "default" : "outline"}
+            aria-pressed={showAllFields}
+            onClick={() => setShowAllFields(true)}
+          >
+            Alle Portalfelder
+          </Button>
+        </div>
       )}
 
       {/* Copy progress + shared warning summary (work progress, no funding statement). */}
@@ -147,6 +181,12 @@ export function PortalTransfer({
         ))
       )}
 
+      {/* Slice 4: read-only checklist of the portal fields the Beta does not
+          draft — grouped by portal section incl. Summary & Submit. */}
+      {hasCatalog && showAllFields && (
+        <ManualPortalChecklist portalFields={portalFields ?? []} />
+      )}
+
       {/* Mandatory coverage panel — always rendered. */}
       <section className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4">
         <h2 className="text-sm font-semibold">Abdeckung der Übernahmeansicht</h2>
@@ -177,5 +217,60 @@ export function PortalTransfer({
         </div>
       </section>
     </div>
+  )
+}
+
+/** Slice 4: read-only checklist "Im Portal manuell erfassen" — all registry
+ * fields WITHOUT an active draft, grouped by portal section (incl. SUM).
+ * No check-off state, no persistence. */
+function ManualPortalChecklist({
+  portalFields,
+}: Readonly<{ portalFields: PortalFieldInfoDto[] }>) {
+  const manual = portalFields.filter((f) => !f.draft_available)
+  const sections = [...SECTION_ORDER].filter((key) =>
+    manual.some((f) => f.section === key)
+  )
+  return (
+    <section
+      aria-label="Im Portal manuell erfassen"
+      className="flex flex-col gap-4 rounded-lg border border-border bg-card p-4"
+    >
+      <div>
+        <h2 className="text-sm font-semibold">Im Portal manuell erfassen</h2>
+        <p className="text-xs text-muted-foreground">
+          Diese Portalfelder bereitet die Beta nicht als Textentwurf vor — sie
+          werden direkt in Innolink erfasst, hochgeladen oder beachtet.
+        </p>
+      </div>
+      {sections.map((key) => (
+        <div key={key} className="flex flex-col gap-1.5">
+          <h3 className="text-xs font-semibold text-muted-foreground">
+            {SECTION_LABELS[key] ?? "Weitere"}
+          </h3>
+          <ul className="flex flex-col gap-1">
+            {manual
+              .filter((f) => f.section === key)
+              .map((f) => (
+                <li
+                  key={f.field_id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border/70 bg-background px-3 py-1.5"
+                >
+                  <span className="text-xs text-foreground">{f.label}</span>
+                  <span className="flex items-center gap-2">
+                    {f.character_limit != null && (
+                      <span className="text-[11px] text-muted-foreground">
+                        max. {f.character_limit.toLocaleString("de-CH")} Zeichen
+                      </span>
+                    )}
+                    <span className="inline-flex items-center rounded-full border border-border bg-muted/40 px-2 py-0.5 text-[11px] text-muted-foreground">
+                      {fieldModeLabel(f)}
+                    </span>
+                  </span>
+                </li>
+              ))}
+          </ul>
+        </div>
+      ))}
+    </section>
   )
 }

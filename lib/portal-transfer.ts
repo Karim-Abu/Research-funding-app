@@ -14,8 +14,9 @@ export const SECTION_LABELS: Record<string, string> = {
   VC: "Wertschöpfung",
   SOL: "Lösung & Innovation",
   PS: "Projektplan",
+  SUM: "Summary & Submit",
 }
-export const SECTION_ORDER = ["INTRO", "ORG", "VC", "SOL", "PS"] as const
+export const SECTION_ORDER = ["INTRO", "ORG", "VC", "SOL", "PS", "SUM"] as const
 
 export function sectionKey(fieldId: string): string {
   return fieldId.split(".")[0]

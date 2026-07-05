@@ -43,3 +43,6 @@ class RequirementAssessment(BaseModel):
     # Populated in M5 from the deterministic evidence baseline (anchor links).
     evidence_links: list[EvidenceLink] = []
     open_issues: list[OpenIssue] = []
+    # Additive (Slice 4, E4-A): registry-declared portal fields this requirement
+    # affects — enables the direct field↔requirement join in the editor.
+    affected_field_ids: list[str] = []

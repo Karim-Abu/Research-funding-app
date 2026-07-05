@@ -116,7 +116,8 @@ def _public_project_with_source(client, csrf):
 
 
 def test_member_can_create_confirmation_and_cloud_run(client):
-    csrf = login(client, TOBIAS_EMAIL, TOBIAS_PASSWORD)  # member, not lead_admin
+    # member, not lead_admin
+    csrf = login(client, TOBIAS_EMAIL, TOBIAS_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
     confirm = _confirm(client, project_id, csrf, [svid])
     assert confirm.status_code == 201, confirm.text
@@ -178,14 +179,16 @@ def test_confirmation_rejects_foreign_source(client):
 def test_cloud_run_without_confirmation_blocked(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
-    res = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid]))
+    res = _create_run(client, project_id, csrf,
+                      _run_body("cloud_assisted", [svid]))
     assert res.status_code == 422
     assert res.json()["code"] == "cloud_confirmation_required"
 
 
 def test_cloud_run_uses_snapshot_source_classification(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    project_id = _make_project(client, csrf, _classification("public", "synthetic"))
+    project_id = _make_project(
+        client, csrf, _classification("public", "synthetic"))
     svid = _text_source(
         client,
         project_id,
@@ -194,7 +197,8 @@ def test_cloud_run_uses_snapshot_source_classification(client):
     )
     cid = _confirm(client, project_id, csrf, [svid]).json()["confirmation_id"]
 
-    cloud = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid], cid))
+    cloud = _create_run(client, project_id, csrf,
+                        _run_body("cloud_assisted", [svid], cid))
     assert cloud.status_code == 403
     assert cloud.json()["code"] == "cloud_not_eligible_for_classification"
 
@@ -213,7 +217,8 @@ def test_confidential_project_with_public_source_never_relaxes(client):
         csrf,
         _classification("confidential", "real_project", mode="local_only"),
     )
-    svid = _text_source(client, project_id, csrf, _classification("public", "synthetic"))
+    svid = _text_source(client, project_id, csrf,
+                        _classification("public", "synthetic"))
 
     deterministic = _create_run(
         client, project_id, csrf, _run_body("deterministic_only", [svid])
@@ -222,7 +227,8 @@ def test_confidential_project_with_public_source_never_relaxes(client):
     classification = _run_classification(deterministic.json()["resource_id"])
     assert classification["sensitivity"] == "confidential"
 
-    cloud = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid]))
+    cloud = _create_run(client, project_id, csrf,
+                        _run_body("cloud_assisted", [svid]))
     assert cloud.status_code == 403
     assert cloud.json()["code"] == "cloud_not_eligible_for_classification"
 
@@ -232,7 +238,8 @@ def test_missing_source_classification_fails_closed(client):
     project_id, svid = _public_project_with_source(client, csrf)
     _replace_source_classification(svid, {})
 
-    run = _create_run(client, project_id, csrf, _run_body("deterministic_only", [svid]))
+    run = _create_run(client, project_id, csrf,
+                      _run_body("deterministic_only", [svid]))
     assert run.status_code == 202, run.text
     classification = _run_classification(run.json()["resource_id"])
     assert classification["sensitivity"] == "confidential"
@@ -242,9 +249,11 @@ def test_missing_source_classification_fails_closed(client):
 
 
 def test_run_classification_merge_flag_false_uses_project_only(client, monkeypatch):
-    monkeypatch.setattr(get_settings(), "run_classification_source_merge_enabled", False)
+    monkeypatch.setattr(
+        get_settings(), "run_classification_source_merge_enabled", False)
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    project_id = _make_project(client, csrf, _classification("public", "synthetic"))
+    project_id = _make_project(
+        client, csrf, _classification("public", "synthetic"))
     svid = _text_source(
         client,
         project_id,
@@ -252,7 +261,8 @@ def test_run_classification_merge_flag_false_uses_project_only(client, monkeypat
         _classification("confidential", "real_project", mode="local_only"),
     )
 
-    run = _create_run(client, project_id, csrf, _run_body("deterministic_only", [svid]))
+    run = _create_run(client, project_id, csrf,
+                      _run_body("deterministic_only", [svid]))
     assert run.status_code == 202, run.text
     classification = _run_classification(run.json()["resource_id"])
     assert classification["sensitivity"] == "public"
@@ -262,7 +272,8 @@ def test_public_project_with_public_source_stays_public(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
 
-    run = _create_run(client, project_id, csrf, _run_body("deterministic_only", [svid]))
+    run = _create_run(client, project_id, csrf,
+                      _run_body("deterministic_only", [svid]))
     assert run.status_code == 202, run.text
     classification = _run_classification(run.json()["resource_id"])
     assert classification["sensitivity"] == "public"
@@ -272,7 +283,8 @@ def test_cloud_run_freezes_policy_snapshot(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
     cid = _confirm(client, project_id, csrf, [svid]).json()["confirmation_id"]
-    run = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid], cid))
+    run = _create_run(client, project_id, csrf,
+                      _run_body("cloud_assisted", [svid], cid))
     assert run.status_code == 202, run.text
     run_id = run.json()["resource_id"]
     db = SessionLocal()
@@ -294,10 +306,12 @@ def test_confirmation_is_one_run_only(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
     cid = _confirm(client, project_id, csrf, [svid]).json()["confirmation_id"]
-    first = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid], cid))
+    first = _create_run(client, project_id, csrf,
+                        _run_body("cloud_assisted", [svid], cid))
     assert first.status_code == 202
     # Reusing a consumed confirmation is rejected (gate runs before the active-run check).
-    second = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid], cid))
+    second = _create_run(client, project_id, csrf,
+                         _run_body("cloud_assisted", [svid], cid))
     assert second.status_code == 422
     assert second.json()["code"] == "cloud_confirmation_invalid"
 
@@ -305,14 +319,16 @@ def test_confirmation_is_one_run_only(client):
 def test_deterministic_run_needs_no_confirmation(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
-    res = _create_run(client, project_id, csrf, _run_body("deterministic_only", [svid]))
+    res = _create_run(client, project_id, csrf,
+                      _run_body("deterministic_only", [svid]))
     assert res.status_code == 202
 
 
 def test_blocked_cloud_run_is_audited(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id, svid = _public_project_with_source(client, csrf)
-    res = _create_run(client, project_id, csrf, _run_body("cloud_assisted", [svid]))
+    res = _create_run(client, project_id, csrf,
+                      _run_body("cloud_assisted", [svid]))
     assert res.status_code == 422
     db = SessionLocal()
     try:
@@ -331,31 +347,36 @@ def test_blocked_cloud_run_is_audited(client):
 def _fake_run(mode, sensitivity="public", origin="synthetic", nda=False):
     return SimpleNamespace(
         processing_mode=mode,
-        effective_data_classification=_classification(sensitivity, origin, nda),
+        effective_data_classification=_classification(
+            sensitivity, origin, nda),
     )
 
 
 def test_a2_availability_deterministic_unavailable(client):
-    ok, reason = field_drafting.availability(_fake_run("deterministic_only"), "SOL.INNOVATION_SOLUTION.EDITOR")
+    ok, reason = field_drafting.availability(
+        _fake_run("deterministic_only"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
     assert reason == "processing_mode_deterministic_only"
 
 
 def test_a2_availability_cloud_with_fake_provider(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", True)
-    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
+    ok, reason = field_drafting.availability(
+        _fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is True
     assert reason == "available"
 
 
 def test_a2_availability_provider_unavailable_without_fake(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", False)
-    ok, reason = field_drafting.availability(_fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
+    ok, reason = field_drafting.availability(
+        _fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
     assert reason == "provider_unavailable"
 
 
 def test_a2_availability_blocked_for_confidential(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", True)
-    ok, _ = field_drafting.availability(_fake_run("cloud_assisted", "confidential", "real_project"), "SOL.INNOVATION_SOLUTION.EDITOR")
+    ok, _ = field_drafting.availability(_fake_run(
+        "cloud_assisted", "confidential", "real_project"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False

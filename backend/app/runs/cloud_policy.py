@@ -95,8 +95,10 @@ def validate_cloud_run(
                      code="invalid_processing_mode", detail="Unknown processing mode.")
 
     effective_for_gate = effective_classification or project.data_classification
-    project_eligible, project_reason = classification_eligible(project.data_classification)
-    effective_eligible, effective_reason = classification_eligible(effective_for_gate)
+    project_eligible, project_reason = classification_eligible(
+        project.data_classification)
+    effective_eligible, effective_reason = classification_eligible(
+        effective_for_gate)
     if not project_eligible or not effective_eligible:
         raise _block(
             db, project, actor_user_id, status=403,
@@ -112,7 +114,8 @@ def validate_cloud_run(
             detail=("Für Cloud-KI ist eine ausdrückliche Freigabe für diesen Durchlauf "
                     "erforderlich."),
         )
-    confirmation = confirmations_repo.get_scoped(db, confirmation_id, project.workspace_id)
+    confirmation = confirmations_repo.get_scoped(
+        db, confirmation_id, project.workspace_id)
     requested = set(requested_source_version_ids or [])
     invalid = (
         confirmation is None

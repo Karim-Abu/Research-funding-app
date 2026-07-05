@@ -469,15 +469,18 @@ export function LiveEditor({
   const anchorById = new Map(anchors.map((a) => [a.anchor_id, a]))
   const visibleLinks = draftLinks.filter((l) => l.status !== "removed")
 
-  // Requirements ↔ field join: open findings carry both field_id and
-  // requirement_id — the contract has no direct field↔requirement mapping.
+  // Requirements ↔ field join (Slice 4): primary over the registry-declared
+  // affected_field_ids; the findings-based join stays as a union fallback for
+  // findings whose requirement does not declare the field.
   const fieldRequirementIds = new Set(
     selectedFindings
       .map((f) => f.requirement_id)
       .filter((id): id is string => Boolean(id))
   )
-  const fieldRequirements = (requirements ?? []).filter((r) =>
-    fieldRequirementIds.has(r.requirement_id)
+  const fieldRequirements = (requirements ?? []).filter(
+    (r) =>
+      (selected && r.affected_field_ids?.includes(selected.field_id)) ||
+      fieldRequirementIds.has(r.requirement_id)
   )
 
   const viewModels = fields.map((f) => liveFieldToViewModel(f, review))

@@ -93,6 +93,10 @@ class PortalFieldDef:
     agent_writable: bool
     structured_data_path: str
     evidence_requirement: str
+    # Raw registry mandatory_status (required | optional | not_applicable |
+    # conditional | needs_verification). Exposed read-only; never interpreted
+    # beyond the deterministic mapping in the portal-fields endpoint (H32).
+    mandatory_status: str
     registry_index: int  # position in the registry → canonical stable order
 
     @property
@@ -258,6 +262,7 @@ def _parse_portal_fields(raw: dict[str, Any]) -> dict[str, PortalFieldDef]:
             agent_writable=bool(entry.get("agent_writable", False)),
             structured_data_path=str(entry.get("structured_data_path", "")),
             evidence_requirement=str(entry.get("evidence_requirement", "")),
+            mandatory_status=str(entry.get("mandatory_status", "")),
             registry_index=index,
         )
     return fields
