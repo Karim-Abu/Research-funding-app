@@ -22,18 +22,21 @@ export const projects: Project[] = [
 
 export const activeProjectId = "p1"
 
-// 7 Schritte, die auf 6 Screens abgebildet werden.
-// Schritt 2 UND 4 -> "Quellen & Evidenz". Freigabe ist Teil der Qualitätsprüfung
+// 8 Schritte, die auf 7 Screens abgebildet werden.
+// Schritt 3 UND 5 -> "Quellen & Evidenz". Freigabe ist Teil der Qualitätsprüfung
 // (kein eigener Abschluss-Screen), daher kein separater "Abschluss"-Schritt.
+// NB: Das Backend-workflow_summary zählt eigenständig (ohne Partner-Schritt) —
+// Übersetzung via BACKEND_STEP_TO_UI_STEP in lib/projects.ts.
 export const workflowSteps: WorkflowStep[] = [
   { step: 1, label: "Intake", subLabel: "Projekt & Daten", href: "/intake" },
-  { step: 2, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
-  { step: 3, label: "Anforderungen", shortLabel: "Anford.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
-  { step: 4, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
+  { step: 2, label: "Partner & Budget", shortLabel: "Partner", subLabel: "Konsortium & Budget", href: "/partner" },
+  { step: 3, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
+  { step: 4, label: "Anforderungen", shortLabel: "Anford.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
+  { step: 5, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
   // Der Entwurf wird feldweise im Portal-Editor vorbereitet (/editor).
-  { step: 5, label: "Entwurf", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/editor" },
-  { step: 6, label: "Qualitätsprüfung", shortLabel: "Prüfung", subLabel: "Freigabe & Qualität", href: "/review" },
-  { step: 7, label: "Export", subLabel: "Abgabe", href: "/export" },
+  { step: 6, label: "Entwurf", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/editor" },
+  { step: 7, label: "Qualitätsprüfung", shortLabel: "Prüfung", subLabel: "Freigabe & Qualität", href: "/review" },
+  { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
 ]
 
 // Dashboard project cards — 4 demo entries covering distinct states.
@@ -48,7 +51,7 @@ export const dashboardProjects: DashboardProject[] = [
     deadline: "Frist: 15. Aug. 2026",
     deadlineIso: "2026-08-15",
     progressPercent: 78,
-    currentStep: 5,
+    currentStep: 6,
     cardStatus: "in_bearbeitung",
     lastEditedLabel: "Zuletzt bearbeitet: heute, 09:42 von Anna Keller",
     nextAction: "continue_draft",
@@ -67,7 +70,7 @@ export const dashboardProjects: DashboardProject[] = [
     deadline: "Frist: 30. Sep. 2026",
     deadlineIso: "2026-09-30",
     progressPercent: 42,
-    currentStep: 4,
+    currentStep: 5,
     cardStatus: "blockiert",
     lastEditedLabel: "Zuletzt bearbeitet: gestern, 14:15 von Tobias Frei",
     nextAction: "resume_analysis",
@@ -86,7 +89,7 @@ export const dashboardProjects: DashboardProject[] = [
     deadline: "Frist: 31. Okt. 2026",
     deadlineIso: "2026-10-31",
     progressPercent: 61,
-    currentStep: 6,
+    currentStep: 7,
     cardStatus: "in_bearbeitung",
     lastEditedLabel: "Zuletzt bearbeitet: heute, 08:03 von Anna Keller",
     nextAction: "review_analysis",
@@ -107,7 +110,7 @@ export const dashboardProjects: DashboardProject[] = [
     deadline: "Frist: 28. Feb. 2027",
     deadlineIso: "2027-02-28",
     progressPercent: 91,
-    currentStep: 7,
+    currentStep: 8,
     cardStatus: "review_offen",
     lastEditedLabel: "Zuletzt bearbeitet: vorgestern, 11:30 von Anna Keller",
     nextAction: "approve_review",

@@ -232,6 +232,7 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
 
 const quellenStepStatus = [
   "done",
+  "done",
   "current",
   "upcoming",
   "upcoming",
@@ -753,7 +754,7 @@ function QuellenPageContent() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={2}
+      currentStep={3}
       stepStatus={[...quellenStepStatus]}
     >
       <div className="mx-auto max-w-5xl px-6 py-8">

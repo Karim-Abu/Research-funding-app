@@ -22,6 +22,16 @@ def _project_dict(project: Project) -> dict:
     return {
         "project_id": project.project_id,
         "funding_instrument_profile_id": project.funding_instrument_profile_id,
+        # Structured budget/duration inputs (Slice 1). Part of the frozen
+        # snapshot so a later budget edit makes the run visibly stale.
+        "direct_total_project_costs_excluding_overhead": (
+            project.direct_total_project_costs_excluding_overhead
+        ),
+        "implementation_own_contribution": project.implementation_own_contribution,
+        "cash_contribution": project.cash_contribution,
+        "total_requested_funding": project.total_requested_funding,
+        "budget_exception_basis": project.budget_exception_basis,
+        "duration_months": project.duration_months,
     }
 
 

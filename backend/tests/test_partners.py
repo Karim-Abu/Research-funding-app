@@ -64,6 +64,32 @@ def test_create_list_update_delete_partner(client):
     assert client.get(f"/api/v1/projects/{project_id}/partners").json() == []
 
 
+def test_partner_form_fields_roundtrip(client):
+    """Slice 1: project_role + independence statuses persist through the API."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = create_project(client, csrf)
+    res = _create_partner(
+        client, project_id, csrf,
+        _partner_body(
+            name="Industrie AG",
+            partner_type="implementation_partner",
+            project_role="Entwicklung des Prototyps",
+            personnel_independence_status="confirmed",
+            financial_independence_status="needs_input",
+        ),
+    )
+    assert res.status_code == 201, res.text
+    partner = res.json()
+    assert partner["project_role"] == "Entwicklung des Prototyps"
+    assert partner["personnel_independence_status"] == "confirmed"
+    assert partner["financial_independence_status"] == "needs_input"
+
+    listed = client.get(f"/api/v1/projects/{project_id}/partners").json()
+    assert listed[0]["project_role"] == "Entwicklung des Prototyps"
+    assert listed[0]["personnel_independence_status"] == "confirmed"
+    assert listed[0]["financial_independence_status"] == "needs_input"
+
+
 def test_create_partner_requires_session(client):
     # No login → 401.
     res = client.post(

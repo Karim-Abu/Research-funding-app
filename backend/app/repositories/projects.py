@@ -58,9 +58,23 @@ def get_scoped(
     )
 
 
+_PATCHABLE_FIELDS = (
+    "title",
+    "description",
+    "innovation_field",
+    "budget_framework_chf",
+    "direct_total_project_costs_excluding_overhead",
+    "implementation_own_contribution",
+    "cash_contribution",
+    "total_requested_funding",
+    "budget_exception_basis",
+    "duration_months",
+)
+
+
 def apply_patch(db: Session, project: Project, patch: ProjectPatch) -> Project:
     data = patch.model_dump(exclude_unset=True)
-    for field in ("title", "description", "innovation_field", "budget_framework_chf"):
+    for field in _PATCHABLE_FIELDS:
         if field in data:
             setattr(project, field, data[field])
     db.add(project)
@@ -78,6 +92,14 @@ def to_contract(db: Session, project: Project) -> ProjectSchema:
         funding_instrument_profile_id=project.funding_instrument_profile_id,
         data_classification=project.data_classification,
         budget_framework_chf=project.budget_framework_chf,
+        direct_total_project_costs_excluding_overhead=(
+            project.direct_total_project_costs_excluding_overhead
+        ),
+        implementation_own_contribution=project.implementation_own_contribution,
+        cash_contribution=project.cash_contribution,
+        total_requested_funding=project.total_requested_funding,
+        budget_exception_basis=project.budget_exception_basis,
+        duration_months=project.duration_months,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,

@@ -15,6 +15,7 @@ const editorStepStatus = [
   "done",
   "done",
   "done",
+  "done",
   "current",
   "upcoming",
   "upcoming",
@@ -61,7 +62,7 @@ export default function EditorPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={5}
+      currentStep={6}
       stepStatus={[...editorStepStatus]}
     >
       {mode === "live" ? (

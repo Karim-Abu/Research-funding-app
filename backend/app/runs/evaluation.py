@@ -47,6 +47,7 @@ def evaluate_run(
     inputs = inputs_from_snapshot(
         profile_id=snapshot.project_json.get("funding_instrument_profile_id"),
         partner_dicts=list(snapshot.partners_json or []),
+        project_dict=dict(snapshot.project_json or {}),
     )
 
     _clear_previous(db, run_id)

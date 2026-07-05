@@ -27,6 +27,15 @@ class ProjectPatch(BaseModel):
     description: str | None = Field(default=None, min_length=1)
     innovation_field: str | None = None
     budget_framework_chf: float | None = Field(default=None, ge=0)
+    # Structured budget inputs (Slice 1, additive).
+    direct_total_project_costs_excluding_overhead: float | None = Field(
+        default=None, ge=0
+    )
+    implementation_own_contribution: float | None = Field(default=None, ge=0)
+    cash_contribution: float | None = Field(default=None, ge=0)
+    total_requested_funding: float | None = Field(default=None, ge=0)
+    budget_exception_basis: str | None = None
+    duration_months: int | None = Field(default=None, ge=1)
 
 
 class WorkflowSummary(BaseModel):
@@ -50,6 +59,13 @@ class WorkflowSummary(BaseModel):
 class Project(ProjectCreate):
     project_id: str
     workspace_id: str
+    # Structured budget inputs (Slice 1, additive; set via ProjectPatch).
+    direct_total_project_costs_excluding_overhead: float | None = None
+    implementation_own_contribution: float | None = None
+    cash_contribution: float | None = None
+    total_requested_funding: float | None = None
+    budget_exception_basis: str | None = None
+    duration_months: int | None = None
     status: Literal["draft", "active", "archived"]
     created_at: datetime
     updated_at: datetime

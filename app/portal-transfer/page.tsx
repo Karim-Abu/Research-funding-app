@@ -23,6 +23,7 @@ const stepStatus: StepStatus[] = [
   "done",
   "done",
   "done",
+  "done",
   "current",
 ]
 
@@ -202,7 +203,7 @@ export default function PortalTransferPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={7}
+      currentStep={8}
       stepStatus={stepStatus}
     >
       {mode === "live" ? <LivePortalTransferContainer /> : <MockPortalTransfer />}

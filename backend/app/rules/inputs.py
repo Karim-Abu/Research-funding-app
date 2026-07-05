@@ -1,9 +1,10 @@
 """Structured, deterministic inputs for the rule engine.
 
 Built from the immutable run snapshot of project + partner data. Only structured
-fields are used — never raw source text. Fields that M4 does not yet capture
-(budget figures, duration, portal fields, scientific-integrity answers) stay
-``None`` so the corresponding rules resolve to ``needs_input`` honestly.
+fields are used — never raw source text. Budget figures and duration come from
+the frozen project snapshot (Slice 1); fields that are still not captured
+(portal fields, scientific-integrity answers) stay ``None`` so the
+corresponding rules resolve to ``needs_input`` honestly.
 """
 from __future__ import annotations
 
@@ -47,7 +48,7 @@ class RuleInputs:
     profile_id: str = EXPECTED_PROFILE_ID
     partners: list[PartnerInput] = field(default_factory=list)
 
-    # Budget (not captured in M4 → None → needs_input).
+    # Budget — mapped from the frozen project snapshot; None → needs_input.
     direct_total_project_costs_excluding_overhead: float | None = None
     implementation_own_contribution: float | None = None
     cash_contribution: float | None = None
@@ -56,7 +57,7 @@ class RuleInputs:
     total_requested_funding: float | None = None
     budget_exception_basis: str | None = None
 
-    # Duration (not captured in M4 → None).
+    # Duration — mapped from the frozen project snapshot; None → needs_input.
     duration_months: int | None = None
     duration_exception: str | None = None
 
@@ -80,21 +81,46 @@ class RuleInputs:
 
     @property
     def implementation_numerator(self) -> float | None:
-        """Implementation-partner contribution = own contribution + cash; falls
-        back to the aggregate ``implementation_total`` when the parts are not
-        captured separately."""
+        """Implementation-partner contribution = own contribution + cash — only
+        when BOTH parts are captured (a partial sum would turn incomplete data
+        into a definitive verdict; missing parts must yield ``needs_input``).
+        Falls back to the aggregate ``implementation_total`` otherwise."""
         own = self.implementation_own_contribution
         cash = self.cash_contribution
-        if own is not None or cash is not None:
-            return (own or 0.0) + (cash or 0.0)
+        if own is not None and cash is not None:
+            return own + cash
         return self.implementation_total
 
 
+def _clean_basis(value: Any) -> str | None:
+    """Exception basis is only meaningful as non-empty text (whitespace-only
+    must not claim an exception)."""
+    if not isinstance(value, str):
+        return None
+    return value.strip() or None
+
+
 def inputs_from_snapshot(
-    *, profile_id: str | None, partner_dicts: list[dict[str, Any]]
+    *,
+    profile_id: str | None,
+    partner_dicts: list[dict[str, Any]],
+    project_dict: dict[str, Any] | None = None,
 ) -> RuleInputs:
-    """Build engine inputs from the frozen project + partner snapshot."""
+    """Build engine inputs from the frozen project + partner snapshot. Budget
+    and duration come from ``project_dict`` (Slice 1); absent values stay None
+    so the budget rules resolve to ``needs_input``."""
+    project = project_dict or {}
     return RuleInputs(
         profile_id=profile_id or EXPECTED_PROFILE_ID,
         partners=[PartnerInput.from_dict(p) for p in partner_dicts],
+        direct_total_project_costs_excluding_overhead=project.get(
+            "direct_total_project_costs_excluding_overhead"
+        ),
+        implementation_own_contribution=project.get(
+            "implementation_own_contribution"
+        ),
+        cash_contribution=project.get("cash_contribution"),
+        total_requested_funding=project.get("total_requested_funding"),
+        budget_exception_basis=_clean_basis(project.get("budget_exception_basis")),
+        duration_months=project.get("duration_months"),
     )

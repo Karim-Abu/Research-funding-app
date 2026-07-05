@@ -123,7 +123,8 @@ describe("projects client (live mode)", () => {
       })
     )
     expect(card.progressPercent).toBe(72)
-    expect(card.currentStep).toBe(5)
+    // Backend step 5 (Entwurf) → UI step 6 (Partner & Budget inserted at 2).
+    expect(card.currentStep).toBe(6)
     expect(card.nextAction).toBe("continue_draft")
     expect(card.isDemo).toBe(true)
     expect(card.warningBadge).toBeUndefined()

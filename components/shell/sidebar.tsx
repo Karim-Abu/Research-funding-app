@@ -19,6 +19,7 @@ import {
   PenLine,
   CheckSquare,
   Download,
+  Users,
   Wallet,
   PanelLeftClose,
   PanelLeftOpen,
@@ -50,6 +51,7 @@ interface DisabledLink {
 const currentApplication: NavLink[] = [
   { label: "Übersicht", href: "/", icon: LayoutDashboard },
   { label: "Intake", href: "/intake", icon: ClipboardList },
+  { label: "Partner & Budget", href: "/partner", icon: Users },
   { label: "Quellen", href: "/quellen", icon: Database },
   { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
   { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },

@@ -103,6 +103,21 @@ class Project(Base):
     # DataClassification stored as a JSON object (5 contract fields).
     data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
     budget_framework_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Structured budget inputs (Slice 1) — feed the deterministic 40-60% and
+    # 5%-cash rules via the frozen run snapshot. All optional; no BudgetPlan
+    # entity in this slice.
+    direct_total_project_costs_excluding_overhead: Mapped[float | None] = (
+        mapped_column(Float, nullable=True)
+    )
+    implementation_own_contribution: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    cash_contribution: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_requested_funding: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    budget_exception_basis: Mapped[str | None] = mapped_column(String, nullable=True)
+    duration_months: Mapped[int | None] = mapped_column(nullable=True)
     # Contract enum: draft | active | archived
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
     active_run_id: Mapped[str | None] = mapped_column(String, nullable=True)

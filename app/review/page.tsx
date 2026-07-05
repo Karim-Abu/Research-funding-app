@@ -27,6 +27,7 @@ const stepStatus: StepStatus[] = [
   "done",
   "done",
   "done",
+  "done",
   "current",
   "upcoming",
 ]
@@ -191,7 +192,7 @@ export default function ReviewPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={6}
+      currentStep={7}
       stepStatus={stepStatus}
     >
       {mode === "live" ? <LiveReviewContainer /> : <MockReviewBody />}
