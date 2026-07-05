@@ -86,7 +86,8 @@ function idempotencyKey(): string {
 }
 
 function intakeToCreatePayload(intake: IntakeFormData) {
-  const flat = intake.vertraulichkeit || "public"
+  const flat = intake.vertraulichkeit
+  if (!flat) throw new Error("confidentiality_missing")
   const budget = intake.budgetrahmen.trim()
   return {
     title: intake.titel,

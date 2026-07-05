@@ -82,6 +82,7 @@ def validate_cloud_run(
     actor_user_id: str,
     requested_source_version_ids: list[str],
     policy_version: str,
+    effective_classification: dict | None = None,
 ) -> CloudDecision:
     """Gate run creation. Non-cloud modes pass through. cloud_assisted is allowed
     only for eligible classification + a valid confirmation; otherwise raises a safe
@@ -93,8 +94,10 @@ def validate_cloud_run(
         raise _block(db, project, actor_user_id, status=400,
                      code="invalid_processing_mode", detail="Unknown processing mode.")
 
-    eligible, reason = classification_eligible(project.data_classification)
-    if not eligible:
+    effective_for_gate = effective_classification or project.data_classification
+    project_eligible, project_reason = classification_eligible(project.data_classification)
+    effective_eligible, effective_reason = classification_eligible(effective_for_gate)
+    if not project_eligible or not effective_eligible:
         raise _block(
             db, project, actor_user_id, status=403,
             code="cloud_not_eligible_for_classification",
@@ -132,6 +135,8 @@ def validate_cloud_run(
         {"confirmation_id": confirmation.confirmation_id, "provider_route_class": route_class,
          "policy_version": policy_version,
          "effective_sensitivity": (project.data_classification or {}).get("sensitivity"),
-         "origin": (project.data_classification or {}).get("origin")},
+            "origin": (project.data_classification or {}).get("origin"),
+            "merged_effective_sensitivity": (effective_for_gate or {}).get("sensitivity"),
+            "merged_origin": (effective_for_gate or {}).get("origin")},
     )
     return CloudDecision(confirmation=confirmation, provider_route_class=route_class)

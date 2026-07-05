@@ -72,6 +72,12 @@ describe("projects client (live mode)", () => {
     expect(body.budget_framework_chf).toBe(350000)
   })
 
+  it("rejects intake without confidentiality before sending a create payload", async () => {
+    await expect(
+      createProjectFromIntake({ ...intake, vertraulichkeit: "" })
+    ).rejects.toThrow("confidentiality_missing")
+  })
+
   it("lists projects", async () => {
     server.use(
       http.get("/api/projects", () =>

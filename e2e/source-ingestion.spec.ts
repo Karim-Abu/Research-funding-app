@@ -100,6 +100,8 @@ test("pdf file upload ingests to processed", async ({ page }) => {
     mimeType: "application/pdf",
     buffer: minimalPdf("E2E upload smoke content for processing."),
   })
+  await expect(page.getByRole("dialog", { name: "Datei hochladen" })).toBeVisible()
+  await page.getByRole("button", { name: "Hochladen" }).click()
 
   // The source appears and becomes processed.
   await expect(page.getByText("e2e-upload.pdf")).toBeVisible({ timeout: 20_000 })

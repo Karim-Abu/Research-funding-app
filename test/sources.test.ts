@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from "vitest"
+import { describe, it, expect, beforeEach, afterEach, vi } from "vitest"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { setBackendMode } from "@/lib/app-mode"
@@ -67,6 +67,7 @@ describe("sources client (live mode)", () => {
     await login("a@x.test", "pw")
 
     let headers: Headers | null = null
+    const appendSpy = vi.spyOn(FormData.prototype, "append")
     server.use(
       http.post("/api/projects/p1/sources/files", ({ request }) => {
         headers = request.headers
@@ -80,7 +81,16 @@ describe("sources client (live mode)", () => {
     expect(res[0].status).toBe("uploaded")
     expect(headers!.get("x-csrf-token")).toBe("tok")
     expect((headers!.get("idempotency-key") ?? "").length).toBeGreaterThanOrEqual(8)
-    // (Multipart body parsing is covered by the backend pytest suite.)
+    const classificationCall = appendSpy.mock.calls.find(
+      ([name]) => name === "data_classification_json"
+    )
+    appendSpy.mockRestore()
+    expect(classificationCall).toBeDefined()
+    const classificationJson = classificationCall?.[1]
+    if (typeof classificationJson !== "string") {
+      throw new Error("classification payload missing")
+    }
+    expect(JSON.parse(classificationJson)).toEqual(CLASSIFICATION)
   })
 
   it("creates a text source", async () => {

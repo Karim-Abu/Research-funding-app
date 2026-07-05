@@ -341,12 +341,12 @@ function QuellenPageContent() {
   const [backendDataClass, setBackendDataClass] =
     React.useState<DataClass | null>(null)
 
-  // Beta: Quellen tragen noch keine eigene Datenklasse — effektiv ist die
-  // restriktivste aus dem Projektkontext (derzeit nur das Intake).
+  // Quellen tragen eine eigene Datenklasse; der Backend-Run meldet die
+  // restriktivste Einstufung aus Projekt und Snapshot-Quellen zurück.
   const effectiveDataClass: DataClass | null =
     backendDataClass ??
     (intake
-      ? mostRestrictiveDataClass([intake.vertraulichkeit || "public"])
+      ? mostRestrictiveDataClass([intake.vertraulichkeit || "confidential"])
       : null)
 
   // Run lifecycle: the page only starts a run and polls its status via the
@@ -603,18 +603,13 @@ function QuellenPageContent() {
     return () => clearInterval(timer)
   }, [liveMode, projectId, liveSources, capabilities, refreshSources])
 
-  const sourceClassification = React.useMemo(
-    () => dataClassificationFromFlat(effectiveDataClass ?? "public"),
-    [effectiveDataClass]
-  )
-
   const handleUploadSources = React.useCallback(
-    async (files: File[]) => {
+    async (files: File[], dataClass: DataClass) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
-      await uploadFiles(projectId, files, sourceClassification)
+      await uploadFiles(projectId, files, dataClassificationFromFlat(dataClass))
       await refreshSources()
     },
-    [projectId, sourceClassification, refreshSources]
+    [projectId, refreshSources]
   )
 
   const handleDeleteSource = React.useCallback(
@@ -629,21 +624,27 @@ function QuellenPageContent() {
   )
 
   const handleAddTextSource = React.useCallback(
-    async ({ title, text }: { title: string; text: string }) => {
+    async ({ title, text, dataClass }: { title: string; text: string; dataClass: DataClass }) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
-      await createTextSource(projectId, title, text, sourceClassification)
+      await createTextSource(
+        projectId,
+        title,
+        text,
+        dataClassificationFromFlat(dataClass)
+      )
       await refreshSources()
     },
-    [projectId, sourceClassification, refreshSources]
+    [projectId, refreshSources]
   )
 
   const handleAddUrlSource = React.useCallback(
-    async ({ url, kind }: { url: string; kind: UrlSourceKind }) => {
+    async ({ url, kind, dataClass }: { url: string; kind: UrlSourceKind; dataClass: DataClass }) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
       const canUseBackendUrlImport = Boolean(
         capabilities?.features?.url_import ||
           capabilities?.supported_source_types.includes("url")
       )
+      const classification = dataClassificationFromFlat(dataClass)
 
       if (canUseBackendUrlImport) {
         try {
@@ -651,7 +652,7 @@ function QuellenPageContent() {
             projectId,
             url,
             `${URL_SOURCE_KIND_LABELS[kind]}: ${url}`,
-            sourceClassification
+            classification
           )
           await refreshSources()
           return
@@ -665,7 +666,7 @@ function QuellenPageContent() {
         "URL-Import ist in dieser Umgebung nicht verfügbar. Kopieren Sie den Webseiteninhalt und fügen Sie ihn als Textquelle ein."
       )
     },
-    [capabilities, projectId, refreshSources, sourceClassification]
+    [capabilities, projectId, refreshSources]
   )
 
   const handleImportSources = React.useCallback(
@@ -887,6 +888,7 @@ function QuellenPageContent() {
                   onImportSources={handleImportSources}
                   onDeleteSource={handleDeleteSource}
                   acceptExtensions={[".pdf", ".docx", ".txt"]}
+                  defaultDataClass={effectiveDataClass ?? "confidential"}
                   currentUserName={currentUser.name}
                   openDetailsForId={sourceDetailId}
                   onDetailsOpenChange={(open) => {
@@ -898,7 +900,7 @@ function QuellenPageContent() {
                 {projectId && capabilities?.features?.web_research && (
                   <PublicResearchPanel
                     projectId={projectId}
-                    dataClass={effectiveDataClass ?? "public"}
+                    dataClass={effectiveDataClass ?? "confidential"}
                     onImported={refreshSources}
                   />
                 )}

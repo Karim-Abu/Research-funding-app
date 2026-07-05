@@ -69,6 +69,7 @@ class Settings(BaseSettings):
     run_default_max_retries: int = 1
     run_default_max_redrafts: int = 2
     run_default_timeout_seconds: int = 600
+    run_classification_source_merge_enabled: bool = True
 
     # Draft carry-over (Slice 2, Council E1-A): a new run reuses the latest
     # meaningful (user/agent/carried_over) draft version of the newest prior
