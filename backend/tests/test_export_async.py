@@ -119,9 +119,12 @@ def test_idempotency_replay_and_conflict(client):
     csrf, _pid, run_id = setup_completed_run(client)
     headers = mut(csrf)
     body = {"type": "markdown", "force_draft": False}
-    first = client.post(f"/api/v1/runs/{run_id}/exports", json=body, headers=headers)
-    second = client.post(f"/api/v1/runs/{run_id}/exports", json=body, headers=headers)
-    assert first.json()["resource_id"] == second.json()["resource_id"]  # replay
+    first = client.post(
+        f"/api/v1/runs/{run_id}/exports", json=body, headers=headers)
+    second = client.post(
+        f"/api/v1/runs/{run_id}/exports", json=body, headers=headers)
+    assert first.json()["resource_id"] == second.json()[
+        "resource_id"]  # replay
 
     conflict = client.post(
         f"/api/v1/runs/{run_id}/exports",
@@ -135,7 +138,8 @@ def test_idempotency_replay_and_conflict(client):
 def test_export_limit_returns_429(client):
     csrf, _pid, run_id = setup_completed_run(client)
     for _ in range(5):
-        assert create_export(client, csrf, run_id, "markdown").status_code == 202
+        assert create_export(client, csrf, run_id,
+                             "markdown").status_code == 202
     res = create_export(client, csrf, run_id, "markdown")
     assert res.status_code == 429
     assert res.json()["code"] == "export_limit_reached"

@@ -57,14 +57,16 @@ def run_export(db: Session, artifact: ExportArtifact) -> None:
     snapshot = artifact.export_snapshot_json
     classification = artifact.effective_data_classification
     for control_id in _PRE_CONTROLS:
-        _control(db, artifact, control_id, "passed", artifact.export_snapshot_hash)
+        _control(db, artifact, control_id, "passed",
+                 artifact.export_snapshot_hash)
     approval_status = "warning" if artifact.draft_marked else "passed"
     approval_detail = (
         f"phase=export; draft_marked={str(artifact.draft_marked).lower()}; "
         f"reason={'export_marked_as_draft' if artifact.draft_marked else 'approval_current'}; "
         f"snapshot_hash={artifact.export_snapshot_hash}"
     )
-    _control(db, artifact, "CTRL.APPROVAL_GATE", approval_status, approval_detail)
+    _control(db, artifact, "CTRL.APPROVAL_GATE",
+             approval_status, approval_detail)
     _control(
         db, artifact, "CTRL.EXPORT_CLASSIFICATION", "passed",
         f"sensitivity={classification.get('sensitivity')}",
@@ -84,7 +86,8 @@ def run_export(db: Session, artifact: ExportArtifact) -> None:
     try:
         stored = storage.put(data)
     except ExportTooLargeError:
-        _control(db, artifact, "CTRL.OUTPUT_SCHEMA", "failed", "size_limit_exceeded")
+        _control(db, artifact, "CTRL.OUTPUT_SCHEMA",
+                 "failed", "size_limit_exceeded")
         raise
 
     # Compensating: if the DB transition fails after the file lands, remove it.
@@ -101,9 +104,12 @@ def run_export(db: Session, artifact: ExportArtifact) -> None:
         invocation.duration_ms = int(
             (artifact.finished_at - started).total_seconds() * 1000
         )
-        _control(db, artifact, "CTRL.OUTPUT_SCHEMA", "passed", "output_validated")
-        _control(db, artifact, "CTRL.FILENAME_NORMALIZATION", "passed", artifact.filename)
-        _control(db, artifact, "CTRL.AUDIT_WRITE", "passed", "export_generated")
+        _control(db, artifact, "CTRL.OUTPUT_SCHEMA",
+                 "passed", "output_validated")
+        _control(db, artifact, "CTRL.FILENAME_NORMALIZATION",
+                 "passed", artifact.filename)
+        _control(db, artifact, "CTRL.AUDIT_WRITE",
+                 "passed", "export_generated")
         audit.record(
             db, workspace_id=artifact.workspace_id, actor_user_id=None,
             action="export.generated", target_type="export", target_id=artifact.export_id,

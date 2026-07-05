@@ -251,7 +251,8 @@ def node_aggregate_review(state: RunState) -> RunState:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
-        package = review_package.refresh_package(db, run, recompute_findings=False)
+        package = review_package.refresh_package(
+            db, run, recompute_findings=False)
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="CTRL.OUTPUT_SCHEMA", status="passed",
@@ -330,7 +331,8 @@ def get_graph():
     if _graph is None:
         builder = StateGraph(RunState)
         builder.add_node("initialize", node_initialize)
-        builder.add_node("validate_source_snapshot", node_validate_source_snapshot)
+        builder.add_node("validate_source_snapshot",
+                         node_validate_source_snapshot)
         builder.add_node(
             "extract_facts_and_map_evidence",
             node_extract_facts_and_map_evidence,
