@@ -275,8 +275,8 @@ def node_human_review(state: RunState) -> RunState:
             return {**state, "cancelled": True}
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
-            source_id=None, control_id="CTRL.APPROVAL_GATE", status="passed",
-            detail="review_available no_auto_approval",
+            source_id=None, control_id="CTRL.APPROVAL_GATE", status="warning",
+            detail="phase=human_review; reason=review_available_no_auto_approval",
         )
         _set_stage(db, run, "human_review")
         db.commit()

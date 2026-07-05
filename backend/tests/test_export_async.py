@@ -9,8 +9,22 @@ from app.exports.executor import recover_interrupted_exports
 from app.exports.service import prepare_export
 from app.storage.exports import get_export_storage
 from tests.conftest import OUTSIDER_EMAIL, OUTSIDER_PASSWORD, login
-from tests.export_helpers import create_export, download, get_export, make_export
+from tests.export_helpers import create_export, download, get_export, make_export, setup_approved_run
 from tests.review_helpers import mut, setup_completed_run
+
+
+def _linked_controls(db, invocation_id):
+    return db.scalars(
+        select(ControlResult).where(
+            ControlResult.tool_invocation_id == invocation_id
+        )
+    ).all()
+
+
+def _only_control(controls, control_id):
+    matches = [control for control in controls if control.control_id == control_id]
+    assert len(matches) == 1
+    return matches[0]
 
 
 def test_create_export_returns_202_async_accepted(client):
@@ -34,13 +48,69 @@ def test_lifecycle_reaches_available_with_tool_invocation(client):
         inv = db.get(ToolInvocation, row.tool_invocation_id)
         assert inv.tool_id == "create_export_artifact" and inv.status == "succeeded"
         # ControlResults linked to the invocation.
-        linked = db.scalars(
+        linked = _linked_controls(db, inv.invocation_id)
+        ids = {c.control_id for c in linked}
+        assert "CTRL.OUTPUT_SCHEMA" in ids
+        approval = _only_control(linked, "CTRL.APPROVAL_GATE")
+        assert approval.status == "warning"
+        assert "phase=export" in approval.detail
+        assert "draft_marked=true" in approval.detail
+        assert "reason=export_marked_as_draft" in approval.detail
+        assert row.export_snapshot_hash in approval.detail
+        classification = _only_control(linked, "CTRL.EXPORT_CLASSIFICATION")
+        assert classification.status == "passed"
+        assert classification.detail == (
+            f"sensitivity={row.effective_data_classification.get('sensitivity')}"
+        )
+    finally:
+        db.close()
+
+
+def test_approved_export_records_approval_gate_passed(client):
+    csrf, run_id = setup_approved_run(client)
+    artifact = make_export(client, csrf, run_id, "markdown")
+    db = SessionLocal()
+    try:
+        row = db.get(ExportArtifact, artifact["export_id"])
+        inv = db.get(ToolInvocation, row.tool_invocation_id)
+        approval = _only_control(
+            _linked_controls(db, inv.invocation_id), "CTRL.APPROVAL_GATE"
+        )
+        assert approval.status == "passed"
+        assert "phase=export" in approval.detail
+        assert "draft_marked=false" in approval.detail
+        assert "reason=approval_current" in approval.detail
+        assert row.export_snapshot_hash in approval.detail
+    finally:
+        db.close()
+
+
+def test_human_review_records_checkpoint_warning(client):
+    _csrf, project_id, _run_id = setup_completed_run(client)
+    db = SessionLocal()
+    try:
+        records = db.scalars(
             select(ControlResult).where(
-                ControlResult.tool_invocation_id == inv.invocation_id
+                ControlResult.project_id == project_id,
+                ControlResult.control_id == "CTRL.APPROVAL_GATE",
+                ControlResult.detail == (
+                    "phase=human_review; reason=review_available_no_auto_approval"
+                ),
             )
         ).all()
-        ids = {c.control_id for c in linked}
-        assert "CTRL.APPROVAL_GATE" in ids and "CTRL.OUTPUT_SCHEMA" in ids
+        assert records
+        assert all(record.status == "warning" for record in records)
+        passed = db.scalars(
+            select(ControlResult).where(
+                ControlResult.project_id == project_id,
+                ControlResult.control_id == "CTRL.APPROVAL_GATE",
+                ControlResult.status == "passed",
+                ControlResult.detail == (
+                    "phase=human_review; reason=review_available_no_auto_approval"
+                ),
+            )
+        ).all()
+        assert passed == []
     finally:
         db.close()
 

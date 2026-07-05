@@ -86,8 +86,8 @@ export const OVER_LIMIT_WARNING =
   "Dieses Feld überschreitet das Innolink-Zeichenlimit. Kürzen Sie den Text vor dem Export."
 
 // ---------------------------------------------------------------------------
-// Placeholder / open-input detection. Returns positions for "jump to" UX —
-// never surface the raw regex to the user.
+// Placeholder / open-input detection. This is deliberately broad for the
+// editor's "jump to" UX; export/readiness status uses lib/placeholders.ts.
 // ---------------------------------------------------------------------------
 function placeholderRegex(): RegExp {
   return /\[\[[^\]]*\]\]|\bTODO\b|\btbd\b|Angabe ergänzen|Platzhalter/gi
