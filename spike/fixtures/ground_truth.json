@@ -1,0 +1,37 @@
+{
+  "_comment": "Ground Truth für spike/fixtures/innolink_sample.pdf. present = Feld(-Label) ist im PDF vorhanden; expected_prefix = erster erwarteter Inhaltsausschnitt (null = Feld vorhanden, aber leer).",
+  "fields": {
+    "INTRO.APP.NAME": {
+      "present": true,
+      "expected_prefix": "SmartGrid Optimizer - Adaptive Lastprognose"
+    },
+    "INTRO.APP.NAME_EN": {
+      "present": true,
+      "expected_prefix": null
+    },
+    "INTRO.APP.ABSTRACT": {
+      "present": true,
+      "expected_prefix": "Das Projekt entwickelt eine adaptive Lastprognose"
+    },
+    "INTRO.APP.EXECUTIVE_SUMMARY": {
+      "present": true,
+      "expected_prefix": "Verteilnetzbetreiber stehen vor stark schwankenden"
+    },
+    "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS": {
+      "present": true,
+      "expected_prefix": "Die Netzwerk Stadt AG hält eine Minderheitsbeteiligung"
+    },
+    "VC.BUSINESS_TARGETS_MODEL.EDITOR": {
+      "present": true,
+      "expected_prefix": "3.1 Which business targets do you pursue"
+    },
+    "SOL.INNOVATION_SOLUTION.EDITOR": {
+      "present": true,
+      "expected_prefix": "4.1 What is the innovation in your solution?"
+    },
+    "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION": {
+      "present": true,
+      "expected_prefix": "Die Management-Stunden verteilen sich auf Projektleitung"
+    }
+  }
+}
