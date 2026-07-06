@@ -72,6 +72,12 @@ describe("projects client (live mode)", () => {
     expect(body.budget_framework_chf).toBe(350000)
   })
 
+  it("rejects intake without confidentiality before sending a create payload", async () => {
+    await expect(
+      createProjectFromIntake({ ...intake, vertraulichkeit: "" })
+    ).rejects.toThrow("confidentiality_missing")
+  })
+
   it("lists projects", async () => {
     server.use(
       http.get("/api/projects", () =>
@@ -123,7 +129,8 @@ describe("projects client (live mode)", () => {
       })
     )
     expect(card.progressPercent).toBe(72)
-    expect(card.currentStep).toBe(5)
+    // Backend step 5 (Entwurf) → UI step 6 (Partner & Budget inserted at 2).
+    expect(card.currentStep).toBe(6)
     expect(card.nextAction).toBe("continue_draft")
     expect(card.isDemo).toBe(true)
     expect(card.warningBadge).toBeUndefined()

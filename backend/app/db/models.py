@@ -103,6 +103,21 @@ class Project(Base):
     # DataClassification stored as a JSON object (5 contract fields).
     data_classification: Mapped[dict] = mapped_column(JSON, nullable=False)
     budget_framework_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # Structured budget inputs (Slice 1) — feed the deterministic 40-60% and
+    # 5%-cash rules via the frozen run snapshot. All optional; no BudgetPlan
+    # entity in this slice.
+    direct_total_project_costs_excluding_overhead: Mapped[float | None] = (
+        mapped_column(Float, nullable=True)
+    )
+    implementation_own_contribution: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    cash_contribution: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_requested_funding: Mapped[float | None] = mapped_column(
+        Float, nullable=True
+    )
+    budget_exception_basis: Mapped[str | None] = mapped_column(String, nullable=True)
+    duration_months: Mapped[int | None] = mapped_column(nullable=True)
     # Contract enum: draft | active | archived
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
     active_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -809,7 +824,7 @@ class PortalFieldDraft(Base):
 
 class DraftVersion(Base):
     """Immutable text version of a PortalFieldDraft (openapi DraftVersion).
-    created_by enum: template | user (M6 never sets agent)."""
+    created_by enum: template | user | agent | carried_over."""
 
     __tablename__ = "draft_versions"
 
@@ -819,12 +834,44 @@ class DraftVersion(Base):
     )
     text: Mapped[str] = mapped_column(Text, nullable=False)
     character_count: Mapped[int] = mapped_column(nullable=False)
-    # Contract enum: agent | user | template
+    # Contract enum: agent | user | template | carried_over
     created_by: Mapped[str] = mapped_column(String, nullable=False)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     # Internal audit only (not exposed): predecessor version + originating op.
     base_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
     source_operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class CopyEvent(Base):
+    """Server-side record of one Innolink copy action (Slice 3, Council E2-A).
+
+    Governance metadata only: the content_hash is taken from the copied
+    DraftVersion (sha256 of its text) — the raw field text is NEVER stored
+    here, and the free-text note is never mirrored into audit events."""
+
+    __tablename__ = "copy_events"
+
+    copy_event_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    # Warning codes (open | limit | review): as reported by the client vs.
+    # recomputed on the server — the union decides the override requirement.
+    client_warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    server_warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Contract enum: portal_finalization | warning_not_relevant |
+    # coordination_draft | other
+    override_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Free text only for reason "other"; max 200 chars, trimmed, event-only.
+    override_reason_note: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

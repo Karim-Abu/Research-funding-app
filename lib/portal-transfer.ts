@@ -3,7 +3,10 @@
 // Pure functions over existing DTOs — no new API, no backend.
 
 import type { PortalFieldDraftDto } from "./fields"
+import { hasPlaceholder } from "./placeholders"
 import type { ReviewPackageDto } from "./review"
+
+export { countPlaceholders, hasPlaceholder } from "./placeholders"
 
 // Canonical Innolink portal sections (field-id prefix → label). Mirrors the
 // editor's section map; the field ORDER comes from listFields (registry order),
@@ -14,8 +17,9 @@ export const SECTION_LABELS: Record<string, string> = {
   VC: "Wertschöpfung",
   SOL: "Lösung & Innovation",
   PS: "Projektplan",
+  SUM: "Summary & Submit",
 }
-export const SECTION_ORDER = ["INTRO", "ORG", "VC", "SOL", "PS"] as const
+export const SECTION_ORDER = ["INTRO", "ORG", "VC", "SOL", "PS", "SUM"] as const
 
 export function sectionKey(fieldId: string): string {
   return fieldId.split(".")[0]
@@ -23,20 +27,6 @@ export function sectionKey(fieldId: string): string {
 
 export function sectionLabel(fieldId: string): string {
   return SECTION_LABELS[sectionKey(fieldId)] ?? "Weitere"
-}
-
-// Visible, machine-detectable placeholder syntax from M6: [[Angabe ergänzen: …]].
-// TODO(P2): This regex is stricter than the editor's placeholder detection in
-// lib/draft-view.ts (which also matches TODO/tbd/[[…]]). Unifying them changes
-// placeholder counts and field readiness — align deliberately, not silently.
-const PLACEHOLDER_RE = /\[\[Angabe ergänzen:[^\]]*\]\]/g
-
-export function countPlaceholders(text: string): number {
-  return (text.match(PLACEHOLDER_RE) ?? []).length
-}
-
-export function hasPlaceholder(text: string): boolean {
-  return countPlaceholders(text) > 0
 }
 
 export function isComposite(fieldId: string): boolean {

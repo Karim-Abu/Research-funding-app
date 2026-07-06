@@ -26,11 +26,28 @@ export interface ProjectDto {
   funding_instrument_profile_id: string
   data_classification: DataClassification
   budget_framework_chf?: number | null
+  // Structured budget inputs (Slice 1) — edited on Partner & Budget.
+  direct_total_project_costs_excluding_overhead?: number | null
+  implementation_own_contribution?: number | null
+  cash_contribution?: number | null
+  total_requested_funding?: number | null
+  budget_exception_basis?: string | null
+  duration_months?: number | null
   status: ProjectStatus
   created_at: string
   updated_at: string
   active_run_id?: string | null
   workflow_summary?: WorkflowSummaryDto | null
+}
+
+/** PATCH /projects/{id} payload — structured budget fields (additive). */
+export interface ProjectBudgetPatch {
+  direct_total_project_costs_excluding_overhead?: number | null
+  implementation_own_contribution?: number | null
+  cash_contribution?: number | null
+  total_requested_funding?: number | null
+  budget_exception_basis?: string | null
+  duration_months?: number | null
 }
 
 interface ProjectListDto {
@@ -69,7 +86,8 @@ function idempotencyKey(): string {
 }
 
 function intakeToCreatePayload(intake: IntakeFormData) {
-  const flat = intake.vertraulichkeit || "public"
+  const flat = intake.vertraulichkeit
+  if (!flat) throw new Error("confidentiality_missing")
   const budget = intake.budgetrahmen.trim()
   return {
     title: intake.titel,
@@ -119,6 +137,49 @@ export async function createProjectFromIntake(
   return (await res.json()) as ProjectDto
 }
 
+export async function getProject(projectId: string): Promise<ProjectDto> {
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`)
+  if (!res.ok) throw new Error("project_load_failed")
+  return (await res.json()) as ProjectDto
+}
+
+export async function patchProject(
+  projectId: string,
+  patch: ProjectBudgetPatch
+): Promise<ProjectDto> {
+  const csrf = getCsrfToken()
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+    },
+    body: JSON.stringify(patch),
+  })
+  if (!res.ok) throw new Error("project_update_failed")
+  return (await res.json()) as ProjectDto
+}
+
+// The backend workflow_summary keeps its own step numbering WITHOUT the
+// Partner & Budget step (1 Intake, 2 Quellen, 3 Anforderungen, 4 Evidenz,
+// 5 Entwurf, 6 Review, 7 Abschluss, 8 Export). The UI model inserts
+// "Partner & Budget" as step 2, so backend steps translate explicitly here —
+// never silently. Backend "Abschluss" (7) is part of the UI Qualitätsprüfung.
+const BACKEND_STEP_TO_UI_STEP: Record<number, number> = {
+  1: 1,
+  2: 3,
+  3: 4,
+  4: 5,
+  5: 6,
+  6: 7,
+  7: 7,
+  8: 8,
+}
+
+function toUiStep(backendStep: number): number {
+  return BACKEND_STEP_TO_UI_STEP[backendStep] ?? backendStep
+}
+
 /** Derive the high-level card status from the available workflow signals. */
 function toCardStatus(summary?: WorkflowSummaryDto | null): ProjectCardStatus {
   if (summary?.warning_badge === "run_stopped") return "blockiert"
@@ -138,7 +199,7 @@ export function toDashboardCard(project: ProjectDto): DashboardProject {
     deadline: "Frist: offen",
     deadlineIso: null,
     progressPercent: summary?.bearbeitungsstand_percent ?? 0,
-    currentStep: summary?.current_step ?? 1,
+    currentStep: summary ? toUiStep(summary.current_step) : 1,
     currentStepLabel: summary?.current_step_label ?? null,
     cardStatus: toCardStatus(summary),
     lastEditedLabel: `Angelegt: ${new Date(

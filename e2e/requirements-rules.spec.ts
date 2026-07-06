@@ -158,9 +158,10 @@ test("M4 requirements & rules precheck end-to-end", async ({ page }) => {
     page.getByText(/Teilweise|Blockiert|Angaben nötig|Erfüllt|Offen/).first()
   ).toBeVisible()
 
-  // UI smoke: partner management lists the created partners.
+  // UI smoke: partner management lists the created partners (Slice 1: the
+  // page is the "Partner & Budget" workflow step).
   await page.goto("/partner")
-  await expect(page.getByText("Partner & Rollen")).toBeVisible()
+  await expect(page.getByText("Partner & Budget").first()).toBeVisible()
   await expect(page.getByText("ETH Zürich").first()).toBeVisible()
 
   await page.getByText("Anna Keller").first().click()

@@ -82,6 +82,9 @@ async function copyCard(page: import("@playwright/test").Page, fieldName: string
     await plainCopy.click()
   } else {
     await card.getByRole("button", { name: "Trotzdem kopieren…" }).click()
+    // Slice 3: copying despite warnings now requires a documented reason.
+    const reason = card.getByText("Feld wird im Portal fertiggestellt")
+    if (await reason.isVisible().catch(() => false)) await reason.click()
   }
   const confirm = card.getByRole("button", { name: "Trotzdem kopieren", exact: true })
   if (await confirm.isVisible().catch(() => false)) await confirm.click()
@@ -130,12 +133,23 @@ test("M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage
 
   // Copy the Abstract (a template placeholder → compact warning badge on the
   // card; the full sentence appears in the shared banner + confirm step).
-  await expect(
-    page
-      .locator("article", { has: page.getByRole("heading", { name: abstract.field_name }) })
-      .getByText("Offene Angaben"),
-  ).toBeVisible()
-  await copyCard(page, abstract.field_name)
+  const abstractCard = page.locator("article", {
+    has: page.getByRole("heading", { name: abstract.field_name }),
+  })
+  await expect(abstractCard.getByText("Offene Angaben")).toBeVisible()
+
+  // Slice 3 (E2-A): copying despite warnings requires a documented reason.
+  // Before a reason is chosen, "Trotzdem kopieren" must stay disabled.
+  await abstractCard.getByRole("button", { name: "Trotzdem kopieren…" }).click()
+  const confirmBtn = abstractCard.getByRole("button", {
+    name: "Trotzdem kopieren",
+    exact: true,
+  })
+  await expect(confirmBtn).toBeDisabled()
+  await abstractCard.getByText("Feld wird im Portal fertiggestellt").click()
+  await expect(confirmBtn).toBeEnabled()
+  await confirmBtn.click()
+  await expect(abstractCard.getByText(/Kopiert am/)).toBeVisible()
   expect(normalize(await page.evaluate(() => navigator.clipboard.readText()))).toBe(
     normalize(abstract.current_version.text),
   )

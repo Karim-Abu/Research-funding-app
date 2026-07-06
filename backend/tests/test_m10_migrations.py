@@ -21,9 +21,9 @@ _KEY_TABLES = {
     "projects", "source_documents", "source_versions", "analysis_runs",
     "portal_field_drafts", "draft_versions", "evidence_anchors", "evidence_links",
     "review_findings", "search_query_approvals", "market_comparisons",
-    "draft_claims", "claim_lineages", "run_quality_summaries",
+    "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "f3d7a9c2e5b1"  # reliability tables (Milestone 9K); M10 adds no migration.
+_HEAD = "262f51ba5176"  # copy events (Slice 3).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -45,6 +45,15 @@ def _tables(db_path: Path) -> set[str]:
     finally:
         con.close()
     return {r[0] for r in rows}
+
+
+def _project_columns(db_path: Path) -> set[str]:
+    con = sqlite3.connect(db_path)
+    try:
+        rows = con.execute("PRAGMA table_info(projects)").fetchall()
+    finally:
+        con.close()
+    return {r[1] for r in rows}
 
 
 def _head_version(db_path: Path) -> str | None:
@@ -101,10 +110,23 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
-    assert "run_quality_summaries" in _tables(db)
-    # Down one (drops the reliability tables), then back up.
+    assert "copy_events" in _tables(db)
+    # Down one (drops the Slice-3 copy_events table), then back up. The
+    # Slice-1 budget columns (one revision earlier) must survive the -1 step.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "run_quality_summaries" not in _tables(db)
+    assert "copy_events" not in _tables(db)
+    assert "cash_contribution" in _project_columns(db)
+    assert "duration_months" in _project_columns(db)
+    assert "run_quality_summaries" in _tables(db)
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
+    assert "copy_events" in _tables(db)
+    assert {
+        "direct_total_project_costs_excluding_overhead",
+        "implementation_own_contribution",
+        "cash_contribution",
+        "total_requested_funding",
+        "budget_exception_basis",
+        "duration_months",
+    } <= _project_columns(db)
     assert {"draft_claims", "claim_lineages", "run_quality_summaries"} <= _tables(db)

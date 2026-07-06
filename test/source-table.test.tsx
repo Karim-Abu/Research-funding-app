@@ -68,4 +68,60 @@ describe("SourceTable live statuses", () => {
     })
     expect(screen.getByText("Ausstehend")).toBeInTheDocument()
   })
+
+  it("sends the selected data class when adding a text source", async () => {
+    const onAddTextSource = vi.fn()
+    render(
+      <SourceTable
+        sources={[]}
+        controlled
+        defaultDataClass="confidential"
+        onAddTextSource={onAddTextSource}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Text einfügen" }))
+    expect(
+      screen.getByText(
+        "Bitte wählen Sie die Vertraulichkeitsstufe dieser Quelle. Wenn Sie unsicher sind, wählen Sie Vertraulich. Die restriktivere Einstufung von Projekt und Quelle gilt."
+      )
+    ).toBeInTheDocument()
+    fireEvent.change(screen.getByLabelText("Titel der Quelle"), {
+      target: { value: "Partnernotiz" },
+    })
+    fireEvent.change(screen.getByLabelText("Textinhalt"), {
+      target: { value: "Gesprächsnotiz" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Als Quelle hinzufügen" }))
+
+    await waitFor(() => {
+      expect(onAddTextSource).toHaveBeenCalledWith({
+        title: "Partnernotiz",
+        text: "Gesprächsnotiz",
+        dataClass: "confidential",
+      })
+    })
+  })
+
+  it("confirms file upload with the selected data class", async () => {
+    const onUploadFiles = vi.fn()
+    const { container } = render(
+      <SourceTable
+        sources={[]}
+        controlled
+        defaultDataClass="internal"
+        onUploadFiles={onUploadFiles}
+      />
+    )
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(["hello"], "a.txt", { type: "text/plain" })
+
+    fireEvent.change(input, { target: { files: [file] } })
+    await screen.findByRole("dialog", { name: "Datei hochladen" })
+    fireEvent.click(screen.getByRole("button", { name: "Hochladen" }))
+
+    await waitFor(() => {
+      expect(onUploadFiles).toHaveBeenCalledWith([file], "internal")
+    })
+  })
 })

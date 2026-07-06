@@ -10,6 +10,8 @@ from app.api.errors import ProblemException
 from app.config.settings import Settings
 from app.contracts.run import AsyncAccepted, RunCreate
 from app.db.models import AnalysisRun, AsyncOperation, UsageRecord
+from app.db.models import SourceVersion
+from app.policy.classification import resolve_effective_classification
 from app.registry import get_registry
 from app.repositories import audit, controls
 from app.repositories import processing_confirmations as confirmations_repo
@@ -29,6 +31,40 @@ RUN_CONTROLS = (
 )
 
 
+def _assert_non_relaxing_classification(
+    *, project_classification: dict, source_classifications: list[dict | None], effective: dict
+) -> None:
+    """Fail closed if the existing resolver ever relaxes sensitivity or NDA."""
+    for classification in [project_classification, *source_classifications]:
+        checked, _ = resolve_effective_classification(
+            classification or {}, effective)
+        if (
+            checked.get("sensitivity") != effective.get("sensitivity")
+            or bool(checked.get("nda_applies")) != bool(effective.get("nda_applies"))
+        ):
+            raise ProblemException(
+                status=500,
+                code="classification_merge_invariant",
+                title="Classification merge invariant failed",
+                detail="The run classification could not be resolved safely.",
+            )
+
+
+def _effective_run_classification(project_classification: dict, versions: list[SourceVersion]) -> dict:
+    effective = dict(project_classification or {})
+    for version in versions:
+        effective, _ = resolve_effective_classification(
+            effective, version.data_classification or None
+        )
+    _assert_non_relaxing_classification(
+        project_classification=project_classification,
+        source_classifications=[
+            version.data_classification for version in versions],
+        effective=effective,
+    )
+    return effective
+
+
 def prepare_run(
     db: Session,
     *,
@@ -46,6 +82,19 @@ def prepare_run(
     Caller owns idempotency records, commit, and execution/background dispatch.
     """
 
+    versions: list[SourceVersion] | None = None
+    effective_classification = project.data_classification
+    if settings.run_classification_source_merge_enabled:
+        versions = snapshot_service.build_source_snapshot(
+            db,
+            project_id=project.project_id,
+            workspace_id=project.workspace_id,
+            requested_version_ids=payload.settings.source_version_ids,
+        )
+        effective_classification = _effective_run_classification(
+            project.data_classification, versions
+        )
+
     # M9D.2 cloud-processing gate: non-cloud modes pass through; cloud_assisted is
     # allowed only for eligible (public/synthetic) projects with a valid one-run
     # confirmation. Blocks persist their own ControlResult + AuditEvent.
@@ -53,6 +102,9 @@ def prepare_run(
         db, project, payload.settings, actor_user_id=actor_user_id,
         requested_source_version_ids=payload.settings.source_version_ids or [],
         policy_version=POLICY_VERSION,
+        effective_classification=(
+            effective_classification if settings.run_classification_source_merge_enabled else None
+        ),
     )
     registry = get_registry()
 
@@ -64,12 +116,13 @@ def prepare_run(
             detail="A run is already active for this project.",
         )
 
-    versions = snapshot_service.build_source_snapshot(
-        db,
-        project_id=project.project_id,
-        workspace_id=project.workspace_id,
-        requested_version_ids=payload.settings.source_version_ids,
-    )
+    if versions is None:
+        versions = snapshot_service.build_source_snapshot(
+            db,
+            project_id=project.project_id,
+            workspace_id=project.workspace_id,
+            requested_version_ids=payload.settings.source_version_ids,
+        )
 
     actual_run_id = run_id or str(uuid.uuid4())
     run = AnalysisRun(
@@ -81,7 +134,7 @@ def prepare_run(
         current_stage="initialize",
         progress_percent=0,
         processing_mode=payload.settings.processing_mode,
-        effective_data_classification=project.data_classification,
+        effective_data_classification=effective_classification,
         snapshot_versions={
             **SNAPSHOT_VERSIONS,
             "source_version_ids": [v.source_version_id for v in versions],
@@ -107,10 +160,12 @@ def prepare_run(
     project_snapshot.build_and_persist(
         db, run_id=actual_run_id, project=project, registry=registry
     )
-    db.add(build_policy_snapshot(actual_run_id, payload.settings, settings, cloud_decision))
+    db.add(build_policy_snapshot(actual_run_id,
+           payload.settings, settings, cloud_decision))
     if cloud_decision.confirmation is not None:
         # Consume the one-run confirmation now that the cloud run is committed.
-        confirmations_repo.mark_used(db, cloud_decision.confirmation, actual_run_id)
+        confirmations_repo.mark_used(
+            db, cloud_decision.confirmation, actual_run_id)
     db.add(
         UsageRecord(
             usage_record_id=str(uuid.uuid4()),

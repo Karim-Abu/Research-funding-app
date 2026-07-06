@@ -40,6 +40,8 @@ export interface RequirementAssessmentDto {
   stale: boolean
   evidence_links: EvidenceLinkDto[]
   open_issues: OpenIssueDto[]
+  // Additive (Slice 4): registry-declared portal fields this requirement affects.
+  affected_field_ids?: string[]
 }
 
 // German user-facing labels (recommended in the milestone spec).

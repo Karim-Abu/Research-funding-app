@@ -2,6 +2,7 @@ import { describe, it, expect, vi, afterEach } from "vitest"
 import { render, screen, fireEvent, waitFor } from "@testing-library/react"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import type { PortalFieldDraftDto } from "@/lib/fields"
+import type { PortalFieldInfoDto } from "@/lib/portal-fields"
 import type { ReviewPackageDto } from "@/lib/review"
 
 function setClipboard(value: unknown) {
@@ -57,6 +58,105 @@ function reviewPkg(overrides: Partial<ReviewPackageDto> = {}): ReviewPackageDto 
 }
 
 describe("PortalTransfer", () => {
+  it("toggle shows all portal sections incl. SUM; default shows only supported (Slice 4)", () => {
+    const catalog: PortalFieldInfoDto[] = [
+      {
+        field_id: "INTRO.APP.ABSTRACT",
+        section: "INTRO",
+        label: "Abstract",
+        character_limit: 300,
+        mandatory_status: "required",
+        required: true,
+        support_mode: "draft_text",
+        field_kind: "narrative_text",
+        display_mode: "draft",
+        draft_available: true,
+      },
+      {
+        field_id: "INTRO.APP.EXECUTIVE_SUMMARY",
+        section: "INTRO",
+        label: "Executive Summary",
+        character_limit: null,
+        mandatory_status: "needs_verification",
+        required: null,
+        support_mode: "draft_text",
+        field_kind: "narrative_text",
+        display_mode: "draft",
+        draft_available: false,
+      },
+      {
+        field_id: "PS.WORK_PACKAGE.NAME",
+        section: "PS",
+        label: "Work package name",
+        character_limit: null,
+        mandatory_status: "required",
+        required: true,
+        support_mode: "user_input_or_suggestion",
+        field_kind: "text_or_structured_input",
+        display_mode: "checklist",
+        draft_available: false,
+      },
+      {
+        field_id: "SUM.COVER_LETTER.UPLOAD",
+        section: "SUM",
+        label: "Cover letter",
+        character_limit: null,
+        mandatory_status: "optional",
+        required: false,
+        support_mode: "upload_validate",
+        field_kind: "file_upload",
+        display_mode: "upload",
+        draft_available: false,
+      },
+      {
+        field_id: "SUM.SUBMIT.BUTTON",
+        section: "SUM",
+        label: "Submit application",
+        character_limit: null,
+        mandatory_status: "not_applicable",
+        required: false,
+        support_mode: "action_only",
+        field_kind: "action_or_lookup",
+        display_mode: "external_only",
+        draft_available: false,
+      },
+    ]
+    const fields = [field("INTRO.APP.ABSTRACT", "Abstract", "Kurzfassung.")]
+    render(
+      <PortalTransfer fields={fields} review={reviewPkg()} portalFields={catalog} />
+    )
+
+    // Default: supported view only — no manual checklist, no SUM section.
+    expect(
+      screen.queryByRole("heading", { name: "Im Portal manuell erfassen" })
+    ).toBeNull()
+    expect(screen.queryByText("Summary & Submit")).toBeNull()
+
+    fireEvent.click(screen.getByRole("button", { name: "Alle Portalfelder" }))
+    expect(
+      screen.getByRole("heading", { name: "Im Portal manuell erfassen" })
+    ).toBeInTheDocument()
+    expect(screen.getByText("Summary & Submit")).toBeInTheDocument()
+    // display_mode badges use user-facing labels, never technical values.
+    expect(screen.getByText("Datei-Upload im Portal")).toBeInTheDocument()
+    expect(screen.getByText("Im Portal beachten")).toBeInTheDocument()
+    expect(
+      screen.getByText("Textfeld im Portal — im MVP noch nicht unterstützt")
+    ).toBeInTheDocument()
+    expect(screen.queryByText("external_only")).toBeNull()
+    // Supported draft field does NOT appear in the manual checklist.
+    const checklist = screen.getByLabelText("Im Portal manuell erfassen")
+    expect(checklist).not.toHaveTextContent("Abstract")
+    // Read-only: no check-off inputs.
+    expect(screen.queryByRole("checkbox")).toBeNull()
+
+    // Back to the default view.
+    fireEvent.click(screen.getByRole("button", { name: "Unterstützte Felder" }))
+    expect(
+      screen.queryByRole("heading", { name: "Im Portal manuell erfassen" })
+    ).toBeNull()
+  })
+
   it("groups fields by section in registry order and lists coverage", () => {
     const fields = [
       field("INTRO.APP.ABSTRACT", "Abstract", "Kurzfassung."),

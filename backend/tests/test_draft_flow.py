@@ -1,10 +1,13 @@
 """End-to-end deterministic template drafts: run -> drafts -> edit -> links -> API."""
 from __future__ import annotations
 
+import hashlib
 import uuid
 
-from app.db.models import DraftVersion, RequirementAssessment
+from app.config.settings import get_settings
+from app.db.models import AnalysisRun, DraftVersion, PortalFieldDraft, RequirementAssessment
 from app.db.session import SessionLocal
+from app.repositories import draft_suggestions as suggestions_repo
 from sqlalchemy import select
 from tests.conftest import (
     ANNA_EMAIL,
@@ -231,6 +234,215 @@ def test_graph_drafts_do_not_change_m4_assessments(client):
     _csrf, _pid, run_id = _setup_run(client)
     statuses = {a["requirement_id"]: a["status"] for a in client.get(f"/api/v1/runs/{run_id}/requirements").json()}
     assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "partial"
+
+
+# --- draft carry-over (Slice 2, Council E1-A) --------------------------------
+
+
+def _start_second_run(client, csrf, project_id) -> str:
+    """Start another run on the same project (the prior one is completed)."""
+    run = client.post(
+        f"/api/v1/projects/{project_id}/runs",
+        json={"settings": {"processing_mode": "deterministic_only", "max_cost_chf": 0, "max_llm_calls": 0, "max_web_calls": 0}},
+        headers=_mut(csrf),
+    ).json()
+    run_id = run["resource_id"]
+    assert client.get(f"/api/v1/runs/{run_id}").json()["status"] == "completed"
+    return run_id
+
+
+def _patch_abstract(client, csrf, run_id, text) -> dict:
+    draft = client.get(f"/api/v1/runs/{run_id}/fields/{ABSTRACT}").json()
+    res = client.patch(
+        f"/api/v1/runs/{run_id}/fields/{ABSTRACT}",
+        json={"base_version_id": draft["current_version"]["draft_version_id"], "text": text},
+        headers=unsafe_headers(csrf),
+    )
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def test_carry_over_user_edit_into_next_run(client):
+    """T1/T2: run1 edit → run2 carries the text; first run stays template."""
+    csrf, project_id, run1 = _setup_run(client)
+    first = client.get(f"/api/v1/runs/{run1}/fields/{ABSTRACT}").json()
+    assert first["current_version"]["created_by"] == "template"  # T2 (Erst-Run)
+
+    _patch_abstract(client, csrf, run1, "Kurzfassung aus Durchlauf eins.")
+    run2 = _start_second_run(client, csrf, project_id)
+    carried = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+    assert carried["current_version"]["text"] == "Kurzfassung aus Durchlauf eins."
+    assert carried["current_version"]["created_by"] == "carried_over"
+    assert carried["open_issue_count"] == 0  # no placeholder in the carried text
+
+
+def test_carry_over_ignores_proposed_suggestions(client):
+    """T3: a proposed A2 suggestion stays on the old run and is never carried."""
+    csrf, project_id, run1 = _setup_run(client)
+    _patch_abstract(client, csrf, run1, "Manueller Stand.")
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run1)
+        draft = db.scalar(
+            select(PortalFieldDraft).where(
+                PortalFieldDraft.run_id == run1, PortalFieldDraft.field_id == ABSTRACT
+            )
+        )
+        suggestions_repo.create(
+            db, run, draft_id=draft.draft_id,
+            base_version_id=draft.current_version_id, field_id=ABSTRACT,
+            profile_id="M9D.field_drafting_suggestion",
+            operation_id=str(uuid.uuid4()), agent_invocation_id=None,
+            prompt_version=None, model_route=None, model_id=None,
+            suggested_text="KI-Vorschlag, nie übernommen.", rationale=None,
+            evidence_anchor_ids=[], open_issue_ids=[], placeholders=[],
+            character_count=28,
+        )
+        db.commit()
+    finally:
+        db.close()
+
+    run2 = _start_second_run(client, csrf, project_id)
+    carried = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+    assert carried["current_version"]["text"] == "Manueller Stand."
+    assert carried["current_version"]["created_by"] == "carried_over"
+
+    db = SessionLocal()
+    try:
+        old_draft = db.scalar(
+            select(PortalFieldDraft).where(
+                PortalFieldDraft.run_id == run1, PortalFieldDraft.field_id == ABSTRACT
+            )
+        )
+        suggestion = suggestions_repo.get_proposed_for(
+            db, run1, old_draft.draft_id, old_draft.current_version_id
+        )
+        assert suggestion is not None  # stays proposed on the old run
+    finally:
+        db.close()
+
+
+def test_carry_over_with_placeholder_sets_open_issue(client):
+    """T4: a carried placeholder keeps the deterministic field issue open."""
+    csrf, project_id, run1 = _setup_run(client)
+    _patch_abstract(client, csrf, run1, "Kurzfassung. [[Angabe ergänzen: Marktzahlen]]")
+    run2 = _start_second_run(client, csrf, project_id)
+    carried = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+    assert carried["current_version"]["created_by"] == "carried_over"
+    assert carried["open_issue_count"] == 1
+    assert carried["open_issues"]
+
+
+def test_carry_over_does_not_carry_approvals(client):
+    """T5: run2 starts unapproved; approval blockers stay fully effective."""
+    csrf, project_id, run1 = _setup_run(client)
+    _patch_abstract(client, csrf, run1, "Kurzfassung ohne Platzhalter.")
+    pkg1 = client.get(f"/api/v1/runs/{run1}/review").json()
+    client.post(
+        f"/api/v1/runs/{run1}/rechecks",
+        json={"expected_review_package_version": pkg1["review_package_version"], "changed_target_refs": []},
+        headers=_mut(csrf),
+    )
+    pkg1 = client.get(f"/api/v1/runs/{run1}/review").json()
+    approved = client.post(
+        f"/api/v1/runs/{run1}/approvals",
+        json={
+            "scope": "field", "scope_id": ABSTRACT,
+            "expected_approval_scope_hash": pkg1["current_approval_scope_hash"],
+            "expected_review_package_version": pkg1["review_package_version"],
+            "confirm_not_submission_approval": True,
+        },
+        headers=_mut(csrf),
+    )
+    assert approved.status_code == 201, approved.text
+
+    run2 = _start_second_run(client, csrf, project_id)
+    pkg2 = client.get(f"/api/v1/runs/{run2}/review").json()
+    assert pkg2["approval_status"] != "approved"  # nothing carried
+    # Run-scope approval on run2 is still blocked (other fields carry templates
+    # with placeholders) — the blocker mechanics are untouched.
+    blocked = client.post(
+        f"/api/v1/runs/{run2}/approvals",
+        json={
+            "scope": "run", "scope_id": run2,
+            "expected_approval_scope_hash": pkg2["current_approval_scope_hash"],
+            "expected_review_package_version": pkg2["review_package_version"],
+            "confirm_not_submission_approval": True,
+        },
+        headers=_mut(csrf),
+    )
+    assert blocked.status_code == 409
+    assert blocked.json()["code"] == "approval_blocked"
+
+
+def test_carry_over_flag_off_keeps_template_behavior(client, monkeypatch):
+    """T6: draft_carry_over_enabled=false → exactly today's template path."""
+    csrf, project_id, run1 = _setup_run(client)
+    _patch_abstract(client, csrf, run1, "Wird bei Flag off nicht übernommen.")
+    monkeypatch.setattr(get_settings(), "draft_carry_over_enabled", False)
+    run2 = _start_second_run(client, csrf, project_id)
+    draft = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+    assert draft["current_version"]["created_by"] == "template"
+    assert "[[Angabe ergänzen:" in draft["current_version"]["text"]
+
+
+def test_newer_template_only_run_does_not_displace_user_work(client, monkeypatch):
+    """T7: a template-only run in between (flag off) must not shadow the older
+    user edit — the newest *meaningful* version wins."""
+    csrf, project_id, run1 = _setup_run(client)
+    _patch_abstract(client, csrf, run1, "Nutzertext aus Durchlauf eins.")
+    monkeypatch.setattr(get_settings(), "draft_carry_over_enabled", False)
+    run2 = _start_second_run(client, csrf, project_id)
+    assert (
+        client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()["current_version"]["created_by"]
+        == "template"
+    )
+    monkeypatch.setattr(get_settings(), "draft_carry_over_enabled", True)
+    run3 = _start_second_run(client, csrf, project_id)
+    third = client.get(f"/api/v1/runs/{run3}/fields/{ABSTRACT}").json()
+    assert third["current_version"]["text"] == "Nutzertext aus Durchlauf eins."
+    assert third["current_version"]["created_by"] == "carried_over"
+
+
+def test_carry_over_over_limit_text_is_kept_and_blocks_review(client):
+    """T8: over-limit legacy text is carried (never dropped); the existing
+    draft_over_limit review blocker gates the new run."""
+    csrf, project_id, run1 = _setup_run(client)
+    long_text = "x" * 400  # ABSTRACT limit is 300
+    db = SessionLocal()
+    try:
+        draft = db.scalar(
+            select(PortalFieldDraft).where(
+                PortalFieldDraft.run_id == run1, PortalFieldDraft.field_id == ABSTRACT
+            )
+        )
+        # Simulate legacy data: an over-limit user version set directly (the
+        # API guards edits, so this state can only pre-exist).
+        version = DraftVersion(
+            draft_version_id=str(uuid.uuid4()), draft_id=draft.draft_id,
+            text=long_text, character_count=len(long_text), created_by="user",
+            content_hash=hashlib.sha256(long_text.encode("utf-8")).hexdigest(),
+            base_version_id=draft.current_version_id,
+        )
+        db.add(version)
+        db.flush()
+        draft.current_version_id = version.draft_version_id
+        db.commit()
+    finally:
+        db.close()
+
+    run2 = _start_second_run(client, csrf, project_id)
+    carried = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+    assert carried["current_version"]["text"] == long_text
+    assert carried["current_version"]["created_by"] == "carried_over"
+
+    pkg = client.get(f"/api/v1/runs/{run2}/review").json()
+    over_limit = [
+        f for f in pkg["findings"]
+        if f["field_id"] == ABSTRACT and f["severity"] == "blocker"
+        and "Limit" in f["description"]
+    ]
+    assert over_limit, pkg["findings"]
 
 
 def test_initial_versions_are_template_never_agent(client):

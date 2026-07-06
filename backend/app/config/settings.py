@@ -69,6 +69,17 @@ class Settings(BaseSettings):
     run_default_max_retries: int = 1
     run_default_max_redrafts: int = 2
     run_default_timeout_seconds: int = 600
+    run_classification_source_merge_enabled: bool = True
+
+    # Draft carry-over (Slice 2, Council E1-A): a new run reuses the latest
+    # meaningful (user/agent/carried_over) draft version of the newest prior
+    # run per field instead of rebuilding the template. Off → template-only.
+    draft_carry_over_enabled: bool = True
+
+    # Copy governance (Slice 3, Council E2-A): the Innolink copy view records a
+    # server-side CopyEvent per copy. Off → the UI copies without a server call
+    # (today's behavior); the endpoint itself stays active.
+    copy_events_enabled: bool = True
 
     # Deterministic exports (Milestone 8) --------------------------------
     export_storage_dir: str = "var/exports"

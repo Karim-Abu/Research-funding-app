@@ -28,6 +28,7 @@ const stepStatus: StepStatus[] = [
   "done",
   "done",
   "done",
+  "done",
   "current",
 ]
 
@@ -183,7 +184,7 @@ export default function ExportPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={7}
+      currentStep={8}
       stepStatus={stepStatus}
     >
       {mode === "live" ? <LiveExportContainer /> : <MockExportBody />}

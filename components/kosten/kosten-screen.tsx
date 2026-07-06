@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import {
+  AlertTriangle,
   ChevronRight,
   CheckCircle2,
   XCircle,
@@ -605,6 +606,17 @@ function DiensteSection() {
 export function KostenScreen({ role }: KostenScreenProps) {
   return (
     <div className="flex flex-col gap-8 px-6 py-8 pb-12">
+      {/* Beta: dieser Screen zeigt ausschließlich Beispieldaten. */}
+      <div
+        role="note"
+        className="flex items-center gap-2 rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3"
+      >
+        <AlertTriangle className="size-4 shrink-0 text-status-partial" />
+        <p className="text-sm text-foreground">
+          Beispieldaten — noch nicht mit dem Backend verbunden.
+        </p>
+      </div>
+
       {/* Page header */}
       <div>
         <h1 className="text-xl font-semibold text-foreground">

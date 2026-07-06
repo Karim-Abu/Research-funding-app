@@ -71,6 +71,7 @@ import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-di
 import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
 import { getActiveProjectId } from "@/lib/intake-store"
 import {
+  CREATED_BY_LABELS,
   liveFieldToViewModel,
   pickDefaultTab,
   type AssistantTab,
@@ -468,15 +469,18 @@ export function LiveEditor({
   const anchorById = new Map(anchors.map((a) => [a.anchor_id, a]))
   const visibleLinks = draftLinks.filter((l) => l.status !== "removed")
 
-  // Requirements ↔ field join: open findings carry both field_id and
-  // requirement_id — the contract has no direct field↔requirement mapping.
+  // Requirements ↔ field join (Slice 4): primary over the registry-declared
+  // affected_field_ids; the findings-based join stays as a union fallback for
+  // findings whose requirement does not declare the field.
   const fieldRequirementIds = new Set(
     selectedFindings
       .map((f) => f.requirement_id)
       .filter((id): id is string => Boolean(id))
   )
-  const fieldRequirements = (requirements ?? []).filter((r) =>
-    fieldRequirementIds.has(r.requirement_id)
+  const fieldRequirements = (requirements ?? []).filter(
+    (r) =>
+      (selected && r.affected_field_ids?.includes(selected.field_id)) ||
+      fieldRequirementIds.has(r.requirement_id)
   )
 
   const viewModels = fields.map((f) => liveFieldToViewModel(f, review))
@@ -858,7 +862,11 @@ export function LiveEditor({
       onSave={save}
       saveDisabled={saveState === "saving" || saveState === "saved" || overLimit}
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
-      deinTextBadge={<Badge variant="secondary">Strukturvorlage</Badge>}
+      deinTextBadge={
+        <Badge variant="secondary">
+          {CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf"}
+        </Badge>
+      }
       deinTextHint={
         <p className="text-xs text-muted-foreground">Bitte fachlich prüfen und ergänzen.</p>
       }

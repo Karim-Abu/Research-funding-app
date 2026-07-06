@@ -13,9 +13,13 @@ import {
   listPartners,
   createPartner,
   deletePartner,
+  PARTNER_SAVE_HINT_KEY,
+  type IndependenceStatus,
   type PartnerDto,
   type PartnerType,
 } from "@/lib/partners"
+import { BudgetForm } from "@/components/partner/budget-form"
+import type { StepStatus } from "@/lib/types"
 
 const PARTNER_TYPE_LABELS: Record<PartnerType, string> = {
   research_partner: "Forschungspartner",
@@ -23,9 +27,28 @@ const PARTNER_TYPE_LABELS: Record<PartnerType, string> = {
   other: "Weitere",
 }
 
+const INDEPENDENCE_LABELS: Record<IndependenceStatus, string> = {
+  confirmed: "bestätigt",
+  exception: "Ausnahme beantragt",
+  needs_input: "Angabe nötig",
+}
+
+// Partner & Budget ist Workflow-Schritt 2 (nach Intake).
+const partnerStepStatus: StepStatus[] = [
+  "done",
+  "current",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+  "upcoming",
+]
+
 interface FormState {
   name: string
   partner_type: PartnerType
+  project_role: string
   country: string
   swiss_value_creation: "" | "true" | "false"
   research_partner_eligibility_status: string
@@ -36,6 +59,7 @@ interface FormState {
 const EMPTY_FORM: FormState = {
   name: "",
   partner_type: "research_partner",
+  project_role: "",
   country: "",
   swiss_value_creation: "",
   research_partner_eligibility_status: "",
@@ -59,6 +83,21 @@ export function PartnerManager() {
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const projectId = React.useMemo(() => getActiveProjectId(), [])
+
+  // B2: one-time hint set by the intake form when partner persistence failed.
+  const [intakeHint, setIntakeHint] = React.useState<string | null>(null)
+  React.useEffect(() => {
+    try {
+      if (window.sessionStorage.getItem(PARTNER_SAVE_HINT_KEY)) {
+        window.sessionStorage.removeItem(PARTNER_SAVE_HINT_KEY)
+        setIntakeHint(
+          "Projekt angelegt, Partner konnten nicht gespeichert werden — bitte im Schritt Partner & Budget ergänzen."
+        )
+      }
+    } catch {
+      // storage blocked — no hint
+    }
+  }, [])
 
   const refresh = React.useCallback(async () => {
     if (!projectId) return
@@ -85,6 +124,7 @@ export function PartnerManager() {
       await createPartner(projectId, {
         name: form.name.trim(),
         partner_type: form.partner_type,
+        project_role: nullable(form.project_role.trim()),
         country: nullable(form.country),
         swiss_value_creation: tri(form.swiss_value_creation),
         research_partner_eligibility_status:
@@ -116,15 +156,30 @@ export function PartnerManager() {
     setForm((prev) => ({ ...prev, ...patch }))
 
   return (
-    <AppShell user={currentUser} projects={projects} activeProjectId={activeProjectId}>
+    <AppShell
+      user={currentUser}
+      projects={projects}
+      activeProjectId={activeProjectId}
+      currentStep={2}
+      stepStatus={[...partnerStepStatus]}
+    >
       <div className="mx-auto max-w-4xl px-6 py-10">
         <header className="mb-6">
-          <h1 className="text-xl font-semibold">Partner &amp; Rollen</h1>
+          <h1 className="text-xl font-semibold">Partner &amp; Budget</h1>
           <p className="text-sm text-muted-foreground">
-            Erfassen Sie Forschungs- und Umsetzungspartner. Diese Angaben fliessen
-            in die formale Prüfung der Fördervoraussetzungen ein.
+            Erfassen Sie Forschungs- und Umsetzungspartner sowie die Budgeteckwerte.
+            Diese Angaben fliessen in die formale Prüfung der Fördervoraussetzungen ein.
           </p>
         </header>
+
+        {intakeHint && (
+          <div
+            role="alert"
+            className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900"
+          >
+            {intakeHint}
+          </div>
+        )}
 
         {error && (
           <div
@@ -169,6 +224,47 @@ export function PartnerManager() {
               onChange={(e) => set({ country: e.target.value })}
               placeholder="CH"
             />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="p-role">Rolle im Projekt</Label>
+            <Input
+              id="p-role"
+              value={form.project_role}
+              onChange={(e) => set({ project_role: e.target.value })}
+              placeholder="z. B. Entwicklung des Prototyps"
+            />
+          </div>
+          <div>
+            <Label htmlFor="p-pers">Personelle Unabhängigkeit</Label>
+            <select
+              id="p-pers"
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.personnel_independence_status}
+              onChange={(e) =>
+                set({ personnel_independence_status: e.target.value })
+              }
+            >
+              <option value="">unbekannt</option>
+              <option value="confirmed">bestätigt</option>
+              <option value="exception">Ausnahme beantragt</option>
+              <option value="needs_input">Angabe nötig</option>
+            </select>
+          </div>
+          <div>
+            <Label htmlFor="p-fin">Finanzielle Unabhängigkeit</Label>
+            <select
+              id="p-fin"
+              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+              value={form.financial_independence_status}
+              onChange={(e) =>
+                set({ financial_independence_status: e.target.value })
+              }
+            >
+              <option value="">unbekannt</option>
+              <option value="confirmed">bestätigt</option>
+              <option value="exception">Ausnahme beantragt</option>
+              <option value="needs_input">Angabe nötig</option>
+            </select>
           </div>
           {form.partner_type === "implementation_partner" && (
             <div>
@@ -231,6 +327,9 @@ export function PartnerManager() {
               <li key={p.partner_id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">{p.name}</p>
+                  {p.project_role && (
+                    <p className="text-xs text-muted-foreground">{p.project_role}</p>
+                  )}
                   <div className="mt-1 flex flex-wrap gap-2">
                     <Badge variant="secondary">
                       {PARTNER_TYPE_LABELS[p.partner_type]}
@@ -239,6 +338,16 @@ export function PartnerManager() {
                     {p.research_partner_eligibility_status && (
                       <Badge variant="outline">
                         {p.research_partner_eligibility_status}
+                      </Badge>
+                    )}
+                    {p.personnel_independence_status && (
+                      <Badge variant="outline">
+                        {`Personell: ${INDEPENDENCE_LABELS[p.personnel_independence_status]}`}
+                      </Badge>
+                    )}
+                    {p.financial_independence_status && (
+                      <Badge variant="outline">
+                        {`Finanziell: ${INDEPENDENCE_LABELS[p.financial_independence_status]}`}
                       </Badge>
                     )}
                   </div>
@@ -256,6 +365,8 @@ export function PartnerManager() {
             ))}
           </ul>
         )}
+
+        {projectId && <BudgetForm projectId={projectId} />}
       </div>
     </AppShell>
   )

@@ -19,6 +19,7 @@ import {
   PenLine,
   CheckSquare,
   Download,
+  Users,
   Wallet,
   PanelLeftClose,
   PanelLeftOpen,
@@ -50,6 +51,7 @@ interface DisabledLink {
 const currentApplication: NavLink[] = [
   { label: "Übersicht", href: "/", icon: LayoutDashboard },
   { label: "Intake", href: "/intake", icon: ClipboardList },
+  { label: "Partner & Budget", href: "/partner", icon: Users },
   { label: "Quellen", href: "/quellen", icon: Database },
   { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
   { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },
@@ -58,7 +60,7 @@ const currentApplication: NavLink[] = [
   // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
   // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
   { label: "Export", href: "/export", icon: Download },
-  { label: "Kosten & Laufzeit", href: "/kosten", icon: Wallet },
+  { label: "Kosten & Laufzeit (Demo)", href: "/kosten", icon: Wallet },
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.

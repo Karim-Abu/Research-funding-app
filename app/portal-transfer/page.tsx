@@ -9,14 +9,17 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import { getActiveProjectId, getCurrentRunId, loadIntake } from "@/lib/intake-store"
+import { getCapabilities } from "@/lib/capabilities"
 import { listProjectRuns } from "@/lib/runs"
 import { charCount, listFields, type PortalFieldDraftDto } from "@/lib/fields"
+import { listPortalFields, type PortalFieldInfoDto } from "@/lib/portal-fields"
 import { getReview, type ReviewPackageDto } from "@/lib/review"
 import { getRunFields, ApiError, BRIDGE_UNREACHABLE_MESSAGE } from "@/lib/api"
 import type { PortalFieldDraftDto as MockFieldDto } from "@/lib/backend-contract"
 import type { StepStatus } from "@/lib/types"
 
 const stepStatus: StepStatus[] = [
+  "done",
   "done",
   "done",
   "done",
@@ -67,7 +70,16 @@ function emptyState(message: string) {
 function LivePortalTransfer({ runId }: { runId: string }) {
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
+  // Slice 4: full registry catalog for the "Alle Portalfelder" view.
+  // Fail-open: on error the toggle is simply absent (today's view).
+  const [portalFields, setPortalFields] = React.useState<
+    PortalFieldInfoDto[] | null
+  >(null)
   const [error, setError] = React.useState<string | null>(null)
+  // Slice 3: whether copies are logged server-side. On a capabilities failure
+  // we still attempt logging (the endpoint is active; errors go the fail-open
+  // path) — only an explicit `false` disables the call.
+  const [copyEventsEnabled, setCopyEventsEnabled] = React.useState(true)
 
   const load = React.useCallback(() => {
     setError(null)
@@ -77,6 +89,9 @@ function LivePortalTransfer({ runId }: { runId: string }) {
         setFields(f)
         // Review is best-effort context; missing review must not break the view.
         getReview(runId).then(setReview).catch(() => setReview(null))
+        listPortalFields(runId)
+          .then(setPortalFields)
+          .catch(() => setPortalFields(null))
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Feldtexte konnten nicht geladen werden.")
@@ -84,6 +99,11 @@ function LivePortalTransfer({ runId }: { runId: string }) {
   }, [runId])
 
   React.useEffect(() => load(), [load])
+  React.useEffect(() => {
+    getCapabilities()
+      .then((caps) => setCopyEventsEnabled(caps.features.copy_events !== false))
+      .catch(() => setCopyEventsEnabled(true))
+  }, [])
 
   if (error) {
     return (
@@ -110,7 +130,11 @@ function LivePortalTransfer({ runId }: { runId: string }) {
     <PortalTransfer
       fields={fields}
       review={review}
+      portalFields={portalFields}
       confidentialReminder={isConfidential()}
+      runId={runId}
+      copyEventsEnabled={copyEventsEnabled}
+      onReload={load}
     />
   )
 }
@@ -202,7 +226,7 @@ export default function PortalTransferPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={7}
+      currentStep={8}
       stepStatus={stepStatus}
     >
       {mode === "live" ? <LivePortalTransferContainer /> : <MockPortalTransfer />}

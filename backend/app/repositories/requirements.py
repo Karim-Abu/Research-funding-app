@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from app.contracts.requirement import OpenIssue as OpenIssueSchema
 from app.contracts.requirement import RequirementAssessment as AssessmentSchema
 from app.db.models import OpenIssue, RequirementAssessment
+from app.registry import get_registry
 from app.repositories import evidence as evidence_repo
 
 
@@ -53,8 +54,10 @@ def to_contracts(
 ) -> list[AssessmentSchema]:
     issues = _issues_by_target(db, run_id)
     links = evidence_repo.links_by_assessment(db, run_id)
+    registry_requirements = get_registry().requirements
     out: list[AssessmentSchema] = []
     for assessment in list_for_run(db, run_id):
+        requirement_def = registry_requirements.get(assessment.requirement_id)
         out.append(
             AssessmentSchema(
                 assessment_id=assessment.assessment_id,
@@ -73,6 +76,10 @@ def to_contracts(
                     _issue_to_contract(i)
                     for i in issues.get(assessment.requirement_id, [])
                 ],
+                # From the registry (no DB field): the declared field scope.
+                affected_field_ids=list(
+                    requirement_def.affected_field_ids if requirement_def else []
+                ),
             )
         )
     return out

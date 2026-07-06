@@ -40,6 +40,11 @@ FIELD_ISSUE_TEXT = (
     "bearbeitet werden."
 )
 
+# Versions worth carrying into a new run (Slice 2, E1-A). Template versions are
+# never a carry source: a fresh template is identical or — after a catalog
+# update — the correct newer scaffold.
+CARRY_OVER_CREATED_BY = ("user", "agent", "carried_over")
+
 
 def _content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
@@ -109,6 +114,35 @@ def _sync_field_issue(
     return 0
 
 
+def _carry_over_source(
+    db: Session, run: AnalysisRun, field_id: str
+) -> tuple[DraftVersion, str] | None:
+    """Latest meaningful current_version of the same project's prior runs for
+    this field, newest run first. Run status is deliberately ignored: a newer
+    cancelled/failed run's user edit must win over an older completed run's
+    text. Returns (version, source_run_id) or None (→ template as today)."""
+    row = db.execute(
+        select(DraftVersion, PortalFieldDraft.run_id)
+        .join(
+            PortalFieldDraft,
+            PortalFieldDraft.current_version_id == DraftVersion.draft_version_id,
+        )
+        .join(AnalysisRun, AnalysisRun.run_id == PortalFieldDraft.run_id)
+        .where(
+            AnalysisRun.project_id == run.project_id,
+            AnalysisRun.workspace_id == run.workspace_id,
+            AnalysisRun.run_id != run.run_id,
+            PortalFieldDraft.field_id == field_id,
+            DraftVersion.created_by.in_(CARRY_OVER_CREATED_BY),
+        )
+        .order_by(AnalysisRun.created_at.desc())
+        .limit(1)
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
 def get_draft(db: Session, run_id: str, field_id: str) -> PortalFieldDraft | None:
     return db.scalar(
         select(PortalFieldDraft).where(
@@ -121,12 +155,28 @@ def get_draft(db: Session, run_id: str, field_id: str) -> PortalFieldDraft | Non
 def create_initial_draft(
     db: Session, run: AnalysisRun, field: PortalFieldDef
 ) -> PortalFieldDraft:
-    """Idempotent: one PortalFieldDraft per run+field, initial template version."""
+    """Idempotent: one PortalFieldDraft per run+field. Initial version carries
+    the newest meaningful prior version of the project (Slice 2, E1-A) or the
+    deterministic template (first run / flag off / no meaningful predecessor)."""
     existing = get_draft(db, run.run_id, field.field_id)
     if existing is not None:
         return existing
 
-    text = build_template(field, get_registry())
+    from app.config.settings import get_settings
+
+    carried = (
+        _carry_over_source(db, run, field.field_id)
+        if get_settings().draft_carry_over_enabled
+        else None
+    )
+    if carried is not None:
+        # Carried text is never dropped, even over the current limit: the
+        # existing draft_over_limit review blocker gates the run instead.
+        text, created_by = carried[0].text, "carried_over"
+        source_run_id = carried[1]
+    else:
+        text, created_by = build_template(field, get_registry()), "template"
+        source_run_id = None
     draft_id = str(uuid.uuid4())
     draft = PortalFieldDraft(
         draft_id=draft_id,
@@ -142,21 +192,28 @@ def create_initial_draft(
     )
     db.add(draft)
     db.flush()
-    version = _new_version(db, draft_id, text, "template")
+    version = _new_version(db, draft_id, text, created_by)
     draft.current_version_id = version.draft_version_id
     draft.open_issue_count = _sync_field_issue(
         db, run, field.field_id, is_empty(text) or has_placeholder(text)
     )
+    created_detail: dict = {
+        "field_id": field.field_id,
+        "carried_over": carried is not None,
+        "source_run_id": source_run_id,
+    }
+    if carried is not None and not within_limit(text, field.character_limit):
+        created_detail["over_limit_at_initialization"] = True
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=None,
         action="draft.template_created", target_type="portal_field_draft",
-        target_id=draft_id, detail={"field_id": field.field_id},
+        target_id=draft_id, detail=created_detail,
     )
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=None,
         action="draft.version_created", target_type="draft_version",
         target_id=version.draft_version_id,
-        detail={"created_by": "template", "content_hash": version.content_hash},
+        detail={"created_by": created_by, "content_hash": version.content_hash},
     )
     db.flush()
     return draft

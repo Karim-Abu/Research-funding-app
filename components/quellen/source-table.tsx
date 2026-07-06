@@ -38,7 +38,7 @@ import {
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { DATA_CLASS_LABELS } from "@/lib/types"
+import { DATA_CLASS_LABELS, type DataClass } from "@/lib/types"
 import type { SourceUsage } from "@/lib/evidence"
 import {
   importableSourceProjects,
@@ -51,15 +51,23 @@ import {
 } from "@/lib/quellen-mock-data"
 
 const DEFAULT_ACCEPT_EXTENSIONS = [".pdf", ".docx", ".txt", ".md"]
+const SOURCE_CLASSIFICATION_HINT =
+  "Bitte wählen Sie die Vertraulichkeitsstufe dieser Quelle. Wenn Sie unsicher sind, wählen Sie Vertraulich. Die restriktivere Einstufung von Projekt und Quelle gilt."
+const DATA_CLASS_OPTIONS = Object.entries(DATA_CLASS_LABELS) as [
+  DataClass,
+  string,
+][]
 
 type TextSourceInput = {
   title: string
   text: string
+  dataClass: DataClass
 }
 
 type UrlSourceInput = {
   url: string
   kind: UrlSourceKind
+  dataClass: DataClass
 }
 
 type ImportSourceInput = {
@@ -73,7 +81,7 @@ interface SourceTableProps {
   /** Live mode: the page owns the list (polling); no local optimistic state. */
   controlled?: boolean
   /** Live upload handler. */
-  onUploadFiles?: (files: File[]) => Promise<void> | void
+  onUploadFiles?: (files: File[], dataClass: DataClass) => Promise<void> | void
   /** Live text-source handler. */
   onAddTextSource?: (input: TextSourceInput) => Promise<void> | void
   /** Live URL-source handler or frontend fallback provided by the page. */
@@ -86,6 +94,8 @@ interface SourceTableProps {
   onDeleteSource?: (id: string) => void
   /** Allowed upload extensions. */
   acceptExtensions?: string[]
+  /** Initial classification for newly added sources. */
+  defaultDataClass?: DataClass
   currentUserName?: string
   importProjects?: ImportableSourceProject[]
   /** External request (e.g. from the Evidenz tab) to open a source's details. */
@@ -228,6 +238,7 @@ export function SourceTable({
   onRetrySource,
   onDeleteSource,
   acceptExtensions = DEFAULT_ACCEPT_EXTENSIONS,
+  defaultDataClass = "confidential",
   currentUserName = "Anna Keller",
   importProjects = importableSourceProjects,
   openDetailsForId = null,
@@ -240,6 +251,8 @@ export function SourceTable({
   const [detailsSource, setDetailsSource] = React.useState<Source | null>(null)
   const [localSources, setLocalSources] = React.useState<Source[]>(sources)
   const [uploadError, setUploadError] = React.useState<string | null>(null)
+  const [pendingUploadFiles, setPendingUploadFiles] = React.useState<File[]>([])
+  const [fileDialogOpen, setFileDialogOpen] = React.useState(false)
   const [textDialogOpen, setTextDialogOpen] = React.useState(false)
   const [urlDialogOpen, setUrlDialogOpen] = React.useState(false)
   const [importDialogOpen, setImportDialogOpen] = React.useState(false)
@@ -278,21 +291,16 @@ export function SourceTable({
     } else {
       setUploadError(null)
     }
-    if (allowed.length > 0) void handleFiles(allowed)
+    if (allowed.length > 0) {
+      setPendingUploadFiles(allowed)
+      setFileDialogOpen(true)
+    }
   }
 
-  async function handleFiles(files: File[]) {
+  async function handleFiles(files: File[], dataClass: DataClass) {
     setUploadError(null)
     if (onUploadFiles) {
-      try {
-        await onUploadFiles(files)
-      } catch (error) {
-        setUploadError(
-          error instanceof Error
-            ? `${error.message} Bitte Format prüfen oder erneut hochladen.`
-            : "Die Datei konnte nicht übernommen werden. Bitte Format prüfen und erneut hochladen."
-        )
-      }
+      await onUploadFiles(files, dataClass)
       return
     }
 
@@ -301,6 +309,7 @@ export function SourceTable({
       name: file.name,
       type: fileTypeFromName(file.name),
       status: "processing",
+      dataClass,
       addedBy: currentUserName,
       addedAt: "soeben",
     }))
@@ -445,6 +454,7 @@ export function SourceTable({
       <UrlSourceDialog
         open={urlDialogOpen}
         onOpenChange={setUrlDialogOpen}
+        defaultDataClass={defaultDataClass}
         onAdd={async (input) => {
           if (onAddUrlSource) {
             await onAddUrlSource(input)
@@ -456,6 +466,7 @@ export function SourceTable({
               name: input.url,
               type: "URL",
               status: "uploaded",
+              dataClass: input.dataClass,
               addedBy: currentUserName,
               addedAt: "soeben",
               note: `${URL_SOURCE_KIND_LABELS[input.kind]} · Verarbeitung ausstehend.`,
@@ -467,6 +478,7 @@ export function SourceTable({
       <TextSourceDialog
         open={textDialogOpen}
         onOpenChange={setTextDialogOpen}
+        defaultDataClass={defaultDataClass}
         onAdd={async (input) => {
           if (onAddTextSource) {
             await onAddTextSource(input)
@@ -478,12 +490,24 @@ export function SourceTable({
               name: input.title,
               type: "Text",
               status: "processed",
+              dataClass: input.dataClass,
               addedBy: currentUserName,
               addedAt: "soeben",
               note: "Direkt eingefügter Text.",
             },
           ])
         }}
+      />
+
+      <FileUploadDialog
+        open={fileDialogOpen}
+        onOpenChange={(open) => {
+          setFileDialogOpen(open)
+          if (!open) setPendingUploadFiles([])
+        }}
+        files={pendingUploadFiles}
+        defaultDataClass={defaultDataClass}
+        onUpload={handleFiles}
       />
 
       <ImportSourcesDialog
@@ -614,6 +638,143 @@ function FileSourceWayCard({
         Datei auswählen
       </Button>
     </div>
+  )
+}
+
+function SourceDataClassField({
+  id,
+  value,
+  onChange,
+  disabled,
+}: Readonly<{
+  id: string
+  value: DataClass
+  onChange: (value: DataClass) => void
+  disabled?: boolean
+}>) {
+  return (
+    <div className="grid gap-1.5">
+      <Label htmlFor={id}>Vertraulichkeitsstufe</Label>
+      <Select
+        value={value}
+        onValueChange={(next) => {
+          if (!next) return
+          onChange(next)
+        }}
+        disabled={disabled}
+      >
+        <SelectTrigger id={id} className="w-full">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectGroup>
+            {DATA_CLASS_OPTIONS.map(([option, label]) => (
+              <SelectItem key={option} value={option}>
+                {label}
+              </SelectItem>
+            ))}
+          </SelectGroup>
+        </SelectContent>
+      </Select>
+      <p className="text-xs leading-relaxed text-muted-foreground">
+        {SOURCE_CLASSIFICATION_HINT}
+      </p>
+    </div>
+  )
+}
+
+function FileUploadDialog({
+  open,
+  onOpenChange,
+  files,
+  defaultDataClass,
+  onUpload,
+}: Readonly<{
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  files: File[]
+  defaultDataClass: DataClass
+  onUpload: (files: File[], dataClass: DataClass) => Promise<void> | void
+}>) {
+  const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
+  const [busy, setBusy] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    setDataClass(defaultDataClass)
+    setError(null)
+  }, [defaultDataClass, open])
+
+  async function submit() {
+    if (files.length === 0) return
+    setBusy(true)
+    setError(null)
+    try {
+      await onUpload(files, dataClass)
+      onOpenChange(false)
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? `${err.message} Die Datei wurde nicht übernommen.`
+          : "Die Datei konnte nicht übernommen werden. Bitte Format prüfen und erneut hochladen."
+      )
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="sm:max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Datei hochladen</DialogTitle>
+          <DialogDescription>
+            Prüfen Sie die ausgewählten Dateien vor der Übernahme.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="grid gap-4">
+          <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
+            <p className="text-xs font-medium text-muted-foreground">
+              Ausgewählte Dateien
+            </p>
+            <ul className="mt-2 space-y-1 text-sm text-foreground">
+              {files.map((file) => (
+                <li key={`${file.name}-${file.size}`}>{file.name}</li>
+              ))}
+            </ul>
+          </div>
+          <SourceDataClassField
+            id="file-source-data-class"
+            value={dataClass}
+            onChange={setDataClass}
+            disabled={busy}
+          />
+          {error && (
+            <p role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
+            Abbrechen
+          </Button>
+          <Button
+            type="button"
+            onClick={submit}
+            disabled={busy || files.length === 0}
+          >
+            {busy ? "Wird hochgeladen..." : "Hochladen"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }
 
@@ -831,16 +992,25 @@ function SourceList({
 function UrlSourceDialog({
   open,
   onOpenChange,
+  defaultDataClass,
   onAdd,
-}: {
+}: Readonly<{
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultDataClass: DataClass
   onAdd: (input: UrlSourceInput) => Promise<void> | void
-}) {
+}>) {
   const [url, setUrl] = React.useState("")
   const [kind, setKind] = React.useState<UrlSourceKind>("webpage")
+  const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    setDataClass(defaultDataClass)
+    setError(null)
+  }, [defaultDataClass, open])
 
   async function submit() {
     const trimmed = url.trim()
@@ -851,7 +1021,7 @@ function UrlSourceDialog({
     setBusy(true)
     setError(null)
     try {
-      await onAdd({ url: trimmed, kind })
+      await onAdd({ url: trimmed, kind, dataClass })
       setUrl("")
       setKind("webpage")
       onOpenChange(false)
@@ -910,6 +1080,12 @@ function UrlSourceDialog({
               </SelectContent>
             </Select>
           </div>
+          <SourceDataClassField
+            id="source-url-data-class"
+            value={dataClass}
+            onChange={setDataClass}
+            disabled={busy}
+          />
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}
@@ -941,23 +1117,32 @@ function UrlSourceDialog({
 function TextSourceDialog({
   open,
   onOpenChange,
+  defaultDataClass,
   onAdd,
-}: {
+}: Readonly<{
   open: boolean
   onOpenChange: (open: boolean) => void
+  defaultDataClass: DataClass
   onAdd: (input: TextSourceInput) => Promise<void> | void
-}) {
+}>) {
   const [title, setTitle] = React.useState("")
   const [text, setText] = React.useState("")
+  const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+
+  React.useEffect(() => {
+    if (!open) return
+    setDataClass(defaultDataClass)
+    setError(null)
+  }, [defaultDataClass, open])
 
   async function submit() {
     if (!title.trim() || !text.trim()) return
     setBusy(true)
     setError(null)
     try {
-      await onAdd({ title: title.trim(), text })
+      await onAdd({ title: title.trim(), text, dataClass })
       setTitle("")
       setText("")
       onOpenChange(false)
@@ -1004,6 +1189,12 @@ function TextSourceDialog({
               disabled={busy}
             />
           </div>
+          <SourceDataClassField
+            id="text-source-data-class"
+            value={dataClass}
+            onChange={setDataClass}
+            disabled={busy}
+          />
           {error && (
             <p role="alert" className="text-sm text-destructive">
               {error}

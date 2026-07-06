@@ -41,6 +41,12 @@ import {
 import { cn } from "@/lib/utils"
 import { saveIntake, setActiveProjectId } from "@/lib/intake-store"
 import { createProjectFromIntake } from "@/lib/projects"
+import {
+  createPartner,
+  PARTNER_SAVE_HINT_KEY,
+  type PartnerType,
+} from "@/lib/partners"
+import { useSession } from "@/components/providers/app-providers"
 import type { DataClass, IntakeFormData, IntakePartner } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
@@ -107,6 +113,12 @@ const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
 
 function newPartner(): IntakePartner {
   return { id: crypto.randomUUID(), name: "", type: "Forschungspartner" }
+}
+
+function partnerTypeFor(type: IntakePartner["type"]): PartnerType {
+  if (type === "Forschungspartner") return "research_partner"
+  if (type === "Umsetzungspartner") return "implementation_partner"
+  return "other"
 }
 
 function isDirty(data: IntakeFormData): boolean {
@@ -204,6 +216,7 @@ type SaveState = "idle" | "saving" | "error"
 
 export function IntakeForm() {
   const router = useRouter()
+  const { mode } = useSession()
   const [data, setData] = React.useState<IntakeFormData>({
     titel: "",
     projektidee: "",
@@ -284,6 +297,30 @@ export function IntakeForm() {
       const project = await createProjectFromIntake(data)
       setActiveProjectId(project.project_id)
       setSaveState("idle")
+      // Live mode: persist the intake partners on the real project. A failure
+      // never loses the project — the user lands on Partner & Budget with a
+      // hint and can add them there (B2). Mock mode stays network-free.
+      if (mode === "live") {
+        const results = await Promise.allSettled(
+          data.partner
+            .filter((p) => p.name.trim() !== "")
+            .map((p) =>
+              createPartner(project.project_id, {
+                name: p.name.trim(),
+                partner_type: partnerTypeFor(p.type),
+              })
+            )
+        )
+        if (results.some((r) => r.status === "rejected")) {
+          try {
+            window.sessionStorage.setItem(PARTNER_SAVE_HINT_KEY, "1")
+          } catch {
+            // storage blocked — the /partner page simply shows no hint
+          }
+          router.push("/partner")
+          return
+        }
+      }
       router.push("/quellen")
     } catch {
       setSaveState("error")

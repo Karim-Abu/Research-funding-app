@@ -1,0 +1,3 @@
+# Spike "Innolink-PDF-Import" — eigenständige Umgebung, KEIN Import in backend/app oder lib/.
+# pypdf ist bereits im backend/.venv vorhanden (5.1.0); Eintrag hier nur zur Dokumentation.
+pypdf>=5.1

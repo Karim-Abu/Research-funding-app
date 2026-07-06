@@ -251,7 +251,8 @@ def node_aggregate_review(state: RunState) -> RunState:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
-        package = review_package.refresh_package(db, run, recompute_findings=False)
+        package = review_package.refresh_package(
+            db, run, recompute_findings=False)
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="CTRL.OUTPUT_SCHEMA", status="passed",
@@ -275,8 +276,8 @@ def node_human_review(state: RunState) -> RunState:
             return {**state, "cancelled": True}
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
-            source_id=None, control_id="CTRL.APPROVAL_GATE", status="passed",
-            detail="review_available no_auto_approval",
+            source_id=None, control_id="CTRL.APPROVAL_GATE", status="warning",
+            detail="phase=human_review; reason=review_available_no_auto_approval",
         )
         _set_stage(db, run, "human_review")
         db.commit()
@@ -330,7 +331,8 @@ def get_graph():
     if _graph is None:
         builder = StateGraph(RunState)
         builder.add_node("initialize", node_initialize)
-        builder.add_node("validate_source_snapshot", node_validate_source_snapshot)
+        builder.add_node("validate_source_snapshot",
+                         node_validate_source_snapshot)
         builder.add_node(
             "extract_facts_and_map_evidence",
             node_extract_facts_and_map_evidence,

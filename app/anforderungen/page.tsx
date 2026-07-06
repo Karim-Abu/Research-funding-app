@@ -21,6 +21,7 @@ import type { Requirement } from "@/lib/anforderungen-mock-data"
 const stepStatus = [
   "done",
   "done",
+  "done",
   "current",
   "upcoming",
   "upcoming",
@@ -57,7 +58,7 @@ function LiveAnforderungen() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={3}
+      currentStep={4}
       stepStatus={[...stepStatus]}
     >
       {!resolved ? null : runId ? (
@@ -107,7 +108,7 @@ function MockAnforderungen() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={3}
+      currentStep={4}
       stepStatus={[...stepStatus]}
     >
       {error ? (

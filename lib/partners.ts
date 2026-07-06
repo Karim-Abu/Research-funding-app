@@ -5,6 +5,10 @@
 import { getCsrfToken } from "./session"
 
 export type PartnerType = "research_partner" | "implementation_partner" | "other"
+
+// Set by the intake form when the project was created but partner persistence
+// failed; the /partner page shows the hint once and clears the flag (B2).
+export const PARTNER_SAVE_HINT_KEY = "rf_partner_save_hint"
 export type ResearchEligibility =
   | "eligible"
   | "not_eligible"

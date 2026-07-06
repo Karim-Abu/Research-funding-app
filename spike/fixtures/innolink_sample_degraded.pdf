@@ -1,0 +1,73 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R] /Count 1 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 3237 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 1) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F2 14.0 Tf
+(1 Introduction) Tj T*
+/F2 11.5 Tf
+(Application Name and Abstract) Tj T*
+/F1 10.0 Tf
+(Application name SmartGrid Optimizer - Adaptive Lastprognose für Verteilnetze Application Name in English Characters: 0/200 Abstract \(wird in Aramis publiziert\) Characters: 254/300 Das Projekt entwickelt eine adaptive Lastprognose für städtische Verteilnetze. Durch selbstkalibrierende Modelle sinken Prognosefehler um bis zu 30 Prozent, was Netzausbaukosten reduziert und die Integration erneuerbarer Energien beschleunigt. Executive summary \(wird nicht in Aramis publiziert\) Characters: 812/2000 Verteilnetzbetreiber stehen vor stark schwankenden Lastprofilen durch Photovoltaik, Wärmepumpen und Elektromobilität. Bestehende Prognose- werkzeuge benötigen manuelle Nachkalibrierung und liefern in Quartieren mit hoher PV-Dichte unzuverlässige Werte. Der SmartGrid Optimizer kombiniert physikalische Netzmodelle mit einem lernenden Korrekturverfahren. Der Umsetzungspartner Netzwerk Stadt AG bringt Messdaten aus zwei Pilotquartieren ein; die Hochschule liefert die Modellarchitektur und Validierungsmethodik.) Tj T*
+/F2 14.0 Tf
+(2 Organisations & People) Tj T*
+/F2 11.5 Tf
+(Independence of Research and Implementation Partners) Tj T*
+/F1 10.0 Tf
+(Confirmation personal independence: Yes Confirmation financial independence: No Explanations and Comments Characters: 231/300 Die Netzwerk Stadt AG hält eine Minderheitsbeteiligung von 8 Prozent an der Spin-off-Gesellschaft der Forschungsgruppe. Die Beteiligung hat keinen Einfluss auf Projektentscheide; Governance-Massnahmen sind im Konsortialvertrag geregelt.) Tj T*
+/F2 14.0 Tf
+(3 Value Creation) Tj T*
+/F2 11.5 Tf
+(Business Targets & Business Model) Tj T*
+/F1 10.0 Tf
+(Open Editor 3.1 Which business targets do you pursue with this project? Innerhalb von drei Jahren nach Projektende sollen 12 Verteilnetz- betreiber die Lösung lizenzieren. Zielumsatz im dritten Jahr: CHF 1.8 Mio. wiederkehrend aus SaaS-Lizenzen. 3.2 What is your business model? SaaS-Abonnement pro Netzgebiet, gestaffelt nach Anzahl Messpunkten. Vertrieb über bestehende Leittechnik-Integratoren als Partnerkanal.) Tj T*
+/F2 14.0 Tf
+(4 Solution) Tj T*
+/F2 11.5 Tf
+(Innovation Solution) Tj T*
+/F1 10.0 Tf
+(Open Editor 4.1 What is the innovation in your solution? Neu ist die Kopplung eines physikalischen Netzmodells mit einem online lernenden Fehlerkorrektur-Modul, das ohne manuelle Rekalibrierung auskommt und Konzeptdrift automatisch erkennt. 4.2 What is the current state of the art? Kommerzielle Werkzeuge nutzen statische Regressionsmodelle, die bei hoher PV-Dichte systematisch abweichen und quartalsweise manuell nachgeführt werden müssen.) Tj T*
+/F2 14.0 Tf
+(5 Project Setup) Tj T*
+/F2 11.5 Tf
+(Planned Hours) Tj T*
+/F1 10.0 Tf
+(Partner | Research | Implementation | Management Hochschule | 2400 | 0 | 180 Netzwerk Stadt AG | 0 | 1600 | 120 Explanation Characters: 176/1000 Die Management-Stunden verteilen sich auf Projektleitung \(60 Prozent Hochschule\) und Koordination der Pilotquartiere \(40 Prozent Umsetzungspartner\), entsprechend der Arbeitspaketverantwortung.) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+xref
+0 7
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000115 00000 n 
+0000000212 00000 n 
+0000000314 00000 n 
+0000003603 00000 n 
+trailer
+<< /Size 7 /Root 1 0 R >>
+startxref
+3739
+%%EOF

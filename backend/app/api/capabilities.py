@@ -47,6 +47,9 @@ def get_capabilities(
         # Milestone 9K: deterministic MAS reliability & value assurance (beta-internal) —
         # available whenever the review layer is (no provider dependency).
         "reliability": True,
+        # Slice 3 (E2-A): the Innolink copy view logs a server-side CopyEvent
+        # per copy. False → the UI skips the call (endpoint stays active).
+        "copy_events": settings.copy_events_enabled,
     }
     return Capabilities(
         api_version=settings.api_version,

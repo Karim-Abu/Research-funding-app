@@ -8,7 +8,8 @@ from pydantic import BaseModel, ConfigDict
 
 from app.contracts.evidence import EvidenceLink
 
-RequirementStatus = Literal["fulfilled", "partial", "open", "needs_input", "blocked"]
+RequirementStatus = Literal["fulfilled",
+                            "partial", "open", "needs_input", "blocked"]
 AssessmentBasis = Literal[
     "deterministic_rule", "semantic_assessment", "hybrid", "human_override"
 ]
@@ -43,3 +44,6 @@ class RequirementAssessment(BaseModel):
     # Populated in M5 from the deterministic evidence baseline (anchor links).
     evidence_links: list[EvidenceLink] = []
     open_issues: list[OpenIssue] = []
+    # Additive (Slice 4, E4-A): registry-declared portal fields this requirement
+    # affects — enables the direct field↔requirement join in the editor.
+    affected_field_ids: list[str] = []

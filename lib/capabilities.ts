@@ -30,6 +30,8 @@ export const MOCK_CAPABILITIES: Capabilities = {
     web_research: false,
     market_comparison: false,
     reliability: false,
+    // Mock mode never talks to the network — copy events stay off.
+    copy_events: false,
   },
 }
 
