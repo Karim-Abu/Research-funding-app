@@ -82,7 +82,13 @@ export function PartnerManager() {
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
-  const projectId = React.useMemo(() => getActiveProjectId(), [])
+  const [projectId, setProjectId] = React.useState<string | null>(null)
+  const [projectResolved, setProjectResolved] = React.useState(false)
+
+  React.useEffect(() => {
+    setProjectId(getActiveProjectId())
+    setProjectResolved(true)
+  }, [])
 
   // B2: one-time hint set by the intake form when partner persistence failed.
   const [intakeHint, setIntakeHint] = React.useState<string | null>(null)
@@ -366,7 +372,12 @@ export function PartnerManager() {
           </ul>
         )}
 
-        {projectId && <BudgetForm projectId={projectId} />}
+        {projectResolved && !projectId && (
+          <p className="mt-10 rounded-md border border-dashed border-border px-4 py-6 text-center text-sm text-muted-foreground">
+            Kein aktives Projekt ausgewählt.
+          </p>
+        )}
+        {projectResolved && projectId && <BudgetForm projectId={projectId} />}
       </div>
     </AppShell>
   )
