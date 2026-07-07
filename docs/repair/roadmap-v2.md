@@ -17,9 +17,17 @@
 > Registry-Metadaten-Validierung (R2.7). Messbare Wirkung am F1-Goldfall: 72 offene
 > Findings → 7 priorisierte Gruppen. Nachweis:
 > `docs/milestones/Repair_R2_Issue_Modell_Dedupe_Fix_Queue_Report.md`.
-> **Nächster Milestone-Kandidat:** R3 hängt an E-01 (PDF-Gate-Entscheid, Owner);
-> ohne E-01 ist **R4.4 (Browser-Storage-Security-P0, keine Owner-Abhängigkeiten)**
-> der empfohlene nächste Slice. R4.1–4.3 brauchen Owner-Tabelle/E-02.
+> **R3 abgeschlossen** (`repair-r3-done`) — PDF-Gate mit echtem Portal-Export
+> ausgeführt (Doppelmessung: Spike as-is 1/8, mit Portal-Vokabular 5/8 = 62.5 %;
+> Owner-Entscheid E-01 «R3 bauen», `docs/evaluation/pdf-import-gate-report.md`);
+> Import-Mapping deterministisch portiert (R3.1), ImportCandidate-Persistenz + API
+> mit Konflikt-Semantik und HITL-Zwang (R3.2, Migration `a3f8c2d91e47`, Owner-Review
+> vor Merge ausstehend), Import-Review-UI + drei Startoptionen hinter Flag
+> `innolinkImport` (R3.3), No-Raw-Logging-Suite als Merge-Gate (R3.4). Nachweis:
+> `docs/milestones/Repair_R3_Import_First_MVP_Report.md`.
+> **Nächster Milestone-Kandidat:** **R4.4 (Browser-Storage-Security-P0, keine
+> Owner-Abhängigkeiten)**. R4.1–4.3 brauchen Owner-Tabelle/E-02; E-12
+> (anonymisiertes Gate-Fixture) bleibt offen.
 
 Die vom Product Owner vorgeschlagene R0–R9-Struktur wird übernommen — mit drei begründeten Abweichungen:
 
