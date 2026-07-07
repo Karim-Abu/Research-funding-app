@@ -118,13 +118,20 @@ test("M10.2: orientation, links and readiness across the core screens", async ({
   await expect(page.getByText("Systembefund").first()).toBeVisible()
   await expect(page.getByText(/Warum relevant\?/).first()).toBeVisible()
 
-  // --- Review: Nächste Schritte ---------------------------------------------
+  // --- Review: Nächste Schritte/Aufgaben -------------------------------------
   await page.goto("/review")
   await expect(
     page.getByRole("heading", { name: "Qualitätsprüfung", exact: true })
   ).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByTestId("next-steps")).toBeVisible()
-  await expect(page.getByTestId("next-steps")).toContainText("Nächste Schritte")
+  // Seit R2.5 zeigt der Screen bei offenen Findings die priorisierte Fix
+  // Queue («Nächste Aufgaben», fix-queue-next); ohne Gruppen bleibt die alte
+  // Ableitung («Nächste Schritte», next-steps) als Fallback.
+  const guidance = page
+    .getByTestId("fix-queue-next")
+    .or(page.getByTestId("next-steps"))
+    .first()
+  await expect(guidance).toBeVisible({ timeout: 20_000 })
+  await expect(guidance).toContainText(/Nächste (Aufgaben|Schritte)/)
 
   // --- Export: field readiness + honest semantics ----------------------------
   await page.goto("/export")
