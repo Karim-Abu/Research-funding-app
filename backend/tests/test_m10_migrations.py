@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "262f51ba5176"  # copy events (Slice 3).
+_HEAD = "7b091c3d3e24"  # finding v2 fields (R2.2).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -47,13 +47,23 @@ def _tables(db_path: Path) -> set[str]:
     return {r[0] for r in rows}
 
 
-def _project_columns(db_path: Path) -> set[str]:
+def _columns(db_path: Path, table: str) -> set[str]:
     con = sqlite3.connect(db_path)
     try:
-        rows = con.execute("PRAGMA table_info(projects)").fetchall()
+        rows = con.execute(f"PRAGMA table_info({table})").fetchall()
     finally:
         con.close()
     return {r[1] for r in rows}
+
+
+def _project_columns(db_path: Path) -> set[str]:
+    return _columns(db_path, "projects")
+
+
+# R2.2 — die additiven Issue-Modell-v2-Spalten der Head-Migration.
+_FINDING_V2_COLUMNS = {
+    "fingerprint", "severity_class", "fix_recommendation", "last_seen_at",
+}
 
 
 def _head_version(db_path: Path) -> str | None:
@@ -110,17 +120,45 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
-    assert "copy_events" in _tables(db)
-    # Down one (drops the Slice-3 copy_events table), then back up. The
-    # Slice-1 budget columns (one revision earlier) must survive the -1 step.
+    assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
+    assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
+    # Row preservation across the roundtrip: a pre-existing open_issues row
+    # must survive downgrade (column drop) + upgrade (column re-add).
+    con = sqlite3.connect(db)
+    try:
+        con.execute(
+            "INSERT INTO open_issues (issue_id, run_id, issue_type, severity,"
+            " description, target_type, target_id, recommended_next_action,"
+            " status, created_at) VALUES ('iss-r22', 'run-x', 'draft_incomplete',"
+            " 'warning', 'Roundtrip-Testzeile', 'portal_field', 'INTRO.APP.NAME',"
+            " 'nichts', 'open', '2026-01-01T00:00:00+00:00')"
+        )
+        con.commit()
+    finally:
+        con.close()
+    # Down one (drops the R2.2 finding-v2 columns), then back up. The Slice-3
+    # copy_events table (one revision earlier) must survive the -1 step.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "copy_events" not in _tables(db)
+    assert "fingerprint" not in _columns(db, "review_findings")
+    assert "fingerprint" not in _columns(db, "open_issues")
+    assert "copy_events" in _tables(db)
     assert "cash_contribution" in _project_columns(db)
     assert "duration_months" in _project_columns(db)
     assert "run_quality_summaries" in _tables(db)
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
     assert "copy_events" in _tables(db)
+    assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
+    assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
+    con = sqlite3.connect(db)
+    try:
+        row = con.execute(
+            "SELECT description, fingerprint FROM open_issues"
+            " WHERE issue_id='iss-r22'"
+        ).fetchone()
+    finally:
+        con.close()
+    assert row == ("Roundtrip-Testzeile", None), "row lost or mutated in roundtrip"
     assert {
         "direct_total_project_costs_excluding_overhead",
         "implementation_own_contribution",

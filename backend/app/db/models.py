@@ -632,6 +632,14 @@ class OpenIssue(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+    # Issue-Modell v2 (R2.2, additiv/nullable): technische Identität + Klasse
+    # für Dedupe/Fix Queue. Befüllung folgt schrittweise (R2.3+).
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    severity_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    fix_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -921,6 +929,15 @@ class ReviewFinding(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+    # Issue-Modell v2 (R2.2, additiv/nullable): stabile technische Identität
+    # (R2.1-Fingerprint), sechs severity-Klassen, ableitbare Fix-Empfehlung,
+    # letzter Emissionszeitpunkt. finding_code bleibt der Idempotenz-Schlüssel.
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    severity_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    fix_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
