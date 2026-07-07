@@ -10,8 +10,16 @@
 > Screens lesen ihn (R1.3), Status-Paritätstest als dauerhaftes Merge-Gate, CI-Guard
 > gegen neue Legacy-Statuspfade (R1.4). Nachweis:
 > `docs/milestones/Repair_R0_R1_Kanonischer_Status_Report.md`.
-> **Nächster Milestone: R2** (Issue-Modell, Dedupe, Fix Queue). Voraussetzung für R2.6:
-> Owner-freigegebener Message-Katalog; für R2.7: Registry-Metadaten vom Owner.
+> **R2 abgeschlossen** (`repair-r2-done`) — Fingerprint + display_group_key (R2.1),
+> additive Finding-v2-Migration (R2.2, Owner-Review vor Merge ausstehend), severity_class-
+> Befüllung mit Idempotenz-Merge-Gate (R2.3), Fix-Queue-API (R2.4), UI hinter Flag
+> `groupedFindings` (R2.5), Message-Katalog Owner-approved + verdrahtet (R2.6),
+> Registry-Metadaten-Validierung (R2.7). Messbare Wirkung am F1-Goldfall: 72 offene
+> Findings → 7 priorisierte Gruppen. Nachweis:
+> `docs/milestones/Repair_R2_Issue_Modell_Dedupe_Fix_Queue_Report.md`.
+> **Nächster Milestone-Kandidat:** R3 hängt an E-01 (PDF-Gate-Entscheid, Owner);
+> ohne E-01 ist **R4.4 (Browser-Storage-Security-P0, keine Owner-Abhängigkeiten)**
+> der empfohlene nächste Slice. R4.1–4.3 brauchen Owner-Tabelle/E-02.
 
 Die vom Product Owner vorgeschlagene R0–R9-Struktur wird übernommen — mit drei begründeten Abweichungen:
 
