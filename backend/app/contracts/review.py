@@ -48,6 +48,28 @@ class ReviewPackage(BaseModel):
     stale_finding_count: int
 
 
+class ReviewStatusView(BaseModel):
+    """R1.2 — kanonischer, schlanker Status-Read-View für alle Screens.
+
+    Additiv und read-only; Zahlen kommen aus denselben Zählfunktionen wie das
+    ReviewPackage (``review.package.counts`` / ``approval_status``) — keine
+    parallele Zähllogik. ``human_review_count`` zählt Requirement-Assessments
+    mit Status ``needs_input`` (menschliche Angabe/Prüfung nötig).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    blocker_count: int
+    warning_count: int
+    human_review_count: int
+    stale: bool
+    approval_status: ApprovalStatus
+    review_package_version: str
+    per_area_counts: dict[str, int]
+    last_reviewed_at: datetime | None = None
+
+
 # --- human decisions (discriminated by target_type) ------------------------
 
 

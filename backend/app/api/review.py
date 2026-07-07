@@ -13,6 +13,7 @@ from app.contracts.review import (
     RecheckCreate,
     ReviewApproval,
     ReviewPackage,
+    ReviewStatusView,
 )
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun
@@ -66,6 +67,18 @@ def get_review(
 ) -> ReviewPackage:
     run = _require_run(db, run_id, context.user.workspace_id)
     return review_service.read_review_package(db, run)
+
+
+@router.get("/runs/{run_id}/review/status", response_model=ReviewStatusView)
+def get_review_status(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> ReviewStatusView:
+    """R1.2 — kanonischer Status-View (read-only, additiv). Alle Screens lesen
+    Blocker-/Warn-/Prüfzahlen aus dieser einen Quelle statt eigener Zählungen."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    return review_service.read_status_view(db, run)
 
 
 @router.post(
