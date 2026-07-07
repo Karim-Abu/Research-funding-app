@@ -70,6 +70,55 @@ class ReviewStatusView(BaseModel):
     last_reviewed_at: datetime | None = None
 
 
+SeverityClass = Literal[
+    "export_blocker", "eligibility_blocker", "budget_blocker",
+    "reviewer_risk", "evidence_risk", "style_risk",
+]
+
+
+class GroupedFindingExample(BaseModel):
+    """Ein Einzel-Finding als Beispiel innerhalb einer Gruppe — die
+    individuellen Claims/Felder bleiben hier sichtbar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    finding_id: str
+    field_id: str | None = None
+    description: str
+    target_type: str | None = None
+    target_id: str | None = None
+
+
+class GroupedFinding(BaseModel):
+    """R2.4 — UI-Gruppierung gleichartiger Meldungen. ``group_key`` ist der
+    display_group_key (severity_class|Meldungsfamilie) und enthält NIE
+    Roh-Claim-Text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_key: str
+    title: str
+    count: int
+    severity_class: SeverityClass
+    severity: FindingSeverity
+    affected_fields: list[str]
+    examples: list[GroupedFindingExample]
+    recommended_next_action: str | None = None
+    target_field_id: str | None = None
+
+
+class FixQueueView(BaseModel):
+    """R2.4 — Gruppierungs-/Fix-Queue-Read-View über den offenen Findings
+    eines Runs. Read-only, additiv; ändert keine Findings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    grouped_findings: list[GroupedFinding]
+    next_actions: list[GroupedFinding]
+    total_open_findings: int
+
+
 # --- human decisions (discriminated by target_type) ------------------------
 
 

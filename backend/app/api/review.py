@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ProblemException, correlation_id
 from app.contracts.review import (
     ApprovalCreate,
+    FixQueueView,
     HumanDecision,
     HumanDecisionCreate,
     RecheckCreate,
@@ -21,6 +22,7 @@ from app.db.session import get_db
 from app.repositories import idempotency
 from app.repositories import runs as runs_repo
 from app.review import service as review_service
+from app.review.fix_queue import build_fix_queue
 from app.review.recheck import prepare_recheck, recheck_executor
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
@@ -79,6 +81,18 @@ def get_review_status(
     Blocker-/Warn-/Prüfzahlen aus dieser einen Quelle statt eigener Zählungen."""
     run = _require_run(db, run_id, context.user.workspace_id)
     return review_service.read_status_view(db, run)
+
+
+@router.get("/runs/{run_id}/review/fix-queue", response_model=FixQueueView)
+def get_fix_queue(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> FixQueueView:
+    """R2.4 — gruppierte Findings + priorisierte Fix Queue (read-only,
+    additiv). Gruppiert nach display_group_key; ändert keine Findings."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    return build_fix_queue(db, run)
 
 
 @router.post(
