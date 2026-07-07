@@ -56,6 +56,72 @@ def compute_finding_fingerprint(
     return hashlib.sha256(joined.encode("utf-8")).hexdigest()
 
 
+def finding_code_family(finding_code: str) -> str:
+    """Meldungsfamilie eines ``finding_code`` (deterministisch, ohne IDs).
+
+    ``draft_placeholder:INTRO.APP.ABSTRACT`` → ``draft_placeholder``;
+    ``reliability:quantified:<claim>`` → ``reliability:quantified``;
+    ``comment:<uuid>`` → ``comment``.
+    """
+    parts = finding_code.split(":")
+    if parts[0] == "reliability" and len(parts) > 1:
+        return ":".join(parts[:2])
+    return parts[0]
+
+
+# R2.3 — GENAU diese sechs Klassen, keine weiteren.
+SEVERITY_CLASSES = (
+    "export_blocker",
+    "eligibility_blocker",
+    "budget_blocker",
+    "reviewer_risk",
+    "evidence_risk",
+    "style_risk",
+)
+
+# Deterministische Familien → Klasse. Platzhalter/Zeichenlimit/leeres
+# Pflichtfeld blockieren den Export; Evidenz-/Beurteilungsgrundlagen-Findings
+# sind evidence_risk; Rest fällt auf style_risk zurück.
+_FAMILY_CLASS: dict[str, str] = {
+    "draft_placeholder": "export_blocker",
+    "draft_over_limit": "export_blocker",
+    "draft_empty": "export_blocker",
+    "stale_evidence_link": "evidence_risk",
+    "unverified_linked_evidence": "evidence_risk",
+    "missing_evidence_link": "evidence_risk",
+    "requirement_needs_input": "evidence_risk",
+    "stale_assessment": "evidence_risk",
+    # A3-Agent-Findings (a3:<digest>) sind Evidenz-Konsistenz-Hinweise.
+    "a3": "evidence_risk",
+}
+
+# Requirement-Kategorie (Registry) → Klasse für Blocker-OpenIssues.
+_CATEGORY_CLASS: dict[str, str] = {
+    "budget": "budget_blocker",
+    "portal_quality_gate": "export_blocker",
+}
+
+
+def classify_severity_class(
+    finding_code: str, requirement_category: str | None = None
+) -> str:
+    """Eine der sechs severity-Klassen für einen ``finding_code``.
+
+    ``open_issue_blocker`` wird über die Registry-Kategorie der zugrunde
+    liegenden Anforderung eingeordnet (budget → budget_blocker, sonst
+    eligibility_blocker); alle ``reliability:*``-Familien sind
+    evidence_risk; unbekannte Familien → style_risk (Rest-Klasse).
+    """
+    family = finding_code_family(finding_code)
+    if family == "open_issue_blocker":
+        if requirement_category in _CATEGORY_CLASS:
+            return _CATEGORY_CLASS[requirement_category]
+        return "eligibility_blocker"
+    if family.startswith("reliability:"):
+        return "evidence_risk"
+    return _FAMILY_CLASS.get(family, "style_risk")
+
+
 def compute_display_group_key(
     severity_class: str,
     rule_or_message_template: str,
