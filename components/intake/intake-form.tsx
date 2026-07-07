@@ -39,6 +39,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
+import { flags } from "@/lib/flags"
 import { saveIntake, setActiveProjectId } from "@/lib/intake-store"
 import { createProjectFromIntake } from "@/lib/projects"
 import {
@@ -52,6 +53,35 @@ import type { DataClass, IntakeFormData, IntakePartner } from "@/lib/types"
 // ---------------------------------------------------------------------------
 // Constants / static data
 // ---------------------------------------------------------------------------
+
+// R3.3 — drei Startpfade. «upload» führt nach der Projektanlage zum
+// Import-Review (/import); die beiden anderen zum bisherigen Quellen-Flow.
+type StartPath = "upload" | "idea" | "notes"
+
+const START_OPTIONS: ReadonlyArray<{
+  value: StartPath
+  title: string
+  description: string
+}> = [
+  {
+    value: "upload",
+    title: "Bestehenden Innolink-Antrag hochladen",
+    description:
+      "PDF-Export aus dem Portal hochladen; erkannte Felder prüfen und einzeln übernehmen.",
+  },
+  {
+    value: "idea",
+    title: "Mit Projektidee starten",
+    description:
+      "Eckdaten erfassen und die Feld-Entwürfe aus der Strukturvorlage aufbauen.",
+  },
+  {
+    value: "notes",
+    title: "Aus Notizen & Quellen starten",
+    description:
+      "Zuerst Dokumente und Notizen als Quellen sammeln, dann die Felder erarbeiten.",
+  },
+]
 
 const INNOVATIONSFELDER = [
   "Digitalisierung & KI",
@@ -228,6 +258,8 @@ export function IntakeForm() {
   const [errors, setErrors] = React.useState<IntakeFormErrors>({})
   const [saveState, setSaveState] = React.useState<SaveState>("idle")
   const [cancelDialogOpen, setCancelDialogOpen] = React.useState(false)
+  // R3.3 — gewählter Startpfad; bestimmt nur das Ziel nach der Projektanlage.
+  const [startPath, setStartPath] = React.useState<StartPath>("idea")
   // Ref for the scrollable content area — used to ensure page opens at top.
   const scrollRef = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
@@ -321,7 +353,9 @@ export function IntakeForm() {
           return
         }
       }
-      router.push("/quellen")
+      router.push(
+        flags.innolinkImport && startPath === "upload" ? "/import" : "/quellen"
+      )
     } catch {
       setSaveState("error")
     }
@@ -400,6 +434,51 @@ export function IntakeForm() {
                   </button>
                 </span>
               </Alert>
+            )}
+
+            {/* ── R3.3: Drei Startoptionen ───────────────────────────── */}
+            {flags.innolinkImport && (
+              <div className="mb-8 flex flex-col gap-4">
+                <SectionHeading
+                  title="Wie möchten Sie starten?"
+                  subtitle="Der Startpfad bestimmt nur den nächsten Schritt — alle Wege führen zum gleichen Feldarbeitsplatz"
+                />
+                <RadioGroup
+                  value={startPath}
+                  onValueChange={(v) => setStartPath(v as StartPath)}
+                  className="grid gap-3 sm:grid-cols-3"
+                >
+                  {START_OPTIONS.map((opt) => {
+                    const selected = startPath === opt.value
+                    return (
+                      <label
+                        key={opt.value}
+                        htmlFor={`start-${opt.value}`}
+                        className={cn(
+                          "flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors",
+                          selected
+                            ? "border-primary bg-accent/40"
+                            : "border-border hover:border-primary/40 hover:bg-accent/20"
+                        )}
+                      >
+                        <RadioGroupItem
+                          id={`start-${opt.value}`}
+                          value={opt.value}
+                          className="mt-0.5 shrink-0"
+                        />
+                        <div className="flex min-w-0 flex-col gap-1">
+                          <span className="text-sm font-medium text-foreground">
+                            {opt.title}
+                          </span>
+                          <span className="text-xs text-muted-foreground">
+                            {opt.description}
+                          </span>
+                        </div>
+                      </label>
+                    )
+                  })}
+                </RadioGroup>
+              </div>
             )}
 
             {/* ── SECTION 1: Vertraulichkeit ─────────────────────────── */}

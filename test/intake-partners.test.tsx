@@ -58,7 +58,9 @@ async function fillAndSubmitIntake(partnerNames: string[]) {
   fireEvent.change(screen.getByLabelText(/Antragstitel/), {
     target: { value: "Testprojekt" },
   })
-  fireEvent.change(screen.getByLabelText(/Projektidee/), {
+  // R3.3: die Startoption «Mit Projektidee starten» trägt ebenfalls ein
+  // Label mit «Projektidee» — die Texteingabe eindeutig über die Rolle holen.
+  fireEvent.change(screen.getByRole("textbox", { name: /Projektidee/ }), {
     target: { value: "Eine Projektidee." },
   })
   for (const [index, name] of partnerNames.entries()) {
