@@ -28,6 +28,9 @@ Statuswahrheit: **eine Blocker-Zahl, überall**.
 | `acb5c02` | R1.2 | `ReviewStatusView` Backend (additiv, read-only, wiederverwendete Zählprimitiven) |
 | `04cf23d` | R1.3 | Alle vier Screens lesen den Status-View; Paritätstest (`e2e/status-parity.spec.ts`) |
 | `bcb03fc` | R1.4 | CI-Guard `check_legacy_status_paths.py` + verify_all-Gate |
+| `5575c5e` | R1.3-Fix | Fehlende Next.js-Proxy-Route `app/api/runs/[id]/review/status/route.ts` (Paritätstest erreichte das Backend nicht) + Milestone-Doc-Entwurf |
+| `9904f3a` | Bugfix (vorbestehend) | `e2e/demo-dataset.spec.ts` an ehrliche Herkunfts-Badges angepasst (Alt-Badge war hartkodiert «Strukturvorlage», seit Owner-Commit `2b455a4` dynamisch) |
+| `5622e9e` | Bugfix (vorbestehend) | Quellen-Seite löst die im Backend gespeicherte Projektklasse auf statt Dauer-Fallback «confidential» (State-Resolution, kein Policy-Downgrade) |
 
 ## Kernverhalten
 
@@ -88,8 +91,26 @@ Der Diff berührt `backend/app/review/*` (Governance-Pfad). Geprüft:
 
 ## Verifikation (verify_all.ps1, wörtlich)
 
+Lauf vom 2026-07-07 (nach den beiden Fix-Commits `9904f3a`/`5622e9e`), Exit-Code 0.
+Backend-pytest komplett grün (die `s`-Marker sind vorbestehende Conditional-Skips
+der Real-Provider-Smokes), vitest 210/210 (49 Dateien), Playwright 31/31
+(inkl. neuem Paritätstest), API-Smoke 18/18. Summary-Block wörtlich:
+
 ```text
-{{VERIFY_ALL_BLOCK}}
+================ M10 VERIFICATION SUMMARY ================
+backend tests            : pass
+migration                : pass
+frontend tests (vitest)  : pass
+build/typecheck/lint     : pass
+Playwright               : pass
+API smoke                : pass
+export smoke             : pass   (test_m10_smoke.py::test_export_all_types)
+no-raw-log               : pass   (test_m10_smoke.py::test_no_raw_log)
+testdata markers         : pass   (scripts/check_testdata_markers.py)
+legacy status guard      : pass   (scripts/check_legacy_status_paths.py)
+evaluation summary       : C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\var\evaluation\EvaluationRunSummary.json
+=========================================================
+ALL GREEN
 ```
 
 ## Offene Punkte / Follow-ups
