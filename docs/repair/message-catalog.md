@@ -1,9 +1,9 @@
 # Message-Katalog — Regel-/Partnermeldungen (R2.6)
 
-> **STATUS: ENTWURF — Owner-Freigabe ausstehend.**
-> Verdrahtung in `backend/app/rules/messages.py` erfolgt erst nach explizitem
-> Owner-Approve dieses Katalogs (Prompt-Pack-Arbeitsregel 7: Meldungstexte
-> kommen aus vom Owner freigegebenen Katalogen; Claude Code verdrahtet nur).
+> **STATUS: FREIGEGEBEN** — Owner-Approve am 2026-07-07 (Chat, Option
+> «Approve — verdrahten»). Verdrahtet in `backend/app/rules/messages.py`;
+> Textänderungen laufen über diesen Katalog + erneutes Owner-Approve
+> (Prompt-Pack-Arbeitsregel 7: Claude Code verdrahtet nur).
 
 ## Zweck
 
@@ -53,5 +53,5 @@ haben bereits spezifische, nicht-generische Texte in `handlers.py` — R2.6
 
 ## Abnahme
 
-- [ ] Owner hat jeden ENTWURF-Text geprüft/angepasst
-- [ ] Freigabe erteilt am: ____ durch: ____
+- [x] Owner hat jeden ENTWURF-Text geprüft (ohne Änderungen übernommen)
+- [x] Freigabe erteilt am: 2026-07-07 durch: Owner (Chat-Approve, Session repair-v2/R2)

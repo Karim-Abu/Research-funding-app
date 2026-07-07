@@ -14,6 +14,7 @@ from typing import Any
 
 from app.registry.loader import RuleDef
 from app.rules.inputs import PartnerInput, RuleInputs
+from app.rules.messages import rule_message
 
 Handled = tuple[str, dict[str, Any], str]
 
@@ -67,11 +68,20 @@ def h_exists(rule: RuleDef, inputs: RuleInputs) -> Handled:
         "matched": matched,
         "unknown": unknown,
     }
+    # R2.6 — entity-spezifische Katalogtexte (message-catalog.md); die
+    # Zweig-Entscheidung (true/missing/false) bleibt unverändert.
     if matched:
-        return "true", observed, f"{matched} passende(r) Partner vorhanden."
+        return "true", observed, rule_message(
+            rule.rule_id, "true", f"{matched} passende(r) Partner vorhanden."
+        )
     if unknown:
-        return "missing", observed, "Partnerangaben unvollständig — Prüfung nicht abschliessend."
-    return "false", observed, "Kein passender Partner vorhanden."
+        return "missing", observed, rule_message(
+            rule.rule_id, "missing",
+            "Partnerangaben unvollständig — Prüfung nicht abschliessend.",
+        )
+    return "false", observed, rule_message(
+        rule.rule_id, "false", "Kein passender Partner erfasst."
+    )
 
 
 def h_human_reviewed_questionnaire(rule: RuleDef, inputs: RuleInputs) -> Handled:
@@ -104,15 +114,31 @@ def h_max_exclusive_percent(rule: RuleDef, inputs: RuleInputs) -> Handled:
         "financial_independence_statuses": statuses,
         "percent_values": values,
     }
+    # R2.6 — Katalogtexte je Zweig; Zweig-Semantik unverändert.
     if values:
         if any(v >= threshold for v in values):
-            return "at_or_above_threshold", observed, f"Beteiligung ≥ {threshold} %."
-        return "below_threshold_and_confirmed", observed, f"Alle Beteiligungen < {threshold} %."
+            return "at_or_above_threshold", observed, rule_message(
+                rule.rule_id, "at_or_above_threshold",
+                f"Beteiligung ≥ {threshold} %.",
+            )
+        return "below_threshold_and_confirmed", observed, rule_message(
+            rule.rule_id, "below_threshold_and_confirmed",
+            f"Alle Beteiligungen < {threshold} %.",
+        )
     if not statuses:
-        return "missing", observed, "Keine Angaben zur finanziellen Unabhängigkeit."
+        return "missing", observed, rule_message(
+            rule.rule_id, "missing",
+            "Keine Angaben zur finanziellen Unabhängigkeit.",
+        )
     if all(s == "confirmed" for s in statuses):
-        return "below_threshold_and_confirmed", observed, "Finanzielle Unabhängigkeit bestätigt."
-    return "missing", observed, "Finanzielle Unabhängigkeit nicht bestätigt — Angaben nötig."
+        return "below_threshold_and_confirmed", observed, rule_message(
+            rule.rule_id, "below_threshold_and_confirmed",
+            "Finanzielle Unabhängigkeit bestätigt.",
+        )
+    return "missing", observed, rule_message(
+        rule.rule_id, "missing",
+        "Finanzielle Unabhängigkeit nicht bestätigt — Angaben nötig.",
+    )
 
 
 def h_range_percent(rule: RuleDef, inputs: RuleInputs) -> Handled:
