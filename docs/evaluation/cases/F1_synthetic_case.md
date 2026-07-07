@@ -347,18 +347,21 @@ The expected findings below are goldstandard findings. R0.3 measures which of th
 
 These values must be measured during R0.3. Do not invent them before the baseline run.
 
+Gemessen am 2026-07-07 (R0.3, `docs/evaluation/baseline-report.md`, Rohdaten
+`docs/evaluation/baseline-f1-result.json`):
+
 | Metric | Baseline value |
 |---|---|
-| Total raw findings | TODO after R0.3 |
-| Duplicate finding groups | TODO after R0.3 |
-| Dashboard blocker count | TODO after R0.3 |
-| Requirements blocker count | TODO after R0.3 |
-| Review blocker count | TODO after R0.3 |
-| Export blocker count | TODO after R0.3 |
-| Manual steps until copy-ready field set | TODO after R0.3 |
-| Time until copy-ready field set | TODO after R0.3 |
-| Number of fields copy-ready | TODO after R0.3 |
-| Number of fields with placeholders | TODO after R0.3 |
+| Total raw findings | 72 offene Review-Findings (18 blocker / 54 warning) + 14 OpenIssues |
+| Duplicate finding groups | 20 Meldungstexte für 72 Findings; grösste Gruppen 31×, 10×, 7×, 5× identischer Text |
+| Dashboard blocker count | 0 (Definition zählt nur gestoppte Runs) |
+| Requirements blocker count | 2 Blocker-OpenIssues (2 Assessments «blocked») |
+| Review blocker count | 18 (Reliability-Kacheln zeigen parallel 12) |
+| Export blocker count | 18 (= ReviewPackage.blocker_count) |
+| Manual steps until copy-ready field set | nicht erreicht — 18 Schritte bis Prüfung abgeschlossen, 0/8 kopierbereit |
+| Time until copy-ready field set | nicht erreichbar ohne Reparaturen (Skript-Laufzeit API-Ebene: 5.0 s) |
+| Number of fields copy-ready | 0 von 8 |
+| Number of fields with placeholders | 4 (Abstract, Executive Summary, Value Creation, Solution) |
 
 ---
 
