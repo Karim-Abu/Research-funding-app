@@ -21,7 +21,8 @@ $env:E2E_EMAIL    = if ($env:E2E_EMAIL)    { $env:E2E_EMAIL }    else { "anna.ke
 $env:E2E_PASSWORD = if ($env:E2E_PASSWORD) { $env:E2E_PASSWORD } else { "changeme-dev-lead" }
 
 $R = @{ backend="skip"; migration="skip"; frontend="skip"; quality="skip";
-        playwright="skip"; apismoke="skip"; testdata="skip"; evalpath="-" }
+        playwright="skip"; apismoke="skip"; testdata="skip"; legacyguard="skip";
+        evalpath="-" }
 $e2eDb = Join-Path $backend "var\verify_e2e.db"
 
 function Stop-Servers {
@@ -39,6 +40,11 @@ try {
     Write-Host "-- testdata marker check --"
     & $py (Join-Path $root "scripts\check_testdata_markers.py") --root $root
     $R.testdata = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+
+    # --- Legacy-Status-Guard (R1.4) ---
+    Write-Host "-- legacy status guard --"
+    & $py (Join-Path $root "scripts\check_legacy_status_paths.py") --root $root
+    $R.legacyguard = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
 
     # --- Backend: migration check + pytest ---
     Write-Host "-- backend: fresh-DB migration check --"
@@ -137,10 +143,11 @@ Write-Host "API smoke                : $($R.apismoke)"
 Write-Host "export smoke             : $exportR   (test_m10_smoke.py::test_export_all_types)"
 Write-Host "no-raw-log               : $norawR   (test_m10_smoke.py::test_no_raw_log)"
 Write-Host "testdata markers         : $($R.testdata)   (scripts/check_testdata_markers.py)"
+Write-Host "legacy status guard      : $($R.legacyguard)   (scripts/check_legacy_status_paths.py)"
 Write-Host "evaluation summary       : $($R.evalpath)"
 Write-Host "========================================================="
 
-$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright, $R.apismoke, $R.testdata) |
+$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright, $R.apismoke, $R.testdata, $R.legacyguard) |
         Where-Object { $_ -like "FAIL*" }
 if ($fail.Count -gt 0) { exit 1 }
 Write-Host "ALL GREEN"

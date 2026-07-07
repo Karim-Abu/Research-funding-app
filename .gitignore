@@ -40,3 +40,6 @@ backend.evaluation.stdout.log
 backend.evaluation.stderr.log
 frontend.evaluation.stdout.log
 frontend.evaluation.stderr.log
+
+# Python-Bytecode der CI-Check-Skripte (scripts/check_*.py)
+scripts/__pycache__/
