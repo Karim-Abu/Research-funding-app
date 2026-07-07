@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "7b091c3d3e24"  # finding v2 fields (R2.2).
+_HEAD = "a3f8c2d91e47"  # import candidates (R3.2).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -120,10 +120,11 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
+    assert "import_candidates" in _tables(db)
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
     # Row preservation across the roundtrip: a pre-existing open_issues row
-    # must survive downgrade (column drop) + upgrade (column re-add).
+    # must survive downgrade + upgrade der Head-Migration unverändert.
     con = sqlite3.connect(db)
     try:
         con.execute(
@@ -136,20 +137,25 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one (drops the R2.2 finding-v2 columns), then back up. The Slice-3
-    # copy_events table (one revision earlier) must survive the -1 step.
+    # Down one (entfernt NUR die R3.2-Tabelle), dann wieder hoch. Die R2.2-
+    # Spalten (eine Revision früher) müssen den -1-Schritt überleben.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "fingerprint" not in _columns(db, "review_findings")
-    assert "fingerprint" not in _columns(db, "open_issues")
+    assert "import_candidates" not in _tables(db)
+    assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
+    assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
     assert "copy_events" in _tables(db)
     assert "cash_contribution" in _project_columns(db)
     assert "duration_months" in _project_columns(db)
     assert "run_quality_summaries" in _tables(db)
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
-    assert "copy_events" in _tables(db)
-    assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
-    assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
+    assert "import_candidates" in _tables(db)
+    assert {
+        "import_candidate_id", "workspace_id", "project_id", "source_id",
+        "source_version_id", "field_id", "extracted_text", "confidence",
+        "source_location", "decision", "decided_by", "decided_at",
+        "accepted_draft_version_id", "created_at",
+    } <= _columns(db, "import_candidates")
     con = sqlite3.connect(db)
     try:
         row = con.execute(

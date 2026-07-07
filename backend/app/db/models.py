@@ -290,6 +290,59 @@ class SourceFragment(Base):
     )
 
 
+class ImportCandidate(Base):
+    """R3.2 — ein erkanntes Feld aus einem Innolink-Antragsimport.
+
+    Jeder Kandidat braucht eine explizite menschliche Entscheidung (HITL);
+    ``uncertain`` ist nie automatisch übernehmbar. decision enum:
+    pending | conflict | accepted | saved_as_source | ignored — ``conflict``
+    ist ein Zwischenzustand (bestehender bearbeiteter Draft, Entscheid mit
+    expliziter Bestätigung nötig), kein Endzustand.
+    """
+
+    __tablename__ = "import_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_version_id", "field_id", name="uq_import_candidate_version_field"
+        ),
+    )
+
+    import_candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.source_id"), nullable=False, index=True
+    )
+    source_version_id: Mapped[str] = mapped_column(
+        ForeignKey("source_versions.source_version_id"), nullable=False
+    )
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Extrahierter Antragstext (D2) — bleibt in der DB, nie in Logs/Audit.
+    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # Mapping-Konfidenz: found | uncertain (uncertain nie auto-übernehmbar).
+    confidence: Mapped[str] = mapped_column(String, nullable=False)
+    # Menschlich lesbare Fundstelle, z. B. "Seite 3"; None bei Textquellen.
+    source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    decided_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Provenienz: die durch «Übernehmen» erzeugte DraftVersion.
+    accepted_draft_version_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
 class ControlResult(Base):
     """Minimal deterministic control outcomes (size, type, signature,
     archive-safety, classification, path-safety, processing). Distinct from
