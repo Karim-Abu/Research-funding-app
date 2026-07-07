@@ -69,7 +69,11 @@ import {
 import { createProcessingConfirmation } from "@/lib/processing-confirmations"
 import { pollOperation, type PollHandle } from "@/lib/operations"
 import { LiveEvidence } from "@/components/quellen/live-evidence"
-import { dataClassificationFromFlat } from "@/lib/data-classification"
+import {
+  dataClassificationFromFlat,
+  flatFromDataClassification,
+} from "@/lib/data-classification"
+import { getProject } from "@/lib/projects"
 import {
   computeSourceUsage,
   listEvidence,
@@ -340,14 +344,22 @@ function QuellenPageContent() {
   // Vom Backend gemeldete effektive Klasse hat Vorrang vor dem Intake-Wert.
   const [backendDataClass, setBackendDataClass] =
     React.useState<DataClass | null>(null)
+  // Im Projekt gespeicherte Klassifizierung (Backend ist die Wahrheit) — deckt
+  // Projekte ohne Intake-Session ab (z. B. API-erstellt oder frischer Browser).
+  const [projectDataClass, setProjectDataClass] =
+    React.useState<DataClass | null>(null)
 
-  // Quellen tragen eine eigene Datenklasse; der Backend-Run meldet die
-  // restriktivste Einstufung aus Projekt und Snapshot-Quellen zurück.
-  const effectiveDataClass: DataClass | null =
-    backendDataClass ??
-    (intake
-      ? mostRestrictiveDataClass([intake.vertraulichkeit || "confidential"])
-      : null)
+  // Restriktivste bekannte Einstufung gewinnt (nie Downgrade); ohne jedes
+  // Signal bleibt null und die Konsumenten fallen fail-closed auf
+  // "confidential" zurück.
+  const knownDataClasses: DataClass[] = [
+    ...(backendDataClass ? [backendDataClass] : []),
+    ...(projectDataClass ? [projectDataClass] : []),
+    ...(intake ? [intake.vertraulichkeit || ("confidential" as DataClass)] : []),
+  ]
+  const effectiveDataClass: DataClass | null = knownDataClasses.length
+    ? mostRestrictiveDataClass(knownDataClasses)
+    : null
 
   // Run lifecycle: the page only starts a run and polls its status via the
   // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
@@ -573,6 +585,22 @@ function QuellenPageContent() {
     setProjectId(getActiveProjectId())
     void getCapabilities().then(setCapabilities)
   }, [liveMode])
+
+  // Gespeicherte Projektklasse nachladen; bei Fehler bleibt der
+  // fail-closed-Fallback ("confidential") bestehen.
+  React.useEffect(() => {
+    if (!liveMode || !projectId) return
+    let active = true
+    getProject(projectId)
+      .then((p) => {
+        if (active)
+          setProjectDataClass(flatFromDataClassification(p.data_classification))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [liveMode, projectId])
 
   React.useEffect(() => {
     if (!liveMode) setLocalSourceRows([])

@@ -53,3 +53,12 @@ export function dataClassificationFromFlat(
 ): DataClassification {
   return { ...FLAT_TO_CLASSIFICATION[flat] }
 }
+
+/** Inverse mapping for display/gating: NDA is not expressible in the flat
+ *  choice, so it collapses to the most restrictive flat value. */
+export function flatFromDataClassification(
+  classification: DataClassification
+): DataClass {
+  if (classification.nda_applies) return "confidential"
+  return classification.sensitivity
+}
