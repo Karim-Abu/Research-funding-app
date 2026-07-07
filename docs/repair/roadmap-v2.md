@@ -1,5 +1,18 @@
 # Roadmap v2 (R0–R9)
 
+> **Status-Vorschlag (2026-07-07, zur Owner-Bestätigung):**
+> **R0 abgeschlossen** (`repair-r0-done`) — Harness/Doku aus R0.1 lagen vor; ergänzt um
+> R0.2 Gate-Report-Vorlage, R0.4 Marker-CI-Check, F1-Goldfall (Owner-approved) und
+> R0.3-Baseline (`docs/evaluation/baseline-report.md`). Offen aus R0: Entscheide E-01
+> (PDF-Gate-Testlauf mit lokalem PDF), E-02/E-12 formal; vier `docs/security/`-Vorlagen
+> fehlen weiterhin.
+> **R1 abgeschlossen** (`repair-r1-done`) — kanonischer Status-View (R1.2), alle vier
+> Screens lesen ihn (R1.3), Status-Paritätstest als dauerhaftes Merge-Gate, CI-Guard
+> gegen neue Legacy-Statuspfade (R1.4). Nachweis:
+> `docs/milestones/Repair_R0_R1_Kanonischer_Status_Report.md`.
+> **Nächster Milestone: R2** (Issue-Modell, Dedupe, Fix Queue). Voraussetzung für R2.6:
+> Owner-freigegebener Message-Katalog; für R2.7: Registry-Metadaten vom Owner.
+
 Die vom Product Owner vorgeschlagene R0–R9-Struktur wird übernommen — mit drei begründeten Abweichungen:
 
 1. **Import rückt von R7 auf R3.** Er braucht nur R1 (Statuswahrheit) und R2 (Issue-Modell), nicht Datenklassen-Umbau und keinen Provider [Code: ingestion/parsers.py, Spike deterministisch]. Er ist der grösste Hebel gegen die Hauptschwäche Nutzeraufwand. Datenklassen (neu R4) müssen nur vor KI-Assist liegen, nicht vor einem lokalen, deterministischen, HITL-gesicherten Import.
