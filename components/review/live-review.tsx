@@ -18,6 +18,12 @@ import { getCapabilities } from "@/lib/capabilities"
 import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { QualitySummary } from "@/components/review/quality-summary"
 import {
+  GroupedFindingsSection,
+  NextActionsCard,
+} from "@/components/review/fix-queue"
+import { flags } from "@/lib/flags"
+import { useFixQueue } from "@/lib/fix-queue"
+import {
   getReview,
   startRecheck,
   createApproval,
@@ -82,6 +88,18 @@ export function LiveReview({ runId }: { runId: string }) {
   }, [runId])
 
   React.useEffect(() => load(), [load])
+
+  // R2.5 — Fix Queue (Flag groupedFindings). Fällt bei Fehler/leerer Antwort
+  // automatisch auf die alte Darstellung zurück (fixQueueActive = false).
+  const { queue: fixQueue } = useFixQueue(
+    runId,
+    pkg?.review_package_version,
+    flags.groupedFindings
+  )
+  const fixQueueActive =
+    flags.groupedFindings &&
+    fixQueue !== null &&
+    fixQueue.grouped_findings.length > 0
 
   async function recheck() {
     if (!pkg) return
@@ -234,14 +252,19 @@ export function LiveReview({ runId }: { runId: string }) {
         recheckRequired={pkg.recheck_required}
       />
 
-      {/* Nächste Schritte — the top actions derived from the current package */}
-      <NextStepsCard
-        pkg={pkg}
-        staleReliability={Boolean(staleReliability)}
-        groups={groups}
-        busy={busy}
-        onRecheck={recheck}
-      />
+      {/* Nächste Schritte/Aufgaben — mit aktiver Fix Queue (R2.5) kommen die
+          Top-5 priorisiert aus der Gruppierungs-API; sonst alte Ableitung. */}
+      {fixQueueActive ? (
+        <NextActionsCard groups={fixQueue.next_actions} limit={5} />
+      ) : (
+        <NextStepsCard
+          pkg={pkg}
+          staleReliability={Boolean(staleReliability)}
+          groups={groups}
+          busy={busy}
+          onRecheck={recheck}
+        />
+      )}
 
       {/* Approval / blocker panel */}
       <ApprovalPanel
@@ -271,21 +294,30 @@ export function LiveReview({ runId }: { runId: string }) {
         </div>
       </section>
 
-      {/* Blocker cards — grouped by portal field, top 3 groups first */}
-      {blockerFindings.length > 0 && (
-        <BlockerSection blockerFindings={blockerFindings} />
-      )}
+      {/* Offene Punkte: mit aktiver Fix Queue EINE gruppierte Liste («4 × …»,
+          aufklappbar mit Beispielen) statt Blocker-Karten + Hinweis-Liste;
+          Fallback bleibt die alte Darstellung. */}
+      {fixQueueActive ? (
+        <GroupedFindingsSection groups={fixQueue.grouped_findings} />
+      ) : (
+        <>
+          {/* Blocker cards — grouped by portal field, top 3 groups first */}
+          {blockerFindings.length > 0 && (
+            <BlockerSection blockerFindings={blockerFindings} />
+          )}
 
-      {/* Deduplicated hints */}
-      {dedupedHints.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
-          <div className="flex flex-col gap-2">
-            {dedupedHints.map((h) => (
-              <DedupedHint key={h.description} hint={h} />
-            ))}
-          </div>
-        </section>
+          {/* Deduplicated hints */}
+          {dedupedHints.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
+              <div className="flex flex-col gap-2">
+                {dedupedHints.map((h) => (
+                  <DedupedHint key={h.description} hint={h} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {/* KI-gestützte Hinweise (A3 evidence-consistency, advisory) */}

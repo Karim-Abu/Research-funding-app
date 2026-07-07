@@ -18,6 +18,29 @@ import {
 
 const FLAG_LABEL: Record<string, string> = { ok: "In Ordnung", risky: "Qualitätsrisiko" }
 
+// R2.5 — identische Meldungen werden gebündelt angezeigt («31 × …») statt als
+// lange Wiederholungsliste; die Reihenfolge des ersten Auftretens bleibt.
+function groupByDescription(
+  findings: { finding_id: string; description: string }[]
+): { description: string; count: number; key: string }[] {
+  const order: string[] = []
+  const counts = new Map<string, { count: number; key: string }>()
+  for (const f of findings) {
+    const entry = counts.get(f.description)
+    if (entry) {
+      entry.count += 1
+    } else {
+      counts.set(f.description, { count: 1, key: f.finding_id })
+      order.push(f.description)
+    }
+  }
+  return order.map((description) => ({
+    description,
+    count: counts.get(description)!.count,
+    key: counts.get(description)!.key,
+  }))
+}
+
 // Explains why the four metrics don't necessarily add up — not every claim
 // requires evidence, and the categories track different check states.
 const METRICS_LEGEND =
@@ -131,9 +154,10 @@ export function QualitySummary({ runId }: { runId: string }) {
                 <AlertTriangle className="size-4 text-destructive" /> Zuverlässigkeits-Blocker
               </p>
               <ul className="flex flex-col gap-1">
-                {blockers.map((f) => (
-                  <li key={f.finding_id} className="text-xs text-foreground">
-                    {f.description}
+                {groupByDescription(blockers).map((g) => (
+                  <li key={g.key} className="text-xs text-foreground">
+                    {g.count > 1 ? `${g.count} × ` : ""}
+                    {g.description}
                   </li>
                 ))}
               </ul>
@@ -144,9 +168,10 @@ export function QualitySummary({ runId }: { runId: string }) {
             <div className="mt-3" data-testid="reliability-warnings">
               <p className="mb-1 text-sm font-medium text-foreground">Hinweise (Prüfung nötig)</p>
               <ul className="flex flex-col gap-1">
-                {warnings.map((f) => (
-                  <li key={f.finding_id} className="text-xs text-muted-foreground">
-                    {f.description}
+                {groupByDescription(warnings).map((g) => (
+                  <li key={g.key} className="text-xs text-muted-foreground">
+                    {g.count > 1 ? `${g.count} × ` : ""}
+                    {g.description}
                   </li>
                 ))}
               </ul>

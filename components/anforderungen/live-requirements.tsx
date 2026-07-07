@@ -13,6 +13,9 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { CanonicalStatusBadge } from "@/components/status/canonical-status"
+import { NextActionsCard } from "@/components/review/fix-queue"
+import { flags } from "@/lib/flags"
+import { useFixQueue } from "@/lib/fix-queue"
 import {
   RequirementSummaryBar,
   RequirementFilterBar,
@@ -113,6 +116,10 @@ export function LiveRequirements({
   }, [runId])
 
   React.useEffect(() => load(), [load])
+
+  // R2.5 — kompakte «Nächste Aufgaben» (Fix Queue); bei Fehler/leer erscheint
+  // der Block nicht (alte Darstellung bleibt vollständig erhalten).
+  const { queue: fixQueue } = useFixQueue(runId, undefined, flags.groupedFindings)
 
   // Deep link: once the data is there, expand the targeted row (matched by
   // requirement_id or assessment_id), scroll to it and highlight it briefly.
@@ -238,6 +245,13 @@ export function LiveRequirements({
               <span>{STALE_NOTICE}</span>
             </div>
           )}
+
+          {/* R2.5 — priorisierte «Nächste Aufgaben» aus der Fix Queue. */}
+          {flags.groupedFindings &&
+            fixQueue !== null &&
+            fixQueue.next_actions.length > 0 && (
+              <NextActionsCard groups={fixQueue.next_actions} limit={5} />
+            )}
 
           {rows.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border bg-muted/20 px-6 py-16 text-center">
