@@ -10,6 +10,7 @@ policy. The registry is immutable once loaded.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -46,6 +47,34 @@ class RegistryError(RuntimeError):
     """Raised when a registry file is missing, malformed, or inconsistent."""
 
 
+# R2.7 — Format der Regel-Metadaten. Leere/fehlende Werte sind toleriert
+# (Owner liefert Inhalte nach); vorhandene Werte müssen dem Format genügen,
+# sonst fail-closed (RegistryError).
+_LAST_CHECKED_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+_METADATA_FIELDS = ("source_ref", "source_version", "last_checked", "validity_status")
+
+
+def _parse_rule_metadata(entry: dict[str, Any], rule_id: str) -> dict[str, str | None]:
+    values: dict[str, str | None] = {}
+    for name in _METADATA_FIELDS:
+        raw_value = entry.get(name)
+        if raw_value is None or raw_value == "":
+            values[name] = None
+            continue
+        if not isinstance(raw_value, str) or not raw_value.strip():
+            raise RegistryError(
+                f"Rule {rule_id!r}: metadata field {name!r} has an invalid "
+                "format (expected a non-empty string)."
+            )
+        if name == "last_checked" and not _LAST_CHECKED_RE.match(raw_value.strip()):
+            raise RegistryError(
+                f"Rule {rule_id!r}: last_checked must be an ISO date "
+                f"(YYYY-MM-DD), got {raw_value!r}."
+            )
+        values[name] = raw_value.strip()
+    return values
+
+
 @dataclass(frozen=True)
 class RuleDef:
     rule_id: str
@@ -60,6 +89,13 @@ class RuleDef:
     result_mapping: dict[str, str]
     status: str
     test_cases: list[dict[str, Any]] = field(default_factory=list)
+    # R2.7 — Herkunfts-Metadaten (Inhalte liefert der Owner in den Contract-
+    # YAMLs; leer = noch nicht gepflegt). Der Loader validiert nur das FORMAT
+    # (fail-closed bei kaputtem Format), erfindet nie Inhalte.
+    source_ref: str | None = None
+    source_version: str | None = None
+    last_checked: str | None = None  # ISO-Datum YYYY-MM-DD
+    validity_status: str | None = None
 
 
 @dataclass(frozen=True)
@@ -187,6 +223,7 @@ def _parse_rules(raw: dict[str, Any]) -> dict[str, RuleDef]:
             raise RegistryError(f"Rule {rule_id!r} condition has no type.")
         if rule_id in rules:
             raise RegistryError(f"Duplicate rule_id {rule_id!r}.")
+        metadata = _parse_rule_metadata(entry, rule_id)
         rules[rule_id] = RuleDef(
             rule_id=rule_id,
             requirement_id=entry.get("requirement_id"),
@@ -200,6 +237,10 @@ def _parse_rules(raw: dict[str, Any]) -> dict[str, RuleDef]:
             result_mapping={str(k): str(v) for k, v in mapping.items()},
             status=entry.get("status", "active"),
             test_cases=list(entry.get("test_cases", []) or []),
+            source_ref=metadata["source_ref"],
+            source_version=metadata["source_version"],
+            last_checked=metadata["last_checked"],
+            validity_status=metadata["validity_status"],
         )
     return rules
 
