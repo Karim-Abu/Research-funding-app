@@ -1,8 +1,0 @@
-C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
-  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
-INFO:     Started server process [18376]
-INFO:     Waiting for application startup.
-2026-07-07 09:46:18,130 level=INFO logger=app correlation_id=- msg=recovered_exports=0
-2026-07-07 09:46:18,130 level=INFO logger=app correlation_id=- msg=startup ok api_version=1.1.0 requirement_registry=1.0.0 rule_registry=1.1.0 recovered_sources=0 recovered_runs=0
-INFO:     Application startup complete.
-INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
