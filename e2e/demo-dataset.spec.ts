@@ -84,6 +84,12 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   // project-selector list entry and trip Playwright's strict mode.
   await page.getByRole("heading", { name: /Verbundwerkstoffe \(Demo\)/ }).click()
   await expect(page).toHaveURL(/\/editor/, { timeout: 20_000 })
+  // The origin badge shows the true draft origin (CREATED_BY_LABELS): the
+  // demo seed user-edits the first field, template fields keep their label.
+  await expect(page.getByText("Manuell bearbeitet").first()).toBeVisible({
+    timeout: 20_000,
+  })
+  await page.getByRole("button", { name: /Executive summary/ }).click()
   await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
     timeout: 20_000,
   })
@@ -94,7 +100,8 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   await page.getByRole("tab", { name: "Belege" }).first().click()
   await expect(page.getByText(/Verkn/).first()).toBeVisible({ timeout: 20_000 })
   await page.reload()
-  await expect(page.getByText("Strukturvorlage").first()).toBeVisible({
+  // Reload re-selects the first field (user-edited in the demo seed).
+  await expect(page.getByText("Manuell bearbeitet").first()).toBeVisible({
     timeout: 20_000,
   })
 
