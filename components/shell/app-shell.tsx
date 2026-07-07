@@ -33,7 +33,7 @@ export function AppShell({
   stepStatus,
   stepperVariant = "full",
   children,
-}: AppShellProps) {
+}: Readonly<AppShellProps>) {
   const [collapsed, setCollapsed] = React.useState(false)
   const [projectId, setProjectId] = React.useState(activeProjectId)
   const [liveProjects, setLiveProjects] = React.useState<Project[] | null>(null)
@@ -87,13 +87,13 @@ export function AppShell({
 
   React.useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      const stored = globalThis.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
       if (stored === "true" || stored === "false") {
         setCollapsed(stored === "true")
         return
       }
       setCollapsed(
-        window.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
+        globalThis.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
       )
     } catch {
       setCollapsed(false)
@@ -108,7 +108,7 @@ export function AppShell({
     setCollapsed((current) => {
       const next = !current
       try {
-        window.localStorage.setItem(
+        globalThis.localStorage.setItem(
           SIDEBAR_COLLAPSED_STORAGE_KEY,
           String(next)
         )
@@ -127,14 +127,13 @@ export function AppShell({
       clearAllRichEditorSessionCache()
       // Screens read the active Antrag on mount — a full reload re-anchors
       // every open view to the newly selected application.
-      window.location.reload()
+      globalThis.location.reload()
     }
   }
 
   return (
     <div className="flex h-screen min-w-0 overflow-hidden bg-background">
       <Sidebar
-        role={effectiveUser.role}
         collapsed={collapsed}
         onToggle={handleSidebarToggle}
         activeProjectTitle={activeProject?.title ?? null}

@@ -21,6 +21,7 @@ import {
   Download,
   Users,
   Wallet,
+  Bot,
   PanelLeftClose,
   PanelLeftOpen,
   type LucideIcon,
@@ -31,7 +32,6 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { Role } from "@/lib/types"
 
 interface NavLink {
   label: string
@@ -61,6 +61,8 @@ const currentApplication: NavLink[] = [
   // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
   { label: "Export", href: "/export", icon: Download },
   { label: "Kosten & Laufzeit (Demo)", href: "/kosten", icon: Wallet },
+  // Transparenzseite: zeigt die KI-/Regel-/Mensch-Rollen der App.
+  { label: "KI-Team", href: "/ki-team", icon: Bot },
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
@@ -70,7 +72,6 @@ const collapsedItems: NavLink[] = [
 ]
 
 interface SidebarProps {
-  role: Role
   collapsed: boolean
   onToggle: () => void
   /** Title of the active Antrag; null → project-scoped links are disabled. */
@@ -86,14 +87,14 @@ function pathActive(pathname: string, href: string): boolean {
 }
 
 // Links that work without a selected Antrag (overview + creating a new one).
-const PROJECT_INDEPENDENT = new Set(["Übersicht", "Intake"])
+const PROJECT_INDEPENDENT = new Set(["Übersicht", "Intake", "KI-Team"])
 
 export function Sidebar({
   collapsed,
   onToggle,
   activeProjectTitle = null,
   activeProjectStatusLabel = null,
-}: SidebarProps) {
+}: Readonly<SidebarProps>) {
   const pathname = usePathname()
   const hasProject = activeProjectTitle !== null && activeProjectTitle !== ""
   const navigationId = "primary-sidebar-navigation"
@@ -258,7 +259,7 @@ export function Sidebar({
 // ---------------------------------------------------------------------------
 // Building blocks
 // ---------------------------------------------------------------------------
-function SectionLabel({ children }: { children: ReactNode }) {
+function SectionLabel({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <p className="mt-4 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/50">
       {children}
@@ -266,7 +267,7 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+function GroupLabel({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <p className="px-3 pt-1 text-xs font-medium text-sidebar-foreground/70">
       {children}
@@ -278,11 +279,11 @@ function ExpandedLink({
   item,
   active,
   badge,
-}: {
+}: Readonly<{
   item: NavLink
   active: boolean
   badge?: string
-}) {
+}>) {
   return (
     <Link
       href={item.href}
@@ -305,7 +306,7 @@ function ExpandedLink({
   )
 }
 
-function CollapsedLink({ item, active }: { item: NavLink; active: boolean }) {
+function CollapsedLink({ item, active }: Readonly<{ item: NavLink; active: boolean }>) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -333,10 +334,10 @@ function CollapsedLink({ item, active }: { item: NavLink; active: boolean }) {
 function DisabledRow({
   item,
   hint = "Nicht verfügbar",
-}: {
+}: Readonly<{
   item: DisabledLink
   hint?: string
-}) {
+}>) {
   return (
     <div
       aria-disabled="true"
@@ -352,7 +353,7 @@ function DisabledRow({
   )
 }
 
-function CollapsedDisabled({ item }: { item: NavLink }) {
+function CollapsedDisabled({ item }: Readonly<{ item: NavLink }>) {
   return (
     <Tooltip>
       <TooltipTrigger
