@@ -27,7 +27,8 @@ pm_run()  { if [ "$PM_KIND" = "pnpm" ]; then $PM "$@"; else npm run "$@"; fi; }
 pm_exec() { if [ "$PM_KIND" = "pnpm" ]; then $PM exec "$@"; else npx "$@"; fi; }
 
 R_BACKEND="skip"; R_MIGRATION="skip"; R_FRONTEND="skip"; R_QUALITY="skip"
-R_PLAYWRIGHT="skip"; R_APISMOKE="skip"; R_EXPORT="skip"; R_NORAWLOG="skip"; EVAL_PATH="-"
+R_PLAYWRIGHT="skip"; R_APISMOKE="skip"; R_EXPORT="skip"; R_NORAWLOG="skip"
+R_TESTDATA="skip"; EVAL_PATH="-"
 BACKEND_PID=""; FRONTEND_PID=""
 E2E_DB="$BACKEND/var/verify_e2e.db"
 export E2E_EMAIL="${E2E_EMAIL:-anna.keller@example.test}"
@@ -46,6 +47,11 @@ trap cleanup EXIT INT TERM
 
 echo "== M10 verification =="
 echo "package manager: $PM"
+
+# --- Testdaten-Marker-Check (R0.4) --------------------------------------------
+echo "-- testdata marker check --"
+"$PY" "$ROOT/scripts/check_testdata_markers.py" --root "$ROOT" \
+  && R_TESTDATA="pass" || R_TESTDATA="FAIL"
 
 # --- Backend: migration check + pytest ---------------------------------------
 echo "-- backend: fresh-DB migration check --"
@@ -127,10 +133,11 @@ echo "Playwright               : $R_PLAYWRIGHT"
 echo "API smoke                : $R_APISMOKE"
 echo "export smoke             : $R_EXPORT   (test_m10_smoke.py::test_export_all_types)"
 echo "no-raw-log               : $R_NORAWLOG   (test_m10_smoke.py::test_no_raw_log)"
+echo "testdata markers         : $R_TESTDATA   (scripts/check_testdata_markers.py)"
 echo "evaluation summary       : $EVAL_PATH"
 echo "========================================================="
 
-for r in "$R_BACKEND" "$R_MIGRATION" "$R_FRONTEND" "$R_QUALITY" "$R_PLAYWRIGHT" "$R_APISMOKE"; do
+for r in "$R_BACKEND" "$R_MIGRATION" "$R_FRONTEND" "$R_QUALITY" "$R_PLAYWRIGHT" "$R_APISMOKE" "$R_TESTDATA"; do
   case "$r" in FAIL*) exit 1;; esac
 done
 echo "ALL GREEN"
