@@ -173,6 +173,11 @@ export interface DashboardProject {
   deadlineIso?: string | null
   /** People involved, rendered as an avatar stack. */
   people?: ProjectPerson[]
+  /** Latest analysis run of the project (live mapping; feeds the canonical status). */
+  latestRunId?: string | null
+  /** R1.3 — canonical open-blocker count from the ReviewStatusView (lib/status.ts).
+   *  null/undefined = not loaded (mock mode or no completed run yet). */
+  openBlockerCount?: number | null
 }
 
 

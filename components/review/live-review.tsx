@@ -15,6 +15,7 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { getCapabilities } from "@/lib/capabilities"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { QualitySummary } from "@/components/review/quality-summary"
 import {
   getReview,
@@ -170,6 +171,14 @@ export function LiveReview({ runId }: { runId: string }) {
             Prüft Pflichtfelder, Belege, Zeichenlimits, Platzhalter und offene
             Punkte vor Export oder Weiterbearbeitung.
           </p>
+          {/* R1.3 — kanonischer Gesamtstatus; key erzwingt Neuladen nach
+              Recheck/Freigabe (neue Package-Version). */}
+          <div className="mt-1">
+            <CanonicalStatusBadge
+              key={pkg.review_package_version}
+              runId={runId}
+            />
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/* Recheck always re-runs the WHOLE quality check — there is no

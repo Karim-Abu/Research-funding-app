@@ -12,6 +12,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import {
   RequirementSummaryBar,
   RequirementFilterBar,
@@ -222,6 +223,10 @@ export function LiveRequirements({
               Automatisch erkannte Voraussetzungen, Belege und offene Prüfpunkte
               für diesen Antrag.
             </p>
+            {/* R1.3 — kanonischer Gesamtstatus (eine Quelle für alle Screens). */}
+            <div className="mt-1">
+              <CanonicalStatusBadge runId={runId} />
+            </div>
           </div>
 
           {stale && (
@@ -316,8 +321,11 @@ export function LiveRequirements({
             <p className="text-sm text-muted-foreground">
               {hasBlockers ? (
                 <>
+                  {/* Präzise Teilmengen-Formulierung: blockierende Anforderungen,
+                      nicht die kanonische Gesamt-Blockerzahl (siehe Badge oben). */}
                   <span className="font-medium text-destructive">
-                    {summary.blocked} Blocker
+                    {summary.blocked} blockierende{" "}
+                    {summary.blocked === 1 ? "Anforderung" : "Anforderungen"}
                   </span>{" "}
                   {summary.blocked === 1 ? "verhindert" : "verhindern"} aktuell den
                   nächsten Schritt.

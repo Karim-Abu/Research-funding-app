@@ -58,6 +58,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
     analysisRunning,
     isDemo,
     people,
+    openBlockerCount,
   } = project
 
   const status: ProjectCardStatus = cardStatus ?? "in_bearbeitung"
@@ -96,6 +97,18 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
               className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
             >
               {WARNING_BADGE_LABELS[warningBadge]}
+            </Badge>
+          )}
+          {/* R1.3 — kanonische Blocker-Zahl (ReviewStatusView); dieselbe Zahl
+              wie in Anforderungen, Qualitätsprüfung und Export. */}
+          {typeof openBlockerCount === "number" && openBlockerCount > 0 && (
+            <Badge
+              variant="outline"
+              data-testid="card-blocker-count"
+              data-blocker-count={openBlockerCount}
+              className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+            >
+              {`${openBlockerCount} Blocker offen`}
             </Badge>
           )}
         </div>

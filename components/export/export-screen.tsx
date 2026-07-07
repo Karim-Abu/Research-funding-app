@@ -433,7 +433,11 @@ type LocalCardState = "idle" | "generating" | "ready" | "error"
 
 export interface ExportScreenProps {
   scenario?: PageScenario
-  /** Offene, nicht überschriebene Blocker-Issues (Gating). */
+  /**
+   * @deprecated R1.3 — Demo-only. Der Live-Export liest die Blocker-Zahl aus
+   * dem kanonischen Status-View (lib/status.ts); dieser Prop wird nur noch vom
+   * Mock-Body gespeist und in der nächsten Version entfernt.
+   */
   openBlockerCount?: number
   /** Datenklasse des Laufs (Badge im Kopf). */
   dataClass?: DataClass

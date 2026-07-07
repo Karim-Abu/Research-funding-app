@@ -52,6 +52,13 @@ export type {
 // entschieden (lib/app-mode.ts). Diese Slices sind in Milestone 1 noch nicht
 // live verdrahtet; `isMock("legacy")` ist daher stets true, bis ihr Backend
 // folgt. Es gibt bewusst keinen zweiten, unabhängigen USE_MOCKS-Schalter mehr.
+//
+// R1.1/R1.3 — DEMO-ONLY: Alle isMock("legacy")-Zweige in dieser Datei sind
+// permanente Mock-Pfade und werden im Live-Modus von keinem aktiven Screen
+// erreicht (Inventar: docs/repair/r1-legacy-mock-inventory.md). Statuszahlen
+// im Live-Modus kommen ausschliesslich aus dem kanonischen Status-View
+// (lib/status.ts). Keine neuen Konsumenten anschliessen — der R1.4-CI-Guard
+// schlägt sonst an.
 
 // ---------------------------------------------------------------------------
 // Fehler-Envelope { error: { code, message } } — message ist deutscher UI-Text.
@@ -527,7 +534,9 @@ function cloneReview(runId: string, state: MockReviewState): RunFieldsDto {
   })
 }
 
-/** Offene, nicht überschriebene Blocker — Gating für Freigabe und Export. */
+/** Offene, nicht überschriebene Blocker — Gating für Freigabe und Export.
+ *  @deprecated R1.3 — Demo-only (Mock-Bodies). Live-Screens lesen die
+ *  Blocker-Zahl aus dem kanonischen Status-View (lib/status.ts). */
 export function countOpenBlockers(issues: IssueDto[]): number {
   return issues.filter((i) => i.severity === "blocker" && i.state === "open")
     .length

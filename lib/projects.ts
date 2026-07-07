@@ -212,5 +212,20 @@ export function toDashboardCard(project: ProjectDto): DashboardProject {
     analysisRunning: summary?.next_action === "view_progress",
     isDemo: project.title.trim().endsWith("(Demo)"),
     people: [],
+    latestRunId: summary?.latest_run_id ?? null,
+  }
+}
+
+/** R1.3 — merge the canonical blocker count into a card. Cards with open
+ *  blockers surface as «Blockiert» so the dashboard no longer hides
+ *  content blockers behind «In Bearbeitung». */
+export function withCanonicalStatus(
+  card: DashboardProject,
+  blockerCount: number
+): DashboardProject {
+  return {
+    ...card,
+    openBlockerCount: blockerCount,
+    cardStatus: blockerCount > 0 ? "blockiert" : card.cardStatus,
   }
 }

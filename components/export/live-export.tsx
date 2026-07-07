@@ -24,6 +24,7 @@ import {
 import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
 import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { getCapabilities } from "@/lib/capabilities"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
   EXPORT_REVIEW_LABELS,
@@ -192,6 +193,11 @@ export function LiveExport({ runId }: { runId: string }) {
               >
                 {EXPORT_REVIEW_LABELS[readiness.reviewStatus]}
               </span>
+              {/* R1.3 — kanonischer Gesamtstatus (eine Quelle, lib/status.ts). */}
+              <CanonicalStatusBadge
+                key={pkg?.review_package_version ?? "no-pkg"}
+                runId={runId}
+              />
               {notForSubmission && (
                 <Badge
                   variant="outline"
