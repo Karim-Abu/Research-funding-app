@@ -71,7 +71,7 @@ import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
 import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
-import { getActiveProjectId } from "@/lib/intake-store"
+import { getActiveProjectId, loadIntake } from "@/lib/intake-store"
 import {
   CREATED_BY_LABELS,
   liveFieldToViewModel,
@@ -178,6 +178,9 @@ export function LiveEditor({
 }) {
   // M9I-B: the active project drives the read-only market-comparison context.
   const marketProjectId = getActiveProjectId() ?? undefined
+  // R4.4: Datenklasse für das Format-Cache-Gate — fehlt jedes Signal, bleibt
+  // der Cache fail-closed deaktiviert (isRichCacheAllowed(undefined) = false).
+  const workspaceDataClass = loadIntake()?.vertraulichkeit || undefined
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [anchors, setAnchors] = React.useState<EvidenceAnchorDto[]>([])
   const [requirements, setRequirements] = React.useState<
@@ -959,6 +962,7 @@ export function LiveEditor({
       editorRef={editorRef}
       serverText={selected.current_version.text}
       projectId={marketProjectId}
+      dataClass={workspaceDataClass}
       kiContent={
         <div className="flex flex-col gap-2">
           {showA2Controls ? (

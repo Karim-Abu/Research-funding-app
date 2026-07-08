@@ -39,6 +39,7 @@ import {
 } from "@/lib/draft-view"
 import { AI_PRIMARY } from "@/lib/draft-ai-actions"
 import { isMarketRelevantFieldId, type DraftFieldViewModel } from "@/lib/draft-viewmodel"
+import { isRichCacheAllowed } from "@/lib/rich-editor-cache"
 
 export interface DraftWorkspaceSuggestion {
   text: string
@@ -563,17 +564,31 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                       saveDisabled={saveDisabled}
                     />
                     <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-                      <span>
-                        Formatierungen werden während der Sitzung gespeichert. Innolink übernimmt
-                        beim Kopieren reinen Text; Listen und Absätze bleiben erhalten.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => editorRef.current?.clearFormatCache()}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        Format-Zwischenspeicher löschen
-                      </button>
+                      {/* R4.4: für nicht-öffentliche Klassen ist der Format-
+                          Cache aus Sicherheitsgründen deaktiviert — Hinweis
+                          statt Löschen-Button (es gibt nichts zu löschen). */}
+                      {projectId && !isRichCacheAllowed(dataClass) ? (
+                        <span>
+                          Vertrauliche Inhalte werden nicht im Browser
+                          zwischengespeichert — Formatierungen gehen beim
+                          Feldwechsel verloren. Innolink übernimmt beim Kopieren
+                          reinen Text.
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            Formatierungen werden während der Sitzung gespeichert. Innolink übernimmt
+                            beim Kopieren reinen Text; Listen und Absätze bleiben erhalten.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => editorRef.current?.clearFormatCache()}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Format-Zwischenspeicher löschen
+                          </button>
+                        </>
+                      )}
                     </p>
                     {noticeSlot}
                     <div

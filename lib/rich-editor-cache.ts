@@ -5,10 +5,12 @@
 // sessionStorage (never localStorage) keyed by project + field, and guarded by a
 // hash of the server plain text so a stale cache is discarded automatically.
 //
-// Governance (CLAUDEX §7): the cached JSON contains proposal text and is treated
-// exactly like the draft — it lives only in sessionStorage (gone when the tab
-// closes), is cleared on logout / project switch / explicit user action, is
-// disabled for restricted (D3/NDA) data classes, and is NEVER logged.
+// Governance (CLAUDEX §7, R4.4 / Owner-Tabelle §6): the cached JSON contains
+// proposal text and is treated exactly like the draft — it lives only in
+// sessionStorage (gone when the tab closes), is cleared on logout / project
+// switch / explicit user action, is allowed ONLY for explicitly public (D0)
+// projects (internal/confidential/nda/unknown are fail-closed), and is NEVER
+// logged.
 
 import type { JSONContent } from "@tiptap/react"
 import { normalizePortalPlainText } from "./rich-editor-content"
@@ -51,13 +53,14 @@ export function getRichEditorCacheKey(projectId: string, fieldId: string): strin
 }
 
 /**
- * Data-class gate. The rich cache is disabled for restricted material. The
- * current frontend confidentiality enum tops out at "confidential" (D0–D2); the
- * restricted markers below are future-proofing for a D3/NDA class.
+ * Data-class gate (R4.4, Security-P0 S1). Der Komfort-Cache ist NUR für
+ * explizit öffentliche (D0) Projekte erlaubt. Internal/confidential/nda sowie
+ * fehlende oder unbekannte Einstufungen sind fail-closed — kein Tiptap-JSON
+ * mit Inhalt im Browser-Storage.
  */
 export function isRichCacheAllowed(dataClass?: string | null): boolean {
-  if (!dataClass) return true // D0–D2 scope; unknown handled by the hash guard
-  return !/^(d3|nda|restricted|gesperrt|confidential_restricted)$/i.test(dataClass.trim())
+  if (!dataClass) return false
+  return /^(public|d0)$/i.test(dataClass.trim())
 }
 
 /**
@@ -120,6 +123,24 @@ export function writeRichEditorSessionCache(params: {
 
 export function clearRichEditorSessionCache(projectId: string, fieldId: string): void {
   storage()?.removeItem(getRichEditorCacheKey(projectId, fieldId))
+}
+
+/** R4.4: remove every entry of ONE project (Alt-Cache-Bereinigung, wenn ein
+ *  nicht-öffentliches Projekt geladen wird). */
+export function clearProjectRichEditorSessionCache(projectId: string): void {
+  const store = storage()
+  if (!store) return
+  try {
+    const prefix = `${KEY_PREFIX}:${projectId}:`
+    const keys: string[] = []
+    for (let i = 0; i < store.length; i++) {
+      const k = store.key(i)
+      if (k && k.startsWith(prefix)) keys.push(k)
+    }
+    for (const k of keys) store.removeItem(k)
+  } catch {
+    /* storage blocked */
+  }
 }
 
 /** Remove every rich-editor entry (logout / project switch). */

@@ -35,6 +35,7 @@ import {
   readRichEditorSessionCache,
   writeRichEditorSessionCache,
   clearRichEditorSessionCache,
+  clearProjectRichEditorSessionCache,
 } from "@/lib/rich-editor-cache"
 import { EditorToolbar } from "@/components/editor/editor-toolbar"
 
@@ -134,6 +135,12 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
     const cacheAllowed = Boolean(projectId) && isRichCacheAllowed(dataClass)
     const serverTextHash = React.useMemo(() => hashServerText(serverText), [serverText])
     const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // R4.4: Alt-Cache-Bereinigung — wird ein nicht-öffentliches Projekt
+    // geladen, werden vorhandene (vor dem Fix geschriebene) Einträge entfernt.
+    React.useEffect(() => {
+      if (projectId && !cacheAllowed) clearProjectRichEditorSessionCache(projectId)
+    }, [projectId, cacheAllowed])
 
     // Content for the CURRENT field: cache hit → rich JSON, else built from the
     // server plain text. Used at creation and on every field switch (setContent).

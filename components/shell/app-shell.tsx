@@ -5,7 +5,11 @@ import { Sidebar } from "./sidebar"
 import { Topbar } from "./topbar"
 import { WorkflowStepper } from "./workflow-stepper"
 import { useSession } from "@/components/providers/app-providers"
-import { getActiveProjectId, setActiveProjectId } from "@/lib/intake-store"
+import {
+  getActiveProjectId,
+  redactIntakeInSession,
+  setActiveProjectId,
+} from "@/lib/intake-store"
 import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
 import { listProjects, toDashboardCard } from "@/lib/projects"
 import { PROJECT_STATUS_LABELS, type Project, type StepStatus, type User } from "@/lib/types"
@@ -125,6 +129,9 @@ export function AppShell({
       setActiveProjectId(id)
       // Switching Antrag → drop the previous application's formatting cache.
       clearAllRichEditorSessionCache()
+      // R4.4: das Intake gehört zum vorherigen Antrag — Inhalte leeren
+      // (die Vertraulichkeitsstufe bleibt als restriktives Signal erhalten).
+      redactIntakeInSession()
       // Screens read the active Antrag on mount — a full reload re-anchors
       // every open view to the newly selected application.
       globalThis.location.reload()

@@ -25,8 +25,34 @@ function storage(): Storage | null {
   }
 }
 
+// R4.4 (Security-P0 S1, Owner-Tabelle §6): nur D0/public darf Inhalte in der
+// Browser-Session halten. Für internal/confidential/nda und unklassifiziert
+// wird nur die Stufe selbst persistiert — keine Projektidee, kein Titel,
+// keine Budgetwerte, keine Partnernamen.
+function redactIntake(data: IntakeFormData): IntakeFormData {
+  return {
+    titel: "",
+    projektidee: "",
+    innovationsfeld: "",
+    budgetrahmen: "",
+    vertraulichkeit: data.vertraulichkeit,
+    partner: [],
+  }
+}
+
+function hasIntakeContent(data: IntakeFormData): boolean {
+  return Boolean(
+    data.titel ||
+      data.projektidee ||
+      data.innovationsfeld ||
+      data.budgetrahmen ||
+      data.partner?.length
+  )
+}
+
 export function saveIntake(data: IntakeFormData): void {
-  storage()?.setItem(INTAKE_KEY, JSON.stringify(data))
+  const value = data.vertraulichkeit === "public" ? data : redactIntake(data)
+  storage()?.setItem(INTAKE_KEY, JSON.stringify(value))
 }
 
 function normalizeLegacyConfidentiality(value: unknown): IntakeFormData["vertraulichkeit"] {
@@ -49,13 +75,33 @@ export function loadIntake(): IntakeFormData | null {
   if (!raw) return null
   try {
     const data = JSON.parse(raw) as IntakeFormData
-    return {
+    const normalized = {
       ...data,
       vertraulichkeit: normalizeLegacyConfidentiality(data.vertraulichkeit),
     }
+    // R4.4: Alt-Einträge (vor dem Fix gespeichert) mit Roh-Content für
+    // nicht-public sofort bereinigen — Rückgabe UND Storage.
+    if (normalized.vertraulichkeit !== "public" && hasIntakeContent(normalized)) {
+      const redacted = redactIntake(normalized)
+      storage()?.setItem(INTAKE_KEY, JSON.stringify(redacted))
+      return redacted
+    }
+    return normalized
   } catch {
     return null
   }
+}
+
+/** R4.4: Logout — entfernt den Intake-Eintrag (Inhalts-Key) vollständig. */
+export function clearIntakeSession(): void {
+  storage()?.removeItem(INTAKE_KEY)
+}
+
+/** R4.4: Projektwechsel — Inhalte leeren, Stufe behalten (das Intake gehört
+ *  zum vorherigen Projekt; die Klasse bleibt als restriktives Signal). */
+export function redactIntakeInSession(): void {
+  const data = loadIntake()
+  if (data) storage()?.setItem(INTAKE_KEY, JSON.stringify(redactIntake(data)))
 }
 
 export function setCurrentRunId(runId: string): void {
