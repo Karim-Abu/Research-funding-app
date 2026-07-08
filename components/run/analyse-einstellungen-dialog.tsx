@@ -48,6 +48,7 @@ const dataClassLabel: Record<DataClass, string> = {
   public: "Öffentlich",
   internal: "Intern",
   confidential: "Vertraulich",
+  nda: "NDA / gesperrt",
 }
 
 export function AnalyseEinstellungenDialog({

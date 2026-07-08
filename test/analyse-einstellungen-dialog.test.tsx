@@ -66,4 +66,21 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     expect(settings.ki).toBe(false)
     expect(settings.cloudConfirmed).toBe(false)
   })
+
+  // R4.1: NDA / gesperrt (D3) — wie confidential lokal-only, nie Cloud/Web.
+  it("nda: cloud and web stay blocked, no confirmation is shown", () => {
+    const onStart = renderDialog("nda")
+    expect(
+      screen.queryByLabelText("Cloud-KI für diesen Durchlauf erlauben")
+    ).toBeNull()
+    expect(
+      screen.getByText(/keine externen KI- oder Webdienste/)
+    ).toBeInTheDocument()
+    const start = screen.getByRole("button", { name: "Analyse starten" })
+    fireEvent.click(start)
+    const settings = onStart.mock.calls[0][0] as AnalyseSettings
+    expect(settings.ki).toBe(false)
+    expect(settings.web).toBe(false)
+    expect(settings.cloudConfirmed).toBe(false)
+  })
 })

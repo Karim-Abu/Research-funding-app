@@ -31,7 +31,7 @@ const stepStatus: StepStatus[] = [
 
 function isConfidential(): boolean {
   const v = loadIntake()?.vertraulichkeit
-  return v === "internal" || v === "confidential"
+  return v === "internal" || v === "confidential" || v === "nda"
 }
 
 /** Adapt the flat mock field shape to the live PortalFieldDraft DTO so the same

@@ -63,11 +63,18 @@ export interface HumanCheck {
 
 // Confidentiality / data class ------------------------------------------
 
-export type DataClass = "public" | "internal" | "confidential"
+// R4.1: vier wählbare Stufen — "nda" (D3) ist NDA-/rechtlich gesperrtes Material.
+// Unknown ist KEIN wählbarer Wert; fehlende Einstufung bleibt fail-closed.
+export type DataClass = "public" | "internal" | "confidential" | "nda"
 
 // Beta-Policy (zentral — UI und API nutzen dieselben Regeln):
 // public -> Cloud-LLM und validierte öffentliche Webrecherche erlaubt;
-// internal/confidential bleiben ohne direkte externe Dienste im UI.
+// internal/confidential/nda bleiben ohne direkte externe Dienste im UI.
+//
+// WICHTIG (R4.1): Diese Helper sind reine UI-Gates — sie dürfen Bedienelemente
+// nur DEAKTIVIEREN, nie etwas freischalten. Die finale KI-Entscheidung für
+// D1/D2 trifft die Backend-ProviderPolicy (R4.3) zusammen mit data_policy /
+// policy_matrix; kontrollierte KI läuft nie allein über diese Booleans.
 
 export function isCloudAllowed(dataClass: DataClass): boolean {
   return dataClass === "public"
@@ -81,6 +88,7 @@ export const DATA_CLASS_LABELS: Record<DataClass, string> = {
   public: "Öffentlich",
   internal: "Intern",
   confidential: "Vertraulich",
+  nda: "NDA / gesperrt",
 }
 
 // Restriktivität aufsteigend — Index = Rang.
@@ -88,6 +96,7 @@ const DATA_CLASS_ORDER: DataClass[] = [
   "public",
   "internal",
   "confidential",
+  "nda",
 ]
 
 /**

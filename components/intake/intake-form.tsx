@@ -126,6 +126,14 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
     ki: "nicht möglich",
     web: "nicht möglich",
   },
+  {
+    value: "nda",
+    title: "NDA / gesperrt",
+    description:
+      "Für NDA-geschützte oder rechtlich gesperrte Inhalte. Keine KI-Verarbeitung, keine Webrecherche, keine Browser-Zwischenspeicherung.",
+    ki: "nicht möglich",
+    web: "nicht möglich",
+  },
 ]
 
 const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
@@ -135,6 +143,7 @@ const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
     "Intern gewählt: Externe KI-Dienste nur mit Freigabe, Webrecherche bedingt möglich.",
   confidential:
     "Vertraulich gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
+  nda: "NDA / gesperrt gewählt: Keine KI-Verarbeitung, keine Webrecherche, keine Browser-Zwischenspeicherung.",
 }
 
 // ---------------------------------------------------------------------------

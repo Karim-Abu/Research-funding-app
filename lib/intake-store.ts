@@ -31,8 +31,14 @@ export function saveIntake(data: IntakeFormData): void {
 
 function normalizeLegacyConfidentiality(value: unknown): IntakeFormData["vertraulichkeit"] {
   if (value === "public_synthetic" || value === "public_external") return "public"
-  if (value === "nda") return "confidential"
-  if (value === "public" || value === "internal" || value === "confidential") {
+  // R4.1: "nda" ist jetzt eine eigene Stufe (D3) — der frühere Kollaps auf
+  // "confidential" war ein stiller Marker-Verlust (Owner-Tabelle §4.1).
+  if (
+    value === "public" ||
+    value === "internal" ||
+    value === "confidential" ||
+    value === "nda"
+  ) {
     return value
   }
   return ""

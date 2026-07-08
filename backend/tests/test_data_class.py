@@ -28,6 +28,35 @@ def test_data_class_mapping():
     assert derive_data_class(_cls("public", nda=True)) == DataClass.D3_NDA_BLOCKED
 
 
+def test_owner_mapping_table_rows():
+    """R4.1 — die vier UI-Zeilen der Owner-Tabelle (docs/repair/data-class-mapping.md §2)
+    leiten exakt auf D0–D3 ab; Bestandswerte behalten ihre Interpretation."""
+    rows = {
+        DataClass.D0_PUBLIC: {
+            "sensitivity": "public", "origin": "synthetic",
+            "processing_mode": "cloud_assisted",
+            "web_research_mode": "validated_public", "nda_applies": False,
+        },
+        DataClass.D1_INTERNAL: {
+            "sensitivity": "internal", "origin": "real_project",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "off", "nda_applies": False,
+        },
+        DataClass.D2_CONFIDENTIAL_IDEA: {
+            "sensitivity": "confidential", "origin": "real_project",
+            "processing_mode": "local_only",
+            "web_research_mode": "off", "nda_applies": False,
+        },
+        DataClass.D3_NDA_BLOCKED: {
+            "sensitivity": "confidential", "origin": "real_project",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "off", "nda_applies": True,
+        },
+    }
+    for expected, classification in rows.items():
+        assert derive_data_class(classification) == expected
+
+
 def test_unknown_fail_closed():
     # Empty / missing classification and unrecognized values are UNKNOWN (deny-by-default).
     assert derive_data_class({}) == DataClass.UNKNOWN

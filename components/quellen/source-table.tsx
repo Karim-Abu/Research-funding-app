@@ -1226,7 +1226,11 @@ function TextSourceDialog({
 // Missing/unknown Datenklasse is always treated as confidential — sources are
 // never imported across projects without a deliberate confirmation.
 function isSensitiveSource(source: Source): boolean {
-  return source.dataClass == null || source.dataClass === "confidential"
+  return (
+    source.dataClass == null ||
+    source.dataClass === "confidential" ||
+    source.dataClass === "nda"
+  )
 }
 
 function SourceDataClassPill({ source }: { source: Source }) {
@@ -1235,7 +1239,7 @@ function SourceDataClassPill({ source }: { source: Source }) {
       <span
         className={cn(
           "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-          source.dataClass === "confidential"
+          source.dataClass === "confidential" || source.dataClass === "nda"
             ? "border-status-partial/40 bg-status-partial/8 text-foreground"
             : "border-border bg-muted/40 text-muted-foreground"
         )}
