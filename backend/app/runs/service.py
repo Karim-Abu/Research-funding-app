@@ -171,6 +171,9 @@ def prepare_run(
             usage_record_id=str(uuid.uuid4()),
             run_id=actual_run_id,
             workspace_id=project.workspace_id,
+            # Technischer Seed-Row ohne externen Call (EVAL.1): explizit
+            # not_applicable, damit Runs nicht dauerhaft "unknown cost" tragen.
+            cost_status="not_applicable",
         )
     )
 

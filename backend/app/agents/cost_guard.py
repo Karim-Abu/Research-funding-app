@@ -1,9 +1,10 @@
 """CostGuard for model invocations (Milestone 9A).
 
 Enforces call-count / retry / timeout / token limits from the AgentProfile.
-No pricing or token-cost formula exists in any contract, so CHF cost is NEVER
-invented — ``UsageRecord.cost_chf`` is a non-nullable technical placeholder (0.0)
-and is never surfaced or claimed as an actual cost.
+CHF cost is never invented: since EVAL.1 it is resolved via the versioned
+price table (``app.evaluation.pricing``) — a missing entry yields
+``cost_status='unknown_price'`` with ``cost_chf=0.0``, which must never be
+read or summed as "free"; fake/local adapters yield ``not_applicable``.
 """
 from __future__ import annotations
 
@@ -16,6 +17,7 @@ from sqlalchemy.orm import Session
 from app.agents.registry import AgentProfileDef
 from app.agents.providers.base import ProviderUsage
 from app.db.models import AgentInvocation, UsageRecord
+from app.evaluation.pricing import resolve_cost
 
 # Statuses that count as an accepted (non-idempotent) call against the run limit.
 _COUNTED_STATUSES = ("queued", "running", "succeeded", "failed", "timed_out")
@@ -80,8 +82,21 @@ def record_usage(
     provider: str,
     model_id: str,
     usage: ProviderUsage,
+    adapter_name: str | None = None,
 ) -> UsageRecord:
-    """Persist token usage. cost_chf=0.0 is a placeholder (no pricing config)."""
+    """Persist token usage with cost semantics (EVAL.1).
+
+    ``provider`` bleibt der Contract-Routenwert (z. B. ``anthropic_direct``);
+    ``adapter_name`` ist die Selbstauskunft des tatsächlich bedienenden
+    Adapters (``fake`` ⇒ kein externer Call ⇒ ``not_applicable``).
+    """
+    cost = resolve_cost(
+        provider=provider,
+        model_id=model_id,
+        input_tokens=usage.input_tokens,
+        output_tokens=usage.output_tokens,
+        adapter_name=adapter_name,
+    )
     record = UsageRecord(
         usage_record_id=str(uuid.uuid4()),
         run_id=run_id,
@@ -90,7 +105,9 @@ def record_usage(
         model=model_id,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
-        cost_chf=0.0,  # placeholder only — never displayed as an actual cost
+        cost_chf=cost.cost_chf,
+        cost_status=cost.cost_status,
+        price_version=cost.price_version,
     )
     db.add(record)
     db.flush()

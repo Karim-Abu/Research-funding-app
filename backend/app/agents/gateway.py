@@ -279,22 +279,24 @@ def invoke(
 
 
 def _try_route(inv, profile, request, registry, resolver, route_key):
-    """Attempt one route. Returns (model_out, usage, route) on success, or a
-    ``(None, status, reason)`` tuple on failure."""
+    """Attempt one route. Returns (model_out, usage, route, adapter_name) on
+    success, or a ``(None, status, reason, None)`` tuple on failure. Der
+    Adapter-Name (Selbstauskunft) wird für die Kostensemantik durchgereicht:
+    fake-served Calls dürfen nicht als externe Calls gemetert werden (EVAL.1)."""
     route = registry.route(route_key)
     inv.model_route, inv.provider, inv.model_id = route_key, route.provider, route.model_id
     adapter = resolver(route)
     if adapter is None:
-        return None, "failed", "provider_unavailable"
+        return None, "failed", "provider_unavailable", None
     # R4.3 ProviderPolicy: provider × data_class (× origin/eval) — geprüft VOR
     # available(), damit gesetzte API-Keys nie eine blockierte Klasse öffnen.
     p_decision = provider_policy.decide_for_adapter(
         adapter, request.classification, get_settings()
     )
     if not p_decision.allowed:
-        return None, "blocked", p_decision.reason
+        return None, "blocked", p_decision.reason, None
     if not adapter.available():
-        return None, "failed", "provider_unavailable"
+        return None, "failed", "provider_unavailable", None
     preq = ProviderRequest(
         model_id=route.model_id, prompt=_assemble_prompt(profile, request),
         output_schema_id=profile.output_schema,
@@ -308,12 +310,12 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
             allowed_frags=request.allowed_fragment_ids,
         )
     except ProviderTimeout:
-        return None, "timed_out", "provider_timeout"
+        return None, "timed_out", "provider_timeout", None
     except (ProviderError, ProviderUnavailable):
-        return None, "failed", "provider_error"
+        return None, "failed", "provider_error", None
     except _SchemaFailure as exc:
-        return None, "failed", str(exc)
-    return model_out, usage, route
+        return None, "failed", str(exc), None
+    return model_out, usage, route, getattr(adapter, "name", None)
 
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
@@ -323,7 +325,7 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
     last_status, last_reason = "failed", "provider_unavailable"
 
     for route_key in routes:
-        model_out, second, third = _try_route(
+        model_out, second, third, adapter_name = _try_route(
             inv, profile, request, registry, resolver, route_key
         )
         if model_out is None:
@@ -338,6 +340,7 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             rec = cost_guard.record_usage(
                 db, run_id=request.run_id, workspace_id=request.workspace_id,
                 provider=route.provider, model_id=route.model_id, usage=usage,
+                adapter_name=adapter_name,
             )
             usage_record_id = rec.usage_record_id
         inv.output_hash = _hash(model_out.model_dump())

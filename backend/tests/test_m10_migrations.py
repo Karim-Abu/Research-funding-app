@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "a3f8c2d91e47"  # import candidates (R3.2).
+_HEAD = "b2c4e6a8d0f1"  # usage cost status (EVAL.1).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -60,10 +60,13 @@ def _project_columns(db_path: Path) -> set[str]:
     return _columns(db_path, "projects")
 
 
-# R2.2 — die additiven Issue-Modell-v2-Spalten der Head-Migration.
+# R2.2 — die additiven Issue-Modell-v2-Spalten (zwei Revisionen unter Head).
 _FINDING_V2_COLUMNS = {
     "fingerprint", "severity_class", "fix_recommendation", "last_seen_at",
 }
+
+# EVAL.1 — die additiven Kostensemantik-Spalten der Head-Migration.
+_USAGE_COST_COLUMNS = {"cost_status", "price_version"}
 
 
 def _head_version(db_path: Path) -> str | None:
@@ -121,26 +124,28 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert "import_candidates" in _tables(db)
+    assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
-    # Row preservation across the roundtrip: a pre-existing open_issues row
-    # must survive downgrade + upgrade der Head-Migration unverändert.
+    # Row preservation across the roundtrip: eine bestehende usage_records-Zeile
+    # muss Downgrade + Upgrade der Head-Migration überleben; cost_status wird
+    # nach dem Re-Upgrade per server_default auf 'unknown_price' backfilled.
     con = sqlite3.connect(db)
     try:
         con.execute(
-            "INSERT INTO open_issues (issue_id, run_id, issue_type, severity,"
-            " description, target_type, target_id, recommended_next_action,"
-            " status, created_at) VALUES ('iss-r22', 'run-x', 'draft_incomplete',"
-            " 'warning', 'Roundtrip-Testzeile', 'portal_field', 'INTRO.APP.NAME',"
-            " 'nichts', 'open', '2026-01-01T00:00:00+00:00')"
+            "INSERT INTO usage_records (usage_record_id, workspace_id,"
+            " input_tokens, output_tokens, cost_chf, cost_status, created_at)"
+            " VALUES ('usg-eval1', 'ws-m10', 11, 22, 0.0, 'not_applicable',"
+            " '2026-01-01T00:00:00+00:00')"
         )
         con.commit()
     finally:
         con.close()
-    # Down one (entfernt NUR die R3.2-Tabelle), dann wieder hoch. Die R2.2-
-    # Spalten (eine Revision früher) müssen den -1-Schritt überleben.
+    # Down one (entfernt NUR die EVAL.1-Spalten), dann wieder hoch. Die R3.2-
+    # Tabelle und die R2.2-Spalten (frühere Revisionen) überleben den -1-Schritt.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "import_candidates" not in _tables(db)
+    assert not (_USAGE_COST_COLUMNS & _columns(db, "usage_records"))
+    assert "import_candidates" in _tables(db)
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
     assert "copy_events" in _tables(db)
@@ -149,6 +154,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert "run_quality_summaries" in _tables(db)
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
+    assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
     assert {
         "import_candidate_id", "workspace_id", "project_id", "source_id",
@@ -159,12 +165,15 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     con = sqlite3.connect(db)
     try:
         row = con.execute(
-            "SELECT description, fingerprint FROM open_issues"
-            " WHERE issue_id='iss-r22'"
+            "SELECT input_tokens, output_tokens, cost_status, price_version"
+            " FROM usage_records WHERE usage_record_id='usg-eval1'"
         ).fetchone()
     finally:
         con.close()
-    assert row == ("Roundtrip-Testzeile", None), "row lost or mutated in roundtrip"
+    # Tokens unverändert; cost_status ist nach dem Re-Add der Spalte der
+    # fail-closed server_default (die ursprüngliche Einstufung ist weg — genau
+    # deshalb ist 'unknown_price' der sichere Backfill), price_version NULL.
+    assert row == (11, 22, "unknown_price", None), "row lost or mutated in roundtrip"
     assert {
         "direct_total_project_costs_excluding_overhead",
         "implementation_own_contribution",

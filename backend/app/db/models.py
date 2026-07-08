@@ -526,6 +526,16 @@ class UsageRecord(Base):
     input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
     cost_chf: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # EVAL.1 — Kostensemantik: priced | unknown_price | not_applicable.
+    # cost_chf=0.0 darf NIE als "kostenlos" gelesen werden; Summen nur über
+    # cost_status='priced'. Fail-closed Default: unknown_price (Backfill +
+    # vergessliche Schreiber). Kein DB-Enum (Codebase-Konvention: plain String).
+    cost_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="unknown_price",
+        server_default="unknown_price",
+    )
+    # Version der Preistabelle, nur gesetzt wenn cost_status='priced'.
+    price_version: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )

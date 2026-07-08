@@ -3,6 +3,12 @@
 Deterministic per-run evaluation metrics for M10/thesis reporting: aggregates dataset,
 evidence, review and reliability counts for one completed run. Costs are never invented —
 `estimated_cost` is an explicit placeholder. Reproducible for a fixed run + `generated_at`.
+
+EVAL.1 (additiv, Schema unverändert `evaluation-run-summary-1`): neue Keys
+``data_mode`` (abgeleitetes Label, kein Enforcement) und ``usage``
+(Token-/Kostenstatus-Aggregat aus UsageRecords; ``cost_chf_priced`` summiert
+nur ``cost_status='priced'``). ``estimated_cost`` bleibt bewusst der alte
+Platzhalter — es existieren weiterhin keine Realpreise.
 """
 from __future__ import annotations
 
@@ -26,6 +32,9 @@ from app.db.models import (
     SourceDocument,
 )
 from app.evaluation import SUMMARY_SCHEMA
+from app.evaluation.data_mode import derive_data_mode
+from app.evaluation.pricing import PRICE_TABLE_VERSION
+from app.evaluation.usage import run_usage_totals
 
 
 def _count(db: Session, model_col, *where) -> int:
@@ -56,6 +65,10 @@ def build_evaluation_summary(
         "dataset_id": dataset_id or run.project_id,
         "timestamp": generated_at or datetime.now(timezone.utc).isoformat(),
         "provider_mode": run.processing_mode,
+        "data_mode": derive_data_mode(
+            ai_eval_mode=settings.ai_eval_mode,
+            origin=(run.effective_data_classification or {}).get("origin"),
+        ),
         "fake_provider_used": bool(
             settings.agent_fake_provider or settings.web_research_fake_provider
         ),
@@ -92,6 +105,10 @@ def build_evaluation_summary(
         "warning_count": quality.warning_count if quality else 0,
         "reliability_quality_flag": quality.quality_flag if quality else None,
         "total_runtime_seconds": quality.latency_seconds if quality else None,
+        "usage": {
+            **run_usage_totals(db, run.run_id),
+            "price_table_version": PRICE_TABLE_VERSION,
+        },
         "estimated_cost": {
             "value_chf": None,
             "placeholder": True,
@@ -110,7 +127,8 @@ def render_markdown(summary: dict) -> str:
         "| --- | --- |",
     ]
     order = [
-        "run_id", "dataset_id", "provider_mode", "fake_provider_used",
+        "run_id", "dataset_id", "provider_mode", "data_mode",
+        "fake_provider_used",
         "web_research_used", "market_comparison_used", "source_count",
         "requirement_count", "draft_field_count", "evidence_anchor_count",
         "exact_verified_anchor_count", "review_finding_count",
@@ -121,6 +139,12 @@ def render_markdown(summary: dict) -> str:
     ]
     for key in order:
         lines.append(f"| {key} | {summary.get(key)} |")
+    usage = summary.get("usage") or {}
+    for key in (
+        "usage_record_count", "input_tokens", "output_tokens",
+        "cost_status_counts", "cost_chf_priced", "price_table_version",
+    ):
+        lines.append(f"| usage.{key} | {usage.get(key)} |")
     cost = summary["estimated_cost"]
     lines.append(f"| estimated_cost | placeholder ({cost['note']}) |")
     lines.append("")
