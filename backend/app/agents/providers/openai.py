@@ -39,7 +39,9 @@ class OpenAIProvider:
                 },
                 json={
                     "model": request.model_id,
-                    "max_tokens": request.max_output_tokens or 1024,
+                    # gpt-5.x verlangt max_completion_tokens; "max_tokens"
+                    # wird mit HTTP 400 abgelehnt (EVAL.2, Owner-Ok).
+                    "max_completion_tokens": request.max_output_tokens or 1024,
                     "messages": [{"role": "user", "content": request.prompt}],
                 },
                 timeout=request.timeout_seconds,

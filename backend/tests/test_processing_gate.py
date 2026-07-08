@@ -369,6 +369,10 @@ def test_a2_availability_cloud_with_fake_provider(client, monkeypatch):
 
 def test_a2_availability_provider_unavailable_without_fake(client, monkeypatch):
     monkeypatch.setattr(get_settings(), "agent_fake_provider", False)
+    # Hermetisch: Keys explizit auf None — eine lokale backend/.env mit
+    # echten Keys (EVAL.2-Smoke) darf diesen Test nicht kippen.
+    monkeypatch.setattr(get_settings(), "anthropic_api_key", None)
+    monkeypatch.setattr(get_settings(), "openai_api_key", None)
     ok, reason = field_drafting.availability(
         _fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
