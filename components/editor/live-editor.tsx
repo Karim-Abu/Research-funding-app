@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { ExternalLink, Link2, RefreshCw, Sparkles, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
@@ -77,13 +79,80 @@ import {
   type AssistantTab,
 } from "@/lib/draft-viewmodel"
 import {
+  AI_REASON_INFO,
   createRedraft,
+  FALLBACK_AI_REASON,
   isA2Field,
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
+
+// R4.2 — jeder KI-Blockgrund nennt Grund + Ausweg. Navigations-CTAs führen zur
+// Quellen-/Analyseseite (Datenklasse, Analyse-Einstellungen, Quellen hinzufügen).
+const REASON_CTA_HREF: Record<string, string> = {
+  nda_locked: "/quellen",
+  mode_deterministic_only: "/quellen",
+  run_mode_mismatch: "/quellen",
+  missing_sources: "/quellen",
+}
+
+function A2ReasonNotice({
+  reason,
+  onUseTemplate,
+}: {
+  reason: string
+  onUseTemplate?: () => void
+}) {
+  const [adminHintOpen, setAdminHintOpen] = React.useState(false)
+  const info = AI_REASON_INFO[reason] ?? AI_REASON_INFO[FALLBACK_AI_REASON]
+  const href = REASON_CTA_HREF[reason]
+  return (
+    <div className="flex flex-col gap-1.5" data-reason-code={reason}>
+      <p role="status" className="text-xs text-muted-foreground">
+        {info.text}
+      </p>
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "self-start"
+          )}
+        >
+          {info.ctaLabel}
+        </Link>
+      ) : reason === "field_not_supported" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="self-start"
+          onClick={onUseTemplate}
+        >
+          {info.ctaLabel}
+        </Button>
+      ) : (
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start"
+            onClick={() => setAdminHintOpen((v) => !v)}
+          >
+            {info.ctaLabel}
+          </Button>
+          {adminHintOpen && (
+            <p className="text-xs text-muted-foreground">
+              Ein freigegebener KI-Provider muss durch Ihre Administration
+              konfiguriert werden. Alle übrigen Funktionen bleiben verfügbar.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 const RECHECK_NOTICE =
   "Änderungen gespeichert. Eine erneute Prüfung ist vor der Freigabe erforderlich."
@@ -137,7 +206,10 @@ export function LiveEditor({
   // M9D/9E: A2 draft suggestions (Solution & Innovation + Value Creation fields).
   const [a2Suggestion, setA2Suggestion] = React.useState<A2Suggestion | null>(null)
   const [a2Loading, setA2Loading] = React.useState(false)
-  const [a2Unavailable, setA2Unavailable] = React.useState(false)
+  // R4.2: statt Boolean der konkrete Blockgrund (Katalog-Code) oder null.
+  const [a2UnavailableReason, setA2UnavailableReason] = React.useState<
+    string | null
+  >(null)
   const [a2Error, setA2Error] = React.useState<string | null>(null)
   const [a2ReviewOpen, setA2ReviewOpen] = React.useState(false)
   const [a2Accepting, setA2Accepting] = React.useState(false)
@@ -177,7 +249,7 @@ export function LiveEditor({
   function resetA2() {
     setA2Suggestion(null)
     setA2Loading(false)
-    setA2Unavailable(false)
+    setA2UnavailableReason(null)
     setA2Error(null)
     setA2ReviewOpen(false)
     setA2Accepting(false)
@@ -239,14 +311,15 @@ export function LiveEditor({
     if (!selected) return
     setA2Loading(true)
     setA2Error(null)
-    setA2Unavailable(false)
+    setA2UnavailableReason(null)
     try {
       const suggestion = await createRedraft(runId, selected.field_id, baseVersionId)
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
     } catch (e) {
       if (e instanceof RedraftError && e.status === 503) {
-        setA2Unavailable(true)
+        // Ohne bekannten Code fail-closed auf provider_unavailable.
+        setA2UnavailableReason(e.reasonCode ?? FALLBACK_AI_REASON)
       } else if (e instanceof RedraftError && e.status === 409) {
         setConflict(true)
       } else {
@@ -906,12 +979,10 @@ export function LiveEditor({
                   </Button>
                 )}
               </div>
-              {a2Unavailable && (
-                <p role="status" className="text-xs text-muted-foreground">
-                  KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.
-                </p>
+              {a2UnavailableReason && (
+                <A2ReasonNotice reason={a2UnavailableReason} />
               )}
-              {!a2Suggestion && !a2Loading && !a2Unavailable && !a2Error && (
+              {!a2Suggestion && !a2Loading && !a2UnavailableReason && !a2Error && (
                 <p className="text-xs text-muted-foreground">
                   KI-Vorschlag für diesen Abschnitt noch nicht erstellt.
                 </p>
@@ -919,13 +990,19 @@ export function LiveEditor({
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
             </div>
           ) : (
-            <p
-              className="text-xs text-muted-foreground"
+            <div
+              className="flex flex-col gap-1.5"
               data-testid="a2-field-unavailable"
             >
-              KI-Vorschläge sind für dieses Feld nicht verfügbar — sie unterstützen
-              die Abschnitte «Lösung &amp; Innovation» und «Wertschöpfung».
-            </p>
+              <A2ReasonNotice
+                reason="field_not_supported"
+                onUseTemplate={() => editorRef.current?.focus?.()}
+              />
+              <p className="text-xs text-muted-foreground">
+                KI-Vorschläge unterstützen aktuell die Abschnitte «Lösung &amp;
+                Innovation» und «Wertschöpfung».
+              </p>
+            </div>
           )}
           <p className="text-[11px] text-muted-foreground">
             Vorschläge werden nie automatisch übernommen — Sie prüfen, übernehmen

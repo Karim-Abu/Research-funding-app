@@ -119,11 +119,15 @@ describe("LiveEditor A2 suggestions", () => {
     await screen.findByText("Abstract")
     await openKiAssist()
     // The default-selected field is the Abstract → no A2 control, but the
-    // availability is explained instead of silent (M10.2).
+    // availability is explained with the approved reason + CTA (R4.2).
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
-    expect(screen.getByTestId("a2-field-unavailable")).toHaveTextContent(
-      /für dieses Feld nicht verfügbar/
+    const unavailable = screen.getByTestId("a2-field-unavailable")
+    expect(unavailable).toHaveTextContent(
+      "Für dieses Feld ist noch kein KI-Vorschlag verfügbar."
     )
+    expect(
+      within(unavailable).getByRole("button", { name: "Strukturvorlage nutzen" })
+    ).toBeInTheDocument()
   })
 
   it("renders the empty-state hint for the SOL field", async () => {
@@ -220,7 +224,8 @@ describe("LiveEditor A2 suggestions", () => {
     )
   })
 
-  it("shows the unavailable message on 503", async () => {
+  // R4.2 — je reason_code: freigegebener Text + CTA (Grund + Ausweg statt Generiksatz).
+  it("503 without reason_code falls back to provider_unavailable (fail-closed)", async () => {
     baseMock([solDraft()])
     server.use(
       http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
@@ -231,9 +236,86 @@ describe("LiveEditor A2 suggestions", () => {
     await clickGenerate()
     await waitFor(() =>
       expect(
-        screen.getByText(/nicht verfügbar/)
+        screen.getByText("Es ist kein freigegebener KI-Provider konfiguriert.")
       ).toBeInTheDocument()
     )
+    expect(
+      screen.getByRole("button", { name: "Provider-Konfiguration prüfen" })
+    ).toBeInTheDocument()
+  })
+
+  const reasonCases: Array<{ code: string; text: string; cta: string }> = [
+    {
+      code: "nda_locked",
+      text: "Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert.",
+      cta: "Verarbeitungsmodus prüfen",
+    },
+    {
+      code: "mode_deterministic_only",
+      text: "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt.",
+      cta: "Verarbeitungsmodus ändern",
+    },
+    {
+      code: "provider_unavailable",
+      text: "Es ist kein freigegebener KI-Provider konfiguriert.",
+      cta: "Provider-Konfiguration prüfen",
+    },
+    {
+      code: "run_mode_mismatch",
+      text: "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
+      cta: "Analysemodus prüfen",
+    },
+    {
+      code: "missing_sources",
+      text: "Für einen belastbaren Vorschlag fehlen passende Quellen.",
+      cta: "Quelle hinzufügen",
+    },
+  ]
+
+  for (const { code, text, cta } of reasonCases) {
+    it(`503 with reason_code=${code} shows the approved text and CTA`, async () => {
+      baseMock([solDraft()])
+      server.use(
+        http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+          HttpResponse.json(
+            { code: "ai_unavailable", reason_code: code, detail: text },
+            { status: 503 }
+          )
+        )
+      )
+      render(<LiveEditor runId="r1" />)
+      await clickGenerate()
+      await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument())
+      // CTA rendered as link (navigation) or button (disclosure/action).
+      const control = screen.getByTestId("a2-suggestion-control")
+      expect(
+        within(control).getByRole(
+          code === "provider_unavailable" ? "button" : "link",
+          { name: cta }
+        )
+      ).toBeInTheDocument()
+    })
+  }
+
+  it("provider_unavailable CTA discloses the admin hint", async () => {
+    baseMock([solDraft()])
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json(
+          { code: "ai_unavailable", reason_code: "provider_unavailable" },
+          { status: 503 }
+        )
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate()
+    const cta = await screen.findByRole("button", {
+      name: "Provider-Konfiguration prüfen",
+    })
+    fireEvent.click(cta)
+    expect(
+      screen.getByText(/durch Ihre Administration konfiguriert/)
+    ).toBeInTheDocument()
   })
 
   it("dismisses the suggestion without saving", async () => {

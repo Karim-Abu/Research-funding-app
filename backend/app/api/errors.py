@@ -26,6 +26,7 @@ class ProblemException(Exception):
         detail: str,
         field_errors: list[FieldError] | None = None,
         retry_after_seconds: int | None = None,
+        reason_code: str | None = None,
     ) -> None:
         self.status = status
         self.code = code
@@ -33,6 +34,7 @@ class ProblemException(Exception):
         self.detail = detail
         self.field_errors = field_errors
         self.retry_after_seconds = retry_after_seconds
+        self.reason_code = reason_code
         super().__init__(detail)
 
 
@@ -61,6 +63,7 @@ def make_problem(
     detail: str,
     field_errors: list[FieldError] | None = None,
     retry_after_seconds: int | None = None,
+    reason_code: str | None = None,
 ) -> Problem:
     return Problem(
         type=f"/problems/{code}",
@@ -72,6 +75,7 @@ def make_problem(
         instance=request.url.path,
         field_errors=field_errors,
         retry_after_seconds=retry_after_seconds,
+        reason_code=reason_code,
     )
 
 
@@ -86,6 +90,7 @@ async def problem_exception_handler(
         detail=exc.detail,
         field_errors=exc.field_errors,
         retry_after_seconds=exc.retry_after_seconds,
+        reason_code=exc.reason_code,
     )
     return _response(request, problem)
 

@@ -1,4 +1,4 @@
-# Message-Katalog — Regel-/Partnermeldungen (R2.6)
+# Message-Katalog — Regel-/Partnermeldungen (R2.6) + KI-Blockgründe (R4.2)
 
 > **STATUS: FREIGEGEBEN** — Owner-Approve am 2026-07-07 (Chat, Option
 > «Approve — verdrahten»). Verdrahtet in `backend/app/rules/messages.py`;
@@ -55,3 +55,30 @@ haben bereits spezifische, nicht-generische Texte in `handlers.py` — R2.6
 
 - [x] Owner hat jeden ENTWURF-Text geprüft (ohne Änderungen übernommen)
 - [x] Freigabe erteilt am: 2026-07-07 durch: Owner (Chat-Approve, Session repair-v2/R2)
+
+---
+
+# R4.2 — KI-Verfügbarkeits-Reason-Codes (Owner-Microcopy, wörtlich aus Prompt-Pack)
+
+> **STATUS: FREIGEGEBEN** — Texte stammen wörtlich aus dem Owner-Prompt-Pack R4.2
+> («Owner-approved Microcopy für R4.2»). Verdrahtet in
+> `backend/app/fields/reason_codes.py` (Backend) und `lib/redraft.ts` (Frontend).
+> Der API-`code` bleibt `ai_unavailable`; `reason_code` + `reason_text_de` kommen
+> zusätzlich. Der Alttext «KI-Vorschläge sind für diese Datenklasse oder Umgebung
+> nicht verfügbar.» darf nicht mehr ohne Code erscheinen (Grep-Test).
+
+| reason_code | reason_text_de | CTA |
+|---|---|---|
+| `nda_locked` | «Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert.» | «Verarbeitungsmodus prüfen» |
+| `mode_deterministic_only` | «Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt.» | «Verarbeitungsmodus ändern» |
+| `provider_unavailable` | «Es ist kein freigegebener KI-Provider konfiguriert.» | «Provider-Konfiguration prüfen» |
+| `run_mode_mismatch` | «Der aktuelle Analysemodus passt nicht zum Feldvorschlag.» | «Analysemodus prüfen» |
+| `missing_sources` | «Für einen belastbaren Vorschlag fehlen passende Quellen.» | «Quelle hinzufügen» |
+| `field_not_supported` | «Für dieses Feld ist noch kein KI-Vorschlag verfügbar.» | «Strukturvorlage nutzen» |
+
+Hinweise:
+- Interne Block-Reasons (Audit) bleiben unverändert; das Mapping intern → Code
+  ist fail-closed (`provider_unavailable` als Default, nie ein codeloser Satz).
+- `missing_sources` ist Teil des freigegebenen Katalogs; im Ist-Verhalten
+  blockiert kein Pfad wegen fehlender Quellen — Emission folgt mit R5
+  (Vorschlagsqualität an Quellen gebunden). FE/BE sind bereits verdrahtet.

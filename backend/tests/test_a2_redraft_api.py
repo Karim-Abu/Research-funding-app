@@ -85,7 +85,14 @@ def test_redraft_deterministic_only_503(client, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
     assert res.status_code == 503
-    assert res.json()["code"] == "ai_unavailable"
+    body = res.json()
+    assert body["code"] == "ai_unavailable"
+    # R4.2: konkreter, maschinenlesbarer Grund + freigegebener deutscher Text.
+    assert body["reason_code"] == "mode_deterministic_only"
+    assert body["detail"] == (
+        "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt."
+    )
+    assert "Datenklasse oder Umgebung" not in body["detail"]
 
 
 def _generate(client, monkeypatch, run_id, base) -> str:

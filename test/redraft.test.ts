@@ -55,7 +55,54 @@ describe("createRedraft", () => {
     await expect(createRedraft("r1", FIELD, "v1")).rejects.toMatchObject({
       status: 503,
       code: "ai_unavailable",
+      reasonCode: null,
     })
+  })
+
+  // R4.2: reason_code + freigegebener Text kommen aus dem 503-Body.
+  it("parses reason_code and shows the approved catalog text", async () => {
+    server.use(
+      http.post(REDRAFT_URL, () =>
+        HttpResponse.json(
+          {
+            code: "ai_unavailable",
+            reason_code: "nda_locked",
+            detail: "Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert.",
+          },
+          { status: 503 }
+        )
+      )
+    )
+    const err = await createRedraft("r1", FIELD, "v1").catch((e) => e)
+    expect(err).toBeInstanceOf(RedraftError)
+    expect(err.reasonCode).toBe("nda_locked")
+    expect(err.message).toBe(
+      "Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert."
+    )
+  })
+
+  it("carries reason_code from a failed async operation", async () => {
+    server.use(
+      http.post(REDRAFT_URL, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d1",
+          status: "failed", created_at: new Date().toISOString(),
+          error: {
+            code: "mode_deterministic_only",
+            reason_code: "mode_deterministic_only",
+          },
+        })
+      )
+    )
+    const err = await createRedraft("r1", FIELD, "v1").catch((e) => e)
+    expect(err).toBeInstanceOf(RedraftError)
+    expect(err.reasonCode).toBe("mode_deterministic_only")
+    expect(err.message).toBe(
+      "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt."
+    )
   })
 
   it("maps 409 to a stale_base_version RedraftError", async () => {

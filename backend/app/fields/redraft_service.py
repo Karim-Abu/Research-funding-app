@@ -17,6 +17,7 @@ from app.api.errors import ProblemException
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun, AsyncOperation, PortalFieldDraft
 from app.db.session import SessionLocal
+from app.fields import reason_codes
 from app.repositories import audit
 from app.runs.constants import TERMINAL_OPERATION_STATUSES
 from app.runs.transitions import transition_operation
@@ -48,9 +49,12 @@ def prepare_redraft(
         )
     available, reason = field_drafting.availability(run, draft.field_id)
     if not available:
+        # R4.2: konkreter Grund statt Generiktext — code bleibt ai_unavailable,
+        # reason_code + freigegebener deutscher Text kommen zusätzlich mit.
+        reason_code, reason_text = reason_codes.to_reason(reason)
         raise ProblemException(
             status=503, code="ai_unavailable", title="Service Unavailable",
-            detail="KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.",
+            detail=reason_text, reason_code=reason_code,
         )
     operation_id = str(uuid.uuid4())
     operation = AsyncOperation(
@@ -102,9 +106,13 @@ def redraft_executor(
         else:
             op.status = "failed"
             op.last_error_code = outcome.reason or "ai_unavailable"
+            # R4.2: Verfügbarkeits-Skips (z. B. mode_deterministic_only) tragen
+            # den Katalog-Reason; reine Generierungsfehler bleiben generisch.
+            mapped = reason_codes.maybe_reason(outcome.reason or "")
             op.error = {
                 "code": outcome.reason or "ai_unavailable",
-                "detail": "Es konnte kein Vorschlag erstellt werden.",
+                "detail": mapped[1] if mapped else "Es konnte kein Vorschlag erstellt werden.",
+                **({"reason_code": mapped[0]} if mapped else {}),
             }
         op.finished_at = _now()
         audit.record(

@@ -20,3 +20,7 @@ class Problem(BaseModel):
     instance: str | None = None
     field_errors: list[FieldError] | None = None
     retry_after_seconds: int | None = None
+    # R4.2 (additiv, RFC-9457-Extension-Member, Owner-Freigabe 2026-07-08):
+    # maschinenlesbarer Verfügbarkeits-Blockgrund; detail trägt den
+    # freigegebenen deutschen Text (reason_text_de).
+    reason_code: str | None = None
