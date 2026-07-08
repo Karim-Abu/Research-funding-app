@@ -1003,8 +1003,9 @@ export function LiveEditor({
                 onUseTemplate={() => editorRef.current?.focus?.()}
               />
               <p className="text-xs text-muted-foreground">
-                KI-Vorschläge unterstützen aktuell die Abschnitte «Lösung &amp;
-                Innovation» und «Wertschöpfung».
+                KI-Vorschläge unterstützen aktuell die Abschnitte «Abstract»,
+                «Executive Summary», «Lösung &amp; Innovation» und
+                «Wertschöpfung».
               </p>
             </div>
           )}

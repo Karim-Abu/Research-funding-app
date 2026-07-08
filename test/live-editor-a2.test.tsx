@@ -69,6 +69,10 @@ function abstractDraft() {
   return { ...solDraft(), draft_id: "d-abs", field_id: "INTRO.APP.ABSTRACT", field_name: "Abstract" }
 }
 
+function unsupportedDraft() {
+  return { ...solDraft(), draft_id: "d-name", field_id: "INTRO.APP.NAME", field_name: "Projekttitel" }
+}
+
 function reviewPkg() {
   return {
     run_id: "r1", requirements: [], fields: [], findings: [], approval_status: "blocked",
@@ -113,13 +117,23 @@ function baseMock(fields: Record<string, unknown>[]) {
 }
 
 describe("LiveEditor A2 suggestions", () => {
-  it("shows the AI control only for Solution & Innovation", async () => {
+  it("shows the AI control for the Abstract field (R5.5)", async () => {
     baseMock([abstractDraft()])
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Abstract")
     await openKiAssist()
-    // The default-selected field is the Abstract → no A2 control, but the
-    // availability is explained with the approved reason + CTA (R4.2).
+    // Abstract is now an A2-enabled field → the KI-Vorschlag control appears.
+    expect(await screen.findByTestId("a2-suggestion-control")).toBeInTheDocument()
+    expect(screen.queryByTestId("a2-field-unavailable")).not.toBeInTheDocument()
+  })
+
+  it("hides the AI control for an unsupported field", async () => {
+    baseMock([unsupportedDraft()])
+    render(<LiveEditor runId="r1" />)
+    await screen.findByText("Projekttitel")
+    await openKiAssist()
+    // A non-A2 field → no control, but the availability is explained with the
+    // approved reason + CTA (R4.2).
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
     const unavailable = screen.getByTestId("a2-field-unavailable")
     expect(unavailable).toHaveTextContent(

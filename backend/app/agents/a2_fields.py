@@ -7,10 +7,13 @@ and validated fail-closed at import:
 
 - SOL.INNOVATION_SOLUTION.EDITOR  → A2.solution_innovation        (M9D)
 - VC.BUSINESS_TARGETS_MODEL.EDITOR → A2.value_creation_market_logic (M9E)
+- INTRO.APP.ABSTRACT              → A2.introduction_public_summary  (R5.5)
+- INTRO.APP.EXECUTIVE_SUMMARY     → A2.introduction_public_summary  (R5.5)
 
 Character limit and the mandatory question structure are resolved from the portal
-field registry (never hardcoded), so each profile validates against its field's
-actual registered questions.
+field registry (never hardcoded). Composite editor fields (``*.EDITOR``) carry
+mandatory sub-questions; singleton narrative fields (Abstract, Executive Summary)
+legitimately have none, so ``mandatory_markers`` may be empty for them.
 """
 from __future__ import annotations
 
@@ -24,11 +27,15 @@ from app.registry import get_registry
 A2_FIELD_PROFILES: dict[str, str] = {
     "SOL.INNOVATION_SOLUTION.EDITOR": "A2.solution_innovation",
     "VC.BUSINESS_TARGETS_MODEL.EDITOR": "A2.value_creation_market_logic",
+    "INTRO.APP.ABSTRACT": "A2.introduction_public_summary",
+    "INTRO.APP.EXECUTIVE_SUMMARY": "A2.introduction_public_summary",
 }
 
 # Per-field deterministic fake output (dev/test only — settings.agent_fake_provider).
-# Each text MUST contain the field's registry mandatory markers so the structural
-# validation passes, and uses explicit placeholders (never invented facts).
+# Composite editor texts MUST contain the field's registry mandatory markers so the
+# structural validation passes; singleton narrative fields (Abstract, Executive
+# Summary) have none. All use explicit placeholders, never invented facts. The
+# Abstract text must stay within its 300-char registry limit.
 _FAKE_TEXTS: dict[str, str] = {
     "SOL.INNOVATION_SOLUTION.EDITOR": (
         "4.1 Stand der Technik: bestehende Verfahren und deren Grenzen.\n"
@@ -42,6 +49,17 @@ _FAKE_TEXTS: dict[str, str] = {
         "mit Belegen oder – wo Marktdaten fehlen – als Platzhalter markiert.\n"
         "3.2 Geschäftsmodell und Markt: Zielkunden, Markteintritt und Differenzierung; "
         "fehlende Markt-, Wettbewerbs- oder Umsatzzahlen bleiben explizite Platzhalter."
+    ),
+    "INTRO.APP.ABSTRACT": (
+        "Öffentliche Kurzfassung des Vorhabens und seines Innovationsziels, allgemein "
+        "und ohne vertrauliche Details oder Partnernamen. Wo belastbare Angaben fehlen, "
+        "bleibt eine [Platzhalter]-Markierung statt erfundener Zahlen."
+    ),
+    "INTRO.APP.EXECUTIVE_SUMMARY": (
+        "Ausführlichere Zusammenfassung des Projekts: Ausgangslage, Innovationsziel, "
+        "geplanter Nutzen und Umsetzung, in allgemein verständlicher Sprache. Fehlende "
+        "Baselines, Markt- oder Wirkungszahlen bleiben als [Platzhalter] markiert statt "
+        "erfunden; konkrete KPIs werden nur mit Beleg genannt."
     ),
 }
 
@@ -76,7 +94,9 @@ def resolve_field_config(field_id: str) -> A2FieldConfig | None:
     if fdef is None or fdef.character_limit is None:
         return None
     markers = _registry_markers(field_id)
-    if not markers:
+    # Composite editor fields (SOL/VC) must expose their mandatory sub-questions;
+    # singleton narrative fields (Abstract/Exec Summary) legitimately have none.
+    if field_id.endswith(".EDITOR") and not markers:
         return None
     return A2FieldConfig(
         field_id=field_id,

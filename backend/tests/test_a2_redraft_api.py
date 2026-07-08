@@ -66,7 +66,8 @@ def test_redraft_other_field_404(client, monkeypatch):
     run_id, _draft_id, base = _setup()
     _arm_fake(monkeypatch)
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    res = _create_redraft(client, csrf, run_id, "INTRO.APP.ABSTRACT", base)
+    # INTRO.APP.NAME is outside the A2 allow-list (Abstract/Exec Summary now in).
+    res = _create_redraft(client, csrf, run_id, "INTRO.APP.NAME", base)
     assert res.status_code == 404
 
 

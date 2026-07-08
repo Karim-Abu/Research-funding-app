@@ -124,9 +124,9 @@ test("A2 solution-innovation: safe unavailable + field scope (API context)", asy
   expect(redraft.status()).toBe(503)
   expect((await redraft.json()).code).toBe("ai_unavailable")
 
-  // A2 is scoped to the SOL field — any other field 404s (no AI surface there).
+  // A2 is scoped to the allow-list — a non-enabled field (INTRO.APP.NAME) 404s.
   const other = await page.request.post(
-    `/api/runs/${runId}/fields/INTRO.APP.ABSTRACT/redrafts`,
+    `/api/runs/${runId}/fields/INTRO.APP.NAME/redrafts`,
     { headers: mut(), data: { base_version_id: base } }
   )
   expect(other.status()).toBe(404)
@@ -276,9 +276,10 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
   const runAfter = await (await page.request.get(`/api/runs/${runId}`)).json()
   expect(runAfter.recheck_required).toBe(true)
 
-  // A2 is not exposed on an unsupported field (e.g. the Abstract).
+  // A2 is not exposed on an unsupported field (Abstract/Exec Summary are now
+  // enabled; INTRO.APP.NAME remains outside the A2 allow-list).
   const unsupported = await page.request.post(
-    `/api/runs/${runId}/fields/INTRO.APP.ABSTRACT/redrafts`,
+    `/api/runs/${runId}/fields/INTRO.APP.NAME/redrafts`,
     { headers: mut(), data: { base_version_id: base } }
   )
   expect(unsupported.status()).toBe(404)

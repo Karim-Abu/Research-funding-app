@@ -205,7 +205,8 @@ def test_create_redraft_sol_still_works(client, monkeypatch):
 def test_create_redraft_unsupported_field_404(client):
     run_id, _draft_id, base = _setup()
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    res = _create_redraft(client, csrf, run_id, "INTRO.APP.ABSTRACT", base)
+    # INTRO.APP.NAME is not in the A2 allow-list (Abstract/Exec Summary now are).
+    res = _create_redraft(client, csrf, run_id, "INTRO.APP.NAME", base)
     assert res.status_code == 404
 
 

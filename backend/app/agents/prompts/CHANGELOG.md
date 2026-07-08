@@ -27,6 +27,7 @@ stille Prompt-Änderungen.
 | A1.project_fact_extraction | a1_project_fact_extraction_v1 | A1 — Projekt-Fakten als advisory Vorschläge extrahieren | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A1.evidence_candidate_mapping | a1_evidence_candidate_mapping_v1 | A1 — Kandidaten-Zitate/Ziele vorschlagen (advisory) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A1.public_competence_research | a1_public_competence_research_v1 | A1 — öffentliche Kompetenz-Evidenz strukturieren (advisory) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
+| A2.introduction_public_summary | a2_introduction_public_summary_v1 | A2 — Abstract & Executive Summary (INTRO.APP.ABSTRACT, INTRO.APP.EXECUTIVE_SUMMARY) | 2026-07-09 | R5.5-Aktivierung: erste sichtbare KI-Feldvorschläge |
 | A2.solution_innovation | a2_solution_innovation_v1 | A2 — Solution & Innovation Drafting (SOL.INNOVATION_SOLUTION.EDITOR) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A2.value_creation_market_logic | a2_value_creation_market_logic_v1 | A2 — Value Creation & Market Logic Drafting (VC.BUSINESS_TARGETS_MODEL.EDITOR) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A3.evidence_consistency | a3_evidence_consistency_v1 | A3 — Evidence & Consistency Review (advisory ReviewFindings) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |

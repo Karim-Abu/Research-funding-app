@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
-import { createRedraft, parseAIProposal, RedraftError } from "@/lib/redraft"
+import { createRedraft, isA2Field, parseAIProposal, RedraftError } from "@/lib/redraft"
 
 const FIELD = "SOL.INNOVATION_SOLUTION.EDITOR"
 const REDRAFT_URL = `/api/runs/r1/fields/${FIELD}/redrafts`
@@ -96,6 +96,16 @@ describe("createRedraft", () => {
     expect(parseAIProposal("x")).toBeNull()
     expect(parseAIProposal({})).toBeNull()
     expect(parseAIProposal(aiProposal())).not.toBeNull()
+  })
+
+  // R5.5: Abstract + Executive Summary are now A2-enabled (mirrors the backend).
+  it("isA2Field covers the four enabled fields and rejects others", () => {
+    expect(isA2Field("SOL.INNOVATION_SOLUTION.EDITOR")).toBe(true)
+    expect(isA2Field("VC.BUSINESS_TARGETS_MODEL.EDITOR")).toBe(true)
+    expect(isA2Field("INTRO.APP.ABSTRACT")).toBe(true)
+    expect(isA2Field("INTRO.APP.EXECUTIVE_SUMMARY")).toBe(true)
+    expect(isA2Field("INTRO.APP.NAME")).toBe(false)
+    expect(isA2Field(null)).toBe(false)
   })
 
   it("maps 503 to an ai_unavailable RedraftError", async () => {
