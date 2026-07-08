@@ -60,6 +60,7 @@ def create(
     provider_route_class: str,
     confirmation_text_version: str,
     data_classification_shown: dict,
+    processing_mode: str = "cloud_assisted",
 ) -> ProcessingConfirmation:
     confirmation = ProcessingConfirmation(
         confirmation_id=str(uuid.uuid4()),
@@ -67,7 +68,7 @@ def create(
         workspace_id=project.workspace_id,
         created_by=created_by,
         status=VALID,
-        processing_mode="cloud_assisted",
+        processing_mode=processing_mode,
         source_version_ids=list(source_version_ids),
         accepted_policy_version=accepted_policy_version,
         purpose=purpose,

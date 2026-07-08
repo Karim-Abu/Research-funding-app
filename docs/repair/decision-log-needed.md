@@ -19,3 +19,26 @@ Alle Entscheide sind in R0 zu treffen (Ausnahmen markiert). Ohne Entscheid gilt 
 | E-13 | Gate-Freigaben | R9-Beta-Gate und ggf. D2-Gate formal freigeben | Owner-Unterschrift auf Gate-Report | Beta-Start | keine Beta |
 
 Zeitkritisch: E-01, E-02, E-12 in Woche 1 (R0). E-03/E-04/E-05 spätestens vor R5-Start. E-06–E-08, E-13 vor R9-Abschluss.
+
+## Entschieden (Nachträge)
+
+### E-02 — ENTSCHIEDEN am 2026-07-08 (Owner-Bestätigung, Session repair-v2/R4-Planung)
+
+Der Arbeits-Default ist bestätigt und maschinell durchgesetzt (R4.3,
+`backend/app/config/provider_policy.py`, `docs/security/provider-policy.md`):
+fake/local bleibt Default; direkte OpenAI/Anthropic-Consumer-APIs nur für D0
+(öffentlich/synthetisch); echte D2-Daten nur über die Azure/Enterprise-
+Zielarchitektur (dokumentiert, nicht implementiert); D3/Unknown blockiert.
+
+### Nachtrag 2026-07-08 — KI-Opt-in für D1/D2 (Owner-Entscheid, Session repair-v2/R4.3)
+
+D1/D2-Projekte dürfen KI nutzen, aber nur: (a) über den **lokalen**
+Verarbeitungspfad (heute Fake-Provider, keine externen Calls; contract-konform
+via internal/confidential × local_only = allowed), (b) nach **manuellem
+Einschalten** im Analyse-Dialog und (c) mit **deutlicher Warnung inkl.
+Verstanden-Bestätigung** (`local-ai-confirm-v1`, eine Bestätigung pro
+Durchlauf). **D3 (NDA) und Unknown bleiben immer blockiert — auch für den
+Fake-Provider.** Dieser Entscheid ersetzt für den lokalen Fake-Pfad die
+frühere Auflage «D2 × fake/local nur synthetic/anonymized»; für direkte
+OpenAI/Anthropic-APIs gilt die synthetic/anonymized-Beschränkung weiterhin
+(`AI_EVAL_MODE=real`, Mapping-Tabelle §3.1).

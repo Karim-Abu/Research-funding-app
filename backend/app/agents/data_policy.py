@@ -10,6 +10,7 @@ from dataclasses import dataclass
 
 from app.agents.registry import AgentProfileDef
 from app.config.settings import Settings
+from app.security.data_class import DataClass, derive_data_class
 
 # Order from data_policy classification_resolution.effective_sensitivity_order.
 _SENSITIVITY_RANK = {"public": 0, "internal": 1, "confidential": 2}
@@ -42,9 +43,31 @@ def evaluate(
     processing_mode: str,
     settings: Settings,
     run_confirmation: bool = False,
+    local_provider: bool = False,
 ) -> PolicyDecision:
     sensitivity = effective_sensitivity(classification)
     nda = bool((classification or {}).get("nda_applies"))
+
+    # R4.3 — lokaler KI-Pfad (Owner-Entscheid 2026-07-08): local_only + lokaler
+    # Provider (Fake, keine externen Calls) ist contract-konform erlaubt
+    # (Matrix: internal/confidential × local_only = allowed), aber verschärft:
+    # D1/D2 nur mit ausdrücklicher Opt-in-Bestätigung; D3/UNKNOWN bleiben
+    # blockiert. Externe Adapter fallen weiter in den Block darunter.
+    if processing_mode == "local_only" and local_provider:
+        data_class = derive_data_class(classification or {})
+        if data_class in (DataClass.D3_NDA_BLOCKED, DataClass.UNKNOWN):
+            reason = "nda_applies" if nda else "unknown_classification_blocked"
+            return PolicyDecision("blocked", "blocked", reason)
+        if data_class == DataClass.D0_PUBLIC:
+            return PolicyDecision("allowed", "passed", "public_local_allowed")
+        if run_confirmation:
+            return PolicyDecision(
+                "allowed_with_confirmation", "warning",
+                f"{sensitivity}_local_confirmed",
+            )
+        return PolicyDecision(
+            "blocked", "blocked", f"{sensitivity}_local_requires_confirmation"
+        )
 
     # Processing mode: deterministic_only / local_only never make an external call.
     if processing_mode in _NO_EXTERNAL_CALL_MODES:

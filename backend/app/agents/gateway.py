@@ -21,6 +21,7 @@ from sqlalchemy.orm import Session
 
 from app.agents import cost_guard, data_policy
 from app.agents.prompt_assets import prompt_version_for
+from app.config import provider_policy
 from app.agents.providers.base import (
     ProviderAdapter,
     ProviderError,
@@ -245,11 +246,16 @@ def invoke(
     db.add(inv)
     db.flush()
 
-    # 1. Data Policy (before any external call).
+    # 1. Data Policy (before any external call). R4.3: der lokale Fake-Provider
+    # eröffnet den contract-konformen local_only-Pfad (D1/D2 nur mit Opt-in).
+    local_provider = (
+        provider_policy.kind_of_adapter(resolver(primary))
+        == provider_policy.ProviderKind.FAKE_LOCAL
+    )
     decision = data_policy.evaluate(
         profile=profile, classification=request.classification,
         processing_mode=request.processing_mode, settings=settings,
-        run_confirmation=request.run_confirmation,
+        run_confirmation=request.run_confirmation, local_provider=local_provider,
     )
     _control(db, inv, "CTRL.DATA_POLICY", decision.status, decision.reason)
     if decision.blocked:
@@ -278,7 +284,16 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
     route = registry.route(route_key)
     inv.model_route, inv.provider, inv.model_id = route_key, route.provider, route.model_id
     adapter = resolver(route)
-    if adapter is None or not adapter.available():
+    if adapter is None:
+        return None, "failed", "provider_unavailable"
+    # R4.3 ProviderPolicy: provider × data_class (× origin/eval) — geprüft VOR
+    # available(), damit gesetzte API-Keys nie eine blockierte Klasse öffnen.
+    p_decision = provider_policy.decide_for_adapter(
+        adapter, request.classification, get_settings()
+    )
+    if not p_decision.allowed:
+        return None, "blocked", p_decision.reason
+    if not adapter.available():
         return None, "failed", "provider_unavailable"
     preq = ProviderRequest(
         model_id=route.model_id, prompt=_assemble_prompt(profile, request),
@@ -337,5 +352,9 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             output_tokens=usage.output_tokens,
         )
 
+    # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.
+    if last_reason in (provider_policy.BLOCKED_REASON, "provider_unknown_adapter"):
+        _control(db, inv, "CTRL.DATA_POLICY", "blocked", last_reason)
+        return _safe(db, inv, "blocked", "provider_policy_blocked", last_reason)
     _control(db, inv, "CTRL.OUTPUT_SCHEMA", "failed", last_reason)
     return _safe(db, inv, last_status, "agent_invocation_failed", last_reason)

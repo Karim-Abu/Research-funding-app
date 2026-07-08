@@ -63,33 +63,38 @@ export function AnalyseEinstellungenDialog({
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  // Beta-Policy: public can use validated external services; internal needs
-  // explicit release in a later flow; confidential stays local-only.
+  // Beta-Policy: public darf validierte externe Dienste nutzen. R4.3 (Owner-
+  // Entscheid 2026-07-08): intern/vertraulich erhalten KI nur über den lokalen
+  // Verarbeitungspfad nach manuellem Opt-in + verstandener Warnung; NDA und
+  // unklassifiziert bleiben vollständig blockiert.
   const isLocalOnlyClass = !isCloudAllowed(dataClass)
+  const localOptInClass = dataClass === "internal" || dataClass === "confidential"
 
   const [ki, setKi] = React.useState(!isLocalOnlyClass)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [localSourcesOnly, setLocalSourcesOnly] = React.useState(false)
   const [costLimit, setCostLimit] = React.useState("2.00")
-  // Cloud-KI requires an explicit one-run acknowledgement (public/synthetic only).
+  // KI requires an explicit one-run acknowledgement (cloud: public/synthetic;
+  // lokal: D1/D2 mit Warnung).
   const [cloudConfirmed, setCloudConfirmed] = React.useState(false)
 
   const webDisabled = localSourcesOnly || !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
   const cloudOptIn = ki && !isLocalOnlyClass
-  // Block the start until the user confirms cloud processing for this run.
-  const cloudConfirmationMissing = cloudOptIn && !cloudConfirmed
+  const localOptIn = ki && localOptInClass
+  // Block the start until the user confirms AI processing for this run.
+  const cloudConfirmationMissing = (cloudOptIn || localOptIn) && !cloudConfirmed
 
   function handleStart() {
     onStart?.({
-      ki: cloudOptIn,
+      ki: cloudOptIn || localOptIn,
       web: effectiveWeb,
       localSourcesOnly,
       costLimit: Number.parseFloat(costLimit) || 0,
       // Beta: Modell-Routing ist eine Backend-/Config-Entscheidung —
       // die Drafter/Critic-Trennung bleibt cross-provider.
       model: "auto",
-      cloudConfirmed: cloudOptIn && cloudConfirmed,
+      cloudConfirmed: (cloudOptIn || localOptIn) && cloudConfirmed,
     })
   }
 
@@ -124,9 +129,9 @@ export function AnalyseEinstellungenDialog({
             {isLocalOnlyClass && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                {dataClass === "internal"
-                  ? "Für interne Daten benötigen externe Dienste eine Freigabe. Aktuell werden keine externen Dienste verwendet."
-                  : "Für diese Datenklasse werden keine externen KI- oder Webdienste verwendet."}
+                {localOptInClass
+                  ? "Externe KI- und Webdienste sind für diese Vertraulichkeitsstufe deaktiviert. KI-Unterstützung ist nur über den freigegebenen lokalen Verarbeitungspfad möglich und muss unten bewusst freigegeben werden."
+                  : "Für NDA-geschützte oder gesperrte Inhalte werden keine KI- oder Webdienste verwendet."}
               </div>
             )}
 
@@ -134,7 +139,9 @@ export function AnalyseEinstellungenDialog({
               id="ki-toggle"
               checked={ki}
               onCheckedChange={setKi}
-              available={serviceAvailability.ki && !isLocalOnlyClass}
+              available={
+                serviceAvailability.ki && (!isLocalOnlyClass || localOptInClass)
+              }
             />
 
             {/* Cloud-KI one-run confirmation (public/synthetic only) */}
@@ -166,6 +173,44 @@ export function AnalyseEinstellungenDialog({
                       Ich bestätige, dass die ausgewählten Inhalte öffentlich
                       oder synthetisch sind und für diesen Durchlauf an den
                       konfigurierten KI-Dienst übermittelt werden dürfen.
+                    </span>
+                  </span>
+                </label>
+              </div>
+            )}
+
+            {/* R4.3 — lokaler KI-Opt-in für intern/vertraulich: deutliche
+                Warnung + Verstanden-Bestätigung (Owner-Entscheid 2026-07-08) */}
+            {localOptIn && (
+              <div
+                data-testid="local-ai-warning"
+                className="flex flex-col gap-2 rounded-md border border-status-partial/40 bg-status-partial/8 p-3 text-sm"
+              >
+                <p className="font-medium text-foreground">
+                  Warnung: KI-Unterstützung für{" "}
+                  {dataClass === "internal" ? "interne" : "vertrauliche"} Inhalte
+                </p>
+                <p className="text-muted-foreground">
+                  Die Verarbeitung erfolgt ausschliesslich über den freigegebenen
+                  lokalen Verarbeitungspfad — Inhalte werden nicht an externe
+                  KI-Dienste übermittelt. KI-Vorschläge werden nie automatisch
+                  übernommen; prüfen Sie Ergebnisse immer fachlich, bevor Sie sie
+                  verwenden.
+                </p>
+                <label className="flex items-start gap-2">
+                  <Checkbox
+                    checked={cloudConfirmed}
+                    onCheckedChange={(c) => setCloudConfirmed(c === true)}
+                    className="mt-0.5"
+                    aria-label="KI-Unterstützung für diesen Durchlauf freigeben"
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    <span className="font-medium text-foreground">
+                      Ich habe die Warnung verstanden
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      Ich gebe die KI-Unterstützung über den lokalen
+                      Verarbeitungspfad für diesen Durchlauf bewusst frei.
                     </span>
                   </span>
                 </label>

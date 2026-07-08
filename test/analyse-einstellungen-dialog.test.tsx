@@ -51,31 +51,57 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     expect(screen.queryByText(/openai|gpt|claude/i)).toBeNull()
   })
 
-  it("confidential: cloud is blocked and no confirmation is shown", () => {
+  // R4.3 (Owner-Entscheid 2026-07-08): intern/vertraulich = KI nur nach
+  // manuellem Opt-in + verstandener Warnung, über den lokalen Pfad.
+  it("confidential: default off — without opt-in the run stays rule-based", () => {
     const onStart = renderDialog("confidential")
+    // Kein Cloud-Panel; die Warnung erscheint erst nach dem Einschalten.
     expect(
       screen.queryByLabelText("Cloud-KI für diesen Durchlauf erlauben")
     ).toBeNull()
-    expect(
-      screen.getByText(/keine externen KI- oder Webdienste/)
-    ).toBeInTheDocument()
+    expect(screen.queryByTestId("local-ai-warning")).toBeNull()
     const start = screen.getByRole("button", { name: "Analyse starten" })
-    expect(start).toBeEnabled() // a local-only run needs no confirmation
+    expect(start).toBeEnabled() // ein regelbasierter Lauf braucht keine Freigabe
     fireEvent.click(start)
     const settings = onStart.mock.calls[0][0] as AnalyseSettings
     expect(settings.ki).toBe(false)
     expect(settings.cloudConfirmed).toBe(false)
   })
 
-  // R4.1: NDA / gesperrt (D3) — wie confidential lokal-only, nie Cloud/Web.
-  it("nda: cloud and web stay blocked, no confirmation is shown", () => {
+  for (const dc of ["internal", "confidential"] as const) {
+    it(`${dc}: opt-in shows the warning and requires the acknowledgement`, () => {
+      const onStart = renderDialog(dc)
+      // KI einschalten → deutliche Warnung + Verstanden-Bestätigung.
+      fireEvent.click(screen.getByRole("switch", { name: /KI-Unterstützung/ }))
+      const warning = screen.getByTestId("local-ai-warning")
+      expect(warning).toHaveTextContent(/Warnung: KI-Unterstützung/)
+      expect(warning).toHaveTextContent(/lokalen Verarbeitungspfad/)
+      expect(warning).toHaveTextContent(/nicht an externe KI-Dienste/)
+      const start = screen.getByRole("button", { name: "Analyse starten" })
+      expect(start).toBeDisabled() // ohne Verstanden-Bestätigung kein Start
+
+      fireEvent.click(
+        screen.getByLabelText("KI-Unterstützung für diesen Durchlauf freigeben")
+      )
+      expect(start).toBeEnabled()
+      fireEvent.click(start)
+      const settings = onStart.mock.calls[0][0] as AnalyseSettings
+      expect(settings.ki).toBe(true)
+      expect(settings.cloudConfirmed).toBe(true)
+      expect(settings.web).toBe(false) // Webrecherche bleibt aus
+    })
+  }
+
+  // R4.1/R4.3: NDA / gesperrt (D3) — KI-Schalter bleibt deaktiviert, kein Opt-in.
+  it("nda: AI stays fully blocked — no toggle, no warning panel", () => {
     const onStart = renderDialog("nda")
     expect(
-      screen.queryByLabelText("Cloud-KI für diesen Durchlauf erlauben")
-    ).toBeNull()
-    expect(
-      screen.getByText(/keine externen KI- oder Webdienste/)
+      screen.getByText(/Für NDA-geschützte oder gesperrte Inhalte/)
     ).toBeInTheDocument()
+    // KI- UND Web-Schalter sind als "nicht verfügbar" markiert; Klick wirkungslos.
+    expect(screen.getAllByText("Dienst aktuell nicht verfügbar")).toHaveLength(2)
+    fireEvent.click(screen.getByRole("switch", { name: /KI-Unterstützung/ }))
+    expect(screen.queryByTestId("local-ai-warning")).toBeNull()
     const start = screen.getByRole("button", { name: "Analyse starten" })
     fireEvent.click(start)
     const settings = onStart.mock.calls[0][0] as AnalyseSettings

@@ -12,6 +12,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import a2_fields, data_policy, gateway
@@ -23,8 +24,9 @@ from app.agents.schemas import (
     ValidationError,
     validate_payload,
 )
+from app.config import provider_policy
 from app.config.settings import get_settings
-from app.db.models import AnalysisRun
+from app.db.models import AnalysisRun, ProcessingConfirmation
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
 from app.repositories import draft_suggestions as suggestions_repo
@@ -33,7 +35,6 @@ logger = logging.getLogger("app.agents.field_drafting")
 
 INPUT_SCHEMA = "FieldDraftingInput@v1"
 OUTPUT_SCHEMA = "PortalFieldDraftBundle@v1"
-_NO_CALL_MODES = ("deterministic_only", "local_only")
 # Backward-compatible SOL entry point used by M9D tests.
 SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
@@ -82,6 +83,24 @@ def _classification(run: AnalysisRun) -> dict:
     return dict(run.effective_data_classification or {})
 
 
+def local_ai_confirmed(run: AnalysisRun) -> bool:
+    """R4.3: True, wenn dieser local_only-Lauf mit einer verbrauchten
+    Local-AI-Opt-in-Bestätigung erstellt wurde (Owner-Entscheid 2026-07-08)."""
+    try:
+        db = Session.object_session(run)
+    except Exception:  # kein ORM-Objekt (z. B. Test-Stub) → fail-closed
+        return False
+    if db is None:
+        return False
+    return db.scalar(
+        select(ProcessingConfirmation.confirmation_id).where(
+            ProcessingConfirmation.used_by_run_id == run.run_id,
+            ProcessingConfirmation.processing_mode == "local_only",
+            ProcessingConfirmation.status == "used",
+        )
+    ) is not None
+
+
 def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     """Per-run availability for createRedraft's 503 pre-check, for a specific A2
     field. Reads the run's existing processing mode + classification — NEVER upgrades
@@ -90,20 +109,40 @@ def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     if config is None:
         return False, "field_not_supported"
     mode = run.processing_mode
-    if mode in _NO_CALL_MODES:
-        return False, f"processing_mode_{mode}"
-    registry = gateway.get_agent_registry()
     settings = get_settings()
+    registry = gateway.get_agent_registry()
+    if mode == "deterministic_only":
+        return False, "processing_mode_deterministic_only"
+    confirmed = False
+    if mode == "local_only":
+        # R4.3: lokaler KI-Pfad nur mit Opt-in-Bestätigung des Laufs; ohne sie
+        # bleibt der Lauf regelbasiert (kein stiller Upgrade).
+        confirmed = local_ai_confirmed(run)
+        if not confirmed:
+            return False, "processing_mode_local_only"
+        if not settings.agent_fake_provider:
+            # Der lokale Pfad darf NUR von einem lokalen Adapter bedient werden
+            # — direkte Cloud-Adapter sind hier nie zulässig, egal welche Keys
+            # gesetzt sind. (Heute existiert nur der Fake als lokaler Adapter.)
+            route = registry.route(registry.profile(config.profile_id).primary_model)
+            adapter = _PROVIDER_RESOLVER(route)
+            if (
+                provider_policy.kind_of_adapter(adapter)
+                != provider_policy.ProviderKind.FAKE_LOCAL
+                or not adapter.available()
+            ):
+                return False, "provider_unavailable"
     decision = data_policy.evaluate(
         profile=registry.profile(config.profile_id), classification=_classification(run),
-        processing_mode=mode, settings=settings, run_confirmation=False,
+        processing_mode=mode, settings=settings, run_confirmation=confirmed,
+        local_provider=(mode == "local_only"),
     )
     if decision.blocked:
         return False, decision.reason
     # A provider must actually be available: a real configured route OR the dev/test
     # fake. Without either, A2 is unavailable (503) rather than a failing async job.
     # Uses the module-level resolver so the orchestrator and this pre-check agree.
-    if not settings.agent_fake_provider:
+    if mode == "cloud_assisted" and not settings.agent_fake_provider:
         route = registry.route(registry.profile(config.profile_id).primary_model)
         adapter = _PROVIDER_RESOLVER(route)
         if adapter is None or not adapter.available():
@@ -208,9 +247,17 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
                          view=_suggestion_view(existing))
 
     mode = run.processing_mode
-    if mode in _NO_CALL_MODES:
+    if mode == "deterministic_only":
         _audit(db, run, "agent.field_drafting.skipped", field_id, {"reason": f"mode_{mode}"})
         return A2Outcome(status="skipped", reason=f"mode_{mode}")
+    confirmed = False
+    if mode == "local_only":
+        # R4.3: nur mit Opt-in-Bestätigung des Laufs (kein stiller Upgrade).
+        confirmed = local_ai_confirmed(run)
+        if not confirmed:
+            _audit(db, run, "agent.field_drafting.skipped", field_id,
+                   {"reason": f"mode_{mode}"})
+            return A2Outcome(status="skipped", reason=f"mode_{mode}")
 
     _audit(db, run, "agent.field_drafting.started", field_id, {"profile_id": config.profile_id})
     ctx = a2_context.assemble_a2_context(db, run, field_id=field_id, profile_id=config.profile_id)
@@ -229,7 +276,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     request = gateway.ModelRequest(
         profile_id=config.profile_id, workspace_id=run.workspace_id, input_payload=input_payload,
         classification=_classification(run), processing_mode=mode, run_id=run.run_id,
-        project_id=run.project_id, run_confirmation=False,
+        project_id=run.project_id, run_confirmation=confirmed,
         prompt_version=prompt_version_for(config.profile_id), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
     )

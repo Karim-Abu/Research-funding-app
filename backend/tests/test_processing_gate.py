@@ -380,3 +380,78 @@ def test_a2_availability_blocked_for_confidential(client, monkeypatch):
     ok, _ = field_drafting.availability(_fake_run(
         "cloud_assisted", "confidential", "real_project"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
+
+
+# --- R4.3: lokaler KI-Opt-in (local_only + Bestaetigung, Owner 2026-07-08) ----
+
+def _confirm_local(client, project_id, csrf, svids, policy=POLICY):
+    return client.post(
+        f"/api/v1/projects/{project_id}/processing-confirmations",
+        json={"processing_mode": "local_only", "source_version_ids": svids,
+              "accepted_policy_version": policy,
+              "purpose": "KI-Vorschlaege (lokaler Pfad)",
+              "expires_after_one_run": True},
+        headers=_mut(csrf),
+    )
+
+
+def test_local_confirmation_allowed_for_internal_and_confidential(client):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    for sensitivity in ("internal", "confidential"):
+        cls = _classification(sensitivity, "real_project", mode="local_only")
+        pid = _make_project(client, csrf, cls, title=f"Local {sensitivity}")
+        svid = _text_source(client, pid, csrf, cls)
+        res = _confirm_local(client, pid, csrf, [svid])
+        assert res.status_code == 201, res.text
+
+
+def test_local_confirmation_blocked_for_public_and_nda(client):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid_public = _make_project(client, csrf, _classification(), title="Local pub")
+    res = _confirm_local(client, pid_public, csrf, ["any"])
+    assert res.status_code == 403
+    assert res.json()["code"] == "local_ai_not_eligible_for_classification"
+    pid_nda = _make_project(
+        client, csrf,
+        _classification("internal", "real_project", nda=True, mode="local_only"),
+        title="Local nda")
+    assert _confirm_local(client, pid_nda, csrf, ["any"]).status_code == 403
+
+
+def test_local_run_with_confirmation_consumes_it(client):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    cls = _classification("internal", "real_project", mode="local_only")
+    pid = _make_project(client, csrf, cls, title="Local run")
+    svid = _text_source(client, pid, csrf, cls)
+    cid = _confirm_local(client, pid, csrf, [svid]).json()["confirmation_id"]
+    run = _create_run(client, pid, csrf, _run_body("local_only", [svid], cid))
+    assert run.status_code == 202, run.text
+    db = SessionLocal()
+    try:
+        confirmation = db.get(ProcessingConfirmation, cid)
+        assert confirmation.status == "used"
+        assert confirmation.used_by_run_id
+        snapshot = db.get(RunPolicySnapshot, confirmation.used_by_run_id)
+        assert snapshot.provider_route_class == "fake_local"
+    finally:
+        db.close()
+
+
+def test_local_run_without_confirmation_stays_rule_based(client):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    cls = _classification("confidential", "real_project", mode="local_only")
+    pid = _make_project(client, csrf, cls, title="Local plain")
+    svid = _text_source(client, pid, csrf, cls)
+    res = _create_run(client, pid, csrf, _run_body("local_only", [svid]))
+    assert res.status_code == 202, res.text  # regelbasiert, keine Freigabe noetig
+
+
+def test_local_run_blocked_for_public_project(client):
+    # Cloud-Bestaetigung eines public-Projekts oeffnet den lokalen Pfad nicht.
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _make_project(client, csrf, _classification(), title="Pub local run")
+    svid = _text_source(client, pid, csrf, _classification())
+    cid = _confirm(client, pid, csrf, [svid]).json()["confirmation_id"]
+    res = _create_run(client, pid, csrf, _run_body("local_only", [svid], cid))
+    assert res.status_code == 403
+    assert res.json()["code"] == "local_ai_not_eligible_for_classification"

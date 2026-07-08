@@ -452,7 +452,9 @@ function QuellenPageContent() {
       if (liveMode && projectId) {
         // Derive the processing mode from the run-settings opt-in. Cloud-KI is
         // only used when the user enabled it AND explicitly confirmed for a
-        // public/synthetic project; otherwise the run stays deterministic.
+        // public/synthetic project. R4.3: intern/vertraulich erhalten nach
+        // Opt-in + verstandener Warnung den LOKALEN KI-Pfad (local_only +
+        // Bestätigung); NDA/unklassifiziert bleiben regelbasiert.
         const processedVersionIds = liveSources
           .filter((s) => s.status === "processed" && s.current_source_version_id)
           .map((s) => s.current_source_version_id as string)
@@ -460,6 +462,12 @@ function QuellenPageContent() {
           settings.ki &&
           settings.cloudConfirmed === true &&
           !isLocalOnly &&
+          processedVersionIds.length > 0
+        const useLocalAi =
+          settings.ki &&
+          settings.cloudConfirmed === true &&
+          (effectiveDataClass === "internal" ||
+            effectiveDataClass === "confidential") &&
           processedVersionIds.length > 0
 
         let runSettings: RunSettings = {
@@ -475,6 +483,21 @@ function QuellenPageContent() {
           )
           runSettings = {
             processing_mode: "cloud_assisted",
+            max_cost_chf: settings.costLimit,
+            max_llm_calls: 25,
+            max_web_calls: 0,
+            source_version_ids: processedVersionIds,
+            internal_cloud_confirmation_id: confirmation.confirmation_id,
+          }
+        } else if (useLocalAi) {
+          const confirmation = await createProcessingConfirmation(
+            projectId,
+            processedVersionIds,
+            "KI-Vorschläge für Textentwürfe vorbereiten (lokaler Pfad)",
+            "local_only"
+          )
+          runSettings = {
+            processing_mode: "local_only",
             max_cost_chf: settings.costLimit,
             max_llm_calls: 25,
             max_web_calls: 0,

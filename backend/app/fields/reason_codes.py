@@ -45,6 +45,12 @@ _INTERNAL_TO_CODE: dict[str, str] = {
     # Executor-Skips (run_a2_field_drafting) -------------------------------
     "mode_deterministic_only": "mode_deterministic_only",
     "mode_local_only": "mode_deterministic_only",
+    # R4.3 — lokaler KI-Pfad: ohne Opt-in bleibt der Lauf regelbasiert; der
+    # Ausweg ist derselbe (Verarbeitungsmodus ändern = Opt-in beim Start).
+    "internal_local_requires_confirmation": "mode_deterministic_only",
+    "confidential_local_requires_confirmation": "mode_deterministic_only",
+    "provider_blocked_for_data_class": "provider_unavailable",
+    "provider_unknown_adapter": "provider_unavailable",
     # Reserviert: aktuell blockiert kein Ist-Pfad wegen fehlender Quellen;
     # der Code ist Teil des freigegebenen Katalogs (Emission folgt mit R5).
     "missing_sources": "missing_sources",

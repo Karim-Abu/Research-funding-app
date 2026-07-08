@@ -64,8 +64,8 @@ explizite Freigabe).
 | BE-Klasse | KI-Vorschläge (A2/Cloud-LLM) | Webresearch |
 |---|---|---|
 | D0_PUBLIC | möglich — nur nach expliziter Cloud-Bestätigung (M9D.2) und nur über einen laut ProviderPolicy (R4.3) erlaubten Provider | erlaubt (validated public) |
-| D1_INTERNAL | **Ist:** fail-closed/deterministisch (keine bestätigte ProviderPolicy; `A2_DRAFTING` in der Matrix nicht gelistet → blocked). **Ziel:** kontrollierte KI über ProviderPolicy-erlaubten Pfad; direkte Consumer-APIs für echte D1-Daten bleiben blockiert | sanitized Pfad (§5): nur sanitisierte Query + menschliche Freigabe (Search Query Firewall) |
-| D2_CONFIDENTIAL_IDEA | **Ist:** fail-closed/deterministisch. **Ziel:** kontrollierte KI **nur wenn ProviderPolicy (R4.3) es bestätigt**, mit strengeren Schutzmassnahmen als D1; direkte Consumer-APIs für echte D2-Daten bleiben blockiert | sanitized Pfad (§5): nur sanitisierte Query + menschliche Freigabe; Live-Provider zusätzlich hinter `D2_WEB_RESEARCH_ENABLED` (Default off) |
+| D1_INTERNAL | **Ist (seit R4.3):** KI nur über den **lokalen Pfad** nach manuellem Opt-in + verstandener Warnung (`local-ai-confirm-v1`); ohne Opt-in fail-closed/deterministisch. Direkte Consumer-APIs für echte D1-Daten bleiben blockiert. **Ziel:** Azure Enterprise Boundary (separater Slice) | sanitized Pfad (§5): nur sanitisierte Query + menschliche Freigabe (Search Query Firewall) |
+| D2_CONFIDENTIAL_IDEA | **Ist (seit R4.3):** wie D1 — lokaler Pfad nur mit Opt-in + Warnung; ohne Opt-in fail-closed/deterministisch. Direkte Consumer-APIs für echte D2-Daten bleiben blockiert (Ausnahme §3.1: nur synthetisch/anonymisiert + `AI_EVAL_MODE=real`). **Ziel:** Azure Enterprise Boundary (separater Slice) | sanitized Pfad (§5): nur sanitisierte Query + menschliche Freigabe; Live-Provider zusätzlich hinter `D2_WEB_RESEARCH_ENABLED` (Default off) |
 | D3_NDA_BLOCKED | blockiert — **auch der Fake-Provider** (GO-Auflage 2); zusätzlich kein Browser-Cache (§6) | blockiert |
 | UNKNOWN | blockiert (fail-closed) | blockiert |
 
@@ -157,6 +157,12 @@ Der bestehende Run-/Analyse-Schalter «Web» (`AnalyseSettings.web`,
    - Beschreibung: **«Für NDA-geschützte oder rechtlich gesperrte Inhalte. Keine
      KI-Verarbeitung, keine Webrecherche, keine Browser-Zwischenspeicherung.»**
    - KI: **«nicht möglich»** · Webresearch: **«nicht möglich»**
+5. **KI-Opt-in für D1/D2 (2026-07-08, umgesetzt in R4.3):** KI für interne und
+   vertrauliche Projekte ist nutzbar — nur über den lokalen Verarbeitungspfad,
+   nur nach manuellem Einschalten und mit deutlicher Warnung inkl.
+   Verstanden-Bestätigung. D3/Unknown bleiben immer blockiert. Ersetzt für den
+   lokalen Fake-Pfad die frühere Auflage «D2 × fake/local nur
+   synthetic/anonymized» (Details: decision-log-needed.md, Nachtrag 2026-07-08).
 
 ---
 
