@@ -19,6 +19,7 @@ from app.agents import a2_fields, data_policy, gateway
 from app.agents import field_drafting_context as a2_context
 from app.agents.a2_fields import A2FieldConfig
 from app.agents.prompt_assets import prompt_version_for
+from app.agents.proposal import build_proposal, proposal_anchor_violations
 from app.agents.schemas import (
     SchemaNotImplementedError,
     ValidationError,
@@ -26,7 +27,8 @@ from app.agents.schemas import (
 )
 from app.config import provider_policy
 from app.config.settings import get_settings
-from app.db.models import AnalysisRun, ProcessingConfirmation
+from app.db.models import AgentInvocation, AnalysisRun, ProcessingConfirmation
+from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
 from app.repositories import draft_suggestions as suggestions_repo
@@ -173,10 +175,8 @@ def _validate_candidate(bundle, ctx, config: A2FieldConfig) -> tuple[_Validated 
         return None, "character_limit_exceeded"
     if not _mandatory_structure_ok(cand.suggested_text, config.mandatory_markers):
         return None, "mandatory_structure_missing"
-    bad_anchor = next(
-        (a for a in cand.evidence_anchor_ids if a not in ctx.allowed_anchor_ids), None
-    )
-    if bad_anchor is not None:
+    # R5.2: used_anchor_ids ⊆ allowed_anchor_ids (wiederverwendbarer Helper).
+    if proposal_anchor_violations(cand.evidence_anchor_ids, ctx.allowed_anchor_ids):
         return None, "unknown_evidence_anchor"
     bad_issue = next(
         (i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None
@@ -186,7 +186,7 @@ def _validate_candidate(bundle, ctx, config: A2FieldConfig) -> tuple[_Validated 
     warnings = []
     if bundle.placeholders:
         warnings.append("contains_placeholders")
-    if ctx.confirmed_facts:
+    if ctx.advisory_facts:
         warnings.append("based_on_unconfirmed_facts")
     return _Validated(candidate=cand, warnings=warnings), ""
 
@@ -244,7 +244,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     existing = suggestions_repo.get_proposed_for(db, run.run_id, draft_id, base_version_id)
     if existing is not None:
         return A2Outcome(status="reused", suggestion_id=existing.suggestion_id,
-                         view=_suggestion_view(existing))
+                         view=_suggestion_view(db, run, existing))
 
     mode = run.processing_mode
     if mode == "deterministic_only":
@@ -328,15 +328,35 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     return A2Outcome(
         status="succeeded", suggestion_id=suggestion.suggestion_id,
         invocation_id=result.invocation_id,
-        view=_suggestion_view(suggestion, evidence=ctx.verified_evidence,
+        view=_suggestion_view(db, run, suggestion, evidence=ctx.verified_evidence,
                               warnings=validated.warnings),
     )
 
 
-def _suggestion_view(suggestion, *, evidence: list | None = None, warnings: list | None = None) -> dict:
+def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
+                     warnings: list | None = None) -> dict:
+    """Operation-Result-View + typisiertes AIProposal (R5.2, additiv).
+
+    Reused-Pfad: warnings fallen auf die Placeholder-Heuristik zurück (kein
+    ctx verfügbar) — das AIProposal übernimmt dieselben safety_notes.
+    """
     anchor_ids = set(suggestion.evidence_anchor_ids or [])
     used = [e for e in (evidence or []) if e["anchor_id"] in anchor_ids]
     config = a2_fields.resolve_field_config(suggestion.field_id)
+    warn = warnings if warnings is not None else (
+        ["contains_placeholders"] if suggestion.placeholders else []
+    )
+    invocation = (
+        db.get(AgentInvocation, suggestion.agent_invocation_id)
+        if suggestion.agent_invocation_id else None
+    )
+    data_mode = derive_data_mode(
+        ai_eval_mode=get_settings().ai_eval_mode,
+        origin=(run.effective_data_classification or {}).get("origin"),
+    )
+    proposal = build_proposal(
+        suggestion, invocation, data_mode=data_mode, safety_notes=warn
+    )
     return {
         "suggestion_id": suggestion.suggestion_id,
         "operation_id": suggestion.operation_id,
@@ -349,7 +369,7 @@ def _suggestion_view(suggestion, *, evidence: list | None = None, warnings: list
         "placeholders": list(suggestion.placeholders or []),
         "character_count": suggestion.character_count,
         "character_limit": config.char_limit if config else None,
-        "warnings": warnings if warnings is not None else (
-            ["contains_placeholders"] if suggestion.placeholders else []
-        ),
+        "warnings": warn,
+        # mode="json": datetime → ISO-String für die AsyncOperation-JSON-Spalte.
+        "ai_proposal": proposal.model_dump(mode="json"),
     }

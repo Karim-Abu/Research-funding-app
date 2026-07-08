@@ -202,7 +202,7 @@ class FieldDraftingInput(BaseModel):
     run_id: str
     profile_id: str
     field_profiles: list[PortalFieldProfileView]
-    confirmed_facts: list[ExtractedFactRecord]
+    confirmed_facts: list[ExtractedFactRecord]  # contract-pinned: schema_catalog.yaml FieldDraftingInput@v1 — Inhalt ist advisory (R5.1)
     verified_evidence: list[EvidenceLinkRecord]
     structured_project_data: StructuredProjectDataResult
     open_issues: list[OpenIssueRecord]
@@ -278,7 +278,7 @@ class CriticReviewInput(BaseModel):
     evidence_links: list[EvidenceLinkRecord]
     # M9G/corr-1: confirmed facts ONLY. Proposed A1 facts are passed as marked
     # context text, never here. Usually empty in the current system.
-    confirmed_facts: list[ExtractedFactRecord]
+    confirmed_facts: list[ExtractedFactRecord]  # contract-pinned: schema_catalog.yaml CriticReviewInput@v1
     structured_project_data: StructuredProjectDataResult
 
 

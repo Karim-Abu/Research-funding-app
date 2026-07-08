@@ -42,7 +42,8 @@ class A2Context:
     field_id: str = ""
     profile_id: str = ""
     field_profile: dict = field(default_factory=dict)
-    confirmed_facts: list[dict] = field(default_factory=list)
+    # R5.1: advisory/proposed A1-Fakten — nie als bestätigte Wahrheit behandeln.
+    advisory_facts: list[dict] = field(default_factory=list)
     verified_evidence: list[dict] = field(default_factory=list)
     structured_project_data: dict = field(default_factory=dict)
     open_issues: list[dict] = field(default_factory=list)
@@ -102,8 +103,10 @@ def _current_draft_text(db: Session, run: AnalysisRun, field_id: str) -> str:
     return version.text if version is not None else ""
 
 
-def retrieve_confirmed_project_facts(db: Session, run: AnalysisRun) -> list[dict]:
-    """A1 ExtractedFacts — advisory/proposed (not confirmed truth)."""
+def retrieve_advisory_project_facts(db: Session, run: AnalysisRun) -> list[dict]:
+    """A1 ExtractedFacts — advisory/proposed (not confirmed truth). R5.1: vormals
+    ``retrieve_confirmed_project_facts`` (contract-pinned tool_id, tools_v1_1.yaml);
+    der Wire-String bleibt bei der ToolInvocation-Aufzeichnung unverändert."""
     facts = []
     for f in facts_repo.list_for_run(db, run.run_id):
         # Advisory facts that carry provenance (so they satisfy ExtractedFactRecord).
@@ -219,7 +222,7 @@ def _render_context_text(ctx: A2Context) -> str:
             f"{e['quote']}" for e in ctx.verified_evidence
         ),
         "OPEN ISSUES: " + str(ctx.open_issues),
-        "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.confirmed_facts),
+        "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.advisory_facts),
     ]
     return "\n\n".join(parts)
 
@@ -231,7 +234,7 @@ def assemble_a2_context(
     ctx = A2Context(field_id=field_id, profile_id=profile_id, language=language)
     ctx.field_profile = _field_profile_view(field_id)
     ctx.current_draft_text = _current_draft_text(db, run, field_id)
-    ctx.confirmed_facts = retrieve_confirmed_project_facts(db, run)
+    ctx.advisory_facts = retrieve_advisory_project_facts(db, run)
     ctx.verified_evidence = retrieve_verified_evidence(db, run)
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
@@ -242,8 +245,9 @@ def assemble_a2_context(
     # Record the tool invocations (authorization checked against the registry).
     _record_tool(db, run, "lookup_portal_field_profile",
                  _hash_text(str(ctx.field_profile)), caller=profile_id)
-    _record_tool(db, run, "retrieve_confirmed_project_facts",
-                 _hash_text(",".join(f["fact_id"] for f in ctx.confirmed_facts)), caller=profile_id)
+    # Code liefert advisory Facts; der Wire-Name bleibt bis Contract v1.2.
+    _record_tool(db, run, "retrieve_confirmed_project_facts",  # contract-pinned: tools_v1_1.yaml tool_id
+                 _hash_text(",".join(f["fact_id"] for f in ctx.advisory_facts)), caller=profile_id)
     _record_tool(db, run, "retrieve_verified_evidence",
                  _hash_text(",".join(sorted(ctx.allowed_anchor_ids))), caller=profile_id)
     _record_tool(db, run, "retrieve_structured_project_data",
@@ -263,7 +267,7 @@ def assemble_a2_context(
         "context_hash": ctx.context_hash,
         "evidence_count": len(ctx.verified_evidence),
         "open_issue_count": len(ctx.open_issues),
-        "fact_count": len(ctx.confirmed_facts),
+        "fact_count": len(ctx.advisory_facts),
         "char_budget": budget,
         "total_chars": len(ctx.context_text),
     }
@@ -275,12 +279,13 @@ def build_input_payload(ctx: A2Context, run_id: str) -> dict:
         "run_id": run_id,
         "profile_id": ctx.profile_id,
         "field_profiles": [ctx.field_profile],
-        "confirmed_facts": [
+        # Inhalt sind advisory Facts (R5.1); Wire-Key bleibt Contract v1.1.
+        "confirmed_facts": [  # contract-pinned: schema_catalog.yaml FieldDraftingInput@v1
             {"fact_id": f["fact_id"], "statement": f["statement"],
              "fact_type": f.get("fact_type"), "normalized_value": f.get("normalized_value"),
              "source_fragment_ids": f.get("source_fragment_ids", []),
              "versioned_user_input_ids": []}
-            for f in ctx.confirmed_facts
+            for f in ctx.advisory_facts
         ],
         "verified_evidence": ctx.verified_evidence,
         "structured_project_data": ctx.structured_project_data,

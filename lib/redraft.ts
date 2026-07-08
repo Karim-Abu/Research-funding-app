@@ -1,7 +1,9 @@
 // A2 draft-suggestion client (Milestone 9D; extended to Value Creation in 9E).
 // createRedraft (202 async) → poll the operation → the suggestion in result.
 // Advisory only: accepting is a separate updateField call with source_operation_id.
-// Scoped to the A2-enabled fields below; no provider/model details ever surface.
+// Scoped to the A2-enabled fields below. R5.2 (Owner-Entscheid): das typisierte
+// AIProposal (inkl. provider/model/model_ref) fliesst in die Datenschicht,
+// wird aber weiterhin nirgends in der Standard-UI angezeigt.
 
 import { getCsrfToken } from "./session"
 import { pollOperation, type AsyncOperationDto } from "./operations"
@@ -34,6 +36,30 @@ export interface A2Placeholder {
   reason?: string | null
 }
 
+export interface AIMissingInput {
+  label: string
+  reason?: string | null
+}
+
+// R5.2 — typisiertes AIProposal (Spiegel von backend/app/agents/proposal.py).
+// human_review_required ist im Typ auf `true` fixiert: keine Auto-Übernahme.
+export interface AIProposal {
+  suggestion_text: string
+  used_anchor_ids: string[]
+  missing_inputs: AIMissingInput[]
+  profile_id: string
+  prompt_version: string | null
+  context_hash: string | null
+  model_ref: string
+  created_at: string
+  data_mode: string
+  provider: string
+  model: string
+  usage_record_id?: string | null
+  safety_notes?: string[]
+  human_review_required: true
+}
+
 export interface A2Suggestion {
   suggestion_id: string
   operation_id: string
@@ -47,6 +73,21 @@ export interface A2Suggestion {
   character_count: number
   character_limit: number
   warnings: string[]
+  ai_proposal?: AIProposal
+}
+
+/** Fail-closed AIProposal-Parser: ungültige/fremde Shapes ⇒ null. */
+export function parseAIProposal(value: unknown): AIProposal | null {
+  if (typeof value !== "object" || value === null) return null
+  const v = value as Record<string, unknown>
+  const requiredStrings = [
+    "suggestion_text", "profile_id", "model_ref", "created_at",
+    "data_mode", "provider", "model",
+  ] as const
+  if (requiredStrings.some((k) => typeof v[k] !== "string")) return null
+  if (v.human_review_required !== true) return null
+  if (!Array.isArray(v.used_anchor_ids) || !Array.isArray(v.missing_inputs)) return null
+  return v as unknown as AIProposal
 }
 
 export class RedraftError extends Error {
@@ -155,7 +196,11 @@ export async function createRedraft(
     pollOperation(accepted.operation_id, {
       onTerminal: (op: AsyncOperationDto) => {
         if (op.status === "succeeded" && op.result) {
-          resolve(op.result as unknown as A2Suggestion)
+          const base = op.result as unknown as A2Suggestion
+          const proposal = parseAIProposal(
+            (op.result as Record<string, unknown>).ai_proposal
+          )
+          resolve({ ...base, ai_proposal: proposal ?? undefined })
         } else {
           const code = op.error?.code ?? "redraft_failed"
           const reasonCode = op.error?.reason_code ?? null
