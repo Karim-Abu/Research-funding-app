@@ -5,15 +5,18 @@ draft suggestion, and which agent profile serves each. There is **no** generic
 "all A2 enabled" mechanism — every pair is listed here, backed by the registries,
 and validated fail-closed at import:
 
-- SOL.INNOVATION_SOLUTION.EDITOR  → A2.solution_innovation        (M9D)
-- VC.BUSINESS_TARGETS_MODEL.EDITOR → A2.value_creation_market_logic (M9E)
-- INTRO.APP.ABSTRACT              → A2.introduction_public_summary  (R5.5)
-- INTRO.APP.EXECUTIVE_SUMMARY     → A2.introduction_public_summary  (R5.5)
+- SOL.INNOVATION_SOLUTION.EDITOR              → A2.solution_innovation         (M9D)
+- VC.BUSINESS_TARGETS_MODEL.EDITOR            → A2.value_creation_market_logic (M9E)
+- INTRO.APP.ABSTRACT                          → A2.introduction_public_summary (R5.5)
+- INTRO.APP.EXECUTIVE_SUMMARY                 → A2.introduction_public_summary (R5.5)
+- ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS → A2.organisations_governance (R5.6)
+- PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION     → A2.project_setup_workplan      (R5.6)
 
 Character limit and the mandatory question structure are resolved from the portal
 field registry (never hardcoded). Composite editor fields (``*.EDITOR``) carry
-mandatory sub-questions; singleton narrative fields (Abstract, Executive Summary)
-legitimately have none, so ``mandatory_markers`` may be empty for them.
+mandatory sub-questions; singleton narrative fields (Abstract, Executive Summary,
+Financial-Independence comment, Management-hours explanation) legitimately have
+none, so ``mandatory_markers`` may be empty for them.
 """
 from __future__ import annotations
 
@@ -29,6 +32,8 @@ A2_FIELD_PROFILES: dict[str, str] = {
     "VC.BUSINESS_TARGETS_MODEL.EDITOR": "A2.value_creation_market_logic",
     "INTRO.APP.ABSTRACT": "A2.introduction_public_summary",
     "INTRO.APP.EXECUTIVE_SUMMARY": "A2.introduction_public_summary",
+    "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS": "A2.organisations_governance",
+    "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION": "A2.project_setup_workplan",
 }
 
 # Per-field deterministic fake output (dev/test only — settings.agent_fake_provider).
@@ -60,6 +65,22 @@ _FAKE_TEXTS: dict[str, str] = {
         "geplanter Nutzen und Umsetzung, in allgemein verständlicher Sprache. Fehlende "
         "Baselines, Markt- oder Wirkungszahlen bleiben als [Platzhalter] markiert statt "
         "erfunden; konkrete KPIs werden nur mit Beleg genannt."
+    ),
+    # Vorsichtig, HITL-pflichtig: keine Bestätigung der Unabhängigkeit ohne Nachweis,
+    # keine erfundenen Anteils-/Beteiligungswerte, fehlende Daten als [Platzhalter].
+    "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS": (
+        "Erläuterung zur finanziellen Unabhängigkeit der Partner gemäss den vorliegenden "
+        "Angaben. Eigentums- und Beteiligungsverhältnisse sind noch zu belegen "
+        "[Platzhalter]; ohne Nachweis wird die Unabhängigkeit nicht bestätigt. Eine "
+        "abschliessende Prüfung ist vor der Einreichung erforderlich."
+    ),
+    # Keine erfundenen Stunden-/Prozentwerte; allgemeine Management-Tätigkeiten,
+    # fehlende Verteilung als [Platzhalter].
+    "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION": (
+        "Die Management-Stunden umfassen allgemein Projektkoordination, Reporting, "
+        "Review-Meetings, Projektsteuerung und Partnerabstimmung. Die konkrete Verteilung "
+        "der Stunden auf diese Aufgaben ist noch zu ergänzen [Platzhalter]; ohne belegte "
+        "Grundlage werden keine Stunden- oder Prozentwerte genannt."
     ),
 }
 

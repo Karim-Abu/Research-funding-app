@@ -12,6 +12,8 @@ export const SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 export const VALUE_CREATION_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
 export const ABSTRACT_FIELD_ID = "INTRO.APP.ABSTRACT"
 export const EXECUTIVE_SUMMARY_FIELD_ID = "INTRO.APP.EXECUTIVE_SUMMARY"
+export const FINANCIAL_INDEPENDENCE_FIELD_ID = "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS"
+export const MANAGEMENT_HOURS_EXPLANATION_FIELD_ID = "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION"
 
 // The explicit set of fields that may request an A2 suggestion. Mirrors the
 // backend registry-backed allow-list; the backend stays authoritative.
@@ -20,6 +22,8 @@ export const A2_FIELD_IDS: ReadonlySet<string> = new Set([
   VALUE_CREATION_FIELD_ID,
   ABSTRACT_FIELD_ID,
   EXECUTIVE_SUMMARY_FIELD_ID,
+  FINANCIAL_INDEPENDENCE_FIELD_ID,
+  MANAGEMENT_HOURS_EXPLANATION_FIELD_ID,
 ])
 
 export function isA2Field(fieldId: string | undefined | null): boolean {

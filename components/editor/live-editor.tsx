@@ -1004,8 +1004,8 @@ export function LiveEditor({
               />
               <p className="text-xs text-muted-foreground">
                 KI-Vorschläge unterstützen aktuell die Abschnitte «Abstract»,
-                «Executive Summary», «Lösung &amp; Innovation» und
-                «Wertschöpfung».
+                «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,
+                «Finanzielle Unabhängigkeit» und «Management-Stunden».
               </p>
             </div>
           )}

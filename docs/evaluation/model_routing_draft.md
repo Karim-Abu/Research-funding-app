@@ -4,7 +4,7 @@
   Routing bleibt ausschliesslich die eingefrorene Contract-YAML
   (`final_backend_contracts_v1_1/agents_v1_1.yaml`, `model_catalog` +
   Profil-`model:`-Blöcke) über die AgentRegistry. Dieses Dokument bindet nichts.
-- **Datum:** 2026-07-09 (zuletzt R5.5) · **Owner-Review ausstehend** für alle
+- **Datum:** 2026-07-09 (zuletzt R5.6) · **Owner-Review ausstehend** für alle
   `TODO_OWNER`-Zeilen.
 - **Keine Preise:** Preislogik läuft ausschliesslich über die EVAL.1-Preistabelle
   (`backend/app/evaluation/pricing.py`, aktuell bewusst leer). Hier stehen nur
@@ -18,8 +18,8 @@
 | A2_EXECUTIVE_SUMMARY | `A2.introduction_public_summary` (**code-aktiv, R5.5**) | mittlere Klasse | Shared-Profil-Route; Contract-Primary heute `anthropic_sonnet_46`; finale Modell-ID TODO_OWNER | **code-aktiv (R5.5)** |
 | A2_VALUE_CREATION | `A2.value_creation_market_logic` (aktiv) | mittlere Klasse | `anthropic_sonnet_46` (= heutiger Contract-Primary) | aktiv (Contract) |
 | A2_SOLUTION | `A2.solution_innovation` (aktiv) | mittlere Klasse | `anthropic_sonnet_46` (= heutiger Contract-Primary) | aktiv (Contract) |
-| A2_FINANCIAL_INDEP | kein 1:1-Contract-Profil vorhanden | kleine Klasse | TODO_OWNER | TODO_OWNER |
-| A2_MGMT_HOURS | `A2.project_setup_workplan` (spec-only, nicht code-aktiv) | kleine Klasse | `anthropic_haiku_45` | TODO_OWNER |
+| A2_FINANCIAL_INDEP | `A2.organisations_governance` (**code-aktiv, R5.6**) | fast–mid Klasse | Contract-Primary heute `anthropic_sonnet_46` (current route, **nicht** finale Owner-Entscheidung); finale Modell-ID TODO_OWNER | **code-aktiv (R5.6)** |
+| A2_MGMT_HOURS | `A2.project_setup_workplan` (**code-aktiv, R5.6**) | fast–mid Klasse | Contract-Primary heute `anthropic_sonnet_46` (current route, **nicht** finale Owner-Entscheidung); finale Modell-ID TODO_OWNER | **code-aktiv (R5.6)** |
 
 Fallbacks folgen dem bestehenden Contract-Muster (mittlere Klasse ⇒
 `openai_gpt_54`, kleine Klasse ⇒ `openai_gpt_54_mini`) — verbindlich erst mit
@@ -52,7 +52,9 @@ einem künftigen Contract-Slice.
 ## Hinweise
 
 - Feld-Prompts für Abstract/Executive Summary sind mit R5.5 aktiv
-  (`a2_introduction_public_summary_v1`, gemeinsames Profil).
+  (`a2_introduction_public_summary_v2`, gemeinsames Profil; v2 aus R5.5b).
+- Feld-Prompts für Financial Independence (`a2_organisations_governance_v1`) und
+  Management Hours (`a2_project_setup_workplan_v1`) sind mit R5.6 aktiv.
 - Aktivierung eines neuen Keys erfordert: Contract-Slice (Profil/Route),
   Prompt-Datei mit Version, `a2_fields`-Aktivierung, EVAL-Abdeckung — nicht
   dieses Dokument allein.

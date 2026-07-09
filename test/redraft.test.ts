@@ -98,12 +98,14 @@ describe("createRedraft", () => {
     expect(parseAIProposal(aiProposal())).not.toBeNull()
   })
 
-  // R5.5: Abstract + Executive Summary are now A2-enabled (mirrors the backend).
-  it("isA2Field covers the four enabled fields and rejects others", () => {
+  // R5.6: six A2-enabled fields now (mirrors the backend allow-list).
+  it("isA2Field covers the six enabled fields and rejects others", () => {
     expect(isA2Field("SOL.INNOVATION_SOLUTION.EDITOR")).toBe(true)
     expect(isA2Field("VC.BUSINESS_TARGETS_MODEL.EDITOR")).toBe(true)
     expect(isA2Field("INTRO.APP.ABSTRACT")).toBe(true)
     expect(isA2Field("INTRO.APP.EXECUTIVE_SUMMARY")).toBe(true)
+    expect(isA2Field("ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS")).toBe(true)
+    expect(isA2Field("PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION")).toBe(true)
     expect(isA2Field("INTRO.APP.NAME")).toBe(false)
     expect(isA2Field(null)).toBe(false)
   })
