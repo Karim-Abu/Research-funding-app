@@ -193,6 +193,43 @@ def _fmt_counts(counts: dict) -> str:
     return ", ".join(f"{k}={v}" for k, v in sorted((counts or {}).items())) or "—"
 
 
+_NON_FAILURE_STATUSES = {"generated", "missing_inputs", "deterministic", "skipped"}
+
+
+def _provider_limitation_notes(results: dict[str, dict]) -> list[str]:
+    """Whitelist-safe Limitations-Zeilen: nennt Feld-ID/Provider/Status, nie Rohtext.
+
+    Für jedes Feld, das bei mindestens einem vorhandenen Provider ``failed`` ist: wenn ein
+    anderer vorhandener Provider dasselbe Feld erfolgreich liefert, wird dieser als
+    Demo-Default benannt; scheitern alle vorhandenen Provider, wird das explizit als offene
+    manuelle Prüfung ausgewiesen (kein stiller Ausfall).
+    """
+    by_field: dict[str, dict[str, str]] = {}
+    for provider, entry in results.items():
+        for f in entry["report"]["fields"]:
+            by_field.setdefault(f["field_id"], {})[provider] = f["status"]
+    notes: list[str] = []
+    for field_id, statuses in sorted(by_field.items()):
+        failing = sorted(p for p, s in statuses.items() if s == "failed")
+        if not failing:
+            continue
+        working = sorted(p for p, s in statuses.items() if s in _NON_FAILURE_STATUSES)
+        if working:
+            notes.append(
+                f"- `{field_id}`: bei {', '.join(failing)} als `failed` beobachtet "
+                "(Feld-/Struktur-Regel, z. B. `mandatory_structure_missing` — kein "
+                f"Schema-Bug) — {', '.join(working)} liefert hierfür einen vollständigen "
+                "Draft und dient als Demo-Default."
+            )
+        else:
+            notes.append(
+                f"- `{field_id}`: bei allen ausgeführten Providern "
+                f"({', '.join(failing)}) als `failed` beobachtet — kein Demo-Default "
+                "verfügbar, manuelle Prüfung nötig."
+            )
+    return notes
+
+
 def render_report(results: dict[str, dict], *, generated_at: str) -> str:
     """Whitelist-Report, ein Block je vorhandenem Provider — liest NUR ``entry['report']``;
     das ``artifact`` (Rohoutput) bleibt strukturell aussen vor."""
@@ -280,6 +317,7 @@ def render_report(results: dict[str, dict], *, generated_at: str) -> str:
         "- **Keine automatische Einreichung**; jeder Feldvorschlag erfordert Human Review.",
         "- ResearchCandidates sind advisory und gelten nie als Evidence.",
         "- Kostenstatus ist Mess-Pipeline, keine Kostenrechnung (Preistabelle bewusst leer).",
+        *_provider_limitation_notes(results),
         "", "---", "",
         "Erzeugt mit `RUN_REAL_PROVIDER_SMOKE=true AI_EVAL_MODE=real python "
         "scripts/run_integrated_draft_real.py --provider <openai|anthropic>` (Manual Mode, "

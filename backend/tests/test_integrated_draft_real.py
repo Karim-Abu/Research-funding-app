@@ -199,3 +199,66 @@ def test_renderer_no_canary_and_mandatory_notes():
     assert "ResearchCandidates" in report
     assert "nie 0 CHF als gratis lesen" in report
     assert "unknown_price" in report
+
+
+# --- R5.9b: provider-limitation Demo-Default note ---------------------------
+
+
+def _field_row(field_id: str, status: str) -> dict:
+    return {
+        "field_id": field_id, "field_label": "Solution", "status": status,
+        "provider": "x", "model": "m", "input_tokens": 10, "output_tokens": 20,
+        "total_tokens": 30, "latency_ms": 100, "cost_status": "unknown_price",
+        "usage_record_id": "usg-1", "llm_calls": 1, "missing_inputs_count": 0,
+        "human_review_required": True, "suggestion_preview": "Vorschau.",
+    }
+
+
+def _envelope(provider: str, field_row: dict) -> dict:
+    return {
+        "report": {
+            "provider": provider, "case_id": "F1", "project_id": "p1", "run_id": "r1",
+            "created_at": "2026-07-09T00:00:00+00:00", "data_mode": "synthetic_eval",
+            "price_table_version": "x", "fields": [field_row],
+            "usage_summary": {
+                "input_tokens": 10, "output_tokens": 20, "total_tokens": 30,
+                "usage_record_count": 1, "cost_status_counts": {"unknown_price": 1},
+            },
+            "research_summary": {
+                "market": {"used": True, "candidates": 1, "imported_sources": 0},
+                "partner": {"used": False, "candidates": 0, "imported_sources": 0},
+            },
+            "human_review_required": True,
+        },
+        "artifact": {"fields": [{"field_id": field_row["field_id"], "suggestion_text": "x",
+                                   "ai_proposal": None, "raw_outputs": []}]},
+    }
+
+
+def test_limitations_names_demo_default_when_other_provider_succeeds():
+    results = {
+        "openai": _envelope("openai", _field_row("SOL.INNOVATION_SOLUTION.EDITOR", "failed")),
+        "anthropic": _envelope(
+            "anthropic", _field_row("SOL.INNOVATION_SOLUTION.EDITOR", "missing_inputs")
+        ),
+    }
+    report = render_report(results, generated_at="2026-07-09")
+    assert "SOL.INNOVATION_SOLUTION.EDITOR" in report.split("## 7. Limitations")[1]
+    assert "openai" in report.split("## 7. Limitations")[1]
+    assert "anthropic" in report.split("## 7. Limitations")[1]
+    assert "mandatory_structure_missing" in report
+    assert "Demo-Default" in report
+
+
+def test_limitations_flags_no_demo_default_when_all_providers_fail():
+    results = {
+        "openai": _envelope("openai", _field_row("SOL.INNOVATION_SOLUTION.EDITOR", "failed")),
+    }
+    report = render_report(results, generated_at="2026-07-09")
+    assert "kein Demo-Default verfügbar" in report
+
+
+def test_limitations_silent_when_no_field_failed():
+    results = {"openai": _fake_result("openai")}
+    report = render_report(results, generated_at="2026-07-09")
+    assert "Demo-Default" not in report
