@@ -29,12 +29,31 @@ from app.db.models import (
     Partner,
     Project,
     RequirementAssessment,
+    ResearchResult,
+    ResearchTask,
     ToolInvocation,
 )
+from app.market import source_scope
 from app.registry.loader import get_registry
 from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import extracted_facts as facts_repo
+
+# R5.7: only these two "big" A2 fields consume advisory research context, each scoped to
+# the matching internal research purpose. Imported D0/public sources go to both; candidates
+# are filtered by the originating ResearchTask.purpose. All other A2 profiles get no
+# research context (context_text/hash unchanged).
+_MARKET_PURPOSE = "market_comparison"          # RESEARCH.1
+_PARTNER_PURPOSE = "partner_research_org_topic"  # RESEARCH.2
+_RESEARCH_CONTEXT_PURPOSES: dict[str, tuple[str, ...]] = {
+    "A2.value_creation_market_logic": (_MARKET_PURPOSE,),
+    "A2.solution_innovation": (_PARTNER_PURPOSE,),
+}
+# Bounded so advisory research context never dominates the A2 context budget.
+_RESEARCH_SOURCE_CHAR_BUDGET = 4000
+_RESEARCH_SOURCE_MAX_FRAGMENTS = 8
+_RESEARCH_CANDIDATE_MAX = 6
+_RESEARCH_SNIPPET_MAX = 300
 
 
 @dataclass
@@ -50,6 +69,9 @@ class A2Context:
     language: str = "de"
     current_draft_text: str = ""
     requirement_assessments: list[dict] = field(default_factory=list)
+    # R5.7: advisory research context (imported D0/public sources + non-imported research
+    # candidates) — NEVER evidence, NEVER an anchor. Empty for non-VC/SOL profiles.
+    research_context: dict = field(default_factory=dict)
     context_text: str = ""
     context_hash: str = ""
     allowed_anchor_ids: set = field(default_factory=set)
@@ -208,6 +230,78 @@ def _requirement_assessments(db: Session, run: AnalysisRun, requirement_ids: set
     ]
 
 
+def _trim(text: str | None, limit: int) -> str:
+    one_line = " ".join((text or "").split())
+    return one_line[:limit] + "…" if len(one_line) > limit else one_line
+
+
+def retrieve_advisory_research_context(
+    db: Session, run: AnalysisRun, profile_id: str
+) -> dict:
+    """R5.7 — advisory research context for the two big fields only.
+
+    Returns ``{}`` for any other profile (so their context is unchanged). For VC/SOL it
+    gathers, bounded and deterministically:
+      - imported D0/public SourceDocuments (market-signal fragments), and
+      - non-imported ResearchResult candidates whose ResearchTask.purpose matches the field
+        (VC → market_comparison, SOL → partner_research_org_topic).
+    Everything here is UNTRUSTED, ADVISORY context — never evidence, never an anchor id.
+    """
+    purposes = _RESEARCH_CONTEXT_PURPOSES.get(profile_id)
+    if not purposes or not run.project_id:
+        return {}
+
+    sources = source_scope.imported_public_sources(db, run.project_id, run.workspace_id)
+    fragments = source_scope.prefilter_fragments(
+        db, sources, max_fragments=_RESEARCH_SOURCE_MAX_FRAGMENTS,
+        char_budget=_RESEARCH_SOURCE_CHAR_BUDGET,
+    )
+    imported = [
+        {"source_name": f.source_name, "snippet": _trim(f.text, _RESEARCH_SNIPPET_MAX)}
+        for f in fragments
+    ]
+
+    candidates = [
+        {
+            "title": _trim(r.title, _RESEARCH_SNIPPET_MAX),
+            "snippet": _trim(r.snippet, _RESEARCH_SNIPPET_MAX),
+            "source_url": r.source_url,
+        }
+        for r in db.scalars(
+            select(ResearchResult)
+            .join(ResearchTask, ResearchResult.research_task_id == ResearchTask.research_task_id)
+            .where(
+                ResearchTask.project_id == run.project_id,
+                ResearchResult.workspace_id == run.workspace_id,
+                ResearchResult.status == "candidate",
+                ResearchTask.purpose.in_(purposes),
+            )
+            .order_by(ResearchResult.provider_rank, ResearchResult.result_id)
+            .limit(_RESEARCH_CANDIDATE_MAX)
+        )
+    ]
+    if not imported and not candidates:
+        return {}
+    return {"imported_sources": imported, "candidates": candidates}
+
+
+def _render_research_context(rc: dict) -> str:
+    lines = [
+        "RESEARCH CONTEXT (advisory candidates — NOT evidence, NOT validated facts; any "
+        "market number or partner name here is an UNVALIDATED CANDIDATE. Cite nothing from "
+        "here as evidence_anchor_ids; if a claim would rely on it, keep a placeholder / "
+        "missing_input instead):"
+    ]
+    for s in rc.get("imported_sources", []):
+        lines.append(f"- [imported public source | {s['source_name']}] {s['snippet']}")
+    for c in rc.get("candidates", []):
+        lines.append(
+            f"- [research candidate (not imported) | {c['source_url']}] "
+            f"{c['title']} — {c['snippet']}"
+        )
+    return "\n".join(lines)
+
+
 def _render_context_text(ctx: A2Context) -> str:
     parts = [
         "CURRENT DRAFT (the text to improve):\n" + (ctx.current_draft_text or "(empty)"),
@@ -224,6 +318,8 @@ def _render_context_text(ctx: A2Context) -> str:
         "OPEN ISSUES: " + str(ctx.open_issues),
         "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.advisory_facts),
     ]
+    if ctx.research_context:
+        parts.append(_render_research_context(ctx.research_context))
     return "\n\n".join(parts)
 
 
@@ -239,6 +335,8 @@ def assemble_a2_context(
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
+    # R5.7: advisory research context (VC/SOL only) — never added to allowed_anchor_ids.
+    ctx.research_context = retrieve_advisory_research_context(db, run, profile_id)
     ctx.allowed_anchor_ids = {e["anchor_id"] for e in ctx.verified_evidence}
     ctx.allowed_issue_ids = {i["issue_id"] for i in ctx.open_issues}
 
@@ -268,6 +366,10 @@ def assemble_a2_context(
         "evidence_count": len(ctx.verified_evidence),
         "open_issue_count": len(ctx.open_issues),
         "fact_count": len(ctx.advisory_facts),
+        "research_context_count": (
+            len(ctx.research_context.get("imported_sources", []))
+            + len(ctx.research_context.get("candidates", []))
+        ),
         "char_budget": budget,
         "total_chars": len(ctx.context_text),
     }

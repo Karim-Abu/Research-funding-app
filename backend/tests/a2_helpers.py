@@ -13,8 +13,18 @@ from app.db.models import (
     EvidenceLink,
     PortalFieldDraft,
     RequirementAssessment,
+    ResearchResult,
+    ResearchTask,
+    SourceDocument,
+    SourceFragment,
+    SourceVersion,
 )
 from tests.a1_mapping_helpers import build_run
+
+# R5.7: internal research purposes (mirror app/research/service.py) — VC ← market,
+# SOL ← partner.
+MARKET_PURPOSE = "market_comparison"
+PARTNER_PURPOSE = "partner_research_org_topic"
 
 FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 VC_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
@@ -91,6 +101,64 @@ def add_verified_anchor(db, run, *, quote="Verified passage.") -> str:
     ))
     db.flush()
     return anchor_id
+
+
+def add_research_candidate(
+    db, run, *, purpose: str, title: str = "Öffentliche Marktquelle",
+    snippet: str = "Auszug (Snippet ist kein Beleg).", rank: int = 1,
+) -> str:
+    """R5.7: an internal ResearchTask (VC=market / SOL=partner purpose) + a non-imported
+    ResearchResult candidate for the run's project. Returns the result_id."""
+    task_id = "rtask-" + uuid.uuid4().hex[:8]
+    result_id = "rres-" + uuid.uuid4().hex[:8]
+    db.add(ResearchTask(
+        research_task_id=task_id, project_id=run.project_id, workspace_id=run.workspace_id,
+        created_by="user-anna", purpose=purpose, subject_type="topic", subject_name=None,
+        query_text="öffentliche Themen-/Organisationssuche", normalized_query_hash="qh",
+        status="succeeded",
+    ))
+    db.add(ResearchResult(
+        result_id=result_id, research_task_id=task_id, workspace_id=run.workspace_id,
+        source_url="https://research.example.org/r/1", title=title, snippet=snippet,
+        provider_rank=rank, status="candidate",
+    ))
+    db.flush()
+    return result_id
+
+
+def add_imported_public_source(
+    db, run, *, name: str = "Marktbericht (öffentlich)",
+    text: str = "Der Markt für Anbieter und Wettbewerber wächst; Umsatz ca. 12 Mio.",
+) -> str:
+    """R5.7: an imported D0/public web SourceDocument (type=url, origin=public_source) with
+    a market-signal fragment so source_scope.prefilter_fragments picks it. Returns source_id."""
+    source_id = "src-" + uuid.uuid4().hex[:8]
+    version_id = "sv-" + uuid.uuid4().hex[:8]
+    dc = {
+        "sensitivity": "public", "origin": "public_source",
+        "processing_mode": "deterministic_only", "web_research_mode": "validated_public",
+        "nda_applies": False,
+    }
+    db.add(SourceDocument(
+        source_id=source_id, project_id=run.project_id, workspace_id=run.workspace_id,
+        name=name, type="url", status="processed", data_classification=dc,
+        current_source_version_id=version_id, created_by="user-anna",
+    ))
+    db.add(SourceVersion(
+        source_version_id=version_id, source_document_id=source_id, version_number=1,
+        original_content_hash="h", normalized_content_hash="h2", normalized_text=text,
+        parser_version="parser-1", normalizer_version="normalizer-1",
+        chunker_version="chunker-1", processing_status="processed", data_classification=dc,
+        storage_ref="b" * 32, original_filename="market.html", byte_size=len(text),
+        mime_type="text/html",
+    ))
+    db.add(SourceFragment(
+        fragment_id="frag-" + uuid.uuid4().hex[:8], source_version_id=version_id, ordinal=0,
+        original_text=text, normalized_text=text, start_offset=0, end_offset=len(text),
+        content_hash="fh",
+    ))
+    db.flush()
+    return source_id
 
 
 def fake_resolver(provider: FakeProvider):
