@@ -114,15 +114,23 @@ def _deterministic_name_item(field, project: Project) -> FieldDraftItem:
     )
 
 
-def _deterministic_name_en_item(field) -> FieldDraftItem:
+def _deterministic_name_en_item(field, title_en: str | None) -> FieldDraftItem:
+    text = (title_en or "").strip()
+    if not text:
+        return FieldDraftItem(
+            field_id=field.field_id, field_label=field.label_or_question,
+            status="missing_inputs",
+            missing_inputs=[{
+                "label": "Englischer Antragstitel",
+                "reason": "kein englischer Titel vorhanden; keine automatische Übersetzung",
+            }],
+            notes=["Kein englischer Titel; keine Auto-Übersetzung in diesem Ticket."],
+        )
     return FieldDraftItem(
         field_id=field.field_id, field_label=field.label_or_question,
-        status="missing_inputs",
-        missing_inputs=[{
-            "label": "Englischer Antragstitel",
-            "reason": "kein englischer Titel vorhanden; keine automatische Übersetzung",
-        }],
-        notes=["Kein englischer Titel; keine Auto-Übersetzung in diesem Ticket."],
+        status="deterministic", suggestion_text=text,
+        notes=["Deterministisch aus vorhandenem englischem F1-Titel übernommen "
+               "(kein LLM, keine Übersetzung)."],
     )
 
 
@@ -184,6 +192,7 @@ def run_integrated_draft(
     data_mode: str = "synthetic_eval",
     resolver_for: ResolverFor = None,
     seed_context: SeedContext = None,
+    title_en: str | None = None,
 ) -> DraftPackage:
     """Run all 8 supported draft fields for the F1 case and return a DraftPackage.
 
@@ -191,8 +200,10 @@ def run_integrated_draft(
     ``base_project``) so no profile exceeds its contract max_per_run. ``resolver_for`` lets
     tests inject a per-field fake resolver (else the caller relies on
     ``settings.agent_fake_provider``). ``seed_context(db, field_id, child_project)`` lets the
-    caller seed advisory research context onto the VC/SOL child projects. The package always
-    requires human review and never marks anything final/copy-ready.
+    caller seed advisory research context onto the VC/SOL child projects. ``title_en`` is the
+    (optional) English application name already known for this case — used verbatim,
+    deterministic, no translation; absent/blank keeps NAME_EN at missing_inputs. The package
+    always requires human review and never marks anything final/copy-ready.
     """
     items: list[FieldDraftItem] = []
     a2_runs: list[AnalysisRun] = []
@@ -213,7 +224,7 @@ def run_integrated_draft(
                 partner_run = run
             items.append(_a2_item(db, run, field, config, resolver_for=resolver_for))
         elif field.field_id == "INTRO.APP.NAME_EN":
-            items.append(_deterministic_name_en_item(field))
+            items.append(_deterministic_name_en_item(field, title_en))
         else:  # INTRO.APP.NAME (and any other non-A2 name-like field)
             items.append(_deterministic_name_item(field, base_project))
 

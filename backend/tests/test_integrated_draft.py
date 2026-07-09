@@ -106,11 +106,11 @@ def _make_seed_ctx(seeded_ids: list[str]):
     return _seed
 
 
-def _run(db, project, *, resolver_for=None, seed_context=None) -> DraftPackage:
+def _run(db, project, *, resolver_for=None, seed_context=None, title_en=None) -> DraftPackage:
     return run_integrated_draft(
         db, base_project=project, actor_user_id="user-anna", case_id="F1",
         provider_mode="fake", data_mode="fake_test",
-        resolver_for=resolver_for, seed_context=seed_context,
+        resolver_for=resolver_for, seed_context=seed_context, title_en=title_en,
     )
 
 
@@ -152,6 +152,25 @@ def test_name_missing_when_title_empty(db, fake_provider):
     pkg = _run(db, project)
     name = next(f for f in pkg.fields if f.field_id == NAME_FIELD)
     assert name.status == "missing_inputs"
+
+
+def test_name_en_deterministic_when_title_en_provided(db, fake_provider):
+    title_en = "QUALIMON — AI-based Quality Monitoring for Production Lines"
+    project = _base_project(db, title="Mein Antragstitel")
+    pkg = _run(db, project, title_en=title_en)
+    assert len(pkg.fields) == 8
+    name_en = next(f for f in pkg.fields if f.field_id == NAME_EN_FIELD)
+    assert name_en.status == "deterministic"
+    assert name_en.suggestion_text == title_en
+    assert not name_en.missing_inputs
+
+
+def test_name_en_missing_when_title_en_blank(db, fake_provider):
+    project = _base_project(db, title="Mein Antragstitel")
+    pkg = _run(db, project, title_en="   ")
+    name_en = next(f for f in pkg.fields if f.field_id == NAME_EN_FIELD)
+    assert name_en.status == "missing_inputs"
+    assert name_en.missing_inputs
 
 
 # --- no auto-accept ----------------------------------------------------------

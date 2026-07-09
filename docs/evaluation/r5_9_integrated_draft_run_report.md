@@ -4,8 +4,8 @@
 
 ## 1. Case Summary
 
-- case_id: `F1` · project_id: `integrated-f1-synthetic` · run_id: `irun-bc9fef9e`
-- provider_mode: `fake` · data_mode: `fake_test` · erzeugt: 2026-07-09T20:50:51.604202+00:00
+- case_id: `F1` · project_id: `integrated-f1-synthetic` · run_id: `irun-c1139d58`
+- provider_mode: `fake` · data_mode: `fake_test` · erzeugt: 2026-07-09T21:23:31.467007+00:00
 - Felder im Paket: 8 · **Human Review erforderlich: ja** (kein Auto-Accept, kein automatisches Submit, nicht copy-ready).
 
 ## 2. Field Summary
@@ -13,7 +13,7 @@
 | field_id | status | missing_inputs | human_review |
 | --- | --- | --- | --- |
 | INTRO.APP.NAME | deterministic | 0 | ja |
-| INTRO.APP.NAME_EN | missing_inputs | 1 | ja |
+| INTRO.APP.NAME_EN | deterministic | 0 | ja |
 | INTRO.APP.ABSTRACT | generated | 0 | ja |
 | INTRO.APP.EXECUTIVE_SUMMARY | generated | 0 | ja |
 | ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS | generated | 0 | ja |
@@ -27,11 +27,9 @@
 
 > F1 QUALIMON — KI-gestützte Qualitätsüberwachung (synthetisch)
 
-**INTRO.APP.NAME_EN** (missing_inputs)
+**INTRO.APP.NAME_EN** (deterministic)
 
-> —
->
-> _missing_inputs: Englischer Antragstitel_
+> QUALIMON — AI-based Quality Monitoring for Production Lines
 
 **INTRO.APP.ABSTRACT** (generated)
 
@@ -63,12 +61,12 @@
 | --- | --- | --- | --- | --- | --- |
 | INTRO.APP.NAME | — | — | — | — | — |
 | INTRO.APP.NAME_EN | — | — | — | — | — |
-| INTRO.APP.ABSTRACT | 10 | 20 | 30 | 24 | not_applicable |
-| INTRO.APP.EXECUTIVE_SUMMARY | 10 | 20 | 30 | 8 | not_applicable |
-| ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS | 10 | 20 | 30 | 7 | not_applicable |
-| VC.BUSINESS_TARGETS_MODEL.EDITOR | 10 | 20 | 30 | 8 | not_applicable |
+| INTRO.APP.ABSTRACT | 10 | 20 | 30 | 26 | not_applicable |
+| INTRO.APP.EXECUTIVE_SUMMARY | 10 | 20 | 30 | 7 | not_applicable |
+| ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS | 10 | 20 | 30 | 6 | not_applicable |
+| VC.BUSINESS_TARGETS_MODEL.EDITOR | 10 | 20 | 30 | 7 | not_applicable |
 | SOL.INNOVATION_SOLUTION.EDITOR | 10 | 20 | 30 | 7 | not_applicable |
-| PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION | 10 | 20 | 30 | 6 | not_applicable |
+| PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION | 10 | 20 | 30 | 8 | not_applicable |
 
 - Total: input=60 · output=120 · total=180 tokens · UsageRecords=6
 - cost_status counts: {'not_applicable': 6} (Fake-Provider ⇒ keine Preiswerte).

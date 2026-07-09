@@ -56,6 +56,9 @@ _PROJECT_ID = "integrated-f1-synthetic"
 _REPORT = _BACKEND.parent / "docs" / "evaluation" / "r5_9_integrated_draft_run_report.md"
 _MARKET_PURPOSE = "market_comparison"
 _PARTNER_PURPOSE = "partner_research_org_topic"
+# Verbatim from the F1 goldstandard case (docs/evaluation/cases/F1_synthetic_case.md,
+# "2. INTRO.APP.NAME_EN", status: present) — not invented, not translated here.
+_TITLE_EN = "QUALIMON — AI-based Quality Monitoring for Production Lines"
 
 
 def _seed_project(db):
@@ -151,6 +154,7 @@ def main() -> int:
         package = run_integrated_draft(
             db, base_project=project, actor_user_id=ACTOR, case_id=CASE_ID,
             provider_mode="fake", data_mode="fake_test", seed_context=_seed_context,
+            title_en=_TITLE_EN,
         )
         db.commit()
     finally:
