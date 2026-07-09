@@ -24,7 +24,7 @@ _PROMPT_SNAPSHOTS: dict[str, str] = {
     "a1_evidence_candidate_mapping_v1.md": "cf34fa9f00b30fc9698b9f7d659402d831de71d9c6d1f90467d5f79c76fce761",
     "a1_project_fact_extraction_v1.md": "64235ac962c58af85b45450aa9e420e2b1d92483bd95ba2c8d41044243dc7364",
     "a1_public_competence_research_v1.md": "a0359459e600ceae790cf9056e296f9b1e6436cfda58aecf80175dc672be5cfb",
-    "a2_introduction_public_summary_v1.md": "4751527eca0def861faada000d0b43ca81c71ffbfa68eed7b1b31af16c79f981",
+    "a2_introduction_public_summary_v2.md": "1552c8170804e89b885d26965f3178de49989723270264b5a91135fad9fccadc",
     "a2_solution_innovation_v1.md": "d95460b741fda85a1786e15a7ac894d046918f3340285eef1b0c8cb81ae7a34c",
     "a2_value_creation_market_logic_v1.md": "38384514da24bb98fa0870bb3c8b141ca5e894fb2fb49c26a4b6f87a6e9638ec",
     "a3_evidence_consistency_v1.md": "d93cfa13190fd4fad20e2a5a5a2a987b7461df9e6bc95195c3b4feaac69f4d31",

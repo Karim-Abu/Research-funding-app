@@ -30,6 +30,7 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
+from pydantic import ValidationError
 from sqlalchemy import select
 
 from app.agents import field_drafting
@@ -37,6 +38,7 @@ from app.agents.proposal import AIProposal
 from app.agents.providers.anthropic import AnthropicProvider
 from app.agents.providers.base import ProviderUnavailable
 from app.agents.providers.openai import OpenAIProvider
+from app.agents.schemas import validate_payload
 from app.agents.registry import get_agent_registry
 from app.config.settings import get_settings
 from app.db.models import (
@@ -117,12 +119,18 @@ class _CountingAdapter:
     ``name``/``available`` werden durchgereicht (ProviderPolicy/_try_route lesen
     ``adapter.name``). Der Cap liegt bei ``1+max_retries`` und greift daher NICHT
     in die legitimen Schema-Retry-Versuche ein — er verhindert nur einen Runaway.
+
+    R5.5b: schneidet zusätzlich die rohen Provider-Antworten mit
+    (``raw_outputs``) — das Gateway persistiert bei einem Schema-Failure kein
+    Failure-Detail (der Fallback-Versuch überschreibt den Grund), also ist der
+    Proxy die einzige Diagnose-Quelle. Nur fürs git-ignorierte Artefakt.
     """
 
     def __init__(self, inner, *, limit: int) -> None:
         self._inner = inner
         self._limit = limit
         self.calls = 0
+        self.raw_outputs: list[str] = []
 
     @property
     def name(self) -> str:
@@ -135,7 +143,65 @@ class _CountingAdapter:
         if self.calls >= self._limit:
             raise ProviderUnavailable("r5_5_call_cap_reached")
         self.calls += 1
-        return self._inner.generate(request)
+        result = self._inner.generate(request)
+        self.raw_outputs.append(result.raw_output)
+        return result
+
+
+def _failure_category(
+    raw_outputs: list[str], field_id: str, status: str
+) -> tuple[str, str | None]:
+    """Deterministische, whitelist-sichere Schema-Fehlerkategorie (R5.5b).
+
+    Reines Diagnose-Label für den Report: enthält nur Kategorien, Feldnamen aus
+    dem eigenen Schema (Repo-öffentlich) und Zählwerte — nie Modell-Output
+    (unbekannte Key-NAMEN des Modells werden nur gezählt). Zweiter Rückgabewert
+    ist das volle Fehlerdetail — NUR fürs git-ignorierte Artefakt. Kein
+    permissives Parsing: akzeptiert wird weiterhin ausschliesslich, was das
+    Gateway (pydantic) validiert hat.
+    """
+    if status == "proposal_valid":
+        return "none", None
+    if not raw_outputs:
+        return "no_provider_output", None
+    raw = raw_outputs[-1]
+    stripped = raw.strip()
+    if not stripped:
+        return "empty_output", None
+    if stripped.startswith("```"):
+        return "markdown_fence", None
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # Truncation-Signal: der Parser lief bis ans Input-Ende (oder ein String
+        # blieb offen) — Fehler mitten im Text ist dagegen schlicht kein JSON.
+        truncated = exc.msg.startswith("Unterminated") or exc.pos >= len(raw.rstrip())
+        return ("json_truncated" if truncated else "not_json"), str(exc)[:2000]
+    try:
+        bundle = validate_payload("PortalFieldDraftBundle@v1", parsed)
+    except ValidationError as exc:
+        missing = sorted(
+            {str(e["loc"][-1]) for e in exc.errors() if e["type"] == "missing"}
+        )
+        extra_count = sum(1 for e in exc.errors() if e["type"] == "extra_forbidden")
+        parts = []
+        if missing:  # fehlende Keys = Namen aus unserem Schema (whitelist-safe)
+            parts.append("missing_required:" + "+".join(missing))
+        if extra_count:  # Namen der Fremd-Keys nur im Artefakt-Detail
+            parts.append(f"unknown_keys:{extra_count}")
+        if not parts:
+            kinds = sorted({e["type"] for e in exc.errors()})
+            parts.append("type_error:" + "+".join(kinds))
+        return "; ".join(parts), str(exc)[:2000]
+    if not bundle.draft_candidates:
+        return "no_candidate", None
+    if not any(c.field_id == field_id for c in bundle.draft_candidates):
+        return "wrong_field_id", None
+    if len(bundle.draft_candidates) > 1:
+        return "multiple_candidates", None
+    # Bundle schema-valide — der Kandidat scheiterte an Feldregeln (siehe reason,
+    # z. B. character_limit_exceeded/unknown_evidence_anchor).
+    return "candidate_rejected", None
 
 
 def _forcing_resolver(provider: str, *, adapter=None):
@@ -296,6 +362,10 @@ def run_field_case(db, provider: str, field_id: str, *, adapter=None) -> dict:
     if totals["usage_record_count"] == 0 and status != "provider_error":
         raise SmokeFailure("Metering-Lücke: kein UsageRecord trotz Provider-Call")
 
+    failure_category, failure_detail = _failure_category(
+        proxy.raw_outputs, field_id, status
+    )
+
     return {
         "report": {
             "field": field_id,
@@ -307,6 +377,7 @@ def run_field_case(db, provider: str, field_id: str, *, adapter=None) -> dict:
             ),
             "status": status,
             "reason": outcome.reason or None,
+            "failure_category": failure_category,
             "llm_calls": proxy.calls,
             "latency_ms": inv.latency_ms if inv else None,
             "input_tokens": totals["input_tokens"],
@@ -324,10 +395,13 @@ def run_field_case(db, provider: str, field_id: str, *, adapter=None) -> dict:
             "suggested_text_length": len(view.get("suggested_text") or ""),
         },
         _ARTIFACT_KEY: {
-            # Nur var/-Eval-Artefakt: roher Vorschlagstext + Proposal + Fehlerdetail.
+            # Nur var/-Eval-Artefakt: roher Vorschlagstext + Proposal + Fehlerdetail
+            # + Roh-Antworten aller Versuche (R5.5b-Diagnose-Mitschnitt).
             "suggested_text": view.get("suggested_text"),
             "ai_proposal": proposal,
             "reason": outcome.reason or None,
+            "raw_outputs": list(proxy.raw_outputs),
+            "failure_detail": failure_detail,
         },
     }
 
@@ -382,6 +456,7 @@ def render_report(results: dict, *, generated_at: str) -> str:
                 ("Route", r["route_provider"]),
                 ("Status", r["status"]),
                 ("reason / error_code", r.get("reason") or "—"),
+                ("Schema-Fehlerkategorie", r.get("failure_category") or "—"),
                 ("LLM-Calls", r["llm_calls"]),
                 ("input_tokens", r["input_tokens"]),
                 ("output_tokens", r["output_tokens"]),

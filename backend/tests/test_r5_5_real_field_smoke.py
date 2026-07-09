@@ -99,6 +99,7 @@ def test_field_case_valid_proposal(db):
     )
     r = result["report"]
     assert r["status"] == "proposal_valid"
+    assert r["failure_category"] == "none"
     assert r["field"] == ABSTRACT and r["provider"] == "anthropic"
     assert r["llm_calls"] == 1
     assert r["usage_record_count"] == 1 and r["usage_record_id"]
@@ -119,6 +120,23 @@ def test_field_case_schema_failure_still_meters(db):
     assert r["total_tokens"] > 0
     assert r["human_review_required"] is None
     assert result["artifact"]["ai_proposal"] is None
+    # R5.5b-Diagnose: Kategorie whitelist-safe (Schema-Feldnamen + Zählwert),
+    # Rohantworten/Detail nur im git-ignorierten Artefakt.
+    assert r["failure_category"] == (
+        "missing_required:draft_candidates+placeholders; unknown_keys:1"
+    )
+    assert result["artifact"]["raw_outputs"] == ['{"unexpected_field": true}'] * 2
+    assert "unexpected_field" in result["artifact"]["failure_detail"]
+    assert "unexpected_field" not in json.dumps(r)  # Fremd-Key nie im Report-Teil
+
+
+def test_field_case_not_json_category(db):
+    result = run_field_case(
+        db, "anthropic", EXEC, adapter=FakeProvider(mode="malformed_json")
+    )
+    r = result["report"]
+    assert r["status"] == "schema_failed"
+    assert r["failure_category"] == "not_json"
 
 
 # --- No-Raw-Report-Canary ---------------------------------------------------
@@ -129,7 +147,8 @@ def _fake_result(field: str, provider: str) -> dict:
         "report": {
             "field": field, "provider": provider, "route_provider": "x", "model": "m",
             "data_mode": "synthetic_eval", "status": "schema_failed",
-            "reason": "agent_invocation_failed", "llm_calls": 2, "latency_ms": 1234,
+            "reason": "agent_invocation_failed", "failure_category": "not_json",
+            "llm_calls": 2, "latency_ms": 1234,
             "input_tokens": 20, "output_tokens": 40, "total_tokens": 60,
             "usage_record_count": 1, "usage_record_id": "usg-1",
             "cost_status_counts": {"unknown_price": 1}, "cost_chf_priced": 0.0,
@@ -138,7 +157,8 @@ def _fake_result(field: str, provider: str) -> dict:
         },
         "artifact": {
             "suggested_text": CANARY_TEXT, "ai_proposal": {"raw": CANARY_TEXT},
-            "reason": CANARY_TEXT,
+            "reason": CANARY_TEXT, "raw_outputs": [CANARY_TEXT, CANARY_KEY],
+            "failure_detail": CANARY_TEXT,
         },
     }
 
@@ -147,8 +167,12 @@ def test_renderer_no_canary_and_mandatory_notes():
     report = render_report(
         {"abstract_openai": _fake_result(ABSTRACT, "openai")}, generated_at="2026-07-09"
     )
-    # Rohoutputs (artifact.*) erscheinen nie im Report.
+    # Rohoutputs (artifact.*, inkl. R5.5b raw_outputs/failure_detail) nie im Report.
     assert CANARY_TEXT not in report
+    assert CANARY_KEY not in report
+    # R5.5b: Diagnose-Kategorie erscheint als eigene Whitelist-Zeile.
+    assert "Schema-Fehlerkategorie" in report
+    assert "not_json" in report
     # Pflichthinweise.
     assert "synthetic_eval" in report
     assert "D2" in report

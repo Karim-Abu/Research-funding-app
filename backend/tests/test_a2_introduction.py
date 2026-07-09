@@ -110,7 +110,7 @@ def test_abstract_proposal_valid_and_advisory(db):
     assert proposal.human_review_required is True  # Regel 5: kein Auto-Accept
     assert proposal.used_anchor_ids == [anchor]
     assert proposal.profile_id == PROFILE_ID
-    assert proposal.prompt_version == "a2_introduction_public_summary_v1"
+    assert proposal.prompt_version == "a2_introduction_public_summary_v2"
 
 
 def test_exec_summary_proposal_valid(db):

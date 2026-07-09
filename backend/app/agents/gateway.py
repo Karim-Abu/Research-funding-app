@@ -35,6 +35,7 @@ from app.agents.schemas import (
     ProjectFactExtractionResult,
     SchemaNotImplementedError,
     fact_reference_violations,
+    json_schema_for,
     validate_payload,
 )
 from app.config.settings import get_settings
@@ -329,6 +330,9 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         output_schema_id=profile.output_schema,
         timeout_seconds=cost_guard.timeout_seconds(profile),
         max_output_tokens=profile.invocation_limits.get("max_output_tokens"),
+        # R5.5b: provider-native structured output (advisory) — pydantic below
+        # remains the sole validation authority.
+        output_json_schema=json_schema_for(profile.output_schema),
     )
     try:
         model_out, usage = _execute(

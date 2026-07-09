@@ -474,6 +474,14 @@ def validate_payload(schema_id: str, data: object) -> BaseModel:
     return model.model_validate(data)
 
 
+def json_schema_for(schema_id: str) -> dict | None:
+    """JSON Schema of the declared output model (R5.5b) — handed to provider
+    adapters for provider-native structured output. ``None`` for schema ids
+    without an implemented model; validation stays with ``validate_payload``."""
+    model = SCHEMA_MODELS.get(schema_id)
+    return model.model_json_schema() if model is not None else None
+
+
 def fact_reference_violations(
     result: ProjectFactExtractionResult, allowed_fragment_ids: set[str]
 ) -> list[str]:
@@ -489,6 +497,7 @@ def fact_reference_violations(
 
 __all__ = [
     "SCHEMA_MODELS",
+    "json_schema_for",
     "DataClassificationRef",
     "ProjectFactExtractionInput",
     "ProjectFactExtractionResult",

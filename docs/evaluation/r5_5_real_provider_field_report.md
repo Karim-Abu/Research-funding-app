@@ -26,20 +26,21 @@
 | data_mode | synthetic_eval |
 | Modell | gpt-5.4-2026-03-05 |
 | Route | openai_direct |
-| Status | schema_failed |
-| reason / error_code | agent_invocation_failed |
-| LLM-Calls | 2 |
-| input_tokens | 2762 |
-| output_tokens | 515 |
-| total_tokens | 3277 |
-| Latenz (ms) | 7024 |
+| Status | proposal_valid |
+| reason / error_code | — |
+| Schema-Fehlerkategorie | none |
+| LLM-Calls | 1 |
+| input_tokens | 2058 |
+| output_tokens | 206 |
+| total_tokens | 2264 |
+| Latenz (ms) | 5005 |
 | UsageRecords | 1 |
-| usage_record_id | 1fb7d74c-a547-4646-a698-526fd25d4e9e |
+| usage_record_id | 6ca5e64a-a26a-470d-b0dd-94a2c939046a |
 | cost_status | unknown_price=1 |
 | Kosten | nicht bepreist (unknown_price/not_applicable) — nie als 0 CHF lesen |
-| missing_inputs | 0 |
-| human_review_required | None |
-| Output-Länge (Zeichen) | 0 |
+| missing_inputs | 1 |
+| human_review_required | True |
+| Output-Länge (Zeichen) | 229 |
 | Qualitätsnotiz (manuell) | _vom Reviewer auszufüllen_ |
 
 ### anthropic
@@ -49,20 +50,21 @@
 | data_mode | synthetic_eval |
 | Modell | claude-sonnet-4-6 |
 | Route | anthropic_direct |
-| Status | schema_failed |
-| reason / error_code | agent_invocation_failed |
-| LLM-Calls | 2 |
-| input_tokens | 3168 |
-| output_tokens | 1983 |
-| total_tokens | 5151 |
-| Latenz (ms) | 33350 |
+| Status | proposal_valid |
+| reason / error_code | — |
+| Schema-Fehlerkategorie | none |
+| LLM-Calls | 1 |
+| input_tokens | 3227 |
+| output_tokens | 546 |
+| total_tokens | 3773 |
+| Latenz (ms) | 10623 |
 | UsageRecords | 1 |
-| usage_record_id | f7473659-f40e-4c4e-ade9-a0f029ef28ab |
+| usage_record_id | 538b2e67-2b83-4a9e-963b-e571f1a693cf |
 | cost_status | unknown_price=1 |
 | Kosten | nicht bepreist (unknown_price/not_applicable) — nie als 0 CHF lesen |
-| missing_inputs | 0 |
-| human_review_required | None |
-| Output-Länge (Zeichen) | 0 |
+| missing_inputs | 3 |
+| human_review_required | True |
+| Output-Länge (Zeichen) | 195 |
 | Qualitätsnotiz (manuell) | _vom Reviewer auszufüllen_ |
 
 ## INTRO.APP.EXECUTIVE_SUMMARY
@@ -74,20 +76,21 @@
 | data_mode | synthetic_eval |
 | Modell | gpt-5.4-2026-03-05 |
 | Route | openai_direct |
-| Status | schema_failed |
-| reason / error_code | agent_invocation_failed |
-| LLM-Calls | 2 |
-| input_tokens | 2784 |
-| output_tokens | 1011 |
-| total_tokens | 3795 |
-| Latenz (ms) | 11727 |
+| Status | proposal_valid |
+| reason / error_code | — |
+| Schema-Fehlerkategorie | none |
+| LLM-Calls | 1 |
+| input_tokens | 2076 |
+| output_tokens | 349 |
+| total_tokens | 2425 |
+| Latenz (ms) | 4736 |
 | UsageRecords | 1 |
-| usage_record_id | a461bad7-2ab2-4613-a859-4aecc5693c5a |
+| usage_record_id | 47061047-c18b-4adb-9a19-c06f2e49797a |
 | cost_status | unknown_price=1 |
 | Kosten | nicht bepreist (unknown_price/not_applicable) — nie als 0 CHF lesen |
-| missing_inputs | 0 |
-| human_review_required | None |
-| Output-Länge (Zeichen) | 0 |
+| missing_inputs | 4 |
+| human_review_required | True |
+| Output-Länge (Zeichen) | 257 |
 | Qualitätsnotiz (manuell) | _vom Reviewer auszufüllen_ |
 
 ### anthropic
@@ -97,20 +100,21 @@
 | data_mode | synthetic_eval |
 | Modell | claude-sonnet-4-6 |
 | Route | anthropic_direct |
-| Status | schema_failed |
-| reason / error_code | agent_invocation_failed |
-| LLM-Calls | 2 |
-| input_tokens | 3198 |
-| output_tokens | 2048 |
-| total_tokens | 5246 |
-| Latenz (ms) | 35513 |
+| Status | proposal_valid |
+| reason / error_code | — |
+| Schema-Fehlerkategorie | none |
+| LLM-Calls | 1 |
+| input_tokens | 3214 |
+| output_tokens | 1068 |
+| total_tokens | 4282 |
+| Latenz (ms) | 17138 |
 | UsageRecords | 1 |
-| usage_record_id | 52a4a632-3d33-4801-93a1-c5b14682bc7e |
+| usage_record_id | e72b51f4-1a08-48a1-a4e1-089c3dd9e1b0 |
 | cost_status | unknown_price=1 |
 | Kosten | nicht bepreist (unknown_price/not_applicable) — nie als 0 CHF lesen |
-| missing_inputs | 0 |
-| human_review_required | None |
-| Output-Länge (Zeichen) | 0 |
+| missing_inputs | 5 |
+| human_review_required | True |
+| Output-Länge (Zeichen) | 1056 |
 | Qualitätsnotiz (manuell) | _vom Reviewer auszufüllen_ |
 
 ---
