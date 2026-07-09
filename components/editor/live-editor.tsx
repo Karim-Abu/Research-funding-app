@@ -222,6 +222,7 @@ export function LiveEditor({
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
   const showA2Controls = isA2Field(selected?.field_id)
   const comparisonEnabled = caps?.features?.market_comparison === true
+  const marketResearchEnabled = caps?.features?.web_research === true
 
   React.useEffect(() => {
     let active = true
@@ -1031,6 +1032,7 @@ export function LiveEditor({
             comparisonLoaded,
             comparisonEnabled,
             onOpenComparison: () => setMarketSheetOpen(true),
+            marketResearchEnabled,
           }}
           suggestionExists={false}
           belegeContent={belegeContent}

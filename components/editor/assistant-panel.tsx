@@ -36,6 +36,9 @@ interface AssistantPanelProps {
     comparisonLoaded?: boolean
     comparisonEnabled?: boolean
     onOpenComparison?: () => void
+    /** capabilities.features.web_research — gates the Market Research flow (RESEARCH.1b). */
+    marketResearchEnabled?: boolean
+    onSourceImported?: () => void
   }
   suggestionExists: boolean
   /** Live supplies its evidence + linking UI; mock falls back to the VM list. */
@@ -102,6 +105,8 @@ export function AssistantPanel({
           comparisonLoaded={market.comparisonLoaded ?? false}
           comparisonEnabled={market.comparisonEnabled ?? false}
           onOpenComparison={market.onOpenComparison}
+          marketResearchEnabled={market.marketResearchEnabled ?? false}
+          onSourceImported={market.onSourceImported}
         />
       )}
 
