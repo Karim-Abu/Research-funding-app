@@ -298,6 +298,88 @@ def create_market_research_task(
     return task, operation
 
 
+# Internal-only research purpose for the partner-research MVP (RESEARCH.2). Same
+# rationale as MARKET_RESEARCH_PURPOSE: stored on the free ORM ``ResearchTask.purpose``
+# String column only — deliberately distinct from the public ``partner_role_suggestion``
+# enum value, so importing a result from this task never triggers the existing A1 Public
+# Competence Research LLM synthesis (which runs unconditionally on import and is not
+# gated by ``purpose``/``subject_type``). No frozen contract change.
+PARTNER_RESEARCH_PURPOSE = "partner_research_org_topic"
+
+
+def create_partner_research_task(
+    db: Session,
+    *,
+    project: Project,
+    query_preview: str,
+    actor_user_id: str,
+    max_results: int,
+    task_id: str | None = None,
+    operation_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> tuple[ResearchTask, AsyncOperation]:
+    """Create an internal partner-research ResearchTask through the SAME Search Query
+    Firewall chokepoint as the public flow (RESEARCH.2). Organisation/topic queries only —
+    ``subject_type="topic"``, never a person. D0-only: a confidential/NDA/unknown class
+    raises ``ResearchBlocked`` (approval_required / class_blocked) just like the public path.
+    """
+    actual_task_id = task_id or str(uuid.uuid4())
+    actual_operation_id = operation_id or str(uuid.uuid4())
+
+    query, data_class, approval_id = _firewall_query(
+        db, project=project, query_preview=query_preview,
+        purpose=PARTNER_RESEARCH_PURPOSE, approval_id=None,
+        actor_user_id=actor_user_id, task_id=actual_task_id,
+    )
+
+    task = ResearchTask(
+        research_task_id=actual_task_id,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        created_by=actor_user_id,
+        operation_id=actual_operation_id,
+        purpose=PARTNER_RESEARCH_PURPOSE,
+        subject_type="topic",
+        subject_name=None,
+        query_text=query,
+        normalized_query_hash=_query_hash(query),
+        status="queued",
+        preferred_domains=[],
+        disallowed_domains=[],
+        competence_needs=[],
+        requested_partner_roles=[],
+        max_results=max_results,
+        max_pages=1,
+        result_count=0,
+        firewall_data_class=str(data_class),
+        firewall_approval_id=approval_id,
+    )
+    db.add(task)
+    controls.record(
+        db, workspace_id=project.workspace_id, project_id=project.project_id,
+        control_id=CTRL_QUERY_FIREWALL, status="passed",
+        detail=f"{data_class}:sanitized_ok", research_task_id=actual_task_id,
+    )
+
+    operation = AsyncOperation(
+        operation_id=actual_operation_id,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        resource_type="research_task",
+        resource_id=actual_task_id,
+        status="queued",
+        idempotency_key=idempotency_key,
+    )
+    db.add(operation)
+
+    recording.record_audit(
+        db, workspace_id=project.workspace_id, actor_user_id=actor_user_id,
+        action="research_task.requested", research_task_id=actual_task_id,
+        detail={"purpose": PARTNER_RESEARCH_PURPOSE, "subject_type": "topic"},
+    )
+    return task, operation
+
+
 def get_task(db: Session, task_id: str, workspace_id: str) -> ResearchTask | None:
     return db.scalar(
         select(ResearchTask).where(
