@@ -62,7 +62,9 @@ def _firewall_query(
     db: Session,
     *,
     project: Project,
-    payload: ResearchTaskCreate,
+    query_preview: str,
+    purpose: str,
+    approval_id: str | None,
     actor_user_id: str,
     task_id: str,
 ) -> tuple[str, DataClass, str | None]:
@@ -71,10 +73,12 @@ def _firewall_query(
     Returns ``(query_text, data_class, approval_id)``. The RAW query is hashed and
     discarded — for D1/D2 only the firewall-sanitized, human-approved query is returned;
     for D3/UNKNOWN and blocked queries it raises ``ResearchBlocked``. This runs in the
-    SERVICE (not just the API) so an agent using the service cannot bypass it.
+    SERVICE (not just the API) so an agent using the service cannot bypass it. Takes the
+    query/purpose/approval as explicit args so both the public ``ResearchTaskCreate`` flow
+    and the internal market-research flow share this single chokepoint (RESEARCH.1a).
     """
     data_class = derive_data_class(project.data_classification)
-    qhash = raw_query_hash(payload.query_preview)
+    qhash = raw_query_hash(query_preview)
 
     def _blocked(code: str, detail: str, *, status: int, reason: str) -> ResearchBlocked:
         controls.record(
@@ -98,7 +102,7 @@ def _firewall_query(
         )
 
     def _consume() -> str:
-        if not payload.approval_id:
+        if not approval_id:
             raise _blocked(
                 "approval_required",
                 "Für vertrauliche Projekte ist eine geprüfte, bereinigte Suchanfrage "
@@ -107,7 +111,7 @@ def _firewall_query(
             )
         try:
             return approval_service.consume_for_task(
-                db, approval_id=payload.approval_id, workspace_id=project.workspace_id,
+                db, approval_id=approval_id, workspace_id=project.workspace_id,
                 project_id=project.project_id, raw_query_hash=qhash,
                 research_task_id=task_id,
             )
@@ -117,11 +121,11 @@ def _firewall_query(
     if data_class == DataClass.D0_PUBLIC:
         fw = evaluate_query(
             db, project_id=project.project_id, workspace_id=project.workspace_id,
-            actor_user_id=actor_user_id, raw_query=payload.query_preview,
-            data_class=data_class, intended_tool="firecrawl", purpose=payload.purpose,
+            actor_user_id=actor_user_id, raw_query=query_preview,
+            data_class=data_class, intended_tool="firecrawl", purpose=purpose,
         )
         if fw.decision == "allow":
-            return normalize_query(payload.query_preview), data_class, None
+            return normalize_query(query_preview), data_class, None
         if fw.decision == "block":
             raise _blocked(
                 "web_research_query_blocked",
@@ -129,10 +133,10 @@ def _firewall_query(
                 status=422, reason="query_blocked",
             )
         # require_human_approval: consume the approved sanitized query.
-        return _consume(), data_class, payload.approval_id
+        return _consume(), data_class, approval_id
 
     # D1 / D2 — confidential: only an approved sanitized query may proceed.
-    return _consume(), data_class, payload.approval_id
+    return _consume(), data_class, approval_id
 
 
 def create_research_task(
@@ -151,8 +155,9 @@ def create_research_task(
     # Search Query Firewall — the raw query is hashed and discarded; ``query`` is the
     # public-safe query that may be stored/sent (== normalized preview for a benign D0).
     query, data_class, approval_id = _firewall_query(
-        db, project=project, payload=payload, actor_user_id=actor_user_id,
-        task_id=actual_task_id,
+        db, project=project, query_preview=payload.query_preview,
+        purpose=payload.purpose, approval_id=payload.approval_id,
+        actor_user_id=actor_user_id, task_id=actual_task_id,
     )
 
     task = ResearchTask(
@@ -210,6 +215,87 @@ def create_research_task(
         poll_url=f"/api/v1/operations/{actual_operation_id}",
     )
     return task, operation, accepted
+
+
+# Internal-only research purpose for the market-research MVP (RESEARCH.1a). Stored on
+# the free ORM ``ResearchTask.purpose`` String column ONLY — it is deliberately NOT added
+# to the frozen public ``ResearchTaskCreate.purpose`` enum, so no frozen contract changes
+# and the public create-API surface is untouched.
+MARKET_RESEARCH_PURPOSE = "market_comparison"
+
+
+def create_market_research_task(
+    db: Session,
+    *,
+    project: Project,
+    query_preview: str,
+    actor_user_id: str,
+    max_results: int,
+    task_id: str | None = None,
+    operation_id: str | None = None,
+    idempotency_key: str | None = None,
+) -> tuple[ResearchTask, AsyncOperation]:
+    """Create an internal market-research ResearchTask through the SAME Search Query
+    Firewall chokepoint as the public flow (RESEARCH.1a). No public ``ResearchTaskCreate``
+    contract is used; ``purpose`` is the internal ``market_comparison`` String. D0-only:
+    a confidential/NDA/unknown class raises ``ResearchBlocked`` (approval_required /
+    class_blocked) just like the public path.
+    """
+    actual_task_id = task_id or str(uuid.uuid4())
+    actual_operation_id = operation_id or str(uuid.uuid4())
+
+    query, data_class, approval_id = _firewall_query(
+        db, project=project, query_preview=query_preview,
+        purpose=MARKET_RESEARCH_PURPOSE, approval_id=None,
+        actor_user_id=actor_user_id, task_id=actual_task_id,
+    )
+
+    task = ResearchTask(
+        research_task_id=actual_task_id,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        created_by=actor_user_id,
+        operation_id=actual_operation_id,
+        purpose=MARKET_RESEARCH_PURPOSE,
+        subject_type="topic",
+        subject_name=None,
+        query_text=query,
+        normalized_query_hash=_query_hash(query),
+        status="queued",
+        preferred_domains=[],
+        disallowed_domains=[],
+        competence_needs=[],
+        requested_partner_roles=[],
+        max_results=max_results,
+        max_pages=1,
+        result_count=0,
+        firewall_data_class=str(data_class),
+        firewall_approval_id=approval_id,
+    )
+    db.add(task)
+    controls.record(
+        db, workspace_id=project.workspace_id, project_id=project.project_id,
+        control_id=CTRL_QUERY_FIREWALL, status="passed",
+        detail=f"{data_class}:sanitized_ok", research_task_id=actual_task_id,
+    )
+
+    operation = AsyncOperation(
+        operation_id=actual_operation_id,
+        workspace_id=project.workspace_id,
+        project_id=project.project_id,
+        resource_type="research_task",
+        resource_id=actual_task_id,
+        status="queued",
+        idempotency_key=idempotency_key,
+    )
+    db.add(operation)
+
+    recording.record_audit(
+        db, workspace_id=project.workspace_id, actor_user_id=actor_user_id,
+        action="research_task.requested", research_task_id=actual_task_id,
+        detail={"purpose": MARKET_RESEARCH_PURPOSE, "subject_type": "topic"},
+    )
+    return task, operation
 
 
 def get_task(db: Session, task_id: str, workspace_id: str) -> ResearchTask | None:
