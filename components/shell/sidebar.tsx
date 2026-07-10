@@ -24,6 +24,7 @@ import {
   Bot,
   PanelLeftClose,
   PanelLeftOpen,
+  Sparkles,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -56,6 +57,8 @@ const currentApplication: NavLink[] = [
   { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
   { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },
   { label: "Entwurf", href: "/editor", icon: PenLine },
+  // DEMO.1: Demo-Ansicht des integrierten KI-Antragsentwurfs (8 Felder).
+  { label: "KI-Antragsentwurf", href: "/antragsentwurf", icon: Sparkles },
   { label: "Qualitätsprüfung", href: "/review", icon: CheckSquare },
   // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
   // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
