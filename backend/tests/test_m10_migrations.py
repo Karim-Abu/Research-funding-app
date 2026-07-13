@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "1d4f8a2c6b90"  # versionierte Metadaten des Innolink-Imports.
+_HEAD = "7a9c2e4f6b81"  # strukturierte, HITL-bestätigte Importkandidaten.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -121,10 +121,7 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 
 
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
-    """Roundtrip der Head-Migration (Import-Mapping-Metadaten): Down entfernt
-    NUR die drei neuen Spalten; alle früheren Revisionen (review_comment,
-    edited_text, EVAL.1-Spalten, R3.2-Tabelle, R2.2-Spalten) und bestehende
-    Zeilen bleiben unangetastet erhalten."""
+    """Roundtrip der additiven strukturierten Importmigration."""
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert "run_phases" in _tables(db)
@@ -137,6 +134,16 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert {"mapping_version", "mapping_status", "section_metadata"} <= _columns(
         db, "import_candidates"
     )
+    assert "structured_import_candidates" in _tables(db)
+    assert {
+        "candidate_id", "workspace_id", "project_id",
+        "source_id", "source_version_id", "candidate_kind", "target_key",
+        "payload_json", "edited_payload_json", "confidence", "source_location",
+        "mapping_version", "decision", "decided_by", "decided_at",
+        "applied_resource_id", "supersedes_candidate_id", "created_at",
+    } <= _columns(db, "structured_import_candidates")
+    assert {"title_en", "start_date", "end_date", "total_requested_funding_including_overhead"} <= _project_columns(db)
+    assert "department" in _columns(db, "partners")
     assert "review_comment" in _columns(db, "partners")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
@@ -177,13 +184,19 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one (entfernt NUR die Mapping-Metadaten), dann wieder hoch. Alle
-    # früheren Revisionen überleben den -1-Schritt unangetastet.
+    # Down one entfernt nur die additive strukturierte Importtabelle und ihre
+    # neuen Bestandsfelder. Die narrative Importrevision bleibt erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
     assert "run_phases" in _tables(db)
+    assert {"mapping_version", "mapping_status", "section_metadata"} <= _columns(
+        db, "import_candidates"
+    )
+    assert "structured_import_candidates" not in _tables(db)
     assert not {
-        "mapping_version", "mapping_status", "section_metadata"
-    }.intersection(_columns(db, "import_candidates"))
+        "title_en", "start_date", "end_date",
+        "total_requested_funding_including_overhead",
+    }.intersection(_project_columns(db))
+    assert "department" not in _columns(db, "partners")
     assert "review_comment" in _columns(db, "partners")
     assert "edited_text" in _columns(db, "import_candidates")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
@@ -235,9 +248,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         phase_rows = con.execute("SELECT COUNT(*) FROM run_phases").fetchone()
     finally:
         con.close()
-    # Frühere Revisionen werden vom -1-Roundtrip nicht mehr berührt: usage-,
-    # Kandidaten- und Partner-Zeile bleiben exakt erhalten (inkl. edited_text
-    # und review_comment). Die Import-Metadaten werden sicher zurückgefüllt.
+    # Frühere Revisionen werden vom -1-Roundtrip nicht berührt.
     assert usage == (11, 22, "not_applicable", None), "usage row mutated in roundtrip"
     assert cand == (
         "Original", "Bearbeitet", "accepted", "legacy-anchor-v1",
@@ -256,5 +267,11 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "total_requested_funding",
         "budget_exception_basis",
         "duration_months",
+        "title_en",
+        "start_date",
+        "end_date",
+        "total_requested_funding_including_overhead",
     } <= _project_columns(db)
+    assert "structured_import_candidates" in _tables(db)
+    assert "department" in _columns(db, "partners")
     assert {"draft_claims", "claim_lineages", "run_quality_summaries"} <= _tables(db)

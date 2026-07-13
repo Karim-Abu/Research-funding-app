@@ -22,6 +22,7 @@ import {
   type ProjectBudgetPatch,
   type ProjectDto,
 } from "@/lib/projects"
+import type { StructuredImportSummaryDto } from "@/lib/imports"
 
 // Budgeteckwerte: Erfassung + read-only «Formale Vorprüfung». Gerechnet wird
 // ausschliesslich im Backend-Rule-Kern (gleiche Handler und Registry-Schwellen
@@ -71,6 +72,7 @@ interface BudgetFormState {
   implementation_own_contribution: string
   cash_contribution: string
   total_requested_funding: string
+  total_requested_funding_including_overhead: string
   budget_exception_basis: string
   duration_months: string
 }
@@ -80,6 +82,7 @@ const EMPTY: BudgetFormState = {
   implementation_own_contribution: "",
   cash_contribution: "",
   total_requested_funding: "",
+  total_requested_funding_including_overhead: "",
   budget_exception_basis: "",
   duration_months: "",
 }
@@ -91,6 +94,7 @@ const AMOUNT_FIELDS: Array<{
     | "implementation_own_contribution"
     | "cash_contribution"
     | "total_requested_funding"
+    | "total_requested_funding_including_overhead"
   >
   label: string
 }> = [
@@ -104,6 +108,10 @@ const AMOUNT_FIELDS: Array<{
   },
   { key: "cash_contribution", label: "Barbeitrag (Cash)" },
   { key: "total_requested_funding", label: "Beantragte Fördersumme" },
+  {
+    key: "total_requested_funding_including_overhead",
+    label: "Beantragte Fördersumme inkl. Overhead (nur Information)",
+  },
 ]
 
 function toFormValue(value: number | string | null | undefined): string {
@@ -127,7 +135,13 @@ function parseDuration(raw: string): number | null | "invalid" {
   return value
 }
 
-export function BudgetForm({ projectId }: { projectId: string }) {
+export function BudgetForm({
+  projectId,
+  importSummary,
+}: {
+  projectId: string
+  importSummary?: StructuredImportSummaryDto | null
+}) {
   const [form, setForm] = React.useState<BudgetFormState>(EMPTY)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -162,6 +176,9 @@ export function BudgetForm({ projectId }: { projectId: string }) {
         ),
         cash_contribution: toFormValue(project.cash_contribution),
         total_requested_funding: toFormValue(project.total_requested_funding),
+        total_requested_funding_including_overhead: toFormValue(
+          project.total_requested_funding_including_overhead
+        ),
         budget_exception_basis: project.budget_exception_basis ?? "",
         duration_months: toFormValue(project.duration_months),
       })
@@ -249,6 +266,10 @@ export function BudgetForm({ projectId }: { projectId: string }) {
               onChange={(e) => set({ [field.key]: e.target.value })}
               placeholder="z. B. 250000"
               inputMode="decimal"
+            />
+            <BudgetImportProvenance
+              targetKey={`project.${field.key}`}
+              summary={importSummary}
             />
           </div>
         ))}
@@ -419,5 +440,29 @@ export function BudgetForm({ projectId }: { projectId: string }) {
         )}
       </section>
     </section>
+  )
+}
+
+function BudgetImportProvenance({
+  targetKey,
+  summary,
+}: Readonly<{
+  targetKey: string
+  summary?: StructuredImportSummaryDto | null
+}>) {
+  const provenance = summary?.provenance.find(
+    (entry) => entry.candidate_kind === "budget" && entry.target_key === targetKey
+  )
+  if (!provenance) return null
+  return (
+    <p className="mt-1 text-xs text-primary" data-testid="budget-import-provenance">
+      {provenance.state === "confirmed"
+        ? "Aus PDF übernommen"
+        : provenance.state === "changed_after_import"
+          ? "Ursprünglich aus PDF übernommen – anschließend geändert"
+          : "Aus PDF übernommen – Ziel nicht mehr vorhanden"}
+      {provenance.source_location ? ` – ${provenance.source_location}` : ""}
+      {provenance.state === "confirmed" ? " – menschlich bestätigt" : ""}
+    </p>
   )
 }

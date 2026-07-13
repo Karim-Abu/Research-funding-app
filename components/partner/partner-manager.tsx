@@ -6,6 +6,7 @@
 // Liste markiert sie nur mit «Menschliche Prüfung erforderlich».
 
 import * as React from "react"
+import Link from "next/link"
 import { Trash2, Plus, Pencil, RefreshCw, Save, X } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import {
@@ -33,6 +34,10 @@ import {
   type ResearchEligibility,
 } from "@/lib/partners"
 import { BudgetForm } from "@/components/partner/budget-form"
+import {
+  getStructuredImportSummary,
+  type StructuredImportSummaryDto,
+} from "@/lib/imports"
 
 const PARTNER_TYPE_LABELS: Record<PartnerType, string> = {
   research_partner: "Forschungspartner",
@@ -58,6 +63,10 @@ interface FormState {
   partner_type: PartnerType
   project_role: string
   country: string
+  department: string
+  industry: string
+  fte: string
+  official_representative: string
   contribution: string
   swiss_value_creation: "" | "true" | "false"
   research_partner_eligibility_status: string
@@ -71,6 +80,10 @@ const EMPTY_FORM: FormState = {
   partner_type: "research_partner",
   project_role: "",
   country: "",
+  department: "",
+  industry: "",
+  fte: "",
+  official_representative: "",
   contribution: "",
   swiss_value_creation: "",
   research_partner_eligibility_status: "",
@@ -110,6 +123,13 @@ function missingFields(form: FormState): string[] {
   if (!form.country.trim()) missing.push("Land")
   if (!form.project_role.trim()) missing.push("Rolle im Projekt")
   if (!form.contribution.trim()) missing.push("Kompetenz & Beitrag")
+  if (
+    form.fte.trim() &&
+    (!Number.isFinite(Number(form.fte.replace(",", "."))) ||
+      Number(form.fte.replace(",", ".")) < 0)
+  ) {
+    missing.push("gültige FTE")
+  }
   if (needsComment(form) && !form.review_comment.trim()) {
     missing.push("Kommentar zur Einstufung")
   }
@@ -137,6 +157,10 @@ function formFromPartner(p: PartnerDto): FormState {
     partner_type: p.partner_type,
     project_role: p.project_role ?? "",
     country: p.country ?? "",
+    department: p.department ?? "",
+    industry: p.industry ?? "",
+    fte: p.fte === null || p.fte === undefined ? "" : String(p.fte),
+    official_representative: p.official_representative?.display_name ?? "",
     contribution: p.contribution ?? "",
     swiss_value_creation: swiss,
     research_partner_eligibility_status:
@@ -153,6 +177,12 @@ function toInput(form: FormState): PartnerInput {
     partner_type: form.partner_type,
     project_role: nullable(form.project_role.trim()),
     country: nullable(form.country.trim()),
+    department: nullable(form.department.trim()),
+    industry: nullable(form.industry.trim()),
+    fte: form.fte.trim() === "" ? null : Number(form.fte.replace(",", ".")),
+    official_representative: form.official_representative.trim()
+      ? { display_name: form.official_representative.trim() }
+      : null,
     contribution: nullable(form.contribution.trim()),
     swiss_value_creation: tri(form.swiss_value_creation),
     research_partner_eligibility_status:
@@ -173,6 +203,8 @@ export function PartnerManager() {
   const [busy, setBusy] = React.useState(false)
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [projectResolved, setProjectResolved] = React.useState(false)
+  const [importSummary, setImportSummary] =
+    React.useState<StructuredImportSummaryDto | null>(null)
 
   React.useEffect(() => {
     setProjectId(getActiveProjectId())
@@ -182,7 +214,12 @@ export function PartnerManager() {
   const refresh = React.useCallback(async () => {
     if (!projectId) return
     try {
-      setPartners(await listPartners(projectId))
+      const [loadedPartners, summary] = await Promise.all([
+        listPartners(projectId),
+        getStructuredImportSummary(projectId).catch(() => null),
+      ])
+      setPartners(loadedPartners)
+      setImportSummary(summary)
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fehler beim Laden.")
     }
@@ -286,6 +323,29 @@ export function PartnerManager() {
           </div>
         )}
 
+        {importSummary &&
+          (importSummary.partners.detected > 0 || importSummary.budget.detected > 0) && (
+            <div
+              className="mb-6 rounded-lg border border-primary/30 bg-primary/5 px-4 py-3"
+              data-testid="structured-import-summary"
+            >
+              <p className="text-sm font-medium">
+                Aus PDF erkannt: {importSummary.partners.detected} Partner, {" "}
+                {importSummary.budget.detected} Budgetangaben
+              </p>
+              <p className="mt-1 text-xs text-muted-foreground">
+                Geprüft: {importSummary.partners.reviewed + importSummary.budget.reviewed}; {" "}
+                ungeprüft: {importSummary.partners.unchecked + importSummary.budget.unchecked}.
+              </p>
+              <Link
+                href="/import#strukturierte-kandidaten"
+                className="mt-2 inline-flex text-sm font-medium text-primary underline-offset-4 hover:underline"
+              >
+                Zum Importreview
+              </Link>
+            </div>
+          )}
+
         <form
           onSubmit={onSubmit}
           className="mb-8 grid grid-cols-1 gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
@@ -325,6 +385,42 @@ export function PartnerManager() {
               onChange={(e) => set({ country: e.target.value })}
               placeholder="CH"
             />
+          </div>
+          <div>
+            <Label htmlFor="p-department">Department</Label>
+            <Input
+              id="p-department"
+              value={form.department}
+              onChange={(e) => set({ department: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="p-industry">Branche</Label>
+            <Input
+              id="p-industry"
+              value={form.industry}
+              onChange={(e) => set({ industry: e.target.value })}
+            />
+          </div>
+          <div>
+            <Label htmlFor="p-fte">FTE</Label>
+            <Input
+              id="p-fte"
+              inputMode="decimal"
+              value={form.fte}
+              onChange={(e) => set({ fte: e.target.value })}
+            />
+          </div>
+          <div className="sm:col-span-2">
+            <Label htmlFor="p-representative">Offizielle Vertretung – nur Name</Label>
+            <Input
+              id="p-representative"
+              value={form.official_representative}
+              onChange={(e) => set({ official_representative: e.target.value })}
+            />
+            <p className="mt-1 text-xs text-muted-foreground">
+              Kontaktangaben werden hier nicht aus dem PDF übernommen.
+            </p>
           </div>
           <div className="sm:col-span-2">
             <Label htmlFor="p-role">Rolle im Projekt</Label>
@@ -487,6 +583,30 @@ export function PartnerManager() {
               <li key={p.partner_id} className="flex items-center justify-between gap-4 px-4 py-3">
                 <div>
                   <p className="text-sm font-medium">{p.name}</p>
+                  <ImportProvenance
+                    provenance={importSummary?.provenance.find(
+                      (entry) =>
+                        entry.candidate_kind === "partner" &&
+                        entry.applied_resource_id === p.partner_id
+                    )}
+                  />
+                  {(p.department ||
+                    p.industry ||
+                    p.fte != null ||
+                    p.official_representative?.display_name) && (
+                    <p className="text-xs text-muted-foreground">
+                      {[
+                        p.department,
+                        p.industry,
+                        p.fte != null ? `${p.fte} FTE` : null,
+                        p.official_representative?.display_name
+                          ? `Offizielle Vertretung: ${p.official_representative.display_name}`
+                          : null,
+                      ]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </p>
+                  )}
                   {p.project_role && (
                     <p className="text-xs text-muted-foreground">{p.project_role}</p>
                   )}
@@ -564,8 +684,29 @@ export function PartnerManager() {
             Kein aktives Projekt ausgewählt.
           </p>
         )}
-        {projectResolved && projectId && <BudgetForm projectId={projectId} />}
+        {projectResolved && projectId && (
+          <BudgetForm projectId={projectId} importSummary={importSummary} />
+        )}
       </div>
     </AppShell>
+  )
+}
+
+function ImportProvenance({
+  provenance,
+}: Readonly<{
+  provenance: StructuredImportSummaryDto["provenance"][number] | undefined
+}>) {
+  if (!provenance) return null
+  return (
+    <p className="text-xs text-primary" data-testid="import-provenance">
+      {provenance.state === "confirmed"
+        ? "Aus PDF übernommen"
+        : provenance.state === "changed_after_import"
+          ? "Ursprünglich aus PDF übernommen – anschließend geändert"
+          : "Aus PDF übernommen – Ziel nicht mehr vorhanden"}
+      {provenance.source_location ? ` – ${provenance.source_location}` : ""}
+      {provenance.state === "confirmed" ? " – menschlich bestätigt" : ""}
+    </p>
   )
 }

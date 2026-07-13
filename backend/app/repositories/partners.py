@@ -17,6 +17,7 @@ _MUTABLE_FIELDS = (
     "project_role",
     "country",
     "location",
+    "department",
     "contribution",
     "uid",
     "industry",
@@ -28,6 +29,20 @@ _MUTABLE_FIELDS = (
     "financial_independence_status",
     "review_comment",
 )
+
+_COMMENT_REQUIRING_INDEPENDENCE = ("exception", "needs_input")
+_COMMENT_REQUIRING_ELIGIBILITY = ("not_eligible", "needs_verification")
+
+
+def review_comment_required(data: PartnerCreate) -> bool:
+    """Gemeinsame Konsistenzregel für normale und importierte Partner."""
+    return bool(
+        data.personnel_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or data.financial_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or data.research_partner_eligibility_status
+        in _COMMENT_REQUIRING_ELIGIBILITY
+        or data.swiss_value_creation is False
+    )
 
 
 def _payload_values(data: PartnerCreate) -> dict:
@@ -105,6 +120,7 @@ def to_contract(partner: Partner) -> PartnerSchema:
         project_role=partner.project_role,
         country=partner.country,
         location=partner.location,
+        department=partner.department,
         contribution=partner.contribution,
         uid=partner.uid,
         industry=partner.industry,

@@ -49,6 +49,50 @@ export interface ImportCandidateDto {
   accepted_draft_version_id: string | null
 }
 
+export type StructuredCandidateKind =
+  | "project_metadata"
+  | "partner"
+  | "budget"
+  | "answer"
+export type StructuredImportDecision =
+  | "pending"
+  | "accepted"
+  | "ignored"
+  | "conflict"
+
+export interface StructuredImportCandidateDto {
+  candidate_id: string
+  source_id: string
+  candidate_kind: StructuredCandidateKind
+  target_key: string
+  label: string
+  payload_json: Record<string, unknown>
+  edited_payload_json: Record<string, unknown> | null
+  effective_payload_json: Record<string, unknown>
+  confidence: ImportConfidence
+  source_location: string | null
+  mapping_version: string
+  decision: StructuredImportDecision
+  decided_at: string | null
+  applied_resource_id: string | null
+  current_value_json: Record<string, unknown> | null
+  has_conflict: boolean
+  conflict_reason: string | null
+  requires_manual_edit: boolean
+}
+
+export interface StructuredImportSummaryDto {
+  partners: { detected: number; reviewed: number; unchecked: number }
+  budget: { detected: number; reviewed: number; unchecked: number }
+  provenance: Array<{
+    candidate_kind: "partner" | "budget"
+    target_key: string
+    applied_resource_id: string
+    source_location: string | null
+    state: "confirmed" | "changed_after_import" | "missing"
+  }>
+}
+
 const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",
@@ -117,6 +161,26 @@ export async function getImportCandidates(
   return (await res.json()) as ImportCandidateDto[]
 }
 
+export async function getStructuredImportCandidates(
+  projectId: string
+): Promise<StructuredImportCandidateDto[]> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/structured-imports`
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as StructuredImportCandidateDto[]
+}
+
+export async function getStructuredImportSummary(
+  projectId: string
+): Promise<StructuredImportSummaryDto> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/structured-imports/summary`
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as StructuredImportSummaryDto
+}
+
 export async function createImportCandidates(
   projectId: string,
   sourceId: string
@@ -163,4 +227,28 @@ export async function decideImportCandidate(
   )
   if (!res.ok) throw await toError(res)
   return (await res.json()) as ImportCandidateDto
+}
+
+export async function decideStructuredImportCandidate(
+  candidateId: string,
+  payload: {
+    decision: "accepted" | "ignored"
+    edited_payload_json?: Record<string, unknown>
+    confirm_overwrite?: boolean
+  }
+): Promise<StructuredImportCandidateDto> {
+  const res = await fetch(
+    `/api/structured-imports/${encodeURIComponent(candidateId)}/decision`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey(),
+        ...csrfHeaders(),
+      },
+      body: JSON.stringify(payload),
+    }
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as StructuredImportCandidateDto
 }

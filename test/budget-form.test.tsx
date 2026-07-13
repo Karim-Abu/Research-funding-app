@@ -119,6 +119,7 @@ describe("BudgetForm", () => {
       implementation_own_contribution: 45000,
       cash_contribution: 5000.5,
       total_requested_funding: null,
+      total_requested_funding_including_overhead: null,
       duration_months: 24,
       budget_exception_basis: null,
     })

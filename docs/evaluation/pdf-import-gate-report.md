@@ -82,6 +82,34 @@ absichtlich `uncertain`.
 - Audit und Logs enthalten nur IDs, Versionen, Status und sichere Zählwerte;
   weder bereinigte Kandidatentexte noch Originalausschnitte.
 
+## Strukturierter Folgetest (`innolink-structured-v1`)
+
+Der additive strukturierte Import wurde am selben privaten, 26-seitigen
+Digital-PDF ausschließlich lesend geprüft. Es wurden keine Werte automatisch
+in Project, Partner oder Budget persistiert. Der inhaltsfreie Befund:
+
+| Kandidatengruppe | Anzahl | Befund |
+|---|---:|---|
+| Projektmetadaten | 5 | Titel, englischer Titel, Start, Ende und Dauer vorhanden |
+| Partner | 3 | 1 Research- und 2 Implementation-Partner; alle prüfpflichtig |
+| Budget | 5 | direkte Kosten, Own, Cash sowie Förderung ohne/mit Overhead getrennt |
+| Strukturierte Antworten | 2 | Scientific Integrity und Management-Stunden vorhanden |
+
+Alle drei Partner bleiben im privaten Gate bewusst `uncertain`, weil das
+ältere Tabellenformat kein explizites Land ausweist. Adress- oder Namensdaten
+werden nicht als Schweiz-Bezug, Wertschöpfung oder Eignung interpretiert. Die
+beiden personellen und finanziellen Unabhängigkeitsgruppen sind als
+Antragstellerangabe erkannt; daraus entsteht keine rechtliche Schlussfolgerung.
+
+Der vollständig synthetische Golden-Import bestätigt zusätzlich den
+HITL-Persistenzpfad: drei Partner und fünf Budgetangaben werden erst nach
+Einzelbestätigung gespeichert; die vorhandene Budget-Vorprüfung berechnet
+52,52 % Umsetzungspartneranteil und 6,46 % Cash-Anteil als erfüllt. Ein danach
+erzeugter Lauf friert Projekt, drei Partner, Scientific Integrity und
+Management-Stunden in einem unveränderlichen Snapshot ein. Eine spätere
+Annahme markiert den alten Lauf als `recheck_required`, ohne dessen Snapshot zu
+ändern.
+
 ## Verbleibende Risiken und manuelle Prüfung
 
 - **n = 1 privates reales PDF:** weitere Portalexport-Varianten müssen bei

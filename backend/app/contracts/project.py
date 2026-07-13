@@ -5,7 +5,7 @@ inheritance so the created fields stay in sync.
 """
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import date, datetime
 from typing import Literal
 
 from pydantic import BaseModel, Field
@@ -24,6 +24,9 @@ class ProjectCreate(BaseModel):
 
 class ProjectPatch(BaseModel):
     title: str | None = Field(default=None, min_length=1)
+    title_en: str | None = Field(default=None, min_length=1)
+    start_date: date | None = None
+    end_date: date | None = None
     description: str | None = Field(default=None, min_length=1)
     innovation_field: str | None = None
     budget_framework_chf: float | None = Field(default=None, ge=0)
@@ -34,6 +37,9 @@ class ProjectPatch(BaseModel):
     implementation_own_contribution: float | None = Field(default=None, ge=0)
     cash_contribution: float | None = Field(default=None, ge=0)
     total_requested_funding: float | None = Field(default=None, ge=0)
+    total_requested_funding_including_overhead: float | None = Field(
+        default=None, ge=0
+    )
     budget_exception_basis: str | None = None
     duration_months: int | None = Field(default=None, ge=1)
     # Status transitions (e.g. archivieren) — same enum as the Project contract.
@@ -61,11 +67,15 @@ class WorkflowSummary(BaseModel):
 class Project(ProjectCreate):
     project_id: str
     workspace_id: str
+    title_en: str | None = None
+    start_date: date | None = None
+    end_date: date | None = None
     # Structured budget inputs (Slice 1, additive; set via ProjectPatch).
     direct_total_project_costs_excluding_overhead: float | None = None
     implementation_own_contribution: float | None = None
     cash_contribution: float | None = None
     total_requested_funding: float | None = None
+    total_requested_funding_including_overhead: float | None = None
     budget_exception_basis: str | None = None
     duration_months: int | None = None
     status: Literal["draft", "active", "archived"]

@@ -5,10 +5,11 @@ SQLAlchemy's ``Session``.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -97,6 +98,9 @@ class Project(Base):
         ForeignKey("workspaces.id"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
+    title_en: Mapped[str | None] = mapped_column(String, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     innovation_field: Mapped[str | None] = mapped_column(String, nullable=True)
     funding_instrument_profile_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -115,6 +119,11 @@ class Project(Base):
     cash_contribution: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_requested_funding: Mapped[float | None] = mapped_column(
         Float, nullable=True
+    )
+    # Reine Zusatzinformation aus dem Portal. Sie wird nie als direkte
+    # Foerderung in die formale Regelbasis gespiegelt.
+    total_requested_funding_including_overhead: Mapped[float | None] = (
+        mapped_column(Float, nullable=True)
     )
     budget_exception_basis: Mapped[str | None] = mapped_column(String, nullable=True)
     duration_months: Mapped[int | None] = mapped_column(nullable=True)
@@ -351,6 +360,63 @@ class ImportCandidate(Base):
     # Provenienz: die durch «Übernehmen» erzeugte DraftVersion.
     accepted_draft_version_id: Mapped[str | None] = mapped_column(
         String, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class StructuredImportCandidate(Base):
+    """Deterministischer, nicht textfeldgebundener Importkandidat.
+
+    Payloads koennen D2 und bei Partnern Personennamen enthalten. Sie werden
+    ausschliesslich in der DB gespeichert und nie in Audit- oder Log-Details
+    kopiert. Jede fachliche Persistierung benoetigt eine menschliche
+    Entscheidung.
+    """
+
+    __tablename__ = "structured_import_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_version_id",
+            "candidate_kind",
+            "target_key",
+            name="uq_structured_import_version_kind_target",
+        ),
+    )
+
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.source_id"), nullable=False, index=True
+    )
+    source_version_id: Mapped[str] = mapped_column(
+        ForeignKey("source_versions.source_version_id"), nullable=False
+    )
+    candidate_kind: Mapped[str] = mapped_column(String, nullable=False)
+    target_key: Mapped[str] = mapped_column(String, nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    edited_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[str] = mapped_column(String, nullable=False)
+    source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    mapping_version: Mapped[str] = mapped_column(String, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    decided_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Polymorphe Provenienz auf Project/Partner; bewusst kein FK auf
+    # unterschiedliche Zieltabellen.
+    applied_resource_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    supersedes_candidate_id: Mapped[str | None] = mapped_column(
+        ForeignKey("structured_import_candidates.candidate_id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -616,6 +682,7 @@ class Partner(Base):
     project_role: Mapped[str | None] = mapped_column(String, nullable=True)
     country: Mapped[str | None] = mapped_column(String, nullable=True)
     location: Mapped[str | None] = mapped_column(String, nullable=True)
+    department: Mapped[str | None] = mapped_column(String, nullable=True)
     contribution: Mapped[str | None] = mapped_column(String, nullable=True)
     uid: Mapped[str | None] = mapped_column(String, nullable=True)
     industry: Mapped[str | None] = mapped_column(String, nullable=True)

@@ -60,6 +60,9 @@ def get_scoped(
 
 _PATCHABLE_FIELDS = (
     "title",
+    "title_en",
+    "start_date",
+    "end_date",
     "description",
     "innovation_field",
     "budget_framework_chf",
@@ -67,6 +70,7 @@ _PATCHABLE_FIELDS = (
     "implementation_own_contribution",
     "cash_contribution",
     "total_requested_funding",
+    "total_requested_funding_including_overhead",
     "budget_exception_basis",
     "duration_months",
     "status",
@@ -88,6 +92,9 @@ def to_contract(db: Session, project: Project) -> ProjectSchema:
         project_id=project.project_id,
         workspace_id=project.workspace_id,
         title=project.title,
+        title_en=project.title_en,
+        start_date=project.start_date,
+        end_date=project.end_date,
         description=project.description,
         innovation_field=project.innovation_field,
         funding_instrument_profile_id=project.funding_instrument_profile_id,
@@ -99,6 +106,9 @@ def to_contract(db: Session, project: Project) -> ProjectSchema:
         implementation_own_contribution=project.implementation_own_contribution,
         cash_contribution=project.cash_contribution,
         total_requested_funding=project.total_requested_funding,
+        total_requested_funding_including_overhead=(
+            project.total_requested_funding_including_overhead
+        ),
         budget_exception_basis=project.budget_exception_basis,
         duration_months=project.duration_months,
         status=project.status,

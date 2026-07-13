@@ -21,6 +21,9 @@ export interface ProjectDto {
   project_id: string
   workspace_id: string
   title: string
+  title_en?: string | null
+  start_date?: string | null
+  end_date?: string | null
   description: string
   innovation_field?: string | null
   funding_instrument_profile_id: string
@@ -31,6 +34,7 @@ export interface ProjectDto {
   implementation_own_contribution?: number | null
   cash_contribution?: number | null
   total_requested_funding?: number | null
+  total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
   duration_months?: number | null
   status: ProjectStatus
@@ -46,8 +50,16 @@ export interface ProjectBudgetPatch {
   implementation_own_contribution?: number | null
   cash_contribution?: number | null
   total_requested_funding?: number | null
+  total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
   duration_months?: number | null
+}
+
+export interface ProjectMetadataPatch extends ProjectBudgetPatch {
+  title?: string
+  title_en?: string | null
+  start_date?: string | null
+  end_date?: string | null
 }
 
 interface ProjectListDto {
@@ -146,7 +158,7 @@ export async function getProject(projectId: string): Promise<ProjectDto> {
 
 export async function patchProject(
   projectId: string,
-  patch: ProjectBudgetPatch
+  patch: ProjectMetadataPatch
 ): Promise<ProjectDto> {
   const csrf = getCsrfToken()
   const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {

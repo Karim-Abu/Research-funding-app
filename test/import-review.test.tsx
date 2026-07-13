@@ -4,7 +4,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ImportReview } from "@/components/import/import-review"
-import type { ImportCandidateDto } from "@/lib/imports"
+import type {
+  ImportCandidateDto,
+  StructuredImportCandidateDto,
+} from "@/lib/imports"
 
 const push = vi.fn()
 
@@ -49,7 +52,11 @@ vi.mock("@/lib/sources", () => ({
 }))
 
 const getImportCandidates = vi.fn<() => Promise<ImportCandidateDto[]>>()
+const getStructuredImportCandidates = vi.fn<
+  () => Promise<StructuredImportCandidateDto[]>
+>()
 const decideImportCandidate = vi.fn()
+const decideStructuredImportCandidate = vi.fn()
 const createImportCandidates = vi.fn()
 
 vi.mock("@/lib/imports", async (importOriginal) => {
@@ -57,8 +64,12 @@ vi.mock("@/lib/imports", async (importOriginal) => {
   return {
     ...actual,
     getImportCandidates: (...args: unknown[]) => getImportCandidates(...args),
+    getStructuredImportCandidates: (...args: unknown[]) =>
+      getStructuredImportCandidates(...args),
     decideImportCandidate: (...args: unknown[]) =>
       decideImportCandidate(...args),
+    decideStructuredImportCandidate: (...args: unknown[]) =>
+      decideStructuredImportCandidate(...args),
     createImportCandidates: (...args: unknown[]) =>
       createImportCandidates(...args),
   }
@@ -115,14 +126,55 @@ const FIXTURE: ImportCandidateDto[] = [
   }),
 ]
 
+function structuredCandidate(
+  overrides: Partial<StructuredImportCandidateDto> = {}
+): StructuredImportCandidateDto {
+  return {
+    candidate_id: "sc-budget",
+    source_id: "s-1",
+    candidate_kind: "budget",
+    target_key: "project.cash_contribution",
+    label: "Barbeitrag",
+    payload_json: { cash_contribution: 20000 },
+    edited_payload_json: null,
+    effective_payload_json: { cash_contribution: 20000 },
+    confidence: "found",
+    source_location: "Seite 6",
+    mapping_version: "innolink-structured-v1",
+    decision: "pending",
+    decided_at: null,
+    applied_resource_id: null,
+    current_value_json: { cash_contribution: 5000 },
+    has_conflict: true,
+    conflict_reason: "existing_project_value",
+    requires_manual_edit: false,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   activeRunId = "run-1"
   getImportCandidates.mockResolvedValue(FIXTURE)
+  getStructuredImportCandidates.mockResolvedValue([])
   decideImportCandidate.mockImplementation(
     async (_id: string, payload: { decision: string; edited_text?: string }) =>
       candidate({
         decision: payload.decision as ImportCandidateDto["decision"],
         edited_text: payload.edited_text ?? null,
+      })
+  )
+  decideStructuredImportCandidate.mockImplementation(
+    async (
+      _id: string,
+      payload: {
+        decision: string
+        edited_payload_json?: Record<string, unknown>
+      }
+    ) =>
+      structuredCandidate({
+        decision:
+          payload.decision as StructuredImportCandidateDto["decision"],
+        edited_payload_json: payload.edited_payload_json ?? null,
       })
   )
 })
@@ -220,6 +272,71 @@ describe("ImportReview — Darstellung", () => {
 })
 
 describe("ImportReview — Entscheidungsaktionen", () => {
+  it("gruppiert strukturierte Werte, zeigt Altwert und bestätigt Konflikte explizit", async () => {
+    getStructuredImportCandidates.mockResolvedValueOnce([structuredCandidate()])
+    decideStructuredImportCandidate
+      .mockRejectedValueOnce(
+        new ImportError(409, "structured_import_conflict", "Wert vorhanden.")
+      )
+      .mockResolvedValueOnce(structuredCandidate({ decision: "accepted" }))
+    await renderReview()
+
+    const section = screen.getByTestId("structured-import-review")
+    expect(within(section).getByText("Budget")).toBeInTheDocument()
+    const row = within(section).getByTestId("structured-import-candidate")
+    expect(within(row).getByText("Fundseite: Seite 6")).toBeInTheDocument()
+    expect(within(row).getByText("Aktueller Wert")).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole("button", { name: "Übernehmen" }))
+
+    const confirm = await screen.findByTestId(
+      "structured-import-confirm-overwrite"
+    )
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(decideStructuredImportCandidate).toHaveBeenLastCalledWith(
+        "sc-budget",
+        {
+          decision: "accepted",
+          edited_payload_json: { cash_contribution: 20000 },
+          confirm_overwrite: true,
+        }
+      )
+    )
+  })
+
+  it("zeigt Vertreter nur eingeklappt und ohne Kontaktfelder", async () => {
+    getImportCandidates.mockResolvedValueOnce([])
+    getStructuredImportCandidates.mockResolvedValueOnce([
+      structuredCandidate({
+        candidate_id: "sc-partner",
+        candidate_kind: "partner",
+        target_key: "partner.research.01",
+        label: "Forschungspartner",
+        payload_json: {
+          name: "Synthetisches Labor",
+          partner_type: "research_partner",
+          official_representative: { display_name: "Robin Example" },
+        },
+        effective_payload_json: {
+          name: "Synthetisches Labor",
+          partner_type: "research_partner",
+          official_representative: { display_name: "Robin Example" },
+        },
+        current_value_json: null,
+        has_conflict: false,
+        conflict_reason: null,
+      }),
+    ])
+    await renderReview()
+    const disclosure = screen.getByText(
+      "Personenangabe zur offiziellen Vertretung prüfen"
+    )
+    expect(disclosure.closest("details")).not.toHaveAttribute("open")
+    fireEvent.click(disclosure)
+    expect(await screen.findByText("Robin Example")).toBeInTheDocument()
+    expect(screen.getByText(/keine E-Mail-Adresse/)).toBeInTheDocument()
+  })
+
   it("Übernehmen ruft die Entscheidung mit run_id auf und zeigt den neuen Zustand", async () => {
     await renderReview()
     const row = screen.getAllByTestId("import-candidate")[0]

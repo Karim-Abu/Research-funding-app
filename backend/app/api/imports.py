@@ -15,8 +15,12 @@ from app.contracts.imports import (
     ImportCandidate,
     ImportCandidatesCreate,
     ImportDecisionRequest,
+    StructuredImportCandidate,
+    StructuredImportDecisionRequest,
+    StructuredImportSummary,
 )
 from app.db.models import ImportCandidate as ImportCandidateRow
+from app.db.models import StructuredImportCandidate as StructuredImportCandidateRow
 from app.db.session import get_db
 from app.imports import service as import_service
 from app.repositories import idempotency
@@ -63,6 +67,33 @@ def list_import_candidates(
     _require_project(db, project_id, context.user.workspace_id)
     rows = import_service.list_candidates(db, project_id)
     return [import_service.to_contract(row) for row in rows]
+
+
+@router.get(
+    "/projects/{project_id}/structured-imports",
+    response_model=list[StructuredImportCandidate],
+)
+def list_structured_import_candidates(
+    project_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> list[StructuredImportCandidate]:
+    _require_project(db, project_id, context.user.workspace_id)
+    rows = import_service.list_structured_candidates(db, project_id)
+    return [import_service.to_structured_contract(db, row) for row in rows]
+
+
+@router.get(
+    "/projects/{project_id}/structured-imports/summary",
+    response_model=StructuredImportSummary,
+)
+def structured_import_summary(
+    project_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> StructuredImportSummary:
+    _require_project(db, project_id, context.user.workspace_id)
+    return import_service.structured_summary(db, project_id)
 
 
 @router.post(
@@ -161,6 +192,65 @@ def decide_import_candidate(
         db, scope=scope, key=idempotency_key, request_fingerprint=fingerprint,
         response_status=200, response_body=result.model_dump(mode="json"),
         resource_id=row.import_candidate_id,
+    )
+    db.commit()
+    return result
+
+
+@router.post(
+    "/structured-imports/{candidate_id}/decision",
+    response_model=StructuredImportCandidate,
+)
+def decide_structured_import_candidate(
+    candidate_id: str,
+    payload: StructuredImportDecisionRequest,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+    idempotency_key: str = _IDEMPOTENCY,
+) -> StructuredImportCandidate:
+    candidate = db.get(StructuredImportCandidateRow, candidate_id)
+    if candidate is None or candidate.workspace_id != context.user.workspace_id:
+        raise ProblemException(
+            status=404,
+            code="not_found",
+            title="Resource not found",
+            detail="Structured import candidate not found.",
+        )
+
+    scope = (
+        f"{context.user.workspace_id}:{context.user.id}:"
+        "POST:/structured-imports/decision"
+    )
+    fingerprint = idempotency.fingerprint(
+        "POST",
+        f"/structured-imports/{candidate_id}/decision",
+        payload.model_dump_json(),
+    )
+    existing = _idempotent_replay(db, scope, idempotency_key, fingerprint)
+    if existing is not None:
+        return StructuredImportCandidate(**existing.response_body)
+
+    try:
+        row = import_service.decide_structured_candidate(
+            db,
+            candidate=candidate,
+            decision=payload.decision,
+            actor_user_id=context.user.id,
+            edited_payload_json=payload.edited_payload_json,
+            confirm_overwrite=payload.confirm_overwrite,
+        )
+    except ProblemException:
+        db.commit()
+        raise
+    result = import_service.to_structured_contract(db, row)
+    idempotency.save(
+        db,
+        scope=scope,
+        key=idempotency_key,
+        request_fingerprint=fingerprint,
+        response_status=200,
+        response_body=result.model_dump(mode="json"),
+        resource_id=row.candidate_id,
     )
     db.commit()
     return result

@@ -57,6 +57,7 @@ function partnerBody(overrides: Record<string, unknown> = {}) {
     project_role: "Grundlagenforschung",
     country: "CH",
     location: null,
+    department: null,
     contribution: "Langjährige Erfahrung in Leistungselektronik.",
     uid: null,
     industry: null,
@@ -106,6 +107,13 @@ describe("PartnerManager hydration", () => {
       ),
       http.get("/api/projects/p-1", () => HttpResponse.json(projectBody())),
       http.get("/api/projects/p-1/partners", () => HttpResponse.json([])),
+      http.get("/api/projects/p-1/structured-imports/summary", () =>
+        HttpResponse.json({
+          partners: { detected: 0, reviewed: 0, unchecked: 0 },
+          budget: { detected: 0, reviewed: 0, unchecked: 0 },
+          provenance: [],
+        })
+      ),
       http.get("/api/projects/p-1/budget/precheck", () =>
         HttpResponse.json({
           figures: {
@@ -272,5 +280,40 @@ describe("PartnerManager hydration", () => {
       root?.unmount()
     })
     container.remove()
+  })
+
+  it("zeigt die sichere PDF-Zusammenfassung und menschlich bestätigte Provenienz", async () => {
+    server.use(
+      http.get("/api/projects/p-1/partners", () =>
+        HttpResponse.json([partnerBody({ department: "Applied Systems" })])
+      ),
+      http.get("/api/projects/p-1/structured-imports/summary", () =>
+        HttpResponse.json({
+          partners: { detected: 3, reviewed: 1, unchecked: 2 },
+          budget: { detected: 5, reviewed: 2, unchecked: 3 },
+          provenance: [
+            {
+              candidate_kind: "partner",
+              target_key: "partner.research.01",
+              applied_resource_id: "pr-1",
+              source_location: "Seite 3",
+              state: "confirmed",
+            },
+          ],
+        })
+      )
+    )
+    render(<App />)
+    const summary = await screen.findByTestId("structured-import-summary")
+    expect(summary).toHaveTextContent("Aus PDF erkannt: 3 Partner, 5 Budgetangaben")
+    expect(summary).toHaveTextContent("Geprüft: 3; ungeprüft: 5")
+    expect(screen.getByRole("link", { name: "Zum Importreview" })).toHaveAttribute(
+      "href",
+      "/import#strukturierte-kandidaten"
+    )
+    expect(
+      screen.getByText("Aus PDF übernommen – Seite 3 – menschlich bestätigt")
+    ).toBeInTheDocument()
+    expect(screen.getByText(/Applied Systems/)).toBeInTheDocument()
   })
 })
