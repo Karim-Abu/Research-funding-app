@@ -658,8 +658,8 @@ profiles:
   - portal_field_profiles
   - requirement_definitions
   - run_policy_snapshot
-  input_schema: FieldDraftingInput@v1
-  output_schema: PortalFieldDraftBundle@v1
+  input_schema: SectionDraftingInput@v1
+  output_schema: PortalSectionDraftBundle@v1
   instructions_contract:
   - Answer the portal question directly and preserve mandatory question structure.
   - Use only confirmed facts and verified evidence for factual claims.
@@ -703,7 +703,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 1
+    max_per_run: 3
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1
@@ -758,8 +758,8 @@ profiles:
   - portal_field_profiles
   - requirement_definitions
   - run_policy_snapshot
-  input_schema: FieldDraftingInput@v1
-  output_schema: PortalFieldDraftBundle@v1
+  input_schema: SectionDraftingInput@v1
+  output_schema: PortalSectionDraftBundle@v1
   instructions_contract:
   - Answer the portal question directly and preserve mandatory question structure.
   - Use only confirmed facts and verified evidence for factual claims.
@@ -803,7 +803,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 1
+    max_per_run: 9
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1

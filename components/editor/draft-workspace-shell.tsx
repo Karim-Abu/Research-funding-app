@@ -71,12 +71,12 @@ const MODES: { key: WorkspaceMode; label: string; hint: string }[] = [
   {
     key: "bearbeiten",
     label: "Bearbeiten",
-    hint: "Großer Editor — KI-Vorschlag und Kontext treten in den Hintergrund.",
+    hint: "Großer Editor — Vorschlag und Kontext treten in den Hintergrund.",
   },
   {
     key: "ki",
-    label: "KI-Assist",
-    hint: "Dein Text und KI-Vorschlag nebeneinander. Vorschläge werden nie automatisch übernommen.",
+    label: "Vorschläge",
+    hint: "Dein Text und Vorschlag nebeneinander. Vorschläge werden nie automatisch übernommen.",
   },
   {
     key: "pruefen",
@@ -147,6 +147,8 @@ interface DraftWorkspaceShellProps {
   subsections?: SubsectionDef[]
   /** Klick auf einen Gliederungseintrag springt zur Markerstelle im Text. */
   onJumpToSubsection?: (marker: string) => void
+  /** Ehrliche Herkunftsbezeichnung des sichtbaren Vorschlagspfads. */
+  suggestionPaneLabel?: string
 
   /**
    * When set, the KI-Vorschlag pane renders this instead of the mock
@@ -193,6 +195,7 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     dataClass,
     subsections = [],
     onJumpToSubsection,
+    suggestionPaneLabel = "Vorschlag",
     kiContent,
     aiActions = [],
     aiEnabled = false,
@@ -219,6 +222,7 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
   const [focus, setFocus] = React.useState(false)
   const [spell, setSpell] = React.useState<SpellSetting>("de")
   const [placeholderCursor, setPlaceholderCursor] = React.useState(0)
+  const placeholderFieldRef = React.useRef(selectedId)
   const internalEditorRef = React.useRef<RichTextEditorHandle>(null)
   const editorRef = externalEditorRef ?? internalEditorRef
 
@@ -242,8 +246,13 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     }
   }
 
-  // Restart placeholder cycling when another field is opened.
-  React.useEffect(() => setPlaceholderCursor(0), [selectedId])
+  // Restart only on a real field switch. A passive initial-mount effect could
+  // otherwise race with the user's first click and reset the cursor afterwards.
+  React.useLayoutEffect(() => {
+    if (placeholderFieldRef.current === selectedId) return
+    placeholderFieldRef.current = selectedId
+    setPlaceholderCursor(0)
+  }, [selectedId])
 
   const count = charCount(text)
   const limitInfo = charLimitInfo(count, activeVm.characterLimit)
@@ -688,7 +697,7 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                           className={cn("shrink-0", mode !== "bearbeiten" && "hidden")}
                         >
                           <Sparkles className="mr-1 size-3" />
-                          KI-Assist öffnen
+                          Vorschläge öffnen
                         </Button>
                       </div>
                       <div className="flex items-center gap-2">
@@ -707,7 +716,9 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                       mode === "ki" ? "flex" : "hidden"
                     )}
                   >
-                    <h3 className="text-sm font-semibold text-foreground">KI-Vorschlag</h3>
+                    <h3 className="text-sm font-semibold text-foreground">
+                      {suggestionPaneLabel}
+                    </h3>
                     {/* Live supplies kiContent (real A2 flow); mock falls back
                         to the simulated goal-chip suggestion UI below. */}
                     {kiContent ?? (

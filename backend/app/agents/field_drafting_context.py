@@ -14,6 +14,8 @@ structured fields; the current draft text + requirement assessments are rendered
 from __future__ import annotations
 
 import hashlib
+import json
+import re
 import uuid
 from dataclasses import dataclass, field
 
@@ -25,10 +27,13 @@ from app.db.models import (
     AnalysisRun,
     DraftVersion,
     EvidenceLink,
+    HumanDecision,
     OpenIssue,
     Partner,
     Project,
     RequirementAssessment,
+    RunProjectSnapshot,
+    SourceDocument,
     ToolInvocation,
 )
 from app.market import source_scope
@@ -36,6 +41,13 @@ from app.registry.loader import get_registry
 from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import extracted_facts as facts_repo
+from app.review.evidence_status import lineage_by_anchor, support_status_for_anchor
+from app.drafts.sections import (
+    SectionStructureError,
+    compact_adjacent_section,
+    extract_section,
+    section_spans,
+)
 
 # R5.7/R8: only these two "big" A2 fields consume advisory research context. R8
 # (Anforderung 10): NUR vom Menschen akzeptierte (importierte) D0/public-Quellen werden
@@ -57,10 +69,12 @@ _RESEARCH_SNIPPET_MAX = 300
 class A2Context:
     field_id: str = ""
     profile_id: str = ""
+    target_section: str | None = None
     field_profile: dict = field(default_factory=dict)
     # R5.1: advisory/proposed A1-Fakten — nie als bestätigte Wahrheit behandeln.
     advisory_facts: list[dict] = field(default_factory=list)
     verified_evidence: list[dict] = field(default_factory=list)
+    research_candidates: list[dict] = field(default_factory=list)
     structured_project_data: dict = field(default_factory=dict)
     open_issues: list[dict] = field(default_factory=list)
     language: str = "de"
@@ -74,6 +88,11 @@ class A2Context:
     allowed_anchor_ids: set = field(default_factory=set)
     allowed_issue_ids: set = field(default_factory=set)
     meta: dict = field(default_factory=dict)
+    context_components: list[dict] = field(default_factory=list)
+
+
+class ContextBudgetError(ValueError):
+    pass
 
 
 def _hash_text(text: str) -> str:
@@ -140,7 +159,12 @@ def retrieve_advisory_project_facts(db: Session, run: AnalysisRun) -> list[dict]
 
 
 def retrieve_verified_evidence(db: Session, run: AnalysisRun) -> list[dict]:
-    """exact_verified EvidenceAnchors + the requirement they support via active links."""
+    """Evidence views with coverage and correctness kept separate.
+
+    Only a public anchor with a latest human ``confirm`` decision and a
+    Reliability support result may become ``external_evidence``. Merely finding
+    the exact quote remains a ``research_candidate``.
+    """
     anchor_to_requirement: dict[str, str] = {}
     assessment_requirement = {
         a.assessment_id: a.requirement_id
@@ -161,21 +185,74 @@ def retrieve_verified_evidence(db: Session, run: AnalysisRun) -> list[dict]:
         if req is not None:
             anchor_to_requirement.setdefault(link.anchor_id, req)
 
+    latest_decision: dict[str, str] = {}
+    for decision in db.scalars(
+        select(HumanDecision)
+        .where(
+            HumanDecision.run_id == run.run_id,
+            HumanDecision.target_type == "evidence_anchor",
+        )
+        .order_by(HumanDecision.created_at.desc())
+    ):
+        latest_decision.setdefault(decision.target_id, decision.action)
+    sources = {
+        source.source_id: source
+        for source in db.scalars(
+            select(SourceDocument).where(SourceDocument.project_id == run.project_id)
+        )
+    } if run.project_id else {}
+    lineage = lineage_by_anchor(db, run.run_id)
     evidence = []
     for anchor in evidence_repo.list_anchors_for_run(db, run.run_id):
-        if anchor.verification_status != "exact_verified":
+        if anchor.verification_status not in ("exact_verified", "human_verified"):
             continue
+        support_status = support_status_for_anchor(
+            anchor.verification_status, lineage.get(anchor.anchor_id)
+        )
+        source = sources.get(anchor.source_id)
+        public_source = bool(
+            source
+            and (source.data_classification or {}).get("sensitivity") == "public"
+            and not (source.data_classification or {}).get("nda_applies")
+        )
+        external = (
+            public_source
+            and latest_decision.get(anchor.anchor_id) == "confirm"
+            and support_status in ("supports_partially", "supports_strongly")
+        )
         evidence.append({
             "anchor_id": anchor.anchor_id, "quote": anchor.quote,
             "source_name": anchor.source_name,
             "verification_status": anchor.verification_status,
             "page": anchor.page, "section": anchor.section,
             "requirement_id": anchor_to_requirement.get(anchor.anchor_id),
+            "support_status": support_status,
+            "context_kind": (
+                "external_evidence" if external else "research_candidate"
+            ),
         })
     return evidence
 
 
 def retrieve_structured_project_data(db: Session, run: AnalysisRun) -> dict:
+    snapshot = db.get(RunProjectSnapshot, run.run_id)
+    if snapshot is not None:
+        project_data = dict(snapshot.project_json or {})
+        partners = list(snapshot.partners_json or [])
+        return {
+            "project_title": project_data.get("title"),
+            "funding_instrument_profile_id": project_data.get(
+                "funding_instrument_profile_id"
+            ),
+            "partner_count": len(partners),
+            "project": project_data,
+            "partners": partners,
+            "snapshot_schema_version": project_data.get(
+                "snapshot_schema_version", "run-project-v1"
+            ),
+        }
+    # Defensive compatibility for isolated unit tests without a persisted run
+    # snapshot. Production run creation always freezes one.
     project = db.get(Project, run.project_id) if run.project_id else None
     partner_count = 0
     if run.project_id:
@@ -190,6 +267,7 @@ def retrieve_structured_project_data(db: Session, run: AnalysisRun) -> dict:
             project.funding_instrument_profile_id if project else None
         ),
         "partner_count": int(partner_count),
+        "project": {}, "partners": [], "snapshot_schema_version": "test-fallback",
     }
 
 
@@ -274,36 +352,148 @@ def _render_research_context(rc: dict) -> str:
     return "\n".join(lines)
 
 
-def _render_context_text(ctx: A2Context) -> str:
-    parts = [
-        "CURRENT DRAFT (the text to improve):\n" + (ctx.current_draft_text or "(empty)"),
-        "FIELD PROFILE: " + str(ctx.field_profile),
-        "MANDATORY QUESTIONS (preserve all): "
-        + ", ".join(ctx.field_profile.get("mandatory_questions", [])),
-        "REQUIREMENT ASSESSMENTS (advisory, do not change status): "
-        + str(ctx.requirement_assessments),
-        "VERIFIED EVIDENCE (exact_verified = quote exists in source, NOT approved):\n"
-        + "\n".join(
-            f"[{e['anchor_id']} | {e['source_name']} | {e['verification_status']}] "
-            f"{e['quote']}" for e in ctx.verified_evidence
-        ),
-        "OPEN ISSUES: " + str(ctx.open_issues),
-        "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.advisory_facts),
-    ]
-    if ctx.research_context:
-        parts.append(_render_research_context(ctx.research_context))
-    return "\n\n".join(parts)
+_DE_WORDS = frozenset({
+    "der", "die", "das", "und", "ist", "mit", "fuer", "für", "werden",
+    "projekt", "durch", "eine", "einen", "nicht", "ziel",
+})
+_EN_WORDS = frozenset({
+    "the", "and", "is", "with", "for", "will", "project", "through",
+    "a", "an", "not", "target", "this", "are",
+})
+
+_PORTAL_HEADING_RE = re.compile(
+    r"^\s*\d+(?:\.\d+)*\s+(?:Describe|Indicate|Please describe|Does the planned)\b.*$",
+    re.IGNORECASE | re.MULTILINE,
+)
+_TEMPLATE_PLACEHOLDER_RE = re.compile(r"\[\[Angabe ergänzen:[^\]]*\]\]", re.IGNORECASE)
+
+
+def _applicant_language_text(text: str) -> str:
+    """Ignore registry questions and empty German scaffolding when no answer exists."""
+    without_questions = _PORTAL_HEADING_RE.sub("", text or "")
+    return _TEMPLATE_PLACEHOLDER_RE.sub("", without_questions)
+
+
+def detect_application_language(text: str) -> str:
+    words = re.findall(r"[A-Za-zÄÖÜäöüß]+", _applicant_language_text(text).lower())
+    de = sum(word in _DE_WORDS for word in words)
+    en = sum(word in _EN_WORDS for word in words)
+    return "en" if en > de else "de"
+
+
+def application_language_conflicts(text: str, expected: str) -> bool:
+    """Reject a clear translation while tolerating short technical headings."""
+    words = re.findall(r"[A-Za-zÄÖÜäöüß]+", (text or "").lower())
+    de = sum(word in _DE_WORDS for word in words)
+    en = sum(word in _EN_WORDS for word in words)
+    if de + en < 2 or de == en:
+        return False
+    return ("en" if en > de else "de") != expected
+
+
+def _json(value: object) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
+
+
+def _budgeted_context(
+    target_text: str,
+    components: list[tuple[str, str, int, int]],
+    budget: int,
+) -> tuple[str, list[dict]]:
+    """Keep the applicant target in full and allocate the remaining budget.
+
+    Component tuple = (kind, text, weight, item_count). Unused shares are
+    redistributed in declared priority order. Only safe counts are returned as
+    metadata.
+    """
+    target_body = target_text or "(empty)"
+    target_block = "[imported_applicant_text:target_full]\n" + target_body
+    if len(target_block) > budget:
+        raise ContextBudgetError("target_section_exceeds_context_budget")
+    active = [(k, t, w, n) for k, t, w, n in components if t]
+    headers = [f"[{kind}]\n" for kind, _, _, _ in active]
+    separator_chars = 2 * len(active)
+    content_budget = budget - len(target_block) - sum(map(len, headers)) - separator_chars
+    if content_budget < 0:
+        raise ContextBudgetError("context_component_headers_exceed_budget")
+    total_weight = sum(weight for _, _, weight, _ in active) or 1
+    caps = [int(content_budget * weight / total_weight) for _, _, weight, _ in active]
+    used = [min(len(item[1]), cap) for item, cap in zip(active, caps)]
+    remaining = content_budget - sum(used)
+    # Redistribute unused shares to still-truncated components in priority order.
+    for index, item in enumerate(active):
+        if remaining <= 0:
+            break
+        room = len(item[1]) - used[index]
+        add = min(room, remaining)
+        used[index] += add
+        remaining -= add
+    blocks = [target_block]
+    meta = [{
+        "kind": "imported_applicant_text", "item_count": 1,
+        "character_count": len(target_body), "truncated": False,
+    }]
+    for (kind, content, _, item_count), header, length in zip(active, headers, used):
+        blocks.append(header + content[:length])
+        meta.append({
+            "kind": kind, "item_count": item_count,
+            "character_count": length, "truncated": length < len(content),
+        })
+    rendered = "\n\n".join(blocks)
+    if len(rendered) > budget:  # defensive accounting invariant
+        raise ContextBudgetError("context_budget_accounting_error")
+    return rendered, meta
 
 
 def assemble_a2_context(
-    db: Session, run: AnalysisRun, *, field_id: str, profile_id: str, language: str = "de"
+    db: Session,
+    run: AnalysisRun,
+    *,
+    field_id: str,
+    profile_id: str,
+    target_section: str | None = None,
+    section_markers: tuple[str, ...] = (),
+    language: str | None = None,
 ) -> A2Context:
     requirement_ids = _linked_requirement_ids(field_id)
-    ctx = A2Context(field_id=field_id, profile_id=profile_id, language=language)
+    ctx = A2Context(
+        field_id=field_id, profile_id=profile_id,
+        target_section=target_section, language=language or "de",
+    )
     ctx.field_profile = _field_profile_view(field_id)
-    ctx.current_draft_text = _current_draft_text(db, run, field_id)
+    full_draft_text = _current_draft_text(db, run, field_id)
+    adjacent: list[dict] = []
+    if target_section is not None:
+        if not section_markers:
+            raise SectionStructureError("section_markers_missing")
+        spans = section_spans(full_draft_text, section_markers)
+        ctx.current_draft_text = extract_section(
+            full_draft_text, section_markers, target_section
+        )
+        for span in spans:
+            if span.marker == target_section:
+                continue
+            original_section = full_draft_text[span.start:span.end]
+            synopsis = compact_adjacent_section(original_section, 900)
+            adjacent.append({
+                "section": span.marker,
+                "synopsis": synopsis,
+                "original_character_count": len(original_section),
+                "truncated": len(synopsis) < len(" ".join(original_section.split())),
+            })
+    else:
+        ctx.current_draft_text = full_draft_text
+    ctx.language = language or detect_application_language(ctx.current_draft_text)
     ctx.advisory_facts = retrieve_advisory_project_facts(db, run)
-    ctx.verified_evidence = retrieve_verified_evidence(db, run)
+    typed_evidence = retrieve_verified_evidence(db, run)
+    ctx.verified_evidence = [
+        item for item in typed_evidence
+        if item.get("context_kind") == "external_evidence"
+    ]
+    ctx.research_candidates = [
+        item for item in typed_evidence
+        if item.get("context_kind") == "research_candidate"
+    ]
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
@@ -327,25 +517,73 @@ def assemble_a2_context(
     _record_tool(db, run, "lookup_requirement_definition",
                  _hash_text(",".join(sorted(requirement_ids))), caller=profile_id)
 
-    ctx.context_text = _render_context_text(ctx)
     settings = get_settings()
     budget = settings.a1_context_char_budget
-    truncated = ctx.context_text[:budget]
-    ctx.context_hash = _hash_text(truncated)
-    ctx.context_text = truncated
+    portal_requirement = _json({
+        "field_profile": ctx.field_profile,
+        "requirement_assessments": ctx.requirement_assessments,
+    })
+    research_candidates = {
+        "location_only_or_unconfirmed_anchors": ctx.research_candidates,
+        "public_source_candidates": ctx.research_context.get("imported_sources", []),
+        "advisory_a1_facts": ctx.advisory_facts,
+    }
+    ctx.context_text, ctx.context_components = _budgeted_context(
+        ctx.current_draft_text,
+        [
+            ("accepted_project_input", _json(ctx.structured_project_data), 25, 1),
+            ("external_evidence", _json(ctx.verified_evidence), 35,
+             len(ctx.verified_evidence)),
+            ("open_issue", _json(ctx.open_issues), 15, len(ctx.open_issues)),
+            ("imported_applicant_text", _json(adjacent), 15, len(adjacent)),
+            ("portal_requirement", portal_requirement, 5,
+             len(ctx.requirement_assessments)),
+            ("research_candidate", _json(research_candidates), 5,
+             len(ctx.research_candidates)
+             + len(ctx.research_context.get("imported_sources", []))
+             + len(ctx.advisory_facts)),
+        ],
+        budget,
+    )
+    adjacent_was_compacted = any(item["truncated"] for item in adjacent)
+    if adjacent_was_compacted:
+        for component in ctx.context_components[1:]:
+            if component["kind"] == "imported_applicant_text":
+                component["truncated"] = True
+    ctx.context_hash = _hash_text(ctx.context_text)
     ctx.meta = {
         "context_hash": ctx.context_hash,
         "evidence_count": len(ctx.verified_evidence),
         "open_issue_count": len(ctx.open_issues),
         "fact_count": len(ctx.advisory_facts),
         "research_context_count": len(ctx.research_context.get("imported_sources", [])),
+        "research_candidate_count": len(ctx.research_candidates),
         "char_budget": budget,
         "total_chars": len(ctx.context_text),
+        "target_section": target_section,
+        "language": ctx.language,
+        "components": ctx.context_components,
     }
     return ctx
 
 
 def build_input_payload(ctx: A2Context, run_id: str) -> dict:
+    if ctx.target_section is not None:
+        return {
+            "run_id": run_id,
+            "profile_id": ctx.profile_id,
+            "field_profile": ctx.field_profile,
+            "target_section": ctx.target_section,
+            "accepted_project_input": ctx.structured_project_data,
+            "external_evidence": ctx.verified_evidence,
+            "research_candidate_count": (
+                len(ctx.research_candidates)
+                + len(ctx.research_context.get("imported_sources", []))
+            ),
+            "open_issues": ctx.open_issues,
+            "context_components": ctx.context_components,
+            "language": ctx.language,
+        }
     return {
         "run_id": run_id,
         "profile_id": ctx.profile_id,
@@ -359,7 +597,12 @@ def build_input_payload(ctx: A2Context, run_id: str) -> dict:
             for f in ctx.advisory_facts
         ],
         "verified_evidence": ctx.verified_evidence,
-        "structured_project_data": ctx.structured_project_data,
+        "structured_project_data": {
+            key: ctx.structured_project_data.get(key)
+            for key in (
+                "project_title", "funding_instrument_profile_id", "partner_count"
+            )
+        },
         "open_issues": ctx.open_issues,
         "language": ctx.language,
     }

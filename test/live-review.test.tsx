@@ -227,7 +227,7 @@ describe("LiveReview", () => {
     expect(screen.queryByTestId("reliability-stale-banner")).toBeNull()
   })
 
-  it("groups A3 findings under KI-gestützte Hinweise, blocks approval, hides provider", async () => {
+  it("groups A3 findings under neutral review hints, blocks approval, hides provider", async () => {
     server.use(
       http.get("/api/runs/r1/review", () =>
         HttpResponse.json(
@@ -255,7 +255,7 @@ describe("LiveReview", () => {
     )
     render(<LiveReview runId="r1" />)
     const aiSection = await screen.findByTestId("ai-findings")
-    expect(aiSection).toHaveTextContent("KI-gestützte Hinweise")
+    expect(aiSection).toHaveTextContent("Fachliche Prüfhinweise")
     expect(aiSection).toHaveTextContent("Aussage ohne verifizierten Beleg.")
     // Deterministic finding stays out of the KI section.
     expect(aiSection).not.toHaveTextContent("Deterministischer Hinweis.")

@@ -4,7 +4,9 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.agents import gateway
 from app.agents.gateway import ModelResponse, SafeFailure, invoke
+from app.config.settings import get_settings
 from app.agents.providers import FakeProvider
 from app.agents.providers.base import ProviderUsage
 from app.agents.registry import (
@@ -25,6 +27,12 @@ from tests.agent_helpers import (
 )
 
 PROFILE = "A1.project_fact_extraction"
+
+
+class _RealEvalStub(FakeProvider):
+    """Network-free adapter double classified exactly like the direct OpenAI route."""
+
+    name = "openai_direct"
 
 
 @pytest.fixture
@@ -60,6 +68,73 @@ def test_successful_structured_call(db):
     inv = db.get(AgentInvocation, resp.invocation_id)
     assert inv.status == "succeeded" and inv.input_hash and inv.output_hash
     assert inv.provider == "anthropic_direct" and inv.prompt_version
+    assert resp.generation_kind == "fake_demo"
+    assert inv.context_meta["model_call_attempted"] is False
+
+
+def test_fake_provider_never_unlocks_local_only(db):
+    adapter = FakeProvider()
+    response = invoke(
+        db,
+        base_request(
+            processing_mode="local_only",
+            classification={
+                "sensitivity": "internal",
+                "origin": "real_project",
+                "nda_applies": False,
+            },
+            run_confirmation=True,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, SafeFailure)
+    assert response.status == "blocked"
+    assert response.safe_detail == "processing_mode_local_only"
+    assert adapter.calls == 0
+
+
+def test_real_eval_adapter_sets_model_metadata_only_after_confirmed_call(db, monkeypatch):
+    settings = get_settings().model_copy(update={"ai_eval_mode": "real"})
+    monkeypatch.setattr(gateway, "get_settings", lambda: settings)
+    adapter = _RealEvalStub()
+    response = invoke(
+        db,
+        base_request(run_confirmation=True),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, ModelResponse)
+    assert response.generation_kind == "model_generated"
+    assert response.actual_adapter_name == "openai_direct"
+    assert response.prompt_version
+    assert adapter.calls == 1
+    invocation = db.get(AgentInvocation, response.invocation_id)
+    assert invocation.context_meta["model_call_attempted"] is True
+    assert invocation.context_meta["generation_kind"] == "model_generated"
+
+
+@pytest.mark.parametrize(
+    ("origin", "confirmed"),
+    [("synthetic", False), ("real_project", True)],
+)
+def test_real_eval_gate_blocks_before_adapter_call(db, monkeypatch, origin, confirmed):
+    settings = get_settings().model_copy(update={"ai_eval_mode": "real"})
+    monkeypatch.setattr(gateway, "get_settings", lambda: settings)
+    adapter = _RealEvalStub()
+    response = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "public",
+                "origin": origin,
+                "nda_applies": False,
+            },
+            run_confirmation=confirmed,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, SafeFailure)
+    assert response.status == "blocked"
+    assert adapter.calls == 0
 
 
 def test_malformed_output_is_safe_failure(db):

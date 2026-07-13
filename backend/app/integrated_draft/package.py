@@ -23,6 +23,8 @@ class FieldDraftItem:
     field_label: str
     status: FieldStatus
     suggestion_text: str | None = None
+    generation_kind: str | None = None
+    draft_proposal: dict | None = None
     ai_proposal: dict | None = None
     missing_inputs: list[dict] = field(default_factory=list)
     provider: str | None = None

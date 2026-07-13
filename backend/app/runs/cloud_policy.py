@@ -14,17 +14,14 @@ from sqlalchemy.orm import Session
 from app.agents.registry import get_agent_registry
 from app.api.errors import ProblemException
 from app.contracts.run import RunSettings
+from app.config.settings import get_settings
 from app.db.models import ProcessingConfirmation, Project
 from app.repositories import audit, controls
 from app.repositories import processing_confirmations as confirmations_repo
 from app.security.data_class import DataClass, derive_data_class
 
 CONFIRMATION_TEXT_VERSION = "cloud-confirm-v1"
-# R4.3 — lokaler KI-Opt-in für D1/D2 (Owner-Entscheid 2026-07-08): eigener
-# Bestätigungstext + fixe Route-Klasse (heute Fake, Ziel lokales Modell/Azure).
-LOCAL_AI_CONFIRMATION_TEXT_VERSION = "local-ai-confirm-v1"
-LOCAL_AI_ROUTE_CLASS = "fake_local"
-_LOCAL_AI_CLASSES = (DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA)
+REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION = "real-ai-eval-v1"
 A2_PROFILE_ID = "A2.solution_innovation"
 _ALLOWED_ORIGINS = ("synthetic", "public_source")
 _NO_EXTERNAL_CALL_MODES = ("deterministic_only", "local_only")
@@ -46,13 +43,30 @@ def provider_route_class() -> str:
 def classification_eligible(classification: dict) -> tuple[bool, str]:
     """Public/synthetic eligibility for cloud processing in the beta."""
     cls = classification or {}
-    if cls.get("sensitivity") != "public":
-        return False, "sensitivity_not_public"
-    if cls.get("origin") not in _ALLOWED_ORIGINS:
-        return False, "origin_not_public_or_synthetic"
     if bool(cls.get("nda_applies")):
         return False, "nda_applies"
+    origin = cls.get("origin")
+    if (
+        origin in ("synthetic", "anonymized")
+        and get_settings().ai_eval_mode == "real"
+        and derive_data_class(cls) not in (DataClass.D3_NDA_BLOCKED, DataClass.UNKNOWN)
+    ):
+        return True, "real_eval_eligible"
+    if cls.get("sensitivity") != "public":
+        return False, "sensitivity_not_public"
+    if origin not in _ALLOWED_ORIGINS:
+        return False, "origin_not_public_or_synthetic"
     return True, "eligible"
+
+
+def confirmation_text_version_for(classification: dict) -> str:
+    cls = classification or {}
+    if (
+        cls.get("origin") in ("synthetic", "anonymized")
+        and get_settings().ai_eval_mode == "real"
+    ):
+        return REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION
+    return CONFIRMATION_TEXT_VERSION
 
 
 def _control(db, project, status: str, reason: str) -> None:
@@ -95,14 +109,15 @@ def validate_cloud_run(
     Problem. Returns the confirmation + route class to freeze (caller marks it used)."""
     mode = settings.processing_mode
     if mode in _NO_EXTERNAL_CALL_MODES:
-        # R4.3: local_only MIT referenzierter Bestätigung = lokaler KI-Opt-in
-        # (D1/D2). Ohne Bestätigung bleibt der Lauf wie bisher regelbasiert.
+        # Es existiert kein lokaler/institutioneller Modelladapter. ``local_only``
+        # bleibt daher regelbasiert; eine alte KI-Bestätigung darf keinen Pfad öffnen.
         if mode == "local_only" and settings.internal_cloud_confirmation_id:
-            return _validate_local_ai_run(
-                db, project, settings, actor_user_id=actor_user_id,
-                requested_source_version_ids=requested_source_version_ids,
-                policy_version=policy_version,
-                effective_classification=effective_classification,
+            raise _block(
+                db, project, actor_user_id, status=403,
+                code="local_ai_provider_unavailable",
+                detail=("Für diese Datenklasse ist aktuell kein freigegebener "
+                        "KI-Provider konfiguriert. Die App führt nur regelbasierte "
+                        "Prüfungen aus."),
             )
         return CloudDecision()
     if mode != "cloud_assisted":  # defensive; the contract enum has only these three
@@ -139,6 +154,8 @@ def validate_cloud_run(
         or confirmation.processing_mode != "cloud_assisted"
         or confirmation.accepted_policy_version != policy_version
         or not requested.issubset(set(confirmation.source_version_ids or []))
+        or confirmation.confirmation_text_version
+        != confirmation_text_version_for(effective_for_gate)
     )
     if invalid:
         raise _block(
@@ -158,58 +175,3 @@ def validate_cloud_run(
             "merged_origin": (effective_for_gate or {}).get("origin")},
     )
     return CloudDecision(confirmation=confirmation, provider_route_class=route_class)
-
-
-def _validate_local_ai_run(
-    db: Session,
-    project: Project,
-    settings: RunSettings,
-    *,
-    actor_user_id: str,
-    requested_source_version_ids: list[str],
-    policy_version: str,
-    effective_classification: dict | None,
-) -> CloudDecision:
-    """R4.3: local_only-Lauf mit KI-Opt-in (Owner-Entscheid 2026-07-08). Nur für
-    D1/D2 — projekt- UND quellen-effektiv; D3/UNKNOWN bleiben fail-closed. Die
-    Bestätigung dokumentiert die verstandene Warnung (local-ai-confirm-v1)."""
-    effective_for_gate = effective_classification or project.data_classification
-    project_class = derive_data_class(project.data_classification)
-    effective_class = derive_data_class(effective_for_gate)
-    if project_class not in _LOCAL_AI_CLASSES or effective_class not in _LOCAL_AI_CLASSES:
-        raise _block(
-            db, project, actor_user_id, status=403,
-            code="local_ai_not_eligible_for_classification",
-            detail=("Der lokale KI-Pfad steht nur für interne oder vertrauliche "
-                    "Inhalte zur Verfügung; NDA-gesperrte oder nicht eingestufte "
-                    "Inhalte bleiben blockiert."),
-        )
-    confirmation = confirmations_repo.get_scoped(
-        db, settings.internal_cloud_confirmation_id, project.workspace_id)
-    requested = set(requested_source_version_ids or [])
-    invalid = (
-        confirmation is None
-        or confirmation.project_id != project.project_id
-        or confirmation.status != confirmations_repo.VALID
-        or confirmation.processing_mode != "local_only"
-        or confirmation.accepted_policy_version != policy_version
-        or not requested.issubset(set(confirmation.source_version_ids or []))
-    )
-    if invalid:
-        raise _block(
-            db, project, actor_user_id, status=422, code="cloud_confirmation_invalid",
-            detail="Die KI-Freigabe ist ungültig oder passt nicht zu diesem Durchlauf.",
-        )
-    _control(db, project, "passed", "local_ai_opt_in_confirmed")
-    _audit(
-        db, project, actor_user_id, "local_ai_run.allowed",
-        {"confirmation_id": confirmation.confirmation_id,
-         "provider_route_class": LOCAL_AI_ROUTE_CLASS,
-         "policy_version": policy_version,
-         "effective_sensitivity": (project.data_classification or {}).get("sensitivity"),
-         "origin": (project.data_classification or {}).get("origin"),
-         "merged_effective_sensitivity": (effective_for_gate or {}).get("sensitivity"),
-         "merged_origin": (effective_for_gate or {}).get("origin")},
-    )
-    return CloudDecision(confirmation=confirmation,
-                         provider_route_class=LOCAL_AI_ROUTE_CLASS)

@@ -31,8 +31,10 @@ export function RunTechnicalDetails({
         </AccordionTrigger>
         <AccordionContent>
           <div className="flex flex-col gap-3 pb-2 text-xs text-muted-foreground">
-            {technical.agents.length === 0 ? (
-              <p>Keine KI-Dienste in diesem Durchlauf verwendet.</p>
+            {!technical.model_called ? (
+              <p>Kein Modellaufruf.</p>
+            ) : technical.agents.length === 0 ? (
+              <p>Keine Modellmetadaten vorhanden.</p>
             ) : (
               <ul className="flex flex-col gap-2">
                 {technical.agents.map((agent) => (

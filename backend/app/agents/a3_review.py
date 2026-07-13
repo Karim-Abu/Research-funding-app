@@ -15,6 +15,10 @@ A3_SCOPE_FIELDS: tuple[str, ...] = (
     "SOL.INNOVATION_SOLUTION.EDITOR",
     "VC.BUSINESS_TARGETS_MODEL.EDITOR",
 )
+A3_REVIEW_TARGET_FIELDS: tuple[str, ...] = (
+    *A3_SCOPE_FIELDS,
+    "PS.RISK_MANAGEMENT.SECTION",
+)
 
 
 def validate_a3_scope() -> None:
@@ -27,6 +31,9 @@ def validate_a3_scope() -> None:
             raise RuntimeError(f"A3 scope field unknown in registry: {field_id}")
         if a2_fields.resolve_field_config(field_id) is None:
             raise RuntimeError(f"A3 scope field is not A2-enabled: {field_id}")
+    for field_id in A3_REVIEW_TARGET_FIELDS:
+        if field_id not in registry.portal_fields:
+            raise RuntimeError(f"A3 review target unknown in registry: {field_id}")
 
 
 validate_a3_scope()

@@ -151,7 +151,7 @@ export function ProposalEditor({
             <TabsList>
               <TabsTrigger value="entwurf">Entwurf</TabsTrigger>
               <TabsTrigger value="ki">
-                {`KI-Vorschläge (${visibleSuggestions.length})`}
+                {`Vorschläge (${visibleSuggestions.length})`}
               </TabsTrigger>
               <TabsTrigger value="notizen">Notizen</TabsTrigger>
             </TabsList>
@@ -168,7 +168,7 @@ export function ProposalEditor({
                       className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2"
                       onClick={() => setActiveTab("ki")}
                     >
-                      1 KI-Vorschlag verfügbar
+                      1 Vorschlag verfügbar
                     </button>
                   </div>
                   <DraftEditor draftText={draft} onChange={setDraft} />

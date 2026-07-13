@@ -48,11 +48,12 @@ export const REVIEW_TILE_HELP = {
 } as const
 
 // ---------------------------------------------------------------------------
-// KI-gestützte Hinweise (A3 evidence-consistency findings, Milestone 9G).
+// Advisory A3 findings. Neutral wording avoids implying a model call when a
+// legacy/demo finding has no verified generation provenance.
 // Advisory only; surfaced separately from the deterministic checks. We identify
 // them by profile_id and never show model/provider/confidence.
 // ---------------------------------------------------------------------------
-export const AI_FINDINGS_LABEL = "KI-gestützte Hinweise"
+export const AI_FINDINGS_LABEL = "Fachliche Prüfhinweise"
 export const AI_FINDINGS_DESCRIPTION =
   "Hinweise einer KI-Prüfung zu Belegen und Konsistenz. Vorschläge zur menschlichen Prüfung — keine Freigabe."
 

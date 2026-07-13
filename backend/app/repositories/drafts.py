@@ -12,6 +12,7 @@ import uuid
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.agents import a2_fields
 from app.api.errors import ProblemException
 from app.contracts.draft import DraftVersion as DraftVersionSchema
 from app.contracts.draft import PortalFieldDraft as DraftSchema
@@ -31,6 +32,7 @@ from app.drafts import (
     is_empty,
 )
 from app.drafts.charcount import within_limit
+from app.drafts.sections import SectionStructureError, merge_section
 from app.registry import PortalFieldDef, get_registry
 from app.repositories import audit
 from app.repositories import evidence as evidence_repo
@@ -260,7 +262,7 @@ def create_initial_draft(
     return draft
 
 
-def _resolve_agent_acceptance(
+def _resolve_source_suggestion(
     db: Session,
     run: AnalysisRun,
     draft: PortalFieldDraft,
@@ -269,30 +271,31 @@ def _resolve_agent_acceptance(
     text: str,
     source_operation_id: str | None,
 ):
-    """Return the proposed DraftSuggestion iff `source_operation_id` legitimately
-    identifies it (M9D corr #3): the operation succeeded; it belongs to the same
-    run/workspace/draft/field and base_version_id; a still-proposed suggestion exists;
-    and its content_hash equals the accepted text. Else None (→ normal user edit)."""
+    """Resolve a legitimate proposal operation and whether its text is unchanged.
+
+    Ownership/base/operation checks always gate the section merge. The content
+    hash controls provenance only: exact acceptance is ``agent``; a human-edited
+    acceptance is ``user`` but is still merged into the proposal's target section.
+    """
     if not source_operation_id:
-        return None
+        return None, False
     from app.repositories import draft_suggestions as suggestions_repo
 
     suggestion = suggestions_repo.get_by_operation(db, source_operation_id)
     if suggestion is None or suggestion.status != "proposed":
-        return None
+        return None, False
     if (
         suggestion.run_id != run.run_id
         or suggestion.workspace_id != run.workspace_id
         or suggestion.draft_id != draft.draft_id
         or suggestion.field_id != draft.field_id
         or suggestion.base_version_id != base_version_id
-        or suggestion.content_hash != _content_hash(text)
     ):
-        return None
+        return None, False
     operation = db.get(AsyncOperation, source_operation_id)
     if operation is None or operation.status != "succeeded":
-        return None
-    return suggestion
+        return None, False
+    return suggestion, suggestion.content_hash == _content_hash(text)
 
 
 def apply_update(
@@ -330,7 +333,30 @@ def apply_update(
             status=409, code="stale_base_version", title="Conflict",
             detail="Dieser Abschnitt wurde zwischenzeitlich geändert.",
         )
-    if not within_limit(text, draft.character_limit):
+    source_suggestion, exact_acceptance = _resolve_source_suggestion(
+        db, run, draft, base_version_id=base_version_id, text=text,
+        source_operation_id=source_operation_id,
+    )
+    final_text = text
+    if source_suggestion is not None and source_suggestion.target_section is not None:
+        config = a2_fields.resolve_field_config(draft.field_id)
+        if config is None or not config.mandatory_markers:
+            raise ProblemException(
+                status=422, code="section_structure_invalid",
+                title="Unprocessable Entity",
+                detail="Die Abschnittsstruktur konnte nicht sicher bestimmt werden.",
+            )
+        try:
+            final_text = merge_section(
+                base.text, config.mandatory_markers,
+                source_suggestion.target_section, text,
+            )
+        except SectionStructureError as exc:
+            raise ProblemException(
+                status=422, code=exc.code, title="Unprocessable Entity",
+                detail="Die Abschnittsstruktur ist unvollstaendig oder mehrdeutig.",
+            ) from exc
+    if not within_limit(final_text, draft.character_limit):
         raise ProblemException(
             status=422, code="character_limit_exceeded",
             title="Unprocessable Entity",
@@ -339,34 +365,30 @@ def apply_update(
                 "Zeichen."
             ),
         )
-    if base.text == text:
+    if base.text == final_text:
         return draft  # identical → no redundant version
 
     # M9D: accepting an A2 suggestion (source_operation_id resolves to a still-proposed
     # suggestion for this exact draft/base/text) creates an agent version; otherwise a
     # normal user edit. Never mark arbitrary text created_by=agent.
-    accepted = _resolve_agent_acceptance(
-        db, run, draft, base_version_id=base_version_id, text=text,
-        source_operation_id=source_operation_id,
-    )
-    created_by = "agent" if accepted is not None else origin
+    created_by = "agent" if exact_acceptance else origin
     version = _new_version(
-        db, draft.draft_id, text, created_by,
+        db, draft.draft_id, final_text, created_by,
         base_version_id=base_version_id, source_operation_id=source_operation_id,
     )
     # The superseded version's active evidence links become stale.
     stale = evidence_repo.mark_draft_version_links_stale(db, base_version_id)
     draft.current_version_id = version.draft_version_id
-    if accepted is not None:
+    if source_suggestion is not None:
         from app.repositories import draft_suggestions as suggestions_repo
 
         suggestions_repo.mark_accepted(
-            db, accepted, accepted_draft_version_id=version.draft_version_id,
+            db, source_suggestion, accepted_draft_version_id=version.draft_version_id,
             decided_by=actor_user_id,
         )
         suggestions_repo.expire_superseded(db, draft.draft_id, version.draft_version_id)
     draft.open_issue_count = _sync_field_issue(
-        db, run, draft.field_id, is_empty(text) or has_placeholder(text)
+        db, run, draft.field_id, is_empty(final_text) or has_placeholder(final_text)
     )
     run.recheck_required = True
     # An edit changes the review scope; any prior approval is now stale.
@@ -390,7 +412,15 @@ def apply_update(
 # --- read model ------------------------------------------------------------
 
 
-def _version_contract(version: DraftVersion) -> DraftVersionSchema:
+def _version_contract(db: Session, version: DraftVersion) -> DraftVersionSchema:
+    generation_kind = None
+    if version.created_by == "template":
+        generation_kind = "rule_template"
+    elif version.source_operation_id:
+        from app.repositories import draft_suggestions as suggestions_repo
+
+        suggestion = suggestions_repo.get_by_operation(db, version.source_operation_id)
+        generation_kind = suggestion.generation_kind if suggestion is not None else None
     return DraftVersionSchema(
         draft_version_id=version.draft_version_id,
         text=version.text,
@@ -398,6 +428,7 @@ def _version_contract(version: DraftVersion) -> DraftVersionSchema:
         created_by=version.created_by,
         created_at=version.created_at,
         content_hash=version.content_hash,
+        generation_kind=generation_kind,
     )
 
 
@@ -426,7 +457,7 @@ def to_contract(
         field_id=draft.field_id,
         field_name=draft.field_name,
         status=draft.status,
-        current_version=_version_contract(current),
+        current_version=_version_contract(db, current),
         character_count=current.character_count,
         character_limit=draft.character_limit,
         open_issue_count=draft.open_issue_count,

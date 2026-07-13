@@ -177,6 +177,9 @@ export interface AgentUsageSummaryDto {
   priced_cost_chf: number
   has_unpriced_usage: boolean
   latency_ms_total: number
+  generation_kinds?: string[]
+  model_calls?: number
+  prompt_versions?: string[]
 }
 
 export interface RunTechnicalSummaryDto {
@@ -185,6 +188,7 @@ export interface RunTechnicalSummaryDto {
   priced_cost_chf_total: number
   has_unpriced_usage: boolean
   same_provider_a2_a3?: boolean | null
+  model_called?: boolean
 }
 
 export interface RunPhasesDto {

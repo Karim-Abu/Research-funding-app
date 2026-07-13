@@ -307,7 +307,7 @@ export function MarketCompetitionPanel({
                   onClick={() => onApply?.("Differenzierung ergänzt", `${d.whatIsDifferent}. ${d.whyRelevant}.`)}
                   className="mt-0.5 inline-flex w-fit items-center gap-1 text-[11px] font-medium text-primary hover:underline"
                 >
-                  In KI-Vorschlag übernehmen
+                  In Vorschlag übernehmen
                   <ArrowRight className="size-3" />
                 </button>
               </li>

@@ -62,6 +62,18 @@ def _effective_run_classification(project_classification: dict, versions: list[S
             version.data_classification for version in versions],
         effective=effective,
     )
+    project_origin = (project_classification or {}).get("origin")
+    source_origins = {
+        (version.data_classification or {}).get("origin") for version in versions
+    }
+    # An evaluation project may use public evidence without losing its explicit
+    # synthetic/anonymized provenance. Any real/unknown source origin prevents
+    # this preservation and therefore blocks the real-provider eval path later.
+    if (
+        project_origin in ("synthetic", "anonymized")
+        and source_origins.issubset({"synthetic", "anonymized", "public_source"})
+    ):
+        effective["origin"] = project_origin
     return effective
 
 

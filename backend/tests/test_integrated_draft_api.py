@@ -57,8 +57,8 @@ def test_post_creates_demo_package(client, fake_provider):
     assert pkg["human_review_required"] is True
     assert pkg["provider_mode"] == "fake"
     us = pkg["usage_summary"]
-    assert us["total_tokens"] > 0 and us["usage_record_count"] == 6
-    assert set(us["cost_status_counts"]) <= {"not_applicable"}
+    assert us["total_tokens"] == 0 and us["usage_record_count"] == 0
+    assert us["cost_status_counts"] == {}
     assert pkg["research_summary"]["market"]["used"] is True
     assert pkg["research_summary"]["partner"]["used"] is True
 

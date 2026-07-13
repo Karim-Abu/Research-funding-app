@@ -8,7 +8,7 @@ validation fails safely if a profile's concrete model is not yet implemented.
 """
 from __future__ import annotations
 
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
 
@@ -175,6 +175,8 @@ class EvidenceLinkRecord(BaseModel):
     page: int | None = None
     section: str | None = None
     requirement_id: str | None = None
+    support_status: str | None = None
+    context_kind: Literal["external_evidence", "research_candidate"] | None = None
 
 
 class OpenIssueRecord(BaseModel):
@@ -233,6 +235,64 @@ class PortalFieldDraftBundle(BaseModel):
     draft_candidates: list[DraftCandidateRecord]
     placeholders: list[PlaceholderRecord]
     field_level_warnings: list[OpenIssueRecord] = []
+
+
+# --- A2 subsection drafting (additive code-only contract) ------------------
+
+ContextKind = Literal[
+    "accepted_project_input",
+    "imported_applicant_text",
+    "external_evidence",
+    "research_candidate",
+    "portal_requirement",
+    "open_issue",
+]
+
+
+class SectionContextSummary(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    kind: ContextKind
+    item_count: int = 0
+    character_count: int = 0
+    truncated: bool = False
+
+
+class SectionDraftingInput(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    profile_id: str
+    field_profile: PortalFieldProfileView
+    target_section: str
+    accepted_project_input: dict[str, Any]
+    external_evidence: list[EvidenceLinkRecord]
+    research_candidate_count: int = 0
+    open_issues: list[OpenIssueRecord]
+    context_components: list[SectionContextSummary]
+    language: Literal["de", "en"]
+
+
+class SectionDraftCandidateRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    target_section: str
+    suggested_text: str
+    rationale: str
+    preserved_facts: list[str] = []
+    removed_or_reframed_claims: list[str] = []
+    new_claims: list[str] = []
+    missing_inputs: list[PlaceholderRecord] = []
+    evidence_anchor_ids: list[str] = []
+    open_issue_ids: list[str] = []
+
+
+class PortalSectionDraftBundle(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    section_candidate: SectionDraftCandidateRecord
+    warnings: list[str] = []
 
 
 # --- A3 Evidence & Consistency review (Milestone 9G) ------------------------
@@ -294,12 +354,13 @@ class ReviewFindingRecord(BaseModel):
     description: str
     status: FindingStatus = "open"
     field_id: str | None = None
+    target_section: str
     requirement_id: str | None = None
     evidence_anchor_id: str | None = None
     evidence_link_id: str | None = None
     evidence_status: str | None = None
     suggested_improvement: str | None = None
-    recommended_next_action: str | None = None
+    recommended_next_action: str
 
 
 class ProfileReviewSummaryRecord(BaseModel):
@@ -449,6 +510,8 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "EvidenceCandidateMappingResult@v1": EvidenceCandidateMappingResult,
     "FieldDraftingInput@v1": FieldDraftingInput,
     "PortalFieldDraftBundle@v1": PortalFieldDraftBundle,
+    "SectionDraftingInput@v1": SectionDraftingInput,
+    "PortalSectionDraftBundle@v1": PortalSectionDraftBundle,
     "CriticReviewInput@v1": CriticReviewInput,
     "ReviewFindingBundle@v1": ReviewFindingBundle,
     "PublicCompetenceResearchInput@v1": PublicCompetenceResearchInput,

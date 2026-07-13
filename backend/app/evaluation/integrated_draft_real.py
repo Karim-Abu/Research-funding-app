@@ -119,7 +119,7 @@ def _build_resolver_for(provider: str, adapters: dict[str, object] | None = None
         inner = injected or (
             OpenAIProvider() if provider == "openai" else AnthropicProvider()
         )
-        proxy = _CountingAdapter(inner, limit=limit)
+        proxy = _CountingAdapter(inner, limit=limit, adapter_name=target_route)
         proxies[field_id] = proxy
         return lambda route: proxy if route.provider == target_route else None
 
@@ -145,6 +145,7 @@ def run_integrated_draft_real(
         db, base_project=project, actor_user_id=ACTOR, case_id="F1",
         provider_mode=provider, data_mode="synthetic_eval",
         resolver_for=resolver_for, seed_context=_seed_context, title_en=_TITLE_EN,
+        real_eval_confirmation=True,
     )
     db.commit()
 

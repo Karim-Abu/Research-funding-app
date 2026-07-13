@@ -26,6 +26,9 @@ class DraftVersion(BaseModel):
     created_by: CreatedBy
     created_at: datetime
     content_hash: str
+    generation_kind: Literal[
+        "rule_template", "fake_demo", "model_generated"
+    ] | None = None
 
 
 class PortalFieldDraft(BaseModel):
@@ -66,6 +69,10 @@ class FieldSuggestionRead(BaseModel):
     suggestion: dict | None = None
 
 
+class FieldSuggestionsRead(BaseModel):
+    suggestions: list[dict] = []
+
+
 class RedraftRequest(BaseModel):
     """createRedraft body (openapi RedraftRequest). Milestone 9D: request an
     advisory A2 draft suggestion for the current draft version."""
@@ -74,3 +81,4 @@ class RedraftRequest(BaseModel):
 
     base_version_id: str
     guidance: str | None = Field(default=None, max_length=4000)
+    target_section: str | None = Field(default=None, max_length=16)

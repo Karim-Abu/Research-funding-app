@@ -156,10 +156,11 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
     }
     try:
         validate_payload(INPUT_SCHEMA, input_payload)
-    except (ValidationError, SchemaNotImplementedError) as exc:
+    except (ValidationError, SchemaNotImplementedError):
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
-            control_id="CTRL.INPUT_SCHEMA", status="failed", detail=str(exc)[:200],
+            control_id="CTRL.INPUT_SCHEMA", status="failed",
+            detail="evidence_mapping_input_schema_invalid",
             run_id=run.run_id,
         )
         _audit(db, run, "agent.evidence_mapping.skipped", {"reason": "input_schema"})

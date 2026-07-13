@@ -90,6 +90,8 @@ import {
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
+import { generationActionLabel, generationLabel, type GenerationKind } from "@/lib/generation-kind"
+import { subsectionText } from "@/lib/subsections"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -225,6 +227,7 @@ export function LiveEditor({
   // True, wenn der angezeigte Vorschlag aus dem Analyse-Lauf stammt (statt
   // aus einem manuellen «KI-Vorschlag erstellen»).
   const [a2FromRun, setA2FromRun] = React.useState(false)
+  const [selectedSubsection, setSelectedSubsection] = React.useState<string | null>(null)
   const selectedIdRef = React.useRef<string | null>(null)
   const autoSelectedRef = React.useRef(false)
   const editorRef = React.useRef<RichTextEditorHandle>(null)
@@ -272,10 +275,17 @@ export function LiveEditor({
 
   // Im Analyse-Lauf erzeugte Vorschläge (proposed, zur aktuellen Basis)
   // beim Feldwechsel anzeigen — Anzeige only, nie Auto-Übernahme.
-  async function loadRunSuggestion(draft: PortalFieldDraftDto) {
+  async function loadRunSuggestion(
+    draft: PortalFieldDraftDto,
+    targetSection?: string
+  ) {
     if (!isA2Field(draft.field_id)) return
     try {
-      const suggestion = await getRunFieldSuggestion(runId, draft.field_id)
+      const suggestion = await getRunFieldSuggestion(
+        runId,
+        draft.field_id,
+        targetSection
+      )
       if (
         suggestion &&
         suggestion.base_version_id === draft.current_version.draft_version_id &&
@@ -314,7 +324,7 @@ export function LiveEditor({
           const preferred = initialFieldId
             ? drafts.find((d) => d.field_id === initialFieldId)
             : undefined
-          selectField(preferred ?? drafts[0])
+          selectField(preferred ?? drafts[0], catalog)
           if (preferred) {
             requestAnimationFrame(() => editorRef.current?.focus())
           }
@@ -333,7 +343,13 @@ export function LiveEditor({
 
   React.useEffect(() => load(), [load])
 
-  function selectField(draft: PortalFieldDraftDto) {
+  function selectField(
+    draft: PortalFieldDraftDto,
+    catalog: PortalFieldInfoDto[] = portalCatalog
+  ) {
+    const target =
+      catalog.find((p) => p.field_id === draft.field_id)?.subsections?.[0]?.marker ??
+      null
     setSelectedId(draft.field_id)
     selectedIdRef.current = draft.field_id
     setLocalText(draft.current_version.text)
@@ -344,8 +360,16 @@ export function LiveEditor({
     setFieldNotice(null)
     setConfirmResolveId(null)
     setAssistantTab(null)
+    setSelectedSubsection(target)
     resetA2()
-    void loadRunSuggestion(draft)
+    void loadRunSuggestion(draft, target ?? undefined)
+  }
+
+  function selectSubsection(marker: string) {
+    setSelectedSubsection(marker)
+    editorRef.current?.selectMatch(marker)
+    resetA2()
+    if (selected) void loadRunSuggestion(selected, marker)
   }
 
   async function generateSuggestion() {
@@ -354,7 +378,13 @@ export function LiveEditor({
     setA2Error(null)
     setA2UnavailableReason(null)
     try {
-      const suggestion = await createRedraft(runId, selected.field_id, baseVersionId)
+      const suggestion = await createRedraft(
+        runId,
+        selected.field_id,
+        baseVersionId,
+        undefined,
+        selectedSubsection ?? undefined
+      )
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
     } catch (e) {
@@ -364,7 +394,7 @@ export function LiveEditor({
       } else if (e instanceof RedraftError && e.status === 409) {
         setConflict(true)
       } else {
-        setA2Error(e instanceof Error ? e.message : "KI-Vorschlag fehlgeschlagen.")
+        setA2Error(e instanceof Error ? e.message : "Vorschlag fehlgeschlagen.")
       }
     } finally {
       setA2Loading(false)
@@ -603,6 +633,19 @@ export function LiveEditor({
   // R6: sichtbare Unterabschnitte des ausgewählten Composite-Felds (Registry).
   const subsectionDefs =
     portalCatalog.find((p) => p.field_id === selected.field_id)?.subsections ?? []
+  const configuredGenerationKind: GenerationKind | null =
+    caps?.generation_mode === "fake_demo"
+      ? "fake_demo"
+      : caps?.generation_mode === "real_eval"
+        ? "model_generated"
+        : null
+  const visibleGenerationKind =
+    a2Suggestion?.generation_kind ?? configuredGenerationKind
+  const suggestionAction = generationActionLabel(configuredGenerationKind)
+  const currentReviewText =
+    selectedSubsection && subsectionDefs.length > 0
+      ? (subsectionText(localText, subsectionDefs, selectedSubsection) ?? localText)
+      : localText
 
   const hasBlocker = (review?.blocker_count ?? 0) > 0 || selectedFindings.some((f) => f.severity === "blocker")
   const hasBackedMarketData =
@@ -1101,7 +1144,7 @@ export function LiveEditor({
 
   const editorShell = (
     <DraftWorkspaceShell
-      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie KI-Vorschläge, Belege und offene Punkte."
+      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie Vorschläge, Belege und offene Punkte."
       viewModels={viewModels}
       selectedId={selected.field_id}
       onSelect={(id) => {
@@ -1120,7 +1163,11 @@ export function LiveEditor({
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
       deinTextBadge={
         <Badge variant="secondary">
-          {CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf"}
+          {selected.current_version.generation_kind
+            ? generationLabel(selected.current_version.generation_kind)
+            : selected.current_version.created_by === "agent"
+              ? "Herkunft nicht verifiziert"
+              : (CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf")}
         </Badge>
       }
       deinTextHint={
@@ -1144,11 +1191,31 @@ export function LiveEditor({
       projectId={marketProjectId}
       dataClass={workspaceDataClass}
       subsections={subsectionDefs}
-      onJumpToSubsection={(marker) => editorRef.current?.selectMatch(marker)}
+      onJumpToSubsection={selectSubsection}
+      suggestionPaneLabel={
+        visibleGenerationKind ? generationLabel(visibleGenerationKind) : "Vorschläge"
+      }
       kiContent={
         <div className="flex flex-col gap-2">
           {showA2Controls ? (
             <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
+              {subsectionDefs.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Zielabschnitt</span>
+                  <select
+                    value={selectedSubsection ?? ""}
+                    onChange={(event) => selectSubsection(event.target.value)}
+                    className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                    aria-label="Zielabschnitt für Vorschlag"
+                  >
+                    {subsectionDefs.map((section) => (
+                      <option key={section.marker} value={section.marker}>
+                        {section.marker}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
@@ -1157,7 +1224,7 @@ export function LiveEditor({
                   disabled={a2Loading}
                 >
                   <Sparkles data-icon="inline-start" />
-                  {a2Loading ? "KI-Vorschlag wird erstellt …" : "KI-Vorschlag erstellen"}
+                  {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
                 </Button>
                 {a2Suggestion && !a2ReviewOpen && (
                   <Button size="sm" variant="ghost" onClick={() => setA2ReviewOpen(true)}>
@@ -1178,7 +1245,9 @@ export function LiveEditor({
               )}
               {!a2Suggestion && !a2Loading && !a2UnavailableReason && !a2Error && (
                 <p className="text-xs text-muted-foreground">
-                  KI-Vorschlag für diesen Abschnitt noch nicht erstellt.
+                  {configuredGenerationKind
+                    ? generationLabel(configuredGenerationKind)
+                    : "Vorschlag"} für diesen Abschnitt noch nicht erstellt.
                 </p>
               )}
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
@@ -1193,7 +1262,7 @@ export function LiveEditor({
                 onUseTemplate={() => editorRef.current?.focus?.()}
               />
               <p className="text-xs text-muted-foreground">
-                KI-Vorschläge unterstützen aktuell die Abschnitte «Abstract»,
+                Abschnittsvorschläge unterstützen aktuell «Abstract»,
                 «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,
                 «Finanzielle Unabhängigkeit» und «Management-Stunden».
               </p>
@@ -1248,7 +1317,7 @@ export function LiveEditor({
           onOpenChange={(o) => {
             if (!o) dismissSuggestion()
           }}
-          currentText={localText}
+           currentText={currentReviewText}
           suggestion={a2Suggestion}
           onAccept={acceptSuggestion}
           onDismiss={dismissSuggestion}

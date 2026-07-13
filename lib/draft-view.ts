@@ -19,7 +19,7 @@ export const DRAFT_STATUS_LABELS: Record<DraftFieldStatus, string> = {
   ready: "Bereit",
   needs_review: "Prüfung nötig",
   in_progress: "In Bearbeitung",
-  ai_suggestion: "KI-Vorschlag",
+  ai_suggestion: "Vorschlag zur Prüfung",
   no_draft: "Kein Entwurf",
   no_evidence: "Beleg fehlt",
   blocked: "Blockiert",

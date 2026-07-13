@@ -12,6 +12,7 @@ import {
 } from "@/components/ui/dialog"
 import { VERIFICATION_LABELS, type VerificationStatus } from "@/lib/evidence"
 import type { A2Suggestion } from "@/lib/redraft"
+import { generationLabel } from "@/lib/generation-kind"
 
 const WARNING_LABELS: Record<string, string> = {
   contains_placeholders:
@@ -46,11 +47,13 @@ export function SuggestionReviewDialog({
   accepting = false,
 }: SuggestionReviewDialogProps) {
   const overLimit = suggestion.character_count > suggestion.character_limit
+  const label = generationLabel(suggestion.generation_kind)
+  const section = suggestion.section_result
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-4xl">
         <DialogHeader>
-          <DialogTitle>KI-Vorschlag prüfen</DialogTitle>
+          <DialogTitle>{label} prüfen</DialogTitle>
         </DialogHeader>
 
         <div className="grid gap-4 md:grid-cols-2">
@@ -67,7 +70,7 @@ export function SuggestionReviewDialog({
           </section>
           <section className="flex flex-col gap-1">
             <p className="text-xs font-semibold uppercase tracking-wide text-primary">
-              KI-Vorschlag
+              {label}
             </p>
             <div
               data-testid="suggestion-text"
@@ -101,6 +104,23 @@ export function SuggestionReviewDialog({
             </p>
             <p className="text-xs text-foreground">{suggestion.rationale}</p>
           </section>
+        )}
+
+        {section && (
+          <div className="grid gap-3 md:grid-cols-2">
+            <ReviewList title="Erhaltene Fakten" items={section.preserved_facts} />
+            <ReviewList
+              title="Entfernte oder umformulierte Claims"
+              items={section.removed_or_reframed_claims}
+            />
+            <ReviewList title="Neue Claims" items={section.new_claims} />
+            <ReviewList
+              title="Fehlende Inputs"
+              items={section.missing_inputs.map((item) =>
+                item.reason ? `${item.label}: ${item.reason}` : item.label
+              )}
+            />
+          </div>
         )}
 
         {suggestion.evidence.length > 0 && (
@@ -138,6 +158,25 @@ export function SuggestionReviewDialog({
           </p>
         )}
 
+        <details className="rounded-md border border-border px-3 py-2 text-xs">
+          <summary className="cursor-pointer font-medium">Technische Details</summary>
+          <dl className="mt-2 grid gap-1 text-muted-foreground">
+            <div>Zielabschnitt: {suggestion.target_section ?? "–"}</div>
+            <div>Generierungsart: {suggestion.generation_kind ?? "nicht verifiziert"}</div>
+            <div>Vorschlags-ID: {suggestion.suggestion_id}</div>
+            <div>
+              Modellaufruf: {suggestion.generation_kind === "model_generated" ? "Ja" : "Nein"}
+            </div>
+            {suggestion.generation_kind === "model_generated" && suggestion.proposal && (
+              <>
+                <div>Provider: {suggestion.proposal.provider}</div>
+                <div>Modell: {suggestion.proposal.model}</div>
+                <div>Promptversion: {suggestion.proposal.prompt_version}</div>
+              </>
+            )}
+          </dl>
+        </details>
+
         <DialogFooter>
           <Button variant="ghost" onClick={onDismiss} disabled={accepting}>
             Vorschlag ausblenden
@@ -148,5 +187,24 @@ export function SuggestionReviewDialog({
         </DialogFooter>
       </DialogContent>
     </Dialog>
+  )
+}
+
+function ReviewList({ title, items }: { title: string; items: string[] }) {
+  return (
+    <section className="flex flex-col gap-1">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        {title}
+      </p>
+      {items.length > 0 ? (
+        <ul className="list-disc space-y-1 pl-4 text-xs text-foreground">
+          {items.map((item, index) => (
+            <li key={`${title}-${index}`}>{item}</li>
+          ))}
+        </ul>
+      ) : (
+        <p className="text-xs text-muted-foreground">Keine</p>
+      )}
+    </section>
   )
 }

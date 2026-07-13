@@ -34,15 +34,15 @@ import {
   buildWorkingDraftText,
   costStatusLabel,
   fieldLabel,
-  FIELD_DRAFT_STATUS_LABELS,
   FIELD_DRAFT_STATUS_STYLE,
+  fieldDraftStatusLabel,
   researchHint,
   summarizeFields,
 } from "@/lib/integrated-draft-view"
 import { cn } from "@/lib/utils"
 
 const HUMAN_REVIEW_HINT =
-  "Dieser Entwurf wurde durch KI-Agenten und deterministische Prüfungen " +
+  "Dieser Demo-Entwurf wurde durch einen Demo-Generator und deterministische Prüfungen " +
   "vorbereitet. Er ist nicht automatisch einreichungsbereit und benötigt Human Review."
 const COPY_WARNING = "Copy-Paste ist Arbeitsentwurf, keine finale Freigabe."
 const QUALITY_HINT = "Qualitätsbewertung durch Reviewer ausstehend."
@@ -67,6 +67,7 @@ function FieldCard({
 }: Readonly<{ field: FieldDraftItemDto; pkg: DraftPackageDto }>) {
   const [copied, setCopied] = React.useState(false)
   const hint = researchHint(pkg, field.field_id)
+  const hasModelCall = field.generation_kind === "model_generated"
 
   async function copyField() {
     if (!field.suggestion_text) return
@@ -85,7 +86,7 @@ function FieldCard({
         <CardTitle className="flex flex-wrap items-center gap-2 text-base">
           {fieldLabel(field)}
           <Badge className={cn(FIELD_DRAFT_STATUS_STYLE[field.status])}>
-            {FIELD_DRAFT_STATUS_LABELS[field.status]}
+            {fieldDraftStatusLabel(field)}
           </Badge>
           {field.human_review_required && (
             <Badge variant="outline">Prüfung nötig</Badge>
@@ -142,16 +143,21 @@ function FieldCard({
                   <code className="rounded bg-muted px-1.5 py-0.5">{field.field_id}</code>
                 </dd>
                 <dt className="text-muted-foreground">Provider</dt>
-                <dd>{field.provider ?? "—"}</dd>
+                <dd>
+                  {field.generation_kind === "fake_demo"
+                    ? "Demo-Generator – kein Modellaufruf"
+                    : (hasModelCall ? field.provider : null) ?? "Kein Modellaufruf"}
+                </dd>
                 <dt className="text-muted-foreground">Modell</dt>
-                <dd>{field.model ?? "—"}</dd>
+                <dd>{hasModelCall ? (field.model ?? "—") : "Kein Modellaufruf"}</dd>
                 <dt className="text-muted-foreground">Tokens (in/out/total)</dt>
                 <dd>
-                  {num(field.input_tokens)}/{num(field.output_tokens)}/
-                  {num(field.total_tokens)}
+                  {hasModelCall
+                    ? `${num(field.input_tokens)}/${num(field.output_tokens)}/${num(field.total_tokens)}`
+                    : "—"}
                 </dd>
                 <dt className="text-muted-foreground">Latenz (ms)</dt>
-                <dd>{num(field.latency_ms)}</dd>
+                <dd>{hasModelCall ? num(field.latency_ms) : "—"}</dd>
                 <dt className="text-muted-foreground">Kostenstatus</dt>
                 <dd>{costStatusLabel(field.cost_status)}</dd>
               </dl>
@@ -200,7 +206,7 @@ export function DraftPackageView() {
   return (
     <section className="flex flex-col gap-6" data-testid="draft-package-view">
       <div>
-        <h1 className="text-xl font-semibold">KI-gestützter Antragsentwurf</h1>
+        <h1 className="text-xl font-semibold">Demo-Antragsentwurf</h1>
         <p className="mt-1 max-w-3xl text-sm text-muted-foreground">{HUMAN_REVIEW_HINT}</p>
       </div>
 
@@ -250,7 +256,7 @@ export function DraftPackageView() {
             data-testid="draft-summary"
           >
             <SummaryCard label="Felder gesamt" value={String(summary.total)} />
-            <SummaryCard label="KI-Vorschlag erstellt" value={String(summary.generated)} />
+            <SummaryCard label="Demo-Vorschlag erstellt" value={String(summary.generated)} />
             <SummaryCard
               label="Automatisch übernommen"
               value={String(summary.deterministic)}

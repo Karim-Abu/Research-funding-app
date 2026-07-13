@@ -192,6 +192,56 @@ schemas:
       type: array
       required: false
       items: OpenIssueRecord
+- schema_id: SectionDraftingInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    profile_id:
+      type: string
+      required: true
+    field_profile:
+      type: PortalFieldProfileView
+      required: true
+    target_section:
+      type: string
+      required: true
+    accepted_project_input:
+      type: object
+      required: true
+    external_evidence:
+      type: array
+      required: true
+      items: EvidenceLinkRecord
+    research_candidate_count:
+      type: integer
+      required: false
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+    context_components:
+      type: array
+      required: true
+      items: SectionContextSummary
+    language:
+      type: string
+      required: true
+- schema_id: PortalSectionDraftBundle@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    section_candidate:
+      type: SectionDraftCandidateRecord
+      required: true
+    warnings:
+      type: array
+      required: false
+      items: string
 - schema_id: CriticReviewInput@v1
   version: 1.0.0
   additional_properties: false

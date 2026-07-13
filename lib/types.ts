@@ -106,6 +106,8 @@ export function mostRestrictiveDataClass(classes: DataClass[]): DataClass {
 export interface ServiceAvailability {
   ki: boolean
   web: boolean
+  generationMode?: "unavailable" | "fake_demo" | "real_eval"
+  unavailableReason?: string | null
 }
 
 // Dashboard project cards -----------------------------------------------

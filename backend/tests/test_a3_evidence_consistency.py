@@ -22,6 +22,7 @@ from app.review import package as review_package
 from app.review.recheck import _maybe_run_a3
 from tests.a2_helpers import (
     VC_FIELD_ID,
+    GOOD_TEXT,
     add_verified_anchor,
     build_run_with_draft,
     fake_resolver,
@@ -43,12 +44,15 @@ def db():
 def _sol_run(db, **kw):
     return build_run_with_draft(db, field_id=SOL, character_limit=25000,
                                 field_name="Innovation Solution",
-                                draft_text="4.1 ... 4.2 ... 4.3 ... 4.4 ... 4.5 ...", **kw)
+                                draft_text=GOOD_TEXT, **kw)
 
 
 def _a3_bundle(field_id=SOL, severity="warning", **extra):
+    target_section = "3.2" if field_id == VC_FIELD_ID else "4.2"
     finding = {"origin_profile_id": A3_PROFILE_ID, "severity": severity, "status": "open",
-               "field_id": field_id, "description": "Aussage ohne verknüpften Beleg."}
+               "field_id": field_id, "target_section": target_section,
+               "description": "Aussage ohne verknüpften Beleg.",
+               "recommended_next_action": "Beleg ergänzen oder Aussage markieren."}
     finding.update(extra)
     return {"findings": [finding],
             "profile_summaries": [{"profile_id": A3_PROFILE_ID}], "overall_limitations": []}
@@ -71,7 +75,10 @@ def test_context_scopes_to_drafts_and_confirmed_facts_empty(db):
     run, _d, _b = _sol_run(db)
     ctx = a3_context.assemble_critic_context(db, run)
     assert ctx is not None
-    assert ctx.allowed_field_ids == {SOL}  # only the scoped field with a draft
+    assert ctx.allowed_field_ids == {
+        SOL,
+        "PS.RISK_MANAGEMENT.SECTION",
+    }  # scoped draft plus the advisory risk-register target
     # corr 1: proposed A1 facts are NEVER passed as confirmed.
     assert ctx.payload["confirmed_facts"] == []
     assert ctx.context_hash
@@ -120,6 +127,58 @@ def test_eligible_run_yields_findings(db):
     assert len(out.findings) == 1 and out.findings[0].field_id == SOL
 
 
+@pytest.mark.parametrize(
+    ("target_section", "draft_text", "description", "action"),
+    [
+        (
+            "4.3",
+            GOOD_TEXT.replace("4.3 Ziele: messbar mit Baseline.", "4.3 Ziel: besser werden."),
+            "Textstelle 'Ziel: besser werden': Baseline, Zielwert, Messmethode/Datenquelle und Validierungsmoment fehlen.",
+            "KPI-Kette mit den vier fehlenden Elementen ergänzen; unbekannte Werte als offene Inputs belassen.",
+        ),
+        (
+            "4.1",
+            GOOD_TEXT.replace("4.1 Stand der Technik: bestehende Verfahren.", "4.1 Unsere Lösung ist einzigartig."),
+            "Textstelle 'Unsere Lösung ist einzigartig': konkrete SOTA-Vergleichsbasis und Differenzierungsmerkmal fehlen.",
+            "Vergleichsverfahren und projektspezifisches Differenzierungsmerkmal benennen und belegen.",
+        ),
+        (
+            "4.3",
+            GOOD_TEXT.replace(
+                "4.3 Ziele: messbar mit Baseline.", "4.3 Zielwert 40."
+            ).replace(
+                "4.4 Vorarbeiten: abgeschlossene Vorstudien.",
+                "4.4 Die Vorstudie verwendet Zielwert 60.",
+            ),
+            "Textstelle 'Zielwert 40' widerspricht dem Zielwert 60 in Abschnitt 4.4.",
+            "Bezugsgröße und gültigen Zielwert klären und beide Abschnitte konsistent korrigieren.",
+        ),
+    ],
+)
+def test_a3_returns_concrete_kpi_sota_and_number_findings(
+    db, target_section, draft_text, description, action
+):
+    run, _draft, _base = build_run_with_draft(
+        db, field_id=SOL, character_limit=25000,
+        field_name="Innovation Solution", draft_text=draft_text,
+    )
+    out = _run_a3(
+        db,
+        run,
+        bundle=_a3_bundle(
+            target_section=target_section,
+            description=description,
+            recommended_next_action=action,
+        ),
+    )
+    assert out.status == "succeeded"
+    assert len(out.findings) == 1
+    finding = out.findings[0]
+    assert finding.target_section == target_section
+    assert finding.description == description
+    assert finding.recommended_next_action == action
+
+
 def test_invalid_field_dropped(db):
     run, _d, _b = _sol_run(db)
     out = _run_a3(db, run, bundle=_a3_bundle(field_id="INTRO.APP.ABSTRACT"))
@@ -132,17 +191,18 @@ def test_invalid_evidence_anchor_dropped(db):
     assert out.status == "succeeded" and out.findings == []
 
 
-def test_known_anchor_kept(db):
+def test_exact_anchor_without_support_decision_is_not_external_evidence(db):
     run, _d, _b = _sol_run(db)
-    anchor_id = add_verified_anchor(db, run)
+    anchor_id = add_verified_anchor(db, run, supported=False)
     out = _run_a3(db, run, bundle=_a3_bundle(evidence_anchor_id=anchor_id))
-    assert out.status == "succeeded" and len(out.findings) == 1
+    assert out.status == "succeeded" and out.findings == []
 
 
 def test_approval_finding_rejected_by_schema(db):
     run, _d, _b = _sol_run(db)
     bad = {"findings": [{"origin_profile_id": A3_PROFILE_ID, "severity": "info",
                          "status": "open", "field_id": SOL, "description": "x",
+                         "target_section": "4.2",
                          "approval": "approved"}],
            "profile_summaries": []}
     out = _run_a3(db, run, bundle=bad)
@@ -159,6 +219,7 @@ def _finding(field_id=SOL, severity="warning", description="Aussage ohne verknü
     return critic_review.A3Finding(
         origin_profile_id=A3_PROFILE_ID, severity=severity, status="open",
         description=description, field_id=field_id,
+        target_section="3.2" if field_id == VC_FIELD_ID else "4.2",
     )
 
 
@@ -199,12 +260,14 @@ def test_deterministic_findings_separate(db):
     assert len(_agent_findings(db, run)) == 1
 
 
-def test_blocker_blocks_approval_info_does_not(db):
+def test_agent_blocker_label_is_downgraded_and_never_blocks_approval(db):
     run, _d, _b = _sol_run(db)
     _apply(db, run, _finding(severity="info", description="info claim"))
     assert review_package.has_open_blocker(db, run) is False
     _apply(db, run, _finding(severity="blocker", description="blocker claim"))
-    assert review_package.has_open_blocker(db, run) is True
+    assert review_package.has_open_blocker(db, run) is False
+    blocker_row = next(f for f in _agent_findings(db, run) if f.description == "blocker claim")
+    assert blocker_row.severity == "warning" and blocker_row.advisory is True
 
 
 def test_resolved_agent_finding_not_reopened_when_unseen(db):
@@ -231,15 +294,14 @@ def test_maybe_run_a3_cloud_persists(db, monkeypatch):
     assert len(_agent_findings(db, run)) == 1  # built-in fake warning
 
 
-def test_recheck_clears_required_even_with_blocker(db):
-    # corr 3: a successful recheck clears recheck_required even if A3 blocks approval.
+def test_recheck_clears_required_with_advisory_agent_warning(db):
+    # A successful recheck clears recheck_required; A3 remains advisory.
     run, _d, _b = _sol_run(db)
     run.recheck_required = True
     _apply(db, run, _finding(severity="blocker"))
     pkg = review_package.refresh_package(db, run, clear_recheck=True)
     assert run.recheck_required is False
-    assert pkg.approval_status == "blocked"  # blocker present
-    assert pkg.blocker_count >= 1
+    assert pkg.blocker_count == 0
 
 
 def test_failed_a3_preserves_prior_findings(db, monkeypatch):

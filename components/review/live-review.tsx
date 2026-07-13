@@ -320,7 +320,7 @@ export function LiveReview({ runId }: { runId: string }) {
         </>
       )}
 
-      {/* KI-gestützte Hinweise (A3 evidence-consistency, advisory) */}
+      {/* Fachliche A3-Prüfhinweise (advisory). */}
       {aiFinds.length > 0 && (
         <section className="flex flex-col gap-3" data-testid="ai-findings">
           <div className="flex flex-col gap-0.5">

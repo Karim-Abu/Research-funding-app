@@ -212,7 +212,10 @@ def test_run_llm_case_with_fake_adapter_meters_schema_failure(db, monkeypatch):
     assert r["llm_calls"] == 1  # no_retry_registry: kein 2. Versuch
     assert r["usage_record_count"] == 1
     assert r["total_tokens"] == 30  # FakeProvider-Default 10/20
-    assert r["cost_status_counts"] == {"not_applicable": 1}
+    # The injected network-free double is classified as the selected direct
+    # evaluation route.  It therefore exercises real-call metering semantics;
+    # the test price table intentionally has no entry for this model.
+    assert r["cost_status_counts"] == {"unknown_price": 1}
     assert r["data_mode"] == "synthetic_eval"
     assert result["artifact"]["llm_output"] is None
 

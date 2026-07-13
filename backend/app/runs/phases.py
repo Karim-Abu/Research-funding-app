@@ -161,17 +161,32 @@ def technical_summary(db: Session, run: AnalysisRun) -> dict:
                 "priced_cost_chf": 0.0,
                 "has_unpriced_usage": False,
                 "latency_ms_total": 0,
+                "generation_kinds": [],
+                "model_calls": 0,
+                "prompt_versions": [],
             },
         )
         entry["invocations"] += 1
-        if inv.provider and inv.provider not in entry["providers"]:
+        meta = dict(inv.context_meta or {})
+        generation_kind = meta.get("generation_kind")
+        if generation_kind and generation_kind not in entry["generation_kinds"]:
+            entry["generation_kinds"].append(generation_kind)
+        real_call = bool(meta.get("model_call_attempted"))
+        if real_call:
+            entry["model_calls"] += 1
+        if real_call and inv.provider and inv.provider not in entry["providers"]:
             entry["providers"].append(inv.provider)
-        if inv.model_id and inv.model_id not in entry["models"]:
+        if real_call and inv.model_id and inv.model_id not in entry["models"]:
             entry["models"].append(inv.model_id)
+        if (
+            real_call and inv.prompt_version
+            and inv.prompt_version not in entry["prompt_versions"]
+        ):
+            entry["prompt_versions"].append(inv.prompt_version)
         if inv.latency_ms:
             entry["latency_ms_total"] += inv.latency_ms
         usage = usage_by_id.get(inv.usage_record_id)
-        if usage is not None:
+        if usage is not None and real_call:
             entry["input_tokens"] += usage.input_tokens
             entry["output_tokens"] += usage.output_tokens
             if usage.cost_status == "priced":
@@ -192,4 +207,5 @@ def technical_summary(db: Session, run: AnalysisRun) -> dict:
         ),
         "has_unpriced_usage": any(a["has_unpriced_usage"] for a in agents.values()),
         "same_provider_a2_a3": same_provider,
+        "model_called": any(a["model_calls"] > 0 for a in agents.values()),
     }

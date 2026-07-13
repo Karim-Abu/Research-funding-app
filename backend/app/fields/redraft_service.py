@@ -36,6 +36,7 @@ def prepare_redraft(
     *,
     base_version_id: str,
     guidance: str | None,
+    target_section: str | None,
     actor_user_id: str,
     idempotency_key: str | None,
     correlation_id: str | None,
@@ -71,7 +72,8 @@ def prepare_redraft(
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=actor_user_id,
         action="redraft.requested", target_type="portal_field_draft",
-        target_id=draft.draft_id, detail={"field_id": draft.field_id},
+        target_id=draft.draft_id,
+        detail={"field_id": draft.field_id, "target_section": target_section},
     )
     return operation, accepted, guidance
 
@@ -85,6 +87,7 @@ def execute_a2_operation(
     base_version_id: str,
     field_id: str,
     guidance: str | None = None,
+    target_section: str | None = None,
 ):
     """Gemeinsamer A2-Kern für Redraft-Executor UND Run-Graph: Operation
     running → A2 → succeeded/failed inkl. result/error-Bookkeeping. Jede
@@ -99,6 +102,7 @@ def execute_a2_operation(
     outcome = field_drafting.run_a2_field_drafting(
         db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
         operation_id=operation_id, guidance=guidance,
+        target_section=target_section,
     )
 
     op = db.get(AsyncOperation, operation_id)
@@ -131,7 +135,7 @@ def execute_a2_operation(
 
 def redraft_executor(
     operation_id: str, run_id: str, draft_id: str, base_version_id: str,
-    guidance: str | None, field_id: str,
+    guidance: str | None, field_id: str, target_section: str | None = None,
 ) -> None:
     """Background task: run A2 and store the suggestion in operation.result."""
     db = SessionLocal()
@@ -143,6 +147,7 @@ def redraft_executor(
         execute_a2_operation(
             db, operation=op, run=run, draft_id=draft_id,
             base_version_id=base_version_id, field_id=field_id, guidance=guidance,
+            target_section=target_section,
         )
     except Exception:  # noqa: BLE001
         logger.exception("redraft execution failed")

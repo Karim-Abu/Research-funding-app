@@ -12,3 +12,7 @@ class Capabilities(BaseModel):
     max_upload_bytes: int | None = Field(default=None, ge=1)
     supported_source_types: list[Literal["pdf", "docx", "txt", "url"]]
     features: dict[str, bool]
+    # Deployment-level capability only; project/source policy remains
+    # authoritative at run creation and before every gateway call.
+    generation_mode: Literal["unavailable", "fake_demo", "real_eval"] = "unavailable"
+    generation_unavailable_reason: str | None = None

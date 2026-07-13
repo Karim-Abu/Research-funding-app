@@ -11,7 +11,7 @@ import type { ReviewPackageDto } from "./review"
 // Readable origin of a draft version — the raw created_by enum never reaches
 // the UI.
 export const CREATED_BY_LABELS: Record<CreatedBy, string> = {
-  agent: "KI-Vorschlag (übernommen)",
+  agent: "Vorschlag (Herkunft nicht verifiziert)",
   user: "Manuell bearbeitet",
   template: "Strukturvorlage",
   carried_over: "Übernommen aus vorherigem Durchlauf",

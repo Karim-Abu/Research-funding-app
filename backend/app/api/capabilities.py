@@ -51,10 +51,24 @@ def get_capabilities(
         # per copy. False → the UI skips the call (endpoint stays active).
         "copy_events": settings.copy_events_enabled,
     }
+    real_eval_available = (
+        settings.ai_eval_mode == "real"
+        and bool(settings.openai_api_key or settings.anthropic_api_key)
+    )
+    generation_mode = (
+        "real_eval" if real_eval_available
+        else "fake_demo" if settings.agent_fake_provider
+        else "unavailable"
+    )
     return Capabilities(
         api_version=settings.api_version,
         polling_interval_seconds=settings.polling_interval_seconds,
         max_upload_bytes=settings.max_upload_bytes,
         supported_source_types=settings.supported_source_types,
         features=features,
+        generation_mode=generation_mode,
+        generation_unavailable_reason=(
+            None if generation_mode != "unavailable"
+            else "no_approved_model_provider"
+        ),
     )

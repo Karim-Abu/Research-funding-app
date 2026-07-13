@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "7a9c2e4f6b81"  # strukturierte, HITL-bestätigte Importkandidaten.
+_HEAD = "8c1e3f5a7b92"  # ehrliche Generierungssemantik + Abschnittsvorschläge.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -121,7 +121,7 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 
 
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
-    """Roundtrip der additiven strukturierten Importmigration."""
+    """Roundtrip der additiven Generierungs-/Abschnittsmigration."""
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert "run_phases" in _tables(db)
@@ -145,6 +145,10 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert {"title_en", "start_date", "end_date", "total_requested_funding_including_overhead"} <= _project_columns(db)
     assert "department" in _columns(db, "partners")
     assert "review_comment" in _columns(db, "partners")
+    assert {"generation_kind", "target_section", "section_result_json"} <= _columns(
+        db, "draft_suggestions"
+    )
+    assert "target_section" in _columns(db, "review_findings")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
@@ -184,19 +188,23 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive strukturierte Importtabelle und ihre
-    # neuen Bestandsfelder. Die narrative Importrevision bleibt erhalten.
+    # Down one entfernt nur die additiven A2/A3-Spalten. Die vorherige
+    # strukturierte Importmigration und alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
     assert "run_phases" in _tables(db)
     assert {"mapping_version", "mapping_status", "section_metadata"} <= _columns(
         db, "import_candidates"
     )
-    assert "structured_import_candidates" not in _tables(db)
-    assert not {
+    assert "structured_import_candidates" in _tables(db)
+    assert {
         "title_en", "start_date", "end_date",
         "total_requested_funding_including_overhead",
-    }.intersection(_project_columns(db))
-    assert "department" not in _columns(db, "partners")
+    } <= _project_columns(db)
+    assert "department" in _columns(db, "partners")
+    assert not {"generation_kind", "target_section", "section_result_json"}.intersection(
+        _columns(db, "draft_suggestions")
+    )
+    assert "target_section" not in _columns(db, "review_findings")
     assert "review_comment" in _columns(db, "partners")
     assert "edited_text" in _columns(db, "import_candidates")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
@@ -274,4 +282,8 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     } <= _project_columns(db)
     assert "structured_import_candidates" in _tables(db)
     assert "department" in _columns(db, "partners")
+    assert {"generation_kind", "target_section", "section_result_json"} <= _columns(
+        db, "draft_suggestions"
+    )
+    assert "target_section" in _columns(db, "review_findings")
     assert {"draft_claims", "claim_lineages", "run_quality_summaries"} <= _tables(db)

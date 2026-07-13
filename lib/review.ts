@@ -43,10 +43,12 @@ export interface ReviewFindingDto {
   finding_id: string
   profile_id: string
   field_id?: string | null
+  target_section?: string | null
   requirement_id?: string | null
   severity: FindingSeverity
   description: string
   suggested_improvement?: string | null
+  recommended_next_action?: string | null
   status: FindingStatus
   advisory: boolean
 }

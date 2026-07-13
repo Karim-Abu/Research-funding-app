@@ -19,6 +19,7 @@ function field(
     field_id: id,
     field_label: label,
     status,
+    generation_kind: status === "generated" ? "fake_demo" : null,
     suggestion_text: status === "failed" ? null : `Entwurfstext für ${label}.`,
     missing_inputs:
       status === "missing_inputs" ? [{ label: "Englischer Antragstitel" }] : [],
@@ -89,7 +90,7 @@ async function generate() {
 describe("DraftPackageView", () => {
   it("shows header, human-review hint and the generate action", () => {
     render(<DraftPackageView />)
-    expect(screen.getByText("KI-gestützter Antragsentwurf")).toBeInTheDocument()
+    expect(screen.getByText("Demo-Antragsentwurf")).toBeInTheDocument()
     expect(
       screen.getByText(/nicht automatisch einreichungsbereit und benötigt Human Review/)
     ).toBeInTheDocument()
@@ -105,8 +106,7 @@ describe("DraftPackageView", () => {
     expect(summary).toHaveTextContent("Felder gesamt")
     expect(summary).toHaveTextContent("8")
     expect(summary).toHaveTextContent("Tokens gesamt")
-    expect(summary).toHaveTextContent("180")
-    expect(summary).toHaveTextContent("Ohne Kosten (Demo)")
+    expect(summary).toHaveTextContent("Demo-Vorschlag erstellt")
     expect(summary).toHaveTextContent("Fake/Demo")
     expect(
       screen.getByText("Qualitätsbewertung durch Reviewer ausstehend.")
@@ -123,7 +123,7 @@ describe("DraftPackageView", () => {
     mockDemoPost()
     await generate()
     const abstract = screen.getByTestId("draft-field-INTRO.APP.ABSTRACT")
-    expect(abstract).toHaveTextContent("KI-Vorschlag erstellt")
+    expect(abstract).toHaveTextContent("Demo-Vorschlag (kein echtes KI-Modell) erstellt")
     expect(abstract).toHaveTextContent("Entwurfstext für Abstract.")
     expect(abstract).toHaveTextContent("Prüfung nötig")
     const nameEn = screen.getByTestId("draft-field-INTRO.APP.NAME_EN")
@@ -149,8 +149,11 @@ describe("DraftPackageView", () => {
     const abstract = screen.getByTestId("draft-field-INTRO.APP.ABSTRACT")
     expect(abstract).not.toHaveTextContent("fake-model")
     fireEvent.click(within(abstract).getByText("Technische Details"))
-    await waitFor(() => expect(abstract).toHaveTextContent("fake-model"))
-    expect(abstract).toHaveTextContent("10/20/30")
+    await waitFor(() =>
+      expect(abstract).toHaveTextContent("Demo-Generator – kein Modellaufruf")
+    )
+    expect(abstract).not.toHaveTextContent("fake-model")
+    expect(abstract).not.toHaveTextContent("10/20/30")
     expect(abstract).toHaveTextContent("INTRO.APP.ABSTRACT")
   })
 

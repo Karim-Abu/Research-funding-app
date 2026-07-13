@@ -15,6 +15,7 @@ function aiProposal() {
     profile_id: "A2.solution_innovation",
     prompt_version: "a2_solution_innovation_v1",
     context_hash: "hash-1",
+    generation_kind: "model_generated",
     model_ref: "anthropic_direct:claude-sonnet-4-6",
     created_at: "2026-07-08T00:00:00+00:00",
     data_mode: "fake_test",
@@ -40,6 +41,8 @@ function suggestionResult() {
     character_count: 33,
     character_limit: 25000,
     warnings: [],
+    generation_kind: "model_generated",
+    proposal: aiProposal(),
     ai_proposal: aiProposal(),
   }
 }

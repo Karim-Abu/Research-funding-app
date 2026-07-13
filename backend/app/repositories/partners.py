@@ -135,10 +135,10 @@ def to_contract(partner: Partner) -> PartnerSchema:
     )
 
 
-def snapshot_dict(partner: Partner) -> dict:
+def snapshot_dict(partner: Partner, *, schema_version: str = "run-project-v2") -> dict:
     """Deterministic structured copy for the immutable run snapshot (no PII text
     beyond the structured fields the rules consume)."""
-    return {
+    base = {
         "partner_id": partner.partner_id,
         "partner_type": partner.partner_type,
         "country": partner.country,
@@ -149,3 +149,15 @@ def snapshot_dict(partner: Partner) -> dict:
         "personnel_independence_status": partner.personnel_independence_status,
         "financial_independence_status": partner.financial_independence_status,
     }
+    if schema_version == "run-project-v2":
+        # Organisation data needed for section 4.6. Contact/representative PII is
+        # deliberately excluded from the model-facing immutable snapshot.
+        base.update({
+            "name": partner.name,
+            "project_role": partner.project_role,
+            "department": partner.department,
+            "contribution": partner.contribution,
+            "industry": partner.industry,
+            "fte": partner.fte,
+        })
+    return base

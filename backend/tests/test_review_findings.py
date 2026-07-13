@@ -38,6 +38,7 @@ def test_template_placeholders_are_blocker_findings(client):
     assert set(placeholder_findings[0]) == {
         "finding_id", "profile_id", "field_id", "requirement_id", "severity",
         "description", "suggested_improvement", "status", "advisory",
+        "target_section", "recommended_next_action",
     }
 
 

@@ -4,6 +4,7 @@
 // R5.9-REAL artifacts — never triggers a new provider call).
 
 import { getCsrfToken } from "./session"
+import type { GenerationKind } from "./generation-kind"
 
 export type FieldDraftStatus =
   | "generated"
@@ -23,6 +24,7 @@ export interface FieldDraftItemDto {
   field_label: string
   status: FieldDraftStatus
   suggestion_text: string | null
+  generation_kind: GenerationKind | null
   missing_inputs: MissingInputDto[]
   provider: string | null
   model: string | null

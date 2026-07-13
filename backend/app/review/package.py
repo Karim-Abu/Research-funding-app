@@ -46,7 +46,8 @@ def _agent_finding_code(profile_id: str, finding) -> str:
     description (Milestone 9G, STEP 7)."""
     normalized = " ".join((finding.description or "").lower().split())
     parts = [
-        profile_id, finding.field_id or "", finding.requirement_id or "",
+        profile_id, finding.field_id or "", finding.target_section or "",
+        finding.requirement_id or "",
         finding.evidence_anchor_id or "", finding.evidence_link_id or "", normalized,
     ]
     digest = hashlib.sha256(" ".join(parts).encode("utf-8")).hexdigest()[:16]
@@ -73,14 +74,18 @@ def apply_agent_findings(db: Session, run: AnalysisRun, findings, *, profile_id:
     for finding in findings:
         code = _agent_finding_code(profile_id, finding)
         seen.add(code)
-        advisory = finding.severity != "blocker"
+        # A3 is advisory by product contract. A model-provided blocker label is
+        # downgraded at the persistence boundary and can never gate approval.
+        severity = "warning" if finding.severity == "blocker" else finding.severity
+        advisory = True
         row = existing.get(code)
         if row is None:
             row = ReviewFinding(
                 finding_id=str(uuid.uuid4()), run_id=run.run_id,
                 workspace_id=run.workspace_id, profile_id=profile_id,
                 field_id=finding.field_id, requirement_id=finding.requirement_id,
-                severity=finding.severity, description=finding.description,
+                target_section=finding.target_section,
+                severity=severity, description=finding.description,
                 suggested_improvement=finding.suggested_improvement,
                 status="open", advisory=advisory, source=AGENT, finding_code=code,
                 target_type="portal_field_draft" if finding.field_id else "requirement_assessment",
@@ -92,13 +97,14 @@ def apply_agent_findings(db: Session, run: AnalysisRun, findings, *, profile_id:
                 db, workspace_id=run.workspace_id, actor_user_id=None,
                 action="review.agent_finding_created", target_type="review_finding",
                 target_id=row.finding_id,
-                detail={"profile_id": profile_id, "severity": finding.severity},
+                detail={"profile_id": profile_id, "severity": severity},
             )
         else:
-            row.severity = finding.severity
+            row.severity = severity
             row.description = finding.description
             row.suggested_improvement = finding.suggested_improvement
             row.field_id = finding.field_id
+            row.target_section = finding.target_section
             row.requirement_id = finding.requirement_id
             row.recommended_next_action = finding.recommended_next_action
             row.advisory = advisory
@@ -326,7 +332,7 @@ def has_open_blocker(db: Session, run: AnalysisRun) -> bool:
         return True
     # M9K reliability findings never block via the generic path — they are scope-bound.
     if any(
-        f.severity == "blocker" and f.profile_id != RELIABILITY
+        f.severity == "blocker" and not f.advisory and f.profile_id != RELIABILITY
         for f in _open_findings(db, run)
     ):
         return True
@@ -351,7 +357,8 @@ def counts(db: Session, run: AnalysisRun) -> tuple[int, int, int]:
     count only when scope-bound-current (not via the generic severity sum)."""
     open_findings = _open_findings(db, run)
     blocker = sum(
-        1 for f in open_findings if f.severity == "blocker" and f.profile_id != RELIABILITY
+        1 for f in open_findings
+        if f.severity == "blocker" and not f.advisory and f.profile_id != RELIABILITY
     )
     if _reliability_blocks(db, run):
         from app.reliability import approval as reliability_approval

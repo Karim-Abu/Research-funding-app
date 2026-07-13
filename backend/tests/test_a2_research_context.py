@@ -17,7 +17,7 @@ from app.agents.field_drafting_context import (
     assemble_a2_context,
     retrieve_advisory_research_context,
 )
-from app.agents.proposal import AIProposal
+from app.agents.proposal import DraftProposal
 from app.db.models import AgentInvocation, DraftSuggestion
 from app.db.session import SessionLocal
 from tests.a2_helpers import (
@@ -31,8 +31,8 @@ from tests.a2_helpers import (
     add_research_candidate,
     add_verified_anchor,
     build_run_with_draft,
-    bundle,
     fake_resolver,
+    section_bundle,
     success_fake,
 )
 
@@ -53,7 +53,7 @@ def db():
 def _vc_draft(db, **kw):
     return build_run_with_draft(
         db, field_id=VC_FIELD_ID, character_limit=15000, field_name="Value Creation",
-        draft_text="3.1 ... 3.2 ...", **kw,
+        draft_text=VC_GOOD_TEXT, **kw,
     )
 
 
@@ -62,20 +62,26 @@ def _sol_draft(db, **kw):
 
 
 def _run(db, run, draft, base, field_id, provider, op="op-rc"):
+    target_section = "3.2" if field_id == VC_FIELD_ID else "4.2"
     return field_drafting.run_a2_field_drafting(
         db, run, field_id=field_id, draft_id=draft.draft_id, base_version_id=base,
-        operation_id=op, provider_resolver=fake_resolver(provider),
+        operation_id=op, target_section=target_section,
+        provider_resolver=fake_resolver(provider),
     )
 
 
 def _vc_bundle(**kw):
-    kw.setdefault("suggested_text", VC_GOOD_TEXT)
-    return bundle(field_id=VC_FIELD_ID, **kw)
+    kw.setdefault("suggested_text", "3.2 Geschäftsmodell und Markt: Zielkunden [offen].")
+    return section_bundle(
+        field_id=VC_FIELD_ID, target_section="3.2", **kw
+    )
 
 
 def _sol_bundle(**kw):
-    kw.setdefault("suggested_text", SOL_GOOD_TEXT)
-    return bundle(field_id=SOL_FIELD_ID, **kw)
+    kw.setdefault("suggested_text", "4.2 Neuheit: klare Abgrenzung [offen].")
+    return section_bundle(
+        field_id=SOL_FIELD_ID, target_section="4.2", **kw
+    )
 
 
 # --- R8: nur akzeptierte (importierte) Quellen werden Kontext -----------------
@@ -91,7 +97,7 @@ def test_candidates_never_enter_context_until_imported(db):
     assert retrieve_advisory_research_context(db, run, SOL_PROFILE) == {}
     ctx = assemble_a2_context(db, run, field_id=VC_FIELD_ID, profile_id=VC_PROFILE)
     assert "Marktkandidat Alpha" not in ctx.context_text
-    assert "RESEARCH CONTEXT" not in ctx.context_text
+    assert "Marktkandidat Alpha" not in ctx.context_text
 
 
 def test_imported_source_enters_context_candidates_and_discarded_never(db):
@@ -120,7 +126,7 @@ def test_non_vc_sol_field_gets_no_research_block(db):
     assert retrieve_advisory_research_context(db, run, "A2.introduction_public_summary") == {}
     ctx = assemble_a2_context(db, run, field_id="INTRO.APP.ABSTRACT",
                               profile_id="A2.introduction_public_summary")
-    assert "RESEARCH CONTEXT" not in ctx.context_text
+    assert "[research_candidate]" in ctx.context_text
     assert ctx.research_context == {}
 
 
@@ -129,8 +135,8 @@ def test_vc_context_includes_imported_source_and_marks_advisory(db):
     add_imported_public_source(db, run, name="Marktbericht öffentlich",
                                text="Markt und Wettbewerber wachsen; Umsatz ca. 12 Mio.")
     ctx = assemble_a2_context(db, run, field_id=VC_FIELD_ID, profile_id=VC_PROFILE)
-    assert "RESEARCH CONTEXT" in ctx.context_text
-    assert "NOT evidence" in ctx.context_text
+    assert "[research_candidate]" in ctx.context_text
+    assert "Marktbericht öffentlich" in ctx.context_text
     assert ctx.meta["research_context_count"] >= 1
 
 
@@ -163,7 +169,8 @@ def test_vc_imported_source_number_is_not_an_anchor(db):
     # A clean draft that keeps the number only as a placeholder; no anchors cited.
     out = _run(db, run, draft, base, VC_FIELD_ID, success_fake(_vc_bundle()))
     assert out.status == "succeeded"
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
+    assert out.view["ai_proposal"] is None
     assert proposal.used_anchor_ids == []  # the market number never became an anchor
 
 
@@ -175,10 +182,10 @@ def test_vc_missing_market_evidence_becomes_missing_inputs(db):
     # Only a candidate exists (no verified anchor); the draft marks the gap → missing_inputs.
     add_research_candidate(db, run, purpose=MARKET_PURPOSE)
     out = _run(db, run, draft, base, VC_FIELD_ID, success_fake(_vc_bundle(
-        placeholders=[{"label": "Marktgrösse", "reason": "kein Beleg, nur Kandidat"}],
+        missing_inputs=[{"label": "Marktgrösse", "reason": "kein Beleg, nur Kandidat"}],
     )))
     assert out.status == "succeeded"
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
     assert proposal.missing_inputs and proposal.missing_inputs[0].label == "Marktgrösse"
     assert "contains_placeholders" in proposal.safety_notes
 
@@ -188,27 +195,29 @@ def test_sol_missing_solution_evidence_becomes_missing_inputs(db, label):
     run, draft, base = _sol_draft(db)
     add_research_candidate(db, run, purpose=PARTNER_PURPOSE)
     out = _run(db, run, draft, base, SOL_FIELD_ID, success_fake(_sol_bundle(
-        placeholders=[{"label": label, "reason": "kein Beleg vorhanden"}],
+        missing_inputs=[{"label": label, "reason": "kein Beleg vorhanden"}],
     )))
     assert out.status == "succeeded"
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
     assert proposal.missing_inputs[0].label == label
 
 
 # --- AIProposal shape + only own profile -------------------------------------
 
 
-def test_vc_ai_proposal_shape_and_allowed_anchor(db):
+def test_vc_demo_proposal_shape_and_allowed_anchor(db):
     run, draft, base = _vc_draft(db)
     add_research_candidate(db, run, purpose=MARKET_PURPOSE)
     anchor_id = add_verified_anchor(db, run)
     out = _run(db, run, draft, base, VC_FIELD_ID,
                success_fake(_vc_bundle(evidence_anchor_ids=[anchor_id])))
     assert out.status == "succeeded"
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
+    assert out.view["ai_proposal"] is None
     assert proposal.human_review_required is True
     assert proposal.used_anchor_ids == [anchor_id]  # only the real verified anchor
-    assert proposal.usage_record_id is not None
+    assert proposal.usage_record_id is None
+    assert proposal.generation_kind == "fake_demo"
     assert proposal.data_mode
     # Only the VC profile was invoked — no SOL, no A3.
     profiles = {i.profile_id for i in db.scalars(

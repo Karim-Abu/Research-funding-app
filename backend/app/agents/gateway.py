@@ -3,8 +3,8 @@
 Backend-only. Enforces profile + model route, Data Policy, CostGuard, source-trust
 / prompt-injection, structured-output validation, AgentInvocation/UsageRecord/
 ControlResult/AuditEvent recording, timeout, one retry per route and profile-
-controlled fallback. Returns a typed ModelResponse or a SafeFailure. A1/A2/A3 are
-not wired into the run graph; mandatory tests inject the fake provider.
+controlled fallback. Returns a typed ModelResponse or a SafeFailure. Tests may
+inject FakeProvider, which is always classified as a demo generator.
 """
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 
-from app.agents import cost_guard, data_policy
+from app.agents import cost_guard, data_policy, generation
 from app.agents.prompt_assets import prompt_version_for
 from app.config import provider_policy
 from app.agents.providers.base import (
@@ -66,6 +66,8 @@ class ModelRequest:
     context_text: str = ""
     context_hash: str | None = None
     context_meta: dict | None = None
+    input_schema_id: str | None = None
+    output_schema_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,9 @@ class ModelResponse:
     model_id: str
     input_tokens: int
     output_tokens: int
+    generation_kind: generation.GenerationKind
+    actual_adapter_name: str
+    prompt_version: str | None
 
 
 @dataclass(frozen=True)
@@ -119,6 +124,36 @@ def _hash(obj: object) -> str:
     return hashlib.sha256(
         json.dumps(obj, sort_keys=True, ensure_ascii=False, default=str).encode("utf-8")
     ).hexdigest()
+
+
+_SAFE_META_STRING_KEYS = {
+    "actual_adapter", "generation_kind", "kind", "language", "target_section",
+}
+_SAFE_META_NUMBER_TOKENS = ("count", "chars", "budget", "max", "latency")
+
+
+def _safe_context_meta(meta: dict | None) -> dict:
+    """Whitelist IDs, hashes and safe structural counts for persistence."""
+    safe: dict = {}
+    for raw_key, value in (meta or {}).items():
+        key = str(raw_key)
+        if isinstance(value, bool):
+            safe[key] = value
+        elif isinstance(value, (int, float)) and any(
+            token in key for token in _SAFE_META_NUMBER_TOKENS
+        ):
+            safe[key] = value
+        elif isinstance(value, str) and (
+            key in _SAFE_META_STRING_KEYS
+            or key.endswith("_id")
+            or key.endswith("_hash")
+        ):
+            safe[key] = value
+        elif key == "components" and isinstance(value, list):
+            safe[key] = [
+                _safe_context_meta(item) for item in value if isinstance(item, dict)
+            ]
+    return safe
 
 
 def default_provider_resolver(route: ModelRoute) -> ProviderAdapter | None:
@@ -171,7 +206,7 @@ def _composite_input_hash(profile, request: ModelRequest) -> str:
         {
             "profile_id": profile.profile_id,
             "prompt_version": request.prompt_version or prompt_version_for(profile.profile_id),
-            "schema_id": profile.output_schema,
+            "schema_id": request.output_schema_id or profile.output_schema,
             "model_route": profile.primary_model,
             "input_payload_hash": _hash(request.input_payload),
             "selected_fragment_ids": sorted(request.allowed_fragment_ids),
@@ -193,11 +228,18 @@ def _finalize(db, inv: AgentInvocation, status: str) -> None:
     inv.finished_at = _now()
     if inv.started_at:
         inv.latency_ms = int((inv.finished_at - inv.started_at).total_seconds() * 1000)
+    meta = dict(inv.context_meta or {})
+    detail = {
+        "profile_id": inv.profile_id,
+        "generation_kind": meta.get("generation_kind"),
+        "model_call_attempted": bool(meta.get("model_call_attempted")),
+    }
+    if meta.get("model_call_attempted"):
+        detail["provider"] = inv.provider
     audit.record(
         db, workspace_id=inv.workspace_id, actor_user_id=None,
         action=f"agent.invocation_{status}", target_type="agent_invocation",
-        target_id=inv.invocation_id,
-        detail={"profile_id": inv.profile_id, "provider": inv.provider},
+        target_id=inv.invocation_id, detail=detail,
     )
     db.flush()
 
@@ -212,7 +254,7 @@ def _safe(db, inv, status, error_code, reason) -> SafeFailure:
 def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[BaseModel, object]:
     """Run a single route with at most ``retries`` retries on schema failure.
     Provider timeout/error propagate (→ fallback). Returns (validated, usage)."""
-    last: Exception | None = None
+    last_code: str | None = None
     spent = ProviderUsage()
     for _ in range(1 + retries):
         result = adapter.generate(preq)  # ProviderTimeout/Error propagate
@@ -223,17 +265,23 @@ def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[B
         try:
             parsed = json.loads(result.raw_output)
             model = validate_payload(output_schema, parsed)
-        except (json.JSONDecodeError, ValidationError, SchemaNotImplementedError) as exc:
-            last = exc
+        except json.JSONDecodeError:
+            last_code = "provider_output_not_json"
+            continue
+        except ValidationError:
+            last_code = "provider_output_schema_invalid"
+            continue
+        except SchemaNotImplementedError:
+            last_code = "output_schema_not_implemented"
             continue
         if isinstance(model, ProjectFactExtractionResult):
             violations = fact_reference_violations(model, set(allowed_frags))
             if violations:
-                last = _SchemaFailure(f"invalid_evidence_reference:{violations[0]}")
+                last_code = "invalid_evidence_reference"
                 continue
         return model, result.usage
     raise _SchemaFailure(
-        str(last) if last else "schema_validation_failed", usage=spent
+        last_code or "schema_validation_failed", usage=spent
     )
 
 
@@ -260,24 +308,24 @@ def invoke(
         model_route=profile.primary_model,
         provider=primary.provider,
         model_id=primary.model_id,
-        input_schema_id=profile.input_schema,
-        output_schema_id=profile.output_schema,
+        input_schema_id=request.input_schema_id or profile.input_schema,
+        output_schema_id=request.output_schema_id or profile.output_schema,
         prompt_version=request.prompt_version or prompt_version_for(profile.profile_id),
         status="running",
         input_hash=_composite_input_hash(profile, request),
-        context_meta=request.context_meta,
+        context_meta=_safe_context_meta(request.context_meta),
         created_by_system=request.created_by_system,
         started_at=_now(),
     )
     db.add(inv)
     db.flush()
 
-    # 1. Data Policy (before any external call). R4.3: der lokale Fake-Provider
-    # eröffnet den contract-konformen local_only-Pfad (D1/D2 nur mit Opt-in).
-    local_provider = (
-        provider_policy.kind_of_adapter(resolver(primary))
-        == provider_policy.ProviderKind.FAKE_LOCAL
-    )
+    # 1. Data Policy (before any external call). ``local_provider`` remains a
+    # gateway-level test capability; product A2/A3 availability never treats
+    # FakeProvider as a configured local/institutional model.
+    # No approved local/institutional model adapter exists. FakeProvider is a
+    # CI/demo generator and must not satisfy the local-provider policy input.
+    local_provider = False
     decision = data_policy.evaluate(
         profile=profile, classification=request.classification,
         processing_mode=request.processing_mode, settings=settings,
@@ -325,19 +373,40 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         return None, "blocked", p_decision.reason, None
     if not adapter.available():
         return None, "failed", "provider_unavailable", None
+    adapter_name = getattr(adapter, "name", None)
+    generation_kind = generation.for_adapter_name(adapter_name)
+    if generation_kind == generation.MODEL_GENERATED:
+        origin = (request.classification or {}).get("origin")
+        if (
+            origin not in ("synthetic", "anonymized")
+            or get_settings().ai_eval_mode != "real"
+            or not request.run_confirmation
+        ):
+            return None, "blocked", "real_eval_gate_blocked", None
+    # Metadata only: adapter identity + booleans/counts, never prompt/context.
+    # A FakeProvider executes test code but is explicitly not a model call.
+    inv.context_meta = {
+        **_safe_context_meta(inv.context_meta),
+        "actual_adapter": adapter_name,
+        "generation_kind": generation_kind,
+        "model_call_attempted": generation.is_real_model_call(adapter_name),
+    }
+    # Persist before generate() so timeouts/provider failures remain truthful.
+    Session.object_session(inv).flush()
+    output_schema = request.output_schema_id or profile.output_schema
     preq = ProviderRequest(
         model_id=route.model_id, prompt=_assemble_prompt(profile, request),
-        output_schema_id=profile.output_schema,
+        output_schema_id=output_schema,
         timeout_seconds=cost_guard.timeout_seconds(profile),
         max_output_tokens=profile.invocation_limits.get("max_output_tokens"),
         # R5.5b: provider-native structured output (advisory) — pydantic below
         # remains the sole validation authority.
-        output_json_schema=json_schema_for(profile.output_schema),
+        output_json_schema=json_schema_for(output_schema),
     )
     try:
         model_out, usage = _execute(
             adapter, preq, retries=cost_guard.max_retries(profile),
-            output_schema=profile.output_schema,
+            output_schema=output_schema,
             allowed_frags=request.allowed_fragment_ids,
         )
     except ProviderTimeout:
@@ -348,9 +417,9 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         # EVAL.2: 4. Slot trägt hier die konsumierten Tokens (der Provider hat
         # geantwortet) — auf Erfolg trägt er den Adapter-Namen (str).
         return None, "failed", str(exc), _FailedUsage(
-            exc.usage, getattr(adapter, "name", None)
+            exc.usage, adapter_name
         )
-    return model_out, usage, route, getattr(adapter, "name", None)
+    return model_out, usage, route, adapter_name
 
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
@@ -382,6 +451,12 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             continue
         usage, route = second, third
         adapter_name = extra
+        generation_kind = generation.for_adapter_name(adapter_name)
+        if generation_kind is None:
+            _control(db, inv, "CTRL.DATA_POLICY", "blocked", "unknown_adapter_kind")
+            return _safe(
+                db, inv, "blocked", "provider_policy_blocked", "unknown_adapter_kind"
+            )
         if not cost_guard.output_within_limit(profile, usage):
             _control(db, inv, "CTRL.COST_GUARD", "blocked", "max_output_tokens")
             return _safe(db, inv, "blocked", "cost_guard_output_blocked", "max_output_tokens")
@@ -402,7 +477,9 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             invocation_id=inv.invocation_id, profile_id=profile.profile_id,
             status="succeeded", output=model_out, provider=route.provider,
             model_id=route.model_id, input_tokens=usage.input_tokens,
-            output_tokens=usage.output_tokens,
+            output_tokens=usage.output_tokens, generation_kind=generation_kind,
+            actual_adapter_name=adapter_name,
+            prompt_version=inv.prompt_version,
         )
 
     # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.

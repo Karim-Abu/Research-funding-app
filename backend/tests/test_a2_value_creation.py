@@ -27,6 +27,7 @@ from tests.a2_helpers import (
     bundle,
     build_run_with_draft,
     fake_resolver,
+    section_bundle,
     success_fake,
 )
 from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, login, unsafe_headers
@@ -65,20 +66,26 @@ def test_unsupported_field_has_no_config():
 def _vc_draft(db, **kw):
     return build_run_with_draft(
         db, field_id=VC_FIELD_ID, character_limit=15000, field_name="Value Creation",
-        draft_text="3.1 ... 3.2 ...", **kw,
+        draft_text=VC_GOOD_TEXT, **kw,
     )
 
 
 def _run_vc(db, run, draft, base, provider, operation_id="op-vc"):
     return field_drafting.run_a2_field_drafting(
         db, run, field_id=VC_FIELD_ID, draft_id=draft.draft_id, base_version_id=base,
-        operation_id=operation_id, provider_resolver=fake_resolver(provider),
+        operation_id=operation_id, target_section="3.2",
+        provider_resolver=fake_resolver(provider),
     )
 
 
 def _vc_bundle(**kw):
-    kw.setdefault("suggested_text", VC_GOOD_TEXT)
-    return bundle(field_id=VC_FIELD_ID, **kw)
+    kw.setdefault(
+        "suggested_text",
+        "3.2 Geschäftsmodell und Markt: Zielkunden und Differenzierung werden klarer beschrieben [unklar].",
+    )
+    return section_bundle(
+        field_id=VC_FIELD_ID, target_section="3.2", **kw
+    )
 
 
 def test_valid_vc_suggestion_persists(db):
@@ -94,7 +101,7 @@ def test_valid_vc_suggestion_persists(db):
 
 def test_vc_over_limit_rejected(db):
     run, draft, base = _vc_draft(db)
-    too_long = VC_GOOD_TEXT + "\n" + ("x" * 15001)
+    too_long = "3.2 " + ("x" * 15001)
     out = _run_vc(db, run, draft, base, success_fake(_vc_bundle(suggested_text=too_long)))
     assert out.status == "failed" and out.reason == "character_limit_exceeded"
     assert db.scalar(
@@ -104,9 +111,9 @@ def test_vc_over_limit_rejected(db):
 
 def test_vc_missing_mandatory_structure_rejected(db):
     run, draft, base = _vc_draft(db)
-    # Missing 3.2.
+    # A section response must contain exactly the requested heading.
     out = _run_vc(db, run, draft, base, success_fake(_vc_bundle(suggested_text="3.1 nur eine Frage.")))
-    assert out.status == "failed" and out.reason == "mandatory_structure_missing"
+    assert out.status == "failed" and out.reason == "section_candidate_heading_invalid"
 
 
 def test_vc_invented_evidence_anchor_rejected(db):
@@ -174,9 +181,13 @@ def _arm_vc(monkeypatch):
 
 
 def _create_redraft(client, csrf, run_id, field_id, base):
+    target_section = "3.2" if field_id == VC_FIELD_ID else (
+        "4.2" if field_id == SOL_FIELD_ID else None
+    )
     return client.post(
         f"/api/v1/runs/{run_id}/fields/{field_id}/redrafts",
-        json={"base_version_id": base}, headers=unsafe_headers(csrf),
+        json={"base_version_id": base, "target_section": target_section},
+        headers=unsafe_headers(csrf),
     )
 
 
@@ -196,7 +207,8 @@ def test_create_redraft_vc_async_then_result(client, monkeypatch):
 def test_create_redraft_sol_still_works(client, monkeypatch):
     run_id, _draft_id, base = _setup(field_id=SOL_FIELD_ID)
     monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER", fake_resolver(success_fake(bundle())),
+        field_drafting, "_PROVIDER_RESOLVER",
+        fake_resolver(success_fake(section_bundle())),
     )
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, SOL_FIELD_ID, base)

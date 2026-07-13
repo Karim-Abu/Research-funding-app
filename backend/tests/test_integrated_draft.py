@@ -15,7 +15,7 @@ import pytest
 
 from app.agents import a2_fields
 from app.config.settings import get_settings
-from app.db.models import Project, ResearchResult, UsageRecord, Workspace
+from app.db.models import Project, ResearchResult, Workspace
 from app.db.session import SessionLocal
 from app.integrated_draft.package import DraftPackage
 from app.integrated_draft.report import render_report
@@ -166,7 +166,10 @@ def test_six_a2_fields_generate_or_missing_inputs(db, fake_provider):
     for f in a2:
         assert f.status in ("generated", "missing_inputs")
         if f.status == "generated":
-            assert f.ai_proposal is not None and f.ai_proposal["human_review_required"] is True
+            assert f.generation_kind == "fake_demo"
+            assert f.ai_proposal is None
+            assert f.draft_proposal is not None
+            assert f.draft_proposal["human_review_required"] is True
 
 
 def test_name_deterministic_and_name_en_missing(db, fake_provider):
@@ -222,21 +225,20 @@ def test_no_auto_accept_no_copy_ready(db, fake_provider):
 # --- usage -------------------------------------------------------------------
 
 
-def test_usage_linked_and_aggregated(db, fake_provider):
+def test_fake_demo_exposes_no_model_usage_metadata(db, fake_provider):
     project = _base_project(db)
     pkg = _run(db, project)
     generated = [f for f in pkg.fields if f.status == "generated"]
     assert len(generated) == 6
-    total = 0
     for f in generated:
-        assert f.usage_record_id is not None
-        assert db.get(UsageRecord, f.usage_record_id) is not None
-        assert f.total_tokens == (f.input_tokens or 0) + (f.output_tokens or 0)
-        total += f.total_tokens
-    assert pkg.usage_summary["total_tokens"] == total
-    assert pkg.usage_summary["usage_record_count"] == 6
-    # Fake provider ⇒ not_applicable, no price values.
-    assert set(pkg.usage_summary["cost_status_counts"]) <= {"not_applicable"}
+        assert f.generation_kind == "fake_demo"
+        assert f.ai_proposal is None
+        assert f.provider is None and f.model is None
+        assert f.usage_record_id is None
+        assert f.input_tokens is None and f.output_tokens is None and f.total_tokens is None
+    assert pkg.usage_summary["total_tokens"] == 0
+    assert pkg.usage_summary["usage_record_count"] == 0
+    assert pkg.usage_summary["cost_status_counts"] == {}
 
 
 # --- research context --------------------------------------------------------
@@ -256,7 +258,7 @@ def test_research_context_used_and_never_evidence(db, fake_provider):
     seeded = set(seeded_ids)
     assert len(seeded) == 2
     for f in pkg.fields:
-        used = (f.ai_proposal or {}).get("used_anchor_ids", [])
+        used = (f.draft_proposal or {}).get("used_anchor_ids", [])
         assert seeded.isdisjoint(used)
 
 

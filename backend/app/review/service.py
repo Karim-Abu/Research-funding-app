@@ -56,10 +56,12 @@ def _finding_to_contract(finding: ReviewFinding) -> ReviewFindingContract:
         finding_id=finding.finding_id,
         profile_id=finding.profile_id,
         field_id=finding.field_id,
+        target_section=finding.target_section,
         requirement_id=finding.requirement_id,
         severity=finding.severity,
         description=finding.description,
         suggested_improvement=finding.suggested_improvement,
+        recommended_next_action=finding.recommended_next_action,
         status=finding.status,
         advisory=finding.advisory,
     )

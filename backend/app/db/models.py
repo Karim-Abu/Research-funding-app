@@ -1093,6 +1093,7 @@ class ReviewFinding(Base):
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     profile_id: Mapped[str] = mapped_column(String, nullable=False)
     field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_section: Mapped[str | None] = mapped_column(String, nullable=True)
     requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Contract enum: blocker | warning | info
     severity: Mapped[str] = mapped_column(String, nullable=False)
@@ -1427,8 +1428,8 @@ class AgentEvidenceProposal(Base):
 
 
 # ---------------------------------------------------------------------------
-# A2 Solution & Innovation draft suggestions (Milestone 9D): advisory AI draft
-# suggestions for SOL.INNOVATION_SOLUTION.EDITOR. Internal only — no public
+# A2 draft suggestions: advisory proposals with explicit generation provenance.
+# Internal only — no public
 # endpoint; surfaced through the async operation result. Immutable except the
 # status/decision fields. Accepting (only) creates a new DraftVersion.
 # ---------------------------------------------------------------------------
@@ -1454,6 +1455,18 @@ class DraftSuggestion(Base):
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
     model_route: Mapped[str | None] = mapped_column(String, nullable=True)
     model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Ehrliche Herkunft der Ausgabe. Nullable nur fuer vor dieser Migration
+    # erzeugte Zeilen, deren tatsaechlicher Adapter historisch nicht sicher
+    # rekonstruiert werden kann. Neue Suggestions setzen den Wert immer.
+    # rule_template | fake_demo | model_generated
+    generation_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Composite-A2 bearbeitet genau einen Registry-Unterabschnitt. Singleton-
+    # Felder bleiben null. Technische ID, nicht als Antragstext zu behandeln.
+    target_section: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Strukturierte, advisory Abschnittsausgabe (Rationale/Fakten/Claims/Luecken).
+    # Der vorgeschlagene Text bleibt zusaetzlich in suggested_text, damit der
+    # bestehende HITL-Annahmepfad kompatibel bleibt.
+    section_result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # proposed | accepted | rejected | expired | failed
     status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
     suggested_text: Mapped[str] = mapped_column(Text, nullable=False)

@@ -4,14 +4,20 @@
 
 import { cleanFieldName } from "./draft-viewmodel"
 import type { DraftPackageDto, FieldDraftItemDto, FieldDraftStatus } from "./integrated-draft"
+import { generationLabel } from "./generation-kind"
 
 export const FIELD_DRAFT_STATUS_LABELS: Record<FieldDraftStatus, string> = {
-  generated: "KI-Vorschlag erstellt",
+  generated: "Vorschlag erstellt",
   deterministic: "Automatisch übernommen",
   missing_inputs: "Angaben fehlen",
   skipped: "Übersprungen",
   unavailable: "Nicht verfügbar",
   failed: "Fehlgeschlagen",
+}
+
+export function fieldDraftStatusLabel(field: FieldDraftItemDto): string {
+  if (field.status !== "generated") return FIELD_DRAFT_STATUS_LABELS[field.status]
+  return `${generationLabel(field.generation_kind)} erstellt`
 }
 
 export const FIELD_DRAFT_STATUS_STYLE: Record<FieldDraftStatus, string> = {

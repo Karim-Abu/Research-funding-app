@@ -23,10 +23,12 @@ class ReviewFinding(BaseModel):
     finding_id: str
     profile_id: str
     field_id: str | None = None
+    target_section: str | None = None
     requirement_id: str | None = None
     severity: FindingSeverity
     description: str
     suggested_improvement: str | None = None
+    recommended_next_action: str | None = None
     status: FindingStatus
     advisory: bool
 

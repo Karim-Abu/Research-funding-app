@@ -268,7 +268,8 @@ export function LocalOnlyBanner() {
     >
       <AlertTriangle className="size-4 shrink-0 text-muted-foreground" />
       <p className="text-xs text-muted-foreground">
-        Nur lokale Verarbeitung: Inhalte verlassen Ihre Umgebung nicht.
+        Für diese Datenklasse ist kein freigegebener KI-Provider konfiguriert.
+        Die Analyse bleibt regelbasiert; Inhalte verlassen Ihre Umgebung nicht.
       </p>
     </div>
   )

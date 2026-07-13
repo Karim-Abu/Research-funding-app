@@ -1,7 +1,7 @@
-"""A2 DraftSuggestion persistence (Milestone 9D, internal — no OpenAPI exposure).
+"""A2 DraftSuggestion persistence (internal — no OpenAPI exposure).
 
-Advisory AI draft suggestions for SOL.INNOVATION_SOLUTION.EDITOR. Immutable except
-the status/decision fields; only an accepted suggestion creates a DraftVersion.
+Advisory proposals with explicit generation provenance. Immutable except the
+status/decision fields; only an accepted suggestion creates a DraftVersion.
 """
 from __future__ import annotations
 
@@ -44,6 +44,9 @@ def create(
     prompt_version: str | None,
     model_route: str | None,
     model_id: str | None,
+    generation_kind: str,
+    target_section: str | None,
+    section_result_json: dict | None,
     suggested_text: str,
     rationale: str | None,
     evidence_anchor_ids: list[str],
@@ -64,6 +67,9 @@ def create(
         prompt_version=prompt_version,
         model_route=model_route,
         model_id=model_id,
+        generation_kind=generation_kind,
+        target_section=target_section,
+        section_result_json=(dict(section_result_json) if section_result_json else None),
         status=PROPOSED,
         suggested_text=suggested_text,
         rationale=rationale,
@@ -85,7 +91,8 @@ def get_by_operation(db: Session, operation_id: str) -> DraftSuggestion | None:
 
 
 def get_proposed_for(
-    db: Session, run_id: str, draft_id: str, base_version_id: str
+    db: Session, run_id: str, draft_id: str, base_version_id: str,
+    target_section: str | None = None,
 ) -> DraftSuggestion | None:
     """For replay/idempotency: a still-proposed suggestion for this exact base."""
     return db.scalar(
@@ -93,7 +100,26 @@ def get_proposed_for(
             DraftSuggestion.run_id == run_id,
             DraftSuggestion.draft_id == draft_id,
             DraftSuggestion.base_version_id == base_version_id,
+            DraftSuggestion.target_section == target_section,
             DraftSuggestion.status == PROPOSED,
+        )
+    )
+
+
+def list_proposed_for(
+    db: Session, run_id: str, draft_id: str, base_version_id: str
+) -> list[DraftSuggestion]:
+    """All field/section suggestions for one exact immutable base version."""
+    return list(
+        db.scalars(
+            select(DraftSuggestion)
+            .where(
+                DraftSuggestion.run_id == run_id,
+                DraftSuggestion.draft_id == draft_id,
+                DraftSuggestion.base_version_id == base_version_id,
+                DraftSuggestion.status == PROPOSED,
+            )
+            .order_by(DraftSuggestion.target_section, DraftSuggestion.created_at)
         )
     )
 

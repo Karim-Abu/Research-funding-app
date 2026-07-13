@@ -36,6 +36,7 @@ import {
   type Role,
   type ServiceAvailability,
 } from "@/lib/types"
+import type { Origin } from "@/lib/data-classification"
 
 interface AnalyseEinstellungenDialogProps {
   open: boolean
@@ -48,6 +49,7 @@ interface AnalyseEinstellungenDialogProps {
   // R8 Query-Freigabe: nur mit Projekt kann der Dialog die geplanten Suchanfragen
   // laden und freigeben lassen (öffentliche Projekte, Web-Toggle an).
   projectId?: string
+  projectOrigin?: Origin
   onStart?: (settings: AnalyseSettings) => void
   onCancel?: () => void
 }
@@ -65,35 +67,39 @@ export function AnalyseEinstellungenDialog({
   role,
   dataClass,
   variant = "full",
-  serviceAvailability = { ki: true, web: true },
+  serviceAvailability = { ki: true, web: true, generationMode: "real_eval" },
   hasActiveRun = false,
   projectId,
+  projectOrigin = "synthetic",
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  // Beta-Policy: public darf validierte externe Dienste nutzen. R4.3 (Owner-
-  // Entscheid 2026-07-08): intern/vertraulich erhalten KI nur über den lokalen
-  // Verarbeitungspfad nach manuellem Opt-in + verstandener Warnung; NDA und
-  // unklassifiziert bleiben vollständig blockiert.
+  // Ein realer Modelllauf ist ausschließlich für explizite synthetische oder
+  // anonymisierte Evaluationsfälle verfügbar. FakeProvider ist ein Demo-Pfad,
+  // kein lokaler/institutioneller Modelladapter.
   const isLocalOnlyClass = !isCloudAllowed(dataClass)
-  const localOptInClass = dataClass === "internal" || dataClass === "confidential"
-
-  const [ki, setKi] = React.useState(!isLocalOnlyClass)
+  const evaluationOrigin = projectOrigin === "synthetic" || projectOrigin === "anonymized"
+  const realEvaluation =
+    serviceAvailability.generationMode === "real_eval" && evaluationOrigin
+  const demoMode =
+    serviceAvailability.generationMode === "fake_demo" && evaluationOrigin
+  const aiAvailable = serviceAvailability.ki && (realEvaluation || demoMode)
+  const [ki, setKi] = React.useState(aiAvailable)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [costLimit, setCostLimit] = React.useState("2.00")
   // Erweiterte Einstellungen (nur lead_admin) — echte, gesendete Limits.
   const [maxLlmCalls, setMaxLlmCalls] = React.useState("25")
   const [maxWebCalls, setMaxWebCalls] = React.useState("5")
-  // KI requires an explicit one-run acknowledgement (cloud: public/synthetic;
-  // lokal: D1/D2 mit Warnung).
+  // Reale Modellaufrufe erfordern eine einmalige Bestätigung pro Run.
   const [cloudConfirmed, setCloudConfirmed] = React.useState(false)
 
   const webDisabled = !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
-  const cloudOptIn = ki && !isLocalOnlyClass
-  const localOptIn = ki && localOptInClass
+  // Der Demo-Pfad nutzt aus Kompatibilitätsgründen denselben Run-Modus, ruft
+  // aber keinen Provider auf. Die Bestätigung benennt das ausdrücklich.
+  const cloudOptIn = ki && (realEvaluation || demoMode)
   // Block the start until the user confirms AI processing for this run.
-  const cloudConfirmationMissing = (cloudOptIn || localOptIn) && !cloudConfirmed
+  const cloudConfirmationMissing = cloudOptIn && !cloudConfirmed
 
   // R8 Query-Freigabe: geplante Suchanfragen laden, sobald die Webrecherche für ein
   // öffentliches Projekt aktiviert wird. Ohne Freigaben wird die Recherche-Phase im
@@ -135,7 +141,7 @@ export function AnalyseEinstellungenDialog({
 
   function handleStart() {
     onStart?.({
-      ki: cloudOptIn || localOptIn,
+      ki: ki && aiAvailable,
       web: effectiveWeb,
       localSourcesOnly: false,
       costLimit: Number.parseFloat(costLimit) || 0,
@@ -144,7 +150,7 @@ export function AnalyseEinstellungenDialog({
       model: "auto",
       maxLlmCalls: Number.parseInt(maxLlmCalls, 10) || 25,
       maxWebCalls: Number.parseInt(maxWebCalls, 10) || 5,
-      cloudConfirmed: (cloudOptIn || localOptIn) && cloudConfirmed,
+      cloudConfirmed: cloudOptIn && cloudConfirmed,
     })
   }
 
@@ -188,12 +194,13 @@ export function AnalyseEinstellungenDialog({
             </div>
 
             {/* Local-only class banner */}
-            {isLocalOnlyClass && (
+            {isLocalOnlyClass && !realEvaluation && !demoMode && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                {localOptInClass
-                  ? "Externe KI- und Webdienste sind für diese Vertraulichkeitsstufe deaktiviert. KI-Unterstützung ist nur über den freigegebenen lokalen Verarbeitungspfad möglich und muss unten bewusst freigegeben werden."
-                  : "Für NDA-geschützte oder gesperrte Inhalte werden keine KI- oder Webdienste verwendet."}
+                <span>
+                  Für diese Datenklasse ist aktuell kein freigegebener KI-Provider
+                  konfiguriert. Die App führt nur regelbasierte Prüfungen aus.
+                </span>
               </div>
             )}
 
@@ -202,76 +209,52 @@ export function AnalyseEinstellungenDialog({
               checked={ki}
               onCheckedChange={setKi}
               available={
-                serviceAvailability.ki && (!isLocalOnlyClass || localOptInClass)
+                aiAvailable
               }
+              generationMode={serviceAvailability.generationMode}
             />
 
             {/* Cloud-KI one-run confirmation (public/synthetic only) */}
             {cloudOptIn && (
               <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
-                <p className="text-muted-foreground">
-                  Cloud-KI kann für diesen Durchlauf bewusst freigegeben werden,
-                  sofern die Daten öffentlich oder synthetisch sind.
-                </p>
-                <p className="text-muted-foreground">
-                  Cloud-KI kann ausgewählte Inhalte an den konfigurierten
-                  KI-Dienst übermitteln. Diese Beta erlaubt Cloud-KI nur für
-                  öffentliche oder synthetische Inhalte. Interne, vertrauliche
-                  oder NDA-Inhalte werden blockiert.
-                </p>
-                <label className="flex items-start gap-2">
-                  <Checkbox
-                    checked={cloudConfirmed}
-                    onCheckedChange={(c) => setCloudConfirmed(c === true)}
-                    className="mt-0.5"
-                    aria-label="Cloud-KI für diesen Durchlauf erlauben"
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium text-foreground">
-                      Cloud-KI für diesen Durchlauf erlauben
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Ich bestätige, dass die ausgewählten Inhalte öffentlich
-                      oder synthetisch sind und für diesen Durchlauf an den
-                      konfigurierten KI-Dienst übermittelt werden dürfen.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {/* R4.3 — lokaler KI-Opt-in für intern/vertraulich: deutliche
-                Warnung + Verstanden-Bestätigung (Owner-Entscheid 2026-07-08) */}
-            {localOptIn && (
-              <div
-                data-testid="local-ai-warning"
-                className="flex flex-col gap-2 rounded-md border border-status-partial/40 bg-status-partial/8 p-3 text-sm"
-              >
                 <p className="font-medium text-foreground">
-                  Warnung: KI-Unterstützung für{" "}
-                  {dataClass === "internal" ? "interne" : "vertrauliche"} Inhalte
+                  {realEvaluation
+                    ? "Evaluationsfall – keine echten vertraulichen Daten"
+                    : "Demo-Vorschlag (kein echtes KI-Modell)"}
                 </p>
                 <p className="text-muted-foreground">
-                  Die Verarbeitung erfolgt ausschliesslich über den freigegebenen
-                  lokalen Verarbeitungspfad — Inhalte werden nicht an externe
-                  KI-Dienste übermittelt. KI-Vorschläge werden nie automatisch
-                  übernommen; prüfen Sie Ergebnisse immer fachlich, bevor Sie sie
-                  verwenden.
+                  {realEvaluation
+                    ? "Ein reales Modell darf nur für diesen ausdrücklich bestätigten synthetischen oder anonymisierten Evaluationsfall aufgerufen werden."
+                    : "Der Demo-Generator erstellt klar gekennzeichnete Testausgaben und ruft keinen KI-Provider auf."}
                 </p>
+                {realEvaluation && (
+                  <p className="text-muted-foreground">
+                    Ausgewählte Inhalte können an den konfigurierten KI-Dienst
+                    übermittelt werden. ProviderPolicy und Datenklassifikation werden
+                    zusätzlich im Backend geprüft.
+                  </p>
+                )}
                 <label className="flex items-start gap-2">
                   <Checkbox
                     checked={cloudConfirmed}
                     onCheckedChange={(c) => setCloudConfirmed(c === true)}
                     className="mt-0.5"
-                    aria-label="KI-Unterstützung für diesen Durchlauf freigeben"
+                    aria-label={
+                      realEvaluation
+                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                        : "Demo-Generator für diesen Durchlauf aktivieren"
+                    }
                   />
                   <span className="flex flex-col gap-0.5">
                     <span className="font-medium text-foreground">
-                      Ich habe die Warnung verstanden
+                      {realEvaluation
+                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                        : "Demo-Generator für diesen Durchlauf aktivieren"}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Ich gebe die KI-Unterstützung über den lokalen
-                      Verarbeitungspfad für diesen Durchlauf bewusst frei.
+                      {realEvaluation
+                        ? "Ich bestätige, dass dieser Fall ausschließlich synthetische, anonymisierte oder öffentliche Inhalte enthält und für diesen Durchlauf an den konfigurierten KI-Dienst übermittelt werden darf."
+                        : "Ich bestätige, dass dieser Demo-Lauf keine reale KI-Leistung darstellt."}
                     </span>
                   </span>
                 </label>

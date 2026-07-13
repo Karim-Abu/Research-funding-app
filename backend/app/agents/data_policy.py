@@ -48,11 +48,9 @@ def evaluate(
     sensitivity = effective_sensitivity(classification)
     nda = bool((classification or {}).get("nda_applies"))
 
-    # R4.3 — lokaler KI-Pfad (Owner-Entscheid 2026-07-08): local_only + lokaler
-    # Provider (Fake, keine externen Calls) ist contract-konform erlaubt
-    # (Matrix: internal/confidential × local_only = allowed), aber verschärft:
-    # D1/D2 nur mit ausdrücklicher Opt-in-Bestätigung; D3/UNKNOWN bleiben
-    # blockiert. Externe Adapter fallen weiter in den Block darunter.
+    # Reserved for a future approved local/institutional model adapter. The
+    # current gateway never sets this flag for FakeProvider. D1/D2 would still
+    # require explicit confirmation; D3/UNKNOWN remain blocked.
     if processing_mode == "local_only" and local_provider:
         data_class = derive_data_class(classification or {})
         if data_class in (DataClass.D3_NDA_BLOCKED, DataClass.UNKNOWN):
@@ -80,6 +78,19 @@ def evaluate(
     # NDA → blocked for external processing.
     if nda:
         return PolicyDecision("blocked", "blocked", "nda_applies")
+
+    # Explicit real-provider evaluation path. This is deliberately narrower
+    # than ProviderPolicy and cannot override it: only synthetic/anonymized
+    # origins, AI_EVAL_MODE=real and a one-run confirmation may pass here.
+    origin = (classification or {}).get("origin")
+    if origin in ("synthetic", "anonymized") and settings.ai_eval_mode == "real":
+        if run_confirmation:
+            return PolicyDecision(
+                "allowed_with_confirmation", "warning", "real_eval_confirmed"
+            )
+        return PolicyDecision(
+            "blocked", "blocked", "real_eval_requires_confirmation"
+        )
 
     # Sensitivity gates (evaluation_beta matrix).
     if sensitivity in profile.data_policy.blocked_sensitivity or sensitivity == "confidential":

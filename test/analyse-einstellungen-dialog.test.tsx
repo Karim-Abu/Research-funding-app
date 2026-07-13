@@ -4,18 +4,30 @@ import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
 import type { AnalyseSettings, DataClass, Role } from "@/lib/types"
+import type { Origin } from "@/lib/data-classification"
 
 function renderDialog(
   dataClass: DataClass,
   onStart = vi.fn(),
-  role: Role = "member"
+  role: Role = "member",
+  options: {
+    generationMode?: "unavailable" | "fake_demo" | "real_eval"
+    projectOrigin?: Origin
+  } = {}
 ) {
+  const generationMode = options.generationMode ?? "real_eval"
   render(
     <AnalyseEinstellungenDialog
       open
       onOpenChange={() => {}}
       role={role}
       dataClass={dataClass}
+      projectOrigin={options.projectOrigin ?? "synthetic"}
+      serviceAvailability={{
+        ki: generationMode !== "unavailable",
+        web: true,
+        generationMode,
+      }}
       onStart={onStart}
     />
   )
@@ -27,13 +39,13 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     const onStart = renderDialog("public")
     // The cloud opt-in is on by default for public; the confirmation is required.
     expect(
-      screen.getByText(/Cloud-KI kann für diesen Durchlauf bewusst freigegeben/)
+      screen.getByText("Evaluationsfall – keine echten vertraulichen Daten")
     ).toBeInTheDocument()
     const start = screen.getByRole("button", { name: "Analyse starten" })
     expect(start).toBeDisabled()
 
     fireEvent.click(
-      screen.getByLabelText("Cloud-KI für diesen Durchlauf erlauben")
+      screen.getByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben")
     )
     expect(start).toBeEnabled()
     fireEvent.click(start)
@@ -46,7 +58,7 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
   it("does not imply data stays local or that the provider never processes it", () => {
     renderDialog("public")
     const dialog = screen.getByText(
-      /Cloud-KI kann ausgewählte Inhalte an den konfigurierten KI-Dienst übermitteln/
+      /Ausgewählte Inhalte können an den konfigurierten KI-Dienst übermittelt werden/
     )
     expect(dialog).toBeInTheDocument()
     expect(screen.queryByText(/bleibt lokal/i)).toBeNull()
@@ -57,15 +69,17 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     expect(screen.queryByText(/openai|gpt|claude/i)).toBeNull()
   })
 
-  // R4.3 (Owner-Entscheid 2026-07-08): intern/vertraulich = KI nur nach
-  // manuellem Opt-in + verstandener Warnung, über den lokalen Pfad.
-  it("confidential: default off — without opt-in the run stays rule-based", () => {
-    const onStart = renderDialog("confidential")
-    // Kein Cloud-Panel; die Warnung erscheint erst nach dem Einschalten.
+  it("confidential real project: no approved provider, run stays rule-based", () => {
+    const onStart = renderDialog("confidential", vi.fn(), "member", {
+      projectOrigin: "real_project",
+    })
     expect(
-      screen.queryByLabelText("Cloud-KI für diesen Durchlauf erlauben")
+      screen.queryByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben")
     ).toBeNull()
     expect(screen.queryByTestId("local-ai-warning")).toBeNull()
+    expect(screen.getByText(
+      "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider konfiguriert. Die App führt nur regelbasierte Prüfungen aus."
+    )).toBeInTheDocument()
     const start = screen.getByRole("button", { name: "Analyse starten" })
     expect(start).toBeEnabled() // ein regelbasierter Lauf braucht keine Freigabe
     fireEvent.click(start)
@@ -75,28 +89,32 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
   })
 
   for (const dc of ["internal", "confidential"] as const) {
-    it(`${dc}: opt-in shows the warning and requires the acknowledgement`, () => {
-      const onStart = renderDialog(dc)
-      // KI einschalten → deutliche Warnung + Verstanden-Bestätigung.
-      fireEvent.click(screen.getByRole("switch", { name: /KI-Unterstützung/ }))
-      const warning = screen.getByTestId("local-ai-warning")
-      expect(warning).toHaveTextContent(/Warnung: KI-Unterstützung/)
-      expect(warning).toHaveTextContent(/lokalen Verarbeitungspfad/)
-      expect(warning).toHaveTextContent(/nicht an externe KI-Dienste/)
-      const start = screen.getByRole("button", { name: "Analyse starten" })
-      expect(start).toBeDisabled() // ohne Verstanden-Bestätigung kein Start
-
-      fireEvent.click(
-        screen.getByLabelText("KI-Unterstützung für diesen Durchlauf freigeben")
+    it(`${dc} real project: switch is disabled and no local opt-in is offered`, () => {
+      const onStart = renderDialog(dc, vi.fn(), "member", {
+        projectOrigin: "real_project",
+      })
+      expect(screen.getByRole("switch", { name: /KI-Unterstützung/ })).toHaveAttribute(
+        "aria-disabled",
+        "true"
       )
+      expect(screen.queryByTestId("local-ai-warning")).toBeNull()
+      expect(screen.queryByText(/lokalen Verarbeitungspfad/)).toBeNull()
+      const start = screen.getByRole("button", { name: "Analyse starten" })
       expect(start).toBeEnabled()
       fireEvent.click(start)
       const settings = onStart.mock.calls[0][0] as AnalyseSettings
-      expect(settings.ki).toBe(true)
-      expect(settings.cloudConfirmed).toBe(true)
-      expect(settings.web).toBe(false) // Webrecherche bleibt aus
+      expect(settings.ki).toBe(false)
+      expect(settings.cloudConfirmed).toBe(false)
     })
   }
+
+  it("fake provider is presented only as demo output", () => {
+    renderDialog("public", vi.fn(), "member", { generationMode: "fake_demo" })
+    expect(screen.getByText("Demo-Vorschläge")).toBeInTheDocument()
+    expect(screen.getByText("Demo-Vorschlag (kein echtes KI-Modell)")).toBeInTheDocument()
+    expect(screen.queryByText(/^KI-Vorschlag$/)).toBeNull()
+    expect(screen.getByLabelText("Demo-Generator für diesen Durchlauf aktivieren")).toBeInTheDocument()
+  })
 
   it("public: der Web-Toggle aktiviert die öffentliche Webrecherche", () => {
     const onStart = renderDialog("public")
@@ -107,7 +125,7 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
       screen.getByRole("switch", { name: /Öffentliche Webrecherche/ })
     )
     fireEvent.click(
-      screen.getByLabelText("Cloud-KI für diesen Durchlauf erlauben")
+      screen.getByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben")
     )
     fireEvent.click(screen.getByRole("button", { name: "Analyse starten" }))
     const settings = onStart.mock.calls[0][0] as AnalyseSettings
@@ -135,7 +153,7 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
       target: { value: "7" },
     })
     fireEvent.click(
-      screen.getByLabelText("Cloud-KI für diesen Durchlauf erlauben")
+      screen.getByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben")
     )
     fireEvent.click(screen.getByRole("button", { name: "Analyse starten" }))
     const settings = onStart.mock.calls[0][0] as AnalyseSettings
@@ -213,7 +231,7 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     )
     expect(within(rows[0]).getByText("Freigegeben")).toBeInTheDocument()
     // Der Start bleibt unabhängig von der Zahl der Freigaben möglich.
-    fireEvent.click(screen.getByLabelText("Cloud-KI für diesen Durchlauf erlauben"))
+    fireEvent.click(screen.getByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben"))
     expect(screen.getByRole("button", { name: "Analyse starten" })).toBeEnabled()
   })
 
@@ -267,9 +285,11 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
 
   // R4.1/R4.3: NDA / gesperrt (D3) — KI-Schalter bleibt deaktiviert, kein Opt-in.
   it("nda: AI stays fully blocked — no toggle, no warning panel", () => {
-    const onStart = renderDialog("nda")
+    const onStart = renderDialog("nda", vi.fn(), "member", {
+      projectOrigin: "real_project",
+    })
     expect(
-      screen.getByText(/Für NDA-geschützte oder gesperrte Inhalte/)
+      screen.getByText(/Für diese Datenklasse ist aktuell kein freigegebener KI-Provider/)
     ).toBeInTheDocument()
     // KI- UND Web-Schalter sind als "nicht verfügbar" markiert; Klick wirkungslos.
     expect(screen.getAllByText("Dienst aktuell nicht verfügbar")).toHaveLength(2)

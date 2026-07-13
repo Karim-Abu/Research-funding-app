@@ -56,13 +56,27 @@ function ServiceToggle({
   )
 }
 
-export function LLMToggle(props: Omit<ServiceToggleProps, "title" | "subtitle">) {
+export function LLMToggle({
+  generationMode = "unavailable",
+  ...props
+}: Omit<ServiceToggleProps, "title" | "subtitle"> & {
+  generationMode?: "unavailable" | "fake_demo" | "real_eval"
+}) {
+  const isDemo = generationMode === "fake_demo"
   return (
     <ServiceToggle
       {...props}
-      title="KI-Unterstützung"
-      subtitle="Erstellt Textvorschläge und Analysen"
-      availableLabel="KI-Unterstützung verfügbar"
+      title={isDemo ? "Demo-Vorschläge" : "KI-Unterstützung"}
+      subtitle={
+        isDemo
+          ? "Erstellt gekennzeichnete Testvorschläge ohne echtes KI-Modell"
+          : "Erstellt modellgenerierte Textvorschläge und Analysen"
+      }
+      availableLabel={
+        isDemo
+          ? "Demo-Generator verfügbar – kein Modellaufruf"
+          : "KI-Unterstützung für Evaluationsfälle verfügbar"
+      }
     />
   )
 }

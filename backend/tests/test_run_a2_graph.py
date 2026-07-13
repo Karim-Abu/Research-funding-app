@@ -102,7 +102,7 @@ def test_cloud_fake_run_creates_suggestions_for_all_a2_fields(
             )
         )
         assert phase.status == "succeeded"
-        assert phase.detail["suggestions_created"] == len(A2_FIELD_PROFILES)
+        assert phase.detail["suggestions_created"] == 16, phase.detail
         assert phase.detail["template_drafts"] >= len(A2_FIELD_PROFILES)
     finally:
         db.close()

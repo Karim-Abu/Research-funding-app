@@ -60,8 +60,16 @@ def _accepted_answers(db: Session, project: Project) -> dict:
     return answers
 
 
-def _project_dict(project: Project, structured_answers: dict | None = None) -> dict:
-    return {
+SNAPSHOT_SCHEMA_VERSION = "run-project-v2"
+
+
+def _project_dict(
+    project: Project,
+    structured_answers: dict | None = None,
+    *,
+    schema_version: str = SNAPSHOT_SCHEMA_VERSION,
+) -> dict:
+    result = {
         "project_id": project.project_id,
         "funding_instrument_profile_id": project.funding_instrument_profile_id,
         # Strukturierte Projektbeschreibung aus dem Intake: versionierter
@@ -87,6 +95,12 @@ def _project_dict(project: Project, structured_answers: dict | None = None) -> d
         "duration_months": project.duration_months,
         "structured_answers": structured_answers or {},
     }
+    if schema_version == SNAPSHOT_SCHEMA_VERSION:
+        result["snapshot_schema_version"] = SNAPSHOT_SCHEMA_VERSION
+        # No RiskRegister persistence exists yet. Null is an honest, immutable
+        # input that lets A3 flag the gap without inventing a register.
+        result["risk_register"] = None
+    return result
 
 
 def compute_hash(project_json: dict, partners_json: list[dict]) -> str:
@@ -99,13 +113,15 @@ def compute_hash(project_json: dict, partners_json: list[dict]) -> str:
 
 
 def current_inputs(
-    db: Session, project: Project
+    db: Session, project: Project, *, schema_version: str = SNAPSHOT_SCHEMA_VERSION
 ) -> tuple[dict, list[dict]]:
     partner_rows = partners_repo.list_by_project(
         db, project.project_id, project.workspace_id
     )
-    return _project_dict(project, _accepted_answers(db, project)), [
-        partners_repo.snapshot_dict(p) for p in partner_rows
+    return _project_dict(
+        project, _accepted_answers(db, project), schema_version=schema_version
+    ), [
+        partners_repo.snapshot_dict(p, schema_version=schema_version) for p in partner_rows
     ]
 
 
@@ -166,5 +182,11 @@ def is_stale(db: Session, snapshot: RunProjectSnapshot) -> bool:
     project = db.get(Project, snapshot.project_id)
     if project is None:
         return False
-    project_json, partners_json = current_inputs(db, project)
+    schema_version = (
+        snapshot.project_json.get("snapshot_schema_version")
+        if isinstance(snapshot.project_json, dict) else None
+    ) or "run-project-v1"
+    project_json, partners_json = current_inputs(
+        db, project, schema_version=schema_version
+    )
     return compute_hash(project_json, partners_json) != snapshot.content_hash
