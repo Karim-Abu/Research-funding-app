@@ -6,18 +6,30 @@ import { Avatar, AvatarFallback } from "@/components/ui/avatar"
 import { cn } from "@/lib/utils"
 import { ReqBucketBadge } from "@/components/anforderungen/requirements-controls"
 import { MarketCompetitionPanel } from "@/components/editor/market-competition-panel"
-import { DRAFT_EVIDENCE_LABELS, DRAFT_EVIDENCE_STYLE } from "@/lib/draft-view"
+import { SupportStatusBadge } from "@/components/status/support-status-badge"
+import type { DraftEvidenceStatus } from "@/lib/draft-view"
+import type { SupportStatus } from "@/lib/evidence-ladder"
 import type { MarketDataset } from "@/lib/market-view"
 import type { MarketComparisonDto } from "@/lib/market-comparison"
 import type { AssistantTab, DraftFieldViewModel } from "@/lib/draft-viewmodel"
 
+// R6-Zieltabs zuerst; Kommentare/Versionen bleiben nachgeordnet erhalten.
 const TABS: [AssistantTab, string][] = [
-  ["markt", "Markt"],
-  ["belege", "Belege"],
-  ["anforderungen", "Anforderungen"],
+  ["quellen", "Quellen"],
+  ["fehlende", "Fehlende Angaben"],
+  ["schwaechen", "Schwächen"],
+  ["markt", "Markt & Wettbewerb"],
   ["kommentare", "Kommentare"],
   ["versionen", "Versionen"],
 ]
+
+// Mock-Belegstatus → Statusleiter (Coverage ≠ Correctness): "verified" ist
+// nur eine gefundene Textstelle, nie grünes "belegt".
+const MOCK_EVIDENCE_TO_SUPPORT: Record<DraftEvidenceStatus, SupportStatus> = {
+  verified: "location_found",
+  review: "human_review_required",
+  open: "evidence_missing",
+}
 
 interface AssistantPanelProps {
   vm: DraftFieldViewModel
@@ -36,12 +48,18 @@ interface AssistantPanelProps {
     comparisonLoaded?: boolean
     comparisonEnabled?: boolean
     onOpenComparison?: () => void
+    /** capabilities.features.web_research — gates the Market Research flow (RESEARCH.1b). */
+    marketResearchEnabled?: boolean
+    onSourceImported?: () => void
   }
   suggestionExists: boolean
   /** Live supplies its evidence + linking UI; mock falls back to the VM list. */
-  belegeContent?: React.ReactNode
-  /** Live supplies the joined per-field requirements; mock falls back to the VM list. */
-  anforderungenContent?: React.ReactNode
+  quellenContent?: React.ReactNode
+  /** "Fehlende Angaben" als konkrete Fragen (live); mock fällt auf die
+   * Anforderungsliste des ViewModels zurück. */
+  fehlendeContent?: React.ReactNode
+  /** Feldbezogene Schwächen/Findings (live); mock zeigt einen Leerzustand. */
+  schwaechenContent?: React.ReactNode
   /** Both modes supply the comment-tab body (mock: thread; live: findings + box + approve). */
   kommentareContent: React.ReactNode
   /** Rendered under the version list (live: "history not available" note). */
@@ -55,8 +73,9 @@ export function AssistantPanel({
   onTabChange,
   market,
   suggestionExists,
-  belegeContent,
-  anforderungenContent,
+  quellenContent,
+  fehlendeContent,
+  schwaechenContent,
   kommentareContent,
   versionsFootnote,
 }: AssistantPanelProps) {
@@ -102,12 +121,14 @@ export function AssistantPanel({
           comparisonLoaded={market.comparisonLoaded ?? false}
           comparisonEnabled={market.comparisonEnabled ?? false}
           onOpenComparison={market.onOpenComparison}
+          marketResearchEnabled={market.marketResearchEnabled ?? false}
+          onSourceImported={market.onSourceImported}
         />
       )}
 
-      {tab === "belege" && (
-        <Section title="Verknüpfte Belege">
-          {belegeContent ?? (
+      {tab === "quellen" && (
+        <Section title="Quellen & Belege">
+          {quellenContent ?? (
             vm.evidenceItems.length === 0 ? (
               <p className="text-xs text-muted-foreground">
                 Noch keine Belege mit diesem Feld verknüpft.
@@ -119,16 +140,12 @@ export function AssistantPanel({
                     <p className="text-xs text-foreground">{ev.claim}</p>
                     <p className="text-[11px] text-muted-foreground">{ev.source} · {ev.fundstelle}</p>
                     <div className="flex items-center justify-between gap-2">
-                      <span
-                        className={cn(
-                          "inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                          DRAFT_EVIDENCE_STYLE[ev.status]
-                        )}
-                      >
-                        {DRAFT_EVIDENCE_LABELS[ev.status]}
-                      </span>
+                      <SupportStatusBadge
+                        short
+                        status={MOCK_EVIDENCE_TO_SUPPORT[ev.status]}
+                      />
                       <a
-                        href="/quellen?tab=evidenz"
+                        href="/anforderungen?tab=evidenz"
                         className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
                       >
                         <ExternalLink className="size-3" />
@@ -143,13 +160,13 @@ export function AssistantPanel({
         </Section>
       )}
 
-      {tab === "anforderungen" && (
-        <Section title="Betroffene Anforderungen">
-          {anforderungenContent ?? (
+      {tab === "fehlende" && (
+        <Section title="Fehlende Angaben">
+          {fehlendeContent ?? (
             <>
               {vm.requirementItems.length === 0 ? (
                 <p className="text-xs text-muted-foreground">
-                  Noch keine Anforderungen mit diesem Feld verknüpft.
+                  Keine offenen Angaben für dieses Feld bekannt.
                 </p>
               ) : (
                 <ul className="flex flex-col gap-2">
@@ -165,6 +182,17 @@ export function AssistantPanel({
                 In Anforderungen öffnen
               </a>
             </>
+          )}
+        </Section>
+      )}
+
+      {tab === "schwaechen" && (
+        <Section title="Schwächen">
+          {schwaechenContent ?? (
+            <p className="text-xs text-muted-foreground">
+              Für dieses Feld liegen keine Schwächen-Hinweise vor. Die
+              Gesamtprüfung finden Sie unter „Prüfung“.
+            </p>
           )}
         </Section>
       )}

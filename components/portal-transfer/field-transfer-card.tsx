@@ -10,7 +10,10 @@ import {
   formattedCopySupported,
 } from "@/lib/clipboard"
 import {
+  COPY_READINESS_LABELS,
+  COPY_READINESS_STYLE,
   countPlaceholders,
+  fieldCopyReadiness,
   fieldWarnings,
   isComposite,
   sectionLabel,
@@ -22,6 +25,7 @@ import {
   type OverrideReasonCode,
   type PortalFieldDraftDto,
 } from "@/lib/fields"
+import { subsectionText, type SubsectionDef } from "@/lib/subsections"
 import type { ReviewPackageDto } from "@/lib/review"
 
 type CopyState = "idle" | "copied" | "error"
@@ -36,7 +40,8 @@ const WARNING_BADGE: Record<WarningCode, string> = {
 
 // Slice 3 (E2-A): predefined override reasons — a copy despite warnings needs
 // a documented reason; "Sonstiges" additionally needs a short free text.
-const OVERRIDE_REASONS: Array<{ code: OverrideReasonCode; label: string }> = [
+// Exportiert für die Kapitel-/Gesamt-Kopie (R6) — gleicher Katalog.
+export const OVERRIDE_REASONS: Array<{ code: OverrideReasonCode; label: string }> = [
   { code: "portal_finalization", label: "Feld wird im Portal fertiggestellt" },
   { code: "warning_not_relevant", label: "Hinweis betrifft dieses Feld nicht" },
   { code: "coordination_draft", label: "Zwischenstand für Abstimmung" },
@@ -55,6 +60,7 @@ export function FieldTransferCard({
   onCopied,
   runId = null,
   copyEventsEnabled = false,
+  subsections = [],
   onReload,
 }: {
   field: PortalFieldDraftDto
@@ -65,10 +71,15 @@ export function FieldTransferCard({
   /** Slice 3: with runId + copyEventsEnabled each copy is recorded server-side. */
   runId?: string | null
   copyEventsEnabled?: boolean
+  /** R6: Registry-Unterabschnitte des Composite-Felds → "Unterabschnitt kopieren". */
+  subsections?: SubsectionDef[]
   onReload?: () => void
 }) {
   const [state, setState] = React.useState<CopyState>("idle")
-  const [confirming, setConfirming] = React.useState<null | "plain" | "formatted">(null)
+  const [confirming, setConfirming] = React.useState<null | {
+    kind: "plain" | "formatted"
+    copyText: string
+  }>(null)
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
   const [infoMsg, setInfoMsg] = React.useState<string | null>(null)
   const [advancedOpen, setAdvancedOpen] = React.useState(false)
@@ -78,6 +89,8 @@ export function FieldTransferCard({
   const text = field.current_version.text
   const warnings = fieldWarnings(field, review)
   const copyReady = warnings.length === 0
+  // R6: kanonische Kopierbereitschaft (Backend); rendert nur, sperrt nie.
+  const readiness = fieldCopyReadiness(field, review)
   const placeholderCount = countPlaceholders(text)
   const limit = field.character_limit
   const overLimit = limit != null && field.character_count > limit
@@ -94,7 +107,7 @@ export function FieldTransferCard({
     needsReason &&
     (reasonCode === null || (reasonCode === "other" && reasonNote.trim() === ""))
 
-  async function doCopy(kind: "plain" | "formatted") {
+  async function doCopy(kind: "plain" | "formatted", copyText: string = text) {
     setErrorMsg(null)
     setInfoMsg(null)
     let copiedAtDate: Date | undefined
@@ -138,8 +151,8 @@ export function FieldTransferCard({
     setReasonCode(null)
     setReasonNote("")
     try {
-      if (kind === "formatted") await copyFormatted(text)
-      else await copyPlain(text)
+      if (kind === "formatted") await copyFormatted(copyText)
+      else await copyPlain(copyText)
       setState("copied")
       // "Kopiert am" only after the clipboard write actually succeeded.
       onCopied(field.field_id, copiedAtDate)
@@ -151,9 +164,9 @@ export function FieldTransferCard({
     }
   }
 
-  function requestCopy(kind: "plain" | "formatted") {
-    if (warnings.length > 0) setConfirming(kind)
-    else doCopy(kind)
+  function requestCopy(kind: "plain" | "formatted", copyText: string = text) {
+    if (warnings.length > 0) setConfirming({ kind, copyText })
+    else doCopy(kind, copyText)
   }
 
   function cancelConfirm() {
@@ -171,7 +184,14 @@ export function FieldTransferCard({
             {sectionLabel(field.field_id)}
             {isComposite(field.field_id) && " · Mehrteiliges Feld"}
           </span>
-          <h3 className="text-sm font-semibold">{field.field_name}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-semibold">{field.field_name}</h3>
+            <span
+              className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium ${COPY_READINESS_STYLE[readiness]}`}
+            >
+              {COPY_READINESS_LABELS[readiness]}
+            </span>
+          </div>
         </div>
         {copiedAt && (
           <Badge variant="secondary" className="shrink-0">
@@ -257,7 +277,7 @@ export function FieldTransferCard({
             <Button
               size="sm"
               disabled={reasonMissing}
-              onClick={() => doCopy(confirming)}
+              onClick={() => doCopy(confirming.kind, confirming.copyText)}
             >
               Trotzdem kopieren
             </Button>
@@ -310,6 +330,34 @@ export function FieldTransferCard({
               </>
             )}
           </div>
+          {/* R6: Unterabschnitt kopieren (nur Composite-Felder mit im Text
+              auffindbaren Registry-Markern). Gleiche Warn-/Event-Logik. */}
+          {subsections.length > 0 && (
+            <div className="flex flex-wrap items-center gap-1.5">
+              <span className="text-[11px] text-muted-foreground">
+                Unterabschnitt kopieren:
+              </span>
+              {subsections.map((sub) => {
+                const part = subsectionText(text, subsections, sub.marker)
+                return (
+                  <Button
+                    key={sub.marker}
+                    size="xs"
+                    variant="outline"
+                    disabled={part === null}
+                    title={
+                      part === null
+                        ? `${sub.label} — im Text noch nicht vorhanden`
+                        : sub.label
+                    }
+                    onClick={() => part !== null && requestCopy("plain", part)}
+                  >
+                    {sub.marker}
+                  </Button>
+                )
+              })}
+            </div>
+          )}
           {/* Experimental formatted copy stays behind an "Erweitert" disclosure. */}
           {formatted && (
             <div>

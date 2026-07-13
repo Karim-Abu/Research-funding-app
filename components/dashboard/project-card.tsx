@@ -17,12 +17,13 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 import { cn } from "@/lib/utils"
+import { NotYetReviewedBadge } from "@/components/status/canonical-status"
 import {
   NEXT_ACTION_LABELS,
   PROJECT_STATUS_BADGE,
   WARNING_BADGE_LABELS,
 } from "@/lib/dashboard"
-import { workflowSteps } from "@/lib/mock-data"
+import { WORKFLOW_STEPS } from "@/lib/workflow"
 import {
   PROJECT_STATUS_LABELS,
   type DashboardProject,
@@ -50,7 +51,6 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
     deadline,
     progressPercent,
     currentStep,
-    currentStepLabel,
     cardStatus,
     lastEditedLabel,
     nextAction,
@@ -58,6 +58,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
     analysisRunning,
     isDemo,
     people,
+    openBlockerCount,
   } = project
 
   const status: ProjectCardStatus = cardStatus ?? "in_bearbeitung"
@@ -98,6 +99,21 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
               {WARNING_BADGE_LABELS[warningBadge]}
             </Badge>
           )}
+          {/* R1.3 — kanonische Blocker-Zahl (ReviewStatusView); dieselbe Zahl
+              wie in Anforderungen, Qualitätsprüfung und Export. Ohne
+              durchgeführte Prüfung erscheint nie eine 0, sondern der
+              ehrliche Zustand «Noch nicht geprüft» (Regel 7). */}
+          {typeof openBlockerCount === "number" && openBlockerCount > 0 && (
+            <Badge
+              variant="outline"
+              data-testid="card-blocker-count"
+              data-blocker-count={openBlockerCount}
+              className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+            >
+              {`${openBlockerCount} Blocker offen`}
+            </Badge>
+          )}
+          {typeof openBlockerCount !== "number" && <NotYetReviewedBadge />}
         </div>
 
         <h2 className="text-balance text-base font-semibold leading-snug text-foreground">
@@ -127,10 +143,7 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
 
         {/* Aktueller Schritt */}
         <p className="text-xs text-muted-foreground">
-          {`Schritt ${currentStep} von 8: ${getStepName(
-            currentStep,
-            currentStepLabel
-          )}`}
+          {`Schritt ${currentStep} von ${WORKFLOW_STEPS.length}: ${getStepName(currentStep)}`}
         </p>
 
         {/* Nächster Schritt — answers "what should I do next?" without
@@ -198,10 +211,11 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
 }
 
 // ---------------------------------------------------------------------------
-// Step name helper — use the canonical workflow labels, with live backend labels
-// as an optional frontend-only override.
+// Step name helper — der EINE Workflow-Katalog liefert das Label; das
+// Backend-Label (anderes Schrittmodell) wird bewusst nicht mehr durchgereicht.
 // ---------------------------------------------------------------------------
-function getStepName(step: number, label?: string | null): string {
-  const workflowStep = workflowSteps.find((s) => s.step === step)
-  return label ?? workflowStep?.shortLabel ?? workflowStep?.label ?? `Schritt ${step}`
+function getStepName(step: number): string {
+  return (
+    WORKFLOW_STEPS.find((s) => s.step === step)?.label ?? `Schritt ${step}`
+  )
 }

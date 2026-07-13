@@ -2,10 +2,13 @@
 
 import * as React from "react"
 import { ChevronDown, ChevronRight, RefreshCw } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { AppShell } from "@/components/shell/app-shell"
 import { ExportScreen } from "@/components/export/export-screen"
 import { LiveExport, LiveExportSkeleton } from "@/components/export/live-export"
+import { ActiveRunDetails } from "@/components/status/active-run-details"
 import { useSession } from "@/components/providers/app-providers"
+import { useActiveRun } from "@/components/providers/workflow-run-provider"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
@@ -16,42 +19,17 @@ import {
   ApiError,
   BRIDGE_UNREACHABLE_MESSAGE,
 } from "@/lib/api"
-import { getActiveProjectId, getCurrentRunId, loadIntake } from "@/lib/intake-store"
-import { listProjectRuns } from "@/lib/runs"
+import { getCurrentRunId, loadIntake } from "@/lib/intake-store"
 import { cn } from "@/lib/utils"
-import type { StepStatus } from "@/lib/types"
-
-const stepStatus: StepStatus[] = [
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "current",
-]
 
 // Set to true only during internal prototyping — never exposed in the Petra evaluation view.
 const showDebugControls = false
 
 function LiveExportContainer() {
-  const [runId, setRunId] = React.useState<string | null>(null)
-  const [resolved, setResolved] = React.useState(false)
+  const router = useRouter()
+  const { runId, source, loading } = useActiveRun()
 
-  React.useEffect(() => {
-    const projectId = getActiveProjectId()
-    if (!projectId) {
-      setResolved(true)
-      return
-    }
-    listProjectRuns(projectId)
-      .then((runs) => setRunId(runs.find((r) => r.status === "completed")?.run_id ?? null))
-      .catch(() => setRunId(null))
-      .finally(() => setResolved(true))
-  }, [])
-
-  if (!resolved) {
+  if (loading) {
     return (
       <div className="px-6 py-8">
         <LiveExportSkeleton />
@@ -65,12 +43,22 @@ function LiveExportContainer() {
           Es liegt noch keine abgeschlossene Analyse vor. Starten Sie zunächst die
           Analyse.
         </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => router.push("/quellen")}
+        >
+          Zu den Quellen — Analyse starten
+        </Button>
       </div>
     )
   }
   return (
     <div className="px-6 py-8">
       <LiveExport runId={runId} />
+      <div className="mx-auto mt-6 max-w-5xl">
+        <ActiveRunDetails runId={runId} source={source} />
+      </div>
     </div>
   )
 }
@@ -184,8 +172,6 @@ export default function ExportPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={8}
-      stepStatus={stepStatus}
     >
       {mode === "live" ? <LiveExportContainer /> : <MockExportBody />}
     </AppShell>

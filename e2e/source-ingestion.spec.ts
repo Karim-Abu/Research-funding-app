@@ -1,10 +1,25 @@
-import { test, expect } from "@playwright/test"
+import { test, expect, type Page } from "@playwright/test"
 
 // Live smoke: login → create project → create text source → processed →
 // reload → still visible → logout. Requires the backend + frontend (live)
 // running. Uses the seeded dev lead-admin.
 const EMAIL = process.env.E2E_EMAIL ?? "anna.keller@example.test"
 const PASSWORD = process.env.E2E_PASSWORD ?? "changeme-dev-lead"
+
+// Vereinfachter Intake: Idee-only-Start, öffentliche Demo-Daten über den
+// kompakten «Ändern»-Dialog (Default ist «Vertraulich»).
+async function createProjectViaIntake(page: Page, title: string, idea: string) {
+  await page.goto("/intake")
+  await page.getByLabel(/Projekttitel/).fill(title)
+  await page.getByRole("textbox", { name: /Projektidee/ }).fill(idea)
+  await page.getByRole("button", { name: "Ändern" }).click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByText("Öffentlich", { exact: true }).click()
+  await dialog.getByRole("button", { name: "Fertig" }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole("button", { name: "Projekt erstellen und weiter" }).click()
+  await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
+}
 
 test("source ingestion live smoke", async ({ page }) => {
   // 1. Login
@@ -14,13 +29,8 @@ test("source ingestion live smoke", async ({ page }) => {
   await page.getByRole("button", { name: "Anmelden" }).click()
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 })
 
-  // 2. Create a project via Intake
-  await page.goto("/intake")
-  await page.getByLabel(/Antragstitel/).fill("E2E Source Project")
-  await page.getByLabel(/Projektidee/).fill("Eine Test-Projektidee für E2E.")
-  await page.getByText("Öffentlich", { exact: true }).click()
-  await page.getByRole("button", { name: "Antrag anlegen" }).click()
-  await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
+  // 2. Create a project via Intake (Idee-only-Start)
+  await createProjectViaIntake(page, "E2E Source Project", "Eine Test-Projektidee für E2E.")
 
   // 3. Add a text source
   await page.getByRole("button", { name: "Text einfügen" }).click()
@@ -87,12 +97,11 @@ test("pdf file upload ingests to processed", async ({ page }) => {
   await page.getByRole("button", { name: "Anmelden" }).click()
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 })
 
-  await page.goto("/intake")
-  await page.getByLabel(/Antragstitel/).fill("E2E Upload Projekt")
-  await page.getByLabel(/Projektidee/).fill("Eine Test-Projektidee für den PDF-Upload.")
-  await page.getByText("Öffentlich", { exact: true }).click()
-  await page.getByRole("button", { name: "Antrag anlegen" }).click()
-  await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
+  await createProjectViaIntake(
+    page,
+    "E2E Upload Projekt",
+    "Eine Test-Projektidee für den PDF-Upload."
+  )
 
   // Upload via the hidden file input of the source table.
   await page.locator('input[type="file"]').setInputFiles({
@@ -129,12 +138,11 @@ test("umlaut text source ingests and displays after refresh", async ({ page }) =
   await page.getByRole("button", { name: "Anmelden" }).click()
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 })
 
-  await page.goto("/intake")
-  await page.getByLabel(/Antragstitel/).fill("E2E Unicode Projekt")
-  await page.getByLabel(/Projektidee/).fill("Projektidee mit Umlauten: äöüß.")
-  await page.getByText("Öffentlich", { exact: true }).click()
-  await page.getByRole("button", { name: "Antrag anlegen" }).click()
-  await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
+  await createProjectViaIntake(
+    page,
+    "E2E Unicode Projekt",
+    "Projektidee mit Umlauten: äöüß."
+  )
 
   await page.getByRole("button", { name: "Text einfügen" }).click()
   await page.getByLabel("Titel der Quelle").fill(UMLAUT_NAME)

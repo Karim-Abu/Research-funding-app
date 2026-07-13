@@ -29,12 +29,20 @@ export function deriveDataClass(
   return "UNKNOWN"
 }
 
-// The flat UI confidentiality choice (public/internal/confidential) mapped to a privacy
-// class. NDA is not expressible in the flat choice; the backend still enforces D3.
+// The flat UI confidentiality choice mapped to a privacy class. R4.1: "nda" maps
+// to D3; only an explicit "public" maps to D0 — anything else is UNKNOWN
+// (fail-closed). The backend re-derives and enforces this regardless.
 export function flatToPrivacyClass(flat: DataClass): PrivacyDataClass {
+  if (flat === "nda") return "D3_NDA_BLOCKED"
   if (flat === "confidential") return "D2_CONFIDENTIAL_IDEA"
   if (flat === "internal") return "D1_INTERNAL"
-  return "D0_PUBLIC"
+  if (flat === "public") return "D0_PUBLIC"
+  return "UNKNOWN"
+}
+
+// D3/UNKNOWN never reach any external research surface — not even sanitized.
+export function isExternalBlocked(dc: PrivacyDataClass): boolean {
+  return dc === "D3_NDA_BLOCKED" || dc === "UNKNOWN"
 }
 
 // D1/D2 must obtain a firewall-sanitized, human-approved query before web research.

@@ -14,12 +14,19 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from datetime import datetime, timezone
+
 from app.db.models import AnalysisRun, ReviewFinding
 from app.reliability import RELIABILITY_PROFILE_ID
 from app.reliability.extract import ExtractedClaim, is_quantified
 from app.reliability.lineage import LineageResult
 from app.reliability import sufficiency as suff
 from app.repositories import audit
+from app.review.fingerprint import (
+    classify_severity_class,
+    compute_finding_fingerprint,
+    finding_code_family,
+)
 
 
 @dataclass(frozen=True)
@@ -30,11 +37,18 @@ class ReliabilityFindingSpec:
     field_id: str
     target_type: str = "draft_claim"  # draft_claim | portal_field_draft
     target_id: str = ""  # claim_id (draft_claim) or field_id (portal_field_draft)
+    # R2.3 — claim-bewusster Fingerprint (Familie + Feld + normalisierter
+    # Claim-Text); None ⇒ Fallback ohne claim_core in apply_reliability_findings.
+    fingerprint: str | None = None
 
 
 def _claim_spec(code: str, severity: str, description: str, claim) -> ReliabilityFindingSpec:
     return ReliabilityFindingSpec(
-        code, severity, description, claim.field_id, "draft_claim", claim.claim_id
+        code, severity, description, claim.field_id, "draft_claim", claim.claim_id,
+        fingerprint=compute_finding_fingerprint(
+            finding_code_family(code), claim.field_id,
+            claim_core=getattr(claim, "claim_text", None),
+        ),
     )
 
 
@@ -111,10 +125,17 @@ def apply_reliability_findings(
             )
         )
     }
+    now = datetime.now(timezone.utc)
     seen: set[str] = set()
     for spec in specs:
         seen.add(spec.finding_code)
         advisory = spec.severity != "blocker"
+        # R2.3 — reliability/evidence-Findings sind evidence_risk; Fingerprint
+        # claim-bewusst aus _claim_spec, sonst Fallback Familie+Feld.
+        fp = spec.fingerprint or compute_finding_fingerprint(
+            finding_code_family(spec.finding_code), spec.field_id
+        )
+        severity_class = classify_severity_class(spec.finding_code)
         row = existing.get(spec.finding_code)
         if row is None:
             row = ReviewFinding(
@@ -126,6 +147,7 @@ def apply_reliability_findings(
                 source="agent", finding_code=spec.finding_code,
                 target_type=spec.target_type, target_id=spec.target_id,
                 recommended_next_action=None,
+                fingerprint=fp, severity_class=severity_class, last_seen_at=now,
             )
             db.add(row)
             audit.record(
@@ -141,6 +163,9 @@ def apply_reliability_findings(
             row.target_type = spec.target_type
             row.target_id = spec.target_id
             row.advisory = advisory
+            row.fingerprint = fp
+            row.severity_class = severity_class
+            row.last_seen_at = now
             if row.status == "resolved":
                 row.status = "open"
 

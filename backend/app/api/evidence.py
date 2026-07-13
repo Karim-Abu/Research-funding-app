@@ -10,6 +10,7 @@ from app.contracts.evidence import EvidenceAnchor
 from app.db.session import get_db
 from app.repositories import evidence as evidence_repo
 from app.repositories import runs as runs_repo
+from app.review.evidence_status import lineage_by_anchor, support_status_for_anchor
 from app.security.deps import AuthContext, require_session
 
 router = APIRouter(tags=["Evidence"])
@@ -28,4 +29,13 @@ def list_evidence(
             detail="Run not found.",
         )
     anchors = evidence_repo.list_anchors_for_run(db, run_id)
-    return [evidence_repo.to_anchor_contract(a) for a in anchors]
+    judgments = lineage_by_anchor(db, run_id)
+    return [
+        evidence_repo.to_anchor_contract(
+            a,
+            support_status=support_status_for_anchor(
+                a.verification_status, judgments.get(a.anchor_id)
+            ),
+        )
+        for a in anchors
+    ]

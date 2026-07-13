@@ -163,8 +163,8 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
     requirements = a2_context._requirement_assessments(db, run, requirement_ids)
     rule_results = _rule_results(db, run, requirement_ids)
     structured = a2_context.retrieve_structured_project_data(db, run)
-    confirmed_facts = _confirmed_facts(db, run)
-    proposed_facts = a2_context.retrieve_confirmed_project_facts(db, run)  # proposed/unconfirmed
+    confirmed_only = _confirmed_facts(db, run)
+    proposed_facts = a2_context.retrieve_advisory_project_facts(db, run)  # advisory/unconfirmed
     draft_links = _active_draft_links(db, run)
 
     blocker_issues = [
@@ -187,7 +187,8 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
         "requirements": requirements,
         "rule_results": rule_results,
         "evidence_links": evidence_links,
-        "confirmed_facts": confirmed_facts,
+        # Enthält NUR echt bestätigte Facts (corr 1); Wire-Key bleibt Contract v1.1.
+        "confirmed_facts": confirmed_only,  # contract-pinned: schema_catalog.yaml CriticReviewInput@v1
         "structured_project_data": structured,
     }
 
@@ -216,7 +217,7 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
             "evidence_count": len(evidence),
             "requirement_count": len(requirements),
             "proposed_fact_count": len(proposed_facts),
-            "confirmed_fact_count": len(confirmed_facts),
+            "confirmed_fact_count": len(confirmed_only),
             "char_budget": budget,
             "total_chars": len(context_text),
         },

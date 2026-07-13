@@ -66,7 +66,8 @@ def test_redraft_other_field_404(client, monkeypatch):
     run_id, _draft_id, base = _setup()
     _arm_fake(monkeypatch)
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    res = _create_redraft(client, csrf, run_id, "INTRO.APP.ABSTRACT", base)
+    # INTRO.APP.NAME is outside the A2 allow-list (Abstract/Exec Summary now in).
+    res = _create_redraft(client, csrf, run_id, "INTRO.APP.NAME", base)
     assert res.status_code == 404
 
 
@@ -85,7 +86,89 @@ def test_redraft_deterministic_only_503(client, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
     assert res.status_code == 503
-    assert res.json()["code"] == "ai_unavailable"
+    body = res.json()
+    assert body["code"] == "ai_unavailable"
+    # R4.2: konkreter, maschinenlesbarer Grund + freigegebener deutscher Text.
+    assert body["reason_code"] == "mode_deterministic_only"
+    assert body["detail"] == (
+        "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt."
+    )
+    assert "Datenklasse oder Umgebung" not in body["detail"]
+
+
+# --- R4.3: lokaler KI-Opt-in (Owner-Entscheid 2026-07-08) --------------------
+
+def _setup_local(sensitivity: str = "confidential", nda: bool = False):
+    db = SessionLocal()
+    try:
+        run, draft, base = build_run_with_draft(
+            db, processing_mode="local_only", sensitivity=sensitivity,
+            origin="real_project", nda=nda,
+        )
+        ids = (run.run_id, draft.draft_id, base)
+        db.commit()
+        return ids
+    finally:
+        db.close()
+
+
+def _attach_local_confirmation(run_id: str) -> None:
+    """Simuliert den beim Run-Start verbrauchten Local-AI-Opt-in."""
+    import uuid as _uuid
+
+    from app.db.models import ProcessingConfirmation
+
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run_id)
+        db.add(ProcessingConfirmation(
+            confirmation_id=str(_uuid.uuid4()), project_id=run.project_id,
+            workspace_id=run.workspace_id, created_by="test-user", status="used",
+            processing_mode="local_only", source_version_ids=[],
+            accepted_policy_version="1.1.0", purpose="KI-Vorschläge (lokal)",
+            provider_route_class="fake_local",
+            confirmation_text_version="local-ai-confirm-v1",
+            data_classification_shown={}, expires_after_one_run=True,
+            used_by_run_id=run_id,
+        ))
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_redraft_local_only_without_opt_in_503(client, monkeypatch):
+    run_id, _draft_id, base = _setup_local()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 503
+    assert res.json()["reason_code"] == "mode_deterministic_only"
+
+
+def test_redraft_local_only_with_opt_in_succeeds(client, monkeypatch):
+    """D2 (confidential/real_project) + verbrauchter Local-AI-Opt-in ⇒ der
+    lokale Fake-Provider liefert einen Vorschlag (kein externer Call)."""
+    run_id, _draft_id, base = _setup_local()
+    _attach_local_confirmation(run_id)
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202, res.text
+    op_id = res.json()["operation_id"]
+    op = client.get(f"/api/v1/operations/{op_id}").json()
+    assert op["status"] == "succeeded"
+    assert op["result"]["suggested_text"] == GOOD_TEXT
+
+
+def test_redraft_local_only_nda_stays_blocked(client, monkeypatch):
+    """D3 bleibt blockiert — auch mit (fälschlich) vorhandenem Opt-in."""
+    run_id, _draft_id, base = _setup_local(nda=True)
+    _attach_local_confirmation(run_id)
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 503
+    assert res.json()["reason_code"] == "nda_locked"
 
 
 def _generate(client, monkeypatch, run_id, base) -> str:

@@ -106,6 +106,18 @@ class Settings(BaseSettings):
     # suggestions (no network/key). Off in production — A2 then uses the real
     # adapters and is simply unavailable without a configured key.
     agent_fake_provider: bool = False
+    # R4.3 (Owner-Tabelle §3.1): "real" erlaubt direkte OpenAI/Anthropic-Calls
+    # AUSSCHLIESSLICH für synthetische/anonymisierte Evaluationsfälle (F1
+    # synthetic) — nie für echte D1/D2-Daten. Default off; das Setzen der
+    # Variable gilt als dokumentierte Owner-Freigabe für den Evaluationslauf.
+    ai_eval_mode: Literal["off", "real"] = "off"
+
+    # R6 Rubric v0: deterministische Reviewer-Heuristiken (severity_class
+    # reviewer_risk, NIE Blocker). Ganze Rubric per Flag abschaltbar; einzelne
+    # Heuristiken über die kommaseparierte Code-Liste (z. B. "kpi_chain,
+    # cross_section_numbers") deaktivierbar — Rollback je Flag (Roadmap R6).
+    rubric_v0_enabled: bool = True
+    rubric_v0_disabled_codes: str = ""
 
     # Milestone 9I-A: public web research. Keys are env-only, never defaulted/logged.
     # web_research_enabled gates the whole feature; a missing Firecrawl key + no fake

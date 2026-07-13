@@ -8,6 +8,7 @@ import {
   writeRichEditorSessionCache,
   clearRichEditorSessionCache,
   clearAllRichEditorSessionCache,
+  clearProjectRichEditorSessionCache,
 } from "@/lib/rich-editor-cache"
 
 const json: JSONContent = {
@@ -27,16 +28,40 @@ describe("hashServerText", () => {
   })
 })
 
-describe("isRichCacheAllowed", () => {
-  it("allows D0–D2 and unknown, disables restricted/NDA classes", () => {
+describe("isRichCacheAllowed (R4.4 — nur D0/public, fail-closed)", () => {
+  it("erlaubt ausschliesslich explizit öffentliche Projekte", () => {
     expect(isRichCacheAllowed("public")).toBe(true)
-    expect(isRichCacheAllowed("internal")).toBe(true)
-    expect(isRichCacheAllowed("confidential")).toBe(true)
-    expect(isRichCacheAllowed(undefined)).toBe(true)
-    expect(isRichCacheAllowed("d3")).toBe(false)
+    expect(isRichCacheAllowed("D0")).toBe(true)
+    expect(isRichCacheAllowed(" Public ")).toBe(true)
+  })
+
+  it("sperrt internal/confidential/nda/restricted und alles Unbekannte", () => {
+    expect(isRichCacheAllowed("internal")).toBe(false)
+    expect(isRichCacheAllowed("confidential")).toBe(false)
     expect(isRichCacheAllowed("nda")).toBe(false)
+    expect(isRichCacheAllowed("d3")).toBe(false)
     expect(isRichCacheAllowed("restricted")).toBe(false)
     expect(isRichCacheAllowed("gesperrt")).toBe(false)
+    // fail-closed: fehlende/unklare Einstufung ⇒ kein Cache
+    expect(isRichCacheAllowed(undefined)).toBe(false)
+    expect(isRichCacheAllowed(null)).toBe(false)
+    expect(isRichCacheAllowed("")).toBe(false)
+    expect(isRichCacheAllowed("top-secret")).toBe(false)
+  })
+})
+
+describe("clearProjectRichEditorSessionCache (R4.4 — Alt-Cache-Bereinigung)", () => {
+  it("entfernt nur die Einträge des betroffenen Projekts", () => {
+    const hash = hashServerText("x")
+    for (const projectId of ["p1", "p2"]) {
+      writeRichEditorSessionCache({
+        projectId, fieldId: "F.A", serverTextHash: hash,
+        plainTextSnapshot: "x", tiptapJson: json,
+      })
+    }
+    clearProjectRichEditorSessionCache("p1")
+    expect(readRichEditorSessionCache("p1", "F.A", hash)).toBeNull()
+    expect(readRichEditorSessionCache("p2", "F.A", hash)).not.toBeNull()
   })
 })
 

@@ -15,6 +15,12 @@ import {
   Trash2,
   Upload,
 } from "lucide-react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -37,6 +43,12 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import { Progress } from "@/components/ui/progress"
+import {
+  toUploadErrorInfo,
+  UploadErrorNotice,
+  type UploadErrorInfo,
+} from "@/components/quellen/upload-error-notice"
 import { cn } from "@/lib/utils"
 import { DATA_CLASS_LABELS, type DataClass } from "@/lib/types"
 import type { SourceUsage } from "@/lib/evidence"
@@ -80,8 +92,12 @@ interface SourceTableProps {
   onRemove?: (id: string) => void
   /** Live mode: the page owns the list (polling); no local optimistic state. */
   controlled?: boolean
-  /** Live upload handler. */
-  onUploadFiles?: (files: File[], dataClass: DataClass) => Promise<void> | void
+  /** Live upload handler; onProgress liefert echte Byte-Prozent (0–100). */
+  onUploadFiles?: (
+    files: File[],
+    dataClass: DataClass,
+    onProgress?: (percent: number) => void
+  ) => Promise<void> | void
   /** Live text-source handler. */
   onAddTextSource?: (input: TextSourceInput) => Promise<void> | void
   /** Live URL-source handler or frontend fallback provided by the page. */
@@ -297,10 +313,14 @@ export function SourceTable({
     }
   }
 
-  async function handleFiles(files: File[], dataClass: DataClass) {
+  async function handleFiles(
+    files: File[],
+    dataClass: DataClass,
+    onProgress?: (percent: number) => void
+  ) {
     setUploadError(null)
     if (onUploadFiles) {
-      await onUploadFiles(files, dataClass)
+      await onUploadFiles(files, dataClass, onProgress)
       return
     }
 
@@ -646,42 +666,70 @@ function SourceDataClassField({
   value,
   onChange,
   disabled,
+  projectDefault,
 }: Readonly<{
   id: string
   value: DataClass
   onChange: (value: DataClass) => void
   disabled?: boolean
+  /** Vom Projekt geerbte Stufe — Quellen übernehmen sie ohne Rückfrage;
+   *  eine abweichende Einstufung bleibt optional (eingeklappt). */
+  projectDefault: DataClass
 }>) {
   return (
     <div className="grid gap-1.5">
-      <Label htmlFor={id}>Vertraulichkeitsstufe</Label>
-      <Select
-        value={value}
-        onValueChange={(next) => {
-          if (!next) return
-          onChange(next)
-        }}
-        disabled={disabled}
-      >
-        <SelectTrigger id={id} className="w-full">
-          <SelectValue />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectGroup>
-            {DATA_CLASS_OPTIONS.map(([option, label]) => (
-              <SelectItem key={option} value={option}>
-                {label}
-              </SelectItem>
-            ))}
-          </SelectGroup>
-        </SelectContent>
-      </Select>
-      <p className="text-xs leading-relaxed text-muted-foreground">
-        {SOURCE_CLASSIFICATION_HINT}
+      {/* Die wirksame Einstufung ist immer sichtbar — ein gewählter
+          Override wird nie versteckt. */}
+      <p className="text-sm text-foreground">
+        Einstufung dieser Quelle:{" "}
+        <span className="font-medium">{DATA_CLASS_LABELS[value]}</span>
+        {value === projectDefault && (
+          <span className="text-muted-foreground"> (wie im Projekt festgelegt)</span>
+        )}
       </p>
+      <Accordion>
+        <AccordionItem value="abweichende-einstufung">
+          <AccordionTrigger>Abweichende Einstufung (optional)</AccordionTrigger>
+          <AccordionContent>
+            <div className="grid gap-1.5">
+              <Label htmlFor={id}>Vertraulichkeitsstufe</Label>
+              <Select
+                value={value}
+                onValueChange={(next) => {
+                  if (!next) return
+                  onChange(next)
+                }}
+                disabled={disabled}
+              >
+                <SelectTrigger id={id} className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectGroup>
+                    {DATA_CLASS_OPTIONS.map(([option, label]) => (
+                      <SelectItem key={option} value={option}>
+                        {label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <p className="text-xs leading-relaxed text-muted-foreground">
+                {SOURCE_CLASSIFICATION_HINT}
+              </p>
+            </div>
+          </AccordionContent>
+        </AccordionItem>
+      </Accordion>
     </div>
   )
 }
+
+// Sichtbare Upload-Phasen: Datei ausgewählt (Dialog) → Upload läuft (echte
+// Byte-Prozent) → Gespeichert; die Extraktion läuft danach sichtbar am
+// Status-Badge der Quelle weiter («In Verarbeitung» → «Verarbeitet» /
+// «Prüfung nötig» / «Fehler»).
+type UploadPhase = "idle" | "uploading" | "saved"
 
 function FileUploadDialog({
   open,
@@ -694,46 +742,63 @@ function FileUploadDialog({
   onOpenChange: (open: boolean) => void
   files: File[]
   defaultDataClass: DataClass
-  onUpload: (files: File[], dataClass: DataClass) => Promise<void> | void
+  onUpload: (
+    files: File[],
+    dataClass: DataClass,
+    onProgress?: (percent: number) => void
+  ) => Promise<void> | void
 }>) {
   const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
-  const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [phase, setPhase] = React.useState<UploadPhase>("idle")
+  const [percent, setPercent] = React.useState(0)
+  const [error, setError] = React.useState<UploadErrorInfo | null>(null)
+  const busy = phase !== "idle"
 
   React.useEffect(() => {
     if (!open) return
     setDataClass(defaultDataClass)
     setError(null)
+    setPhase("idle")
+    setPercent(0)
   }, [defaultDataClass, open])
 
   async function submit() {
     if (files.length === 0) return
-    setBusy(true)
+    setPhase("uploading")
+    setPercent(0)
     setError(null)
     try {
-      await onUpload(files, dataClass)
-      onOpenChange(false)
+      await onUpload(files, dataClass, setPercent)
+      // Server hat die Datei gespeichert (202) — kurz bestätigen, dann
+      // schliessen; die Text-Extraktion zeigt der Quellen-Status an.
+      setPhase("saved")
+      window.setTimeout(() => onOpenChange(false), 800)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} Die Datei wurde nicht übernommen.`
-          : "Die Datei konnte nicht übernommen werden. Bitte Format prüfen und erneut hochladen."
+      setPhase("idle")
+      const info = toUploadErrorInfo(
+        err,
+        "Die Datei konnte nicht übernommen werden. Bitte Format prüfen und erneut hochladen."
       )
-    } finally {
-      setBusy(false)
+      setError({
+        ...info,
+        message:
+          err instanceof Error
+            ? `${info.message} Die Datei wurde nicht übernommen.`
+            : info.message,
+      })
     }
   }
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Datei hochladen</DialogTitle>
           <DialogDescription>
             Prüfen Sie die ausgewählten Dateien vor der Übernahme.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
+        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
           <div className="rounded-md border border-border bg-muted/30 px-3 py-2">
             <p className="text-xs font-medium text-muted-foreground">
               Ausgewählte Dateien
@@ -749,11 +814,28 @@ function FileUploadDialog({
             value={dataClass}
             onChange={setDataClass}
             disabled={busy}
+            projectDefault={defaultDataClass}
           />
-          {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
+          {phase === "uploading" && (
+            <div aria-live="polite" className="grid gap-1.5">
+              <Progress value={percent} />
+              <p className="text-xs text-muted-foreground">
+                Upload läuft … {percent} %
+              </p>
+            </div>
+          )}
+          {phase === "saved" && (
+            <p aria-live="polite" className="text-sm text-foreground">
+              Gespeichert — der Text wird jetzt extrahiert. Den Fortschritt
+              sehen Sie am Status der Quelle.
             </p>
+          )}
+          {error && (
+            <UploadErrorNotice
+              error={error}
+              onRetry={() => void submit()}
+              retryDisabled={busy || files.length === 0}
+            />
           )}
         </div>
         <DialogFooter>
@@ -770,7 +852,11 @@ function FileUploadDialog({
             onClick={submit}
             disabled={busy || files.length === 0}
           >
-            {busy ? "Wird hochgeladen..." : "Hochladen"}
+            {phase === "uploading"
+              ? "Wird hochgeladen..."
+              : phase === "saved"
+                ? "Gespeichert"
+                : "Hochladen"}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -1004,7 +1090,7 @@ function UrlSourceDialog({
   const [kind, setKind] = React.useState<UrlSourceKind>("webpage")
   const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
   const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<UploadErrorInfo | null>(null)
 
   React.useEffect(() => {
     if (!open) return
@@ -1015,7 +1101,9 @@ function UrlSourceDialog({
   async function submit() {
     const trimmed = url.trim()
     if (!isValidPublicUrl(trimmed)) {
-      setError("Bitte eine gültige öffentliche HTTP- oder HTTPS-URL eingeben.")
+      setError({
+        message: "Bitte eine gültige öffentliche HTTP- oder HTTPS-URL eingeben.",
+      })
       return
     }
     setBusy(true)
@@ -1026,11 +1114,17 @@ function UrlSourceDialog({
       setKind("webpage")
       onOpenChange(false)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} Die URL wurde nicht hinzugefügt.`
-          : "Die URL konnte nicht hinzugefügt werden."
+      const info = toUploadErrorInfo(
+        err,
+        "Die URL konnte nicht hinzugefügt werden."
       )
+      setError({
+        ...info,
+        message:
+          err instanceof Error
+            ? `${info.message} Die URL wurde nicht hinzugefügt.`
+            : info.message,
+      })
     } finally {
       setBusy(false)
     }
@@ -1038,7 +1132,7 @@ function UrlSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg">
+      <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>URL hinzufügen</DialogTitle>
           <DialogDescription>
@@ -1046,7 +1140,7 @@ function UrlSourceDialog({
             externer Webseiten ist in dieser Phase nicht Teil des MVP.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
+        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
           <div className="grid gap-1.5">
             <Label htmlFor="source-url">URL</Label>
             <Input
@@ -1085,11 +1179,14 @@ function UrlSourceDialog({
             value={dataClass}
             onChange={setDataClass}
             disabled={busy}
+            projectDefault={defaultDataClass}
           />
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <UploadErrorNotice
+              error={error}
+              onRetry={() => void submit()}
+              retryDisabled={busy}
+            />
           )}
         </div>
         <DialogFooter>
@@ -1129,7 +1226,7 @@ function TextSourceDialog({
   const [text, setText] = React.useState("")
   const [dataClass, setDataClass] = React.useState<DataClass>(defaultDataClass)
   const [busy, setBusy] = React.useState(false)
-  const [error, setError] = React.useState<string | null>(null)
+  const [error, setError] = React.useState<UploadErrorInfo | null>(null)
 
   React.useEffect(() => {
     if (!open) return
@@ -1147,11 +1244,17 @@ function TextSourceDialog({
       setText("")
       onOpenChange(false)
     } catch (err) {
-      setError(
-        err instanceof Error
-          ? `${err.message} Der Text wurde nicht hinzugefügt.`
-          : "Der Text konnte nicht hinzugefügt werden."
+      const info = toUploadErrorInfo(
+        err,
+        "Der Text konnte nicht hinzugefügt werden."
       )
+      setError({
+        ...info,
+        message:
+          err instanceof Error
+            ? `${info.message} Der Text wurde nicht hinzugefügt.`
+            : info.message,
+      })
     } finally {
       setBusy(false)
     }
@@ -1159,7 +1262,7 @@ function TextSourceDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Text einfügen</DialogTitle>
           <DialogDescription>
@@ -1167,7 +1270,7 @@ function TextSourceDialog({
             Gesprächsprotokolle.
           </DialogDescription>
         </DialogHeader>
-        <div className="grid gap-4">
+        <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
           <div className="grid gap-1.5">
             <Label htmlFor="text-source-title">Titel der Quelle</Label>
             <Input
@@ -1194,11 +1297,14 @@ function TextSourceDialog({
             value={dataClass}
             onChange={setDataClass}
             disabled={busy}
+            projectDefault={defaultDataClass}
           />
           {error && (
-            <p role="alert" className="text-sm text-destructive">
-              {error}
-            </p>
+            <UploadErrorNotice
+              error={error}
+              onRetry={() => void submit()}
+              retryDisabled={busy || !title.trim() || !text.trim()}
+            />
           )}
         </div>
         <DialogFooter>
@@ -1226,7 +1332,11 @@ function TextSourceDialog({
 // Missing/unknown Datenklasse is always treated as confidential — sources are
 // never imported across projects without a deliberate confirmation.
 function isSensitiveSource(source: Source): boolean {
-  return source.dataClass == null || source.dataClass === "confidential"
+  return (
+    source.dataClass == null ||
+    source.dataClass === "confidential" ||
+    source.dataClass === "nda"
+  )
 }
 
 function SourceDataClassPill({ source }: { source: Source }) {
@@ -1235,7 +1345,7 @@ function SourceDataClassPill({ source }: { source: Source }) {
       <span
         className={cn(
           "inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-xs",
-          source.dataClass === "confidential"
+          source.dataClass === "confidential" || source.dataClass === "nda"
             ? "border-status-partial/40 bg-status-partial/8 text-foreground"
             : "border-border bg-muted/40 text-muted-foreground"
         )}
@@ -1321,7 +1431,7 @@ function ImportSourcesDialog({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-xl">
+      <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-xl">
         <DialogHeader>
           <DialogTitle>Aus anderem Projekt übernehmen</DialogTitle>
           <DialogDescription>
@@ -1331,7 +1441,7 @@ function ImportSourcesDialog({
           </DialogDescription>
         </DialogHeader>
         {project ? (
-          <div className="grid gap-4">
+          <div className="grid min-h-0 flex-1 content-start gap-4 overflow-y-auto">
             <div className="grid gap-1.5">
               <Label htmlFor="import-project">Projekt</Label>
               <Select

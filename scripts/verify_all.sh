@@ -27,7 +27,8 @@ pm_run()  { if [ "$PM_KIND" = "pnpm" ]; then $PM "$@"; else npm run "$@"; fi; }
 pm_exec() { if [ "$PM_KIND" = "pnpm" ]; then $PM exec "$@"; else npx "$@"; fi; }
 
 R_BACKEND="skip"; R_MIGRATION="skip"; R_FRONTEND="skip"; R_QUALITY="skip"
-R_PLAYWRIGHT="skip"; R_APISMOKE="skip"; R_EXPORT="skip"; R_NORAWLOG="skip"; EVAL_PATH="-"
+R_PLAYWRIGHT="skip"; R_GOLDEN2="skip"; R_APISMOKE="skip"; R_EXPORT="skip"
+R_NORAWLOG="skip"; R_TESTDATA="skip"; R_LEGACYGUARD="skip"; EVAL_PATH="-"
 BACKEND_PID=""; FRONTEND_PID=""
 E2E_DB="$BACKEND/var/verify_e2e.db"
 export E2E_EMAIL="${E2E_EMAIL:-anna.keller@example.test}"
@@ -46,6 +47,16 @@ trap cleanup EXIT INT TERM
 
 echo "== M10 verification =="
 echo "package manager: $PM"
+
+# --- Testdaten-Marker-Check (R0.4) --------------------------------------------
+echo "-- testdata marker check --"
+"$PY" "$ROOT/scripts/check_testdata_markers.py" --root "$ROOT" \
+  && R_TESTDATA="pass" || R_TESTDATA="FAIL"
+
+# --- Legacy-Status-Guard (R1.4) ------------------------------------------------
+echo "-- legacy status guard --"
+"$PY" "$ROOT/scripts/check_legacy_status_paths.py" --root "$ROOT" \
+  && R_LEGACYGUARD="pass" || R_LEGACYGUARD="FAIL"
 
 # --- Backend: migration check + pytest ---------------------------------------
 echo "-- backend: fresh-DB migration check --"
@@ -66,6 +77,9 @@ echo "-- frontend: lint + tsc + build --"
 R_QUALITY="pass"
 pm_run lint || R_QUALITY="FAIL"
 pm_exec tsc --noEmit || R_QUALITY="FAIL"
+# OneDrive-Sync kann eine stale .next sperren (EPERM beim unlink) → vor dem Build
+# best-effort räumen. Kein Hänger; nur ein Lock auf Altbeständen (siehe README).
+rm -rf "$ROOT/.next" 2>/dev/null || true
 pm_run build || R_QUALITY="FAIL"
 
 # --- E2E + smokes: start servers, run, tear down ------------------------------
@@ -100,6 +114,12 @@ done
 if [ "$READY" = "yes" ]; then
   echo "-- Playwright --"
   pm_exec playwright test --workers=1 && R_PLAYWRIGHT="pass" || R_PLAYWRIGHT="FAIL"
+  # Akzeptanz: der Golden Path läuft ZWEIMAL hintereinander auf der frischen
+  # Demo-DB (die Playwright-Suite oben ist Lauf 1; hier folgt Lauf 2). Eindeutige
+  # Projekttitel machen den zweiten Lauf kollisionsfrei.
+  echo "-- Golden Path (2. Lauf, frische Demo-DB) --"
+  pm_exec playwright test e2e/golden-path.spec.ts --workers=1 \
+    && R_GOLDEN2="pass" || R_GOLDEN2="FAIL"
   echo "-- API smoke --"
   "$PY" "$ROOT/scripts/smoke_api.py" && R_APISMOKE="pass" || R_APISMOKE="FAIL"
   echo "-- EvaluationRunSummary --"
@@ -108,7 +128,8 @@ if [ "$READY" = "yes" ]; then
     && "$PY" -m app.evaluation ) \
     && EVAL_PATH="$BACKEND/var/evaluation/EvaluationRunSummary.json"
 else
-  R_PLAYWRIGHT="FAIL(servers not ready)"; R_APISMOKE="FAIL(servers not ready)"
+  R_PLAYWRIGHT="FAIL(servers not ready)"; R_GOLDEN2="FAIL(servers not ready)"
+  R_APISMOKE="FAIL(servers not ready)"
 fi
 
 # The export + no-raw-log smokes run as backend pytest cases (test_m10_smoke.py).
@@ -124,13 +145,16 @@ echo "migration                : $R_MIGRATION"
 echo "frontend tests (vitest)  : $R_FRONTEND"
 echo "build/typecheck/lint     : $R_QUALITY"
 echo "Playwright               : $R_PLAYWRIGHT"
+echo "golden path (2nd run)    : $R_GOLDEN2   (e2e/golden-path.spec.ts)"
 echo "API smoke                : $R_APISMOKE"
 echo "export smoke             : $R_EXPORT   (test_m10_smoke.py::test_export_all_types)"
 echo "no-raw-log               : $R_NORAWLOG   (test_m10_smoke.py::test_no_raw_log)"
+echo "testdata markers         : $R_TESTDATA   (scripts/check_testdata_markers.py)"
+echo "legacy status guard      : $R_LEGACYGUARD   (scripts/check_legacy_status_paths.py)"
 echo "evaluation summary       : $EVAL_PATH"
 echo "========================================================="
 
-for r in "$R_BACKEND" "$R_MIGRATION" "$R_FRONTEND" "$R_QUALITY" "$R_PLAYWRIGHT" "$R_APISMOKE"; do
+for r in "$R_BACKEND" "$R_MIGRATION" "$R_FRONTEND" "$R_QUALITY" "$R_PLAYWRIGHT" "$R_GOLDEN2" "$R_APISMOKE" "$R_TESTDATA" "$R_LEGACYGUARD"; do
   case "$r" in FAIL*) exit 1;; esac
 done
 echo "ALL GREEN"

@@ -1,19 +1,70 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Save } from "lucide-react"
+import { Loader2, RefreshCw, Save } from "lucide-react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
+  getBudgetPrecheck,
   getProject,
   patchProject,
+  type BudgetPrecheckCheckDto,
+  type BudgetPrecheckDto,
+  type BudgetPrecheckStatus,
   type ProjectBudgetPatch,
   type ProjectDto,
 } from "@/lib/projects"
 
-// Budgeteckwerte (Slice 1): reine Erfassung — die Bewertung (40-60%-Anteil,
-// 5%-Barbeitrag) erfolgt deterministisch im Anforderungen-Screen.
+// Budgeteckwerte: Erfassung + read-only «Formale Vorprüfung». Gerechnet wird
+// ausschliesslich im Backend-Rule-Kern (gleiche Handler und Registry-Schwellen
+// wie der Analyse-Lauf) — das Frontend zeigt nur an.
+
+// Eigenes Vorprüfungs-Vokabular — bewusst KEIN Requirement-/Evidenz-Status.
+const PRECHECK_BADGE: Record<
+  BudgetPrecheckStatus,
+  { label: string; className: string }
+> = {
+  fulfilled: {
+    label: "Erfüllt",
+    className: "border-status-fulfilled/60 text-status-fulfilled",
+  },
+  review: {
+    label: "Prüfen",
+    className: "border-status-partial/60 text-status-partial",
+  },
+  blocker: { label: "Blocker", className: "border-destructive/60 text-destructive" },
+  missing: { label: "Angabe fehlt", className: "text-muted-foreground" },
+}
+
+const NUMBER_FORMAT = new Intl.NumberFormat("de-CH", {
+  maximumFractionDigits: 2,
+})
+
+function chf(value: number | null): string {
+  return value === null ? "Angabe fehlt" : NUMBER_FORMAT.format(value)
+}
+
+/** Schwellen-Erklärung aus der Registry-Condition — nichts wird hier
+ *  nachgerechnet oder zweitkodiert. */
+function conditionSentence(check: BudgetPrecheckCheckDto): string {
+  const min = check.condition.min
+  const max = check.condition.max
+  if (check.condition.type === "range_percent") {
+    return `Der Beitrag der Umsetzungspartner (Eigenleistung + Barbeitrag) muss ${String(min)}–${String(max)} % der direkten Projektkosten betragen.`
+  }
+  if (check.condition.type === "min_percent") {
+    return `Der Barbeitrag muss mindestens ${String(min)} % der direkten Projektkosten betragen.`
+  }
+  return check.reason
+}
 
 interface BudgetFormState {
   direct_total_project_costs_excluding_overhead: string
@@ -81,32 +132,48 @@ export function BudgetForm({ projectId }: { projectId: string }) {
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [saved, setSaved] = React.useState(false)
+  const [loadError, setLoadError] = React.useState(false)
+  const [precheck, setPrecheck] = React.useState<BudgetPrecheckDto | null>(null)
+  const [precheckUnavailable, setPrecheckUnavailable] = React.useState(false)
 
-  React.useEffect(() => {
-    let cancelled = false
-    getProject(projectId)
-      .then((project: ProjectDto) => {
-        if (cancelled) return
-        setForm({
-          direct_total_project_costs_excluding_overhead: toFormValue(
-            project.direct_total_project_costs_excluding_overhead
-          ),
-          implementation_own_contribution: toFormValue(
-            project.implementation_own_contribution
-          ),
-          cash_contribution: toFormValue(project.cash_contribution),
-          total_requested_funding: toFormValue(project.total_requested_funding),
-          budget_exception_basis: project.budget_exception_basis ?? "",
-          duration_months: toFormValue(project.duration_months),
-        })
-      })
-      .catch(() => {
-        if (!cancelled) setError("Budgetangaben konnten nicht geladen werden.")
-      })
-    return () => {
-      cancelled = true
+  const loadPrecheck = React.useCallback(async () => {
+    try {
+      setPrecheck(await getBudgetPrecheck(projectId))
+      setPrecheckUnavailable(false)
+    } catch {
+      // Die Erfassung bleibt voll nutzbar — nur die Anzeige fehlt.
+      setPrecheckUnavailable(true)
     }
   }, [projectId])
+
+  React.useEffect(() => {
+    void loadPrecheck()
+  }, [loadPrecheck])
+
+  const loadProject = React.useCallback(async () => {
+    try {
+      const project: ProjectDto = await getProject(projectId)
+      setForm({
+        direct_total_project_costs_excluding_overhead: toFormValue(
+          project.direct_total_project_costs_excluding_overhead
+        ),
+        implementation_own_contribution: toFormValue(
+          project.implementation_own_contribution
+        ),
+        cash_contribution: toFormValue(project.cash_contribution),
+        total_requested_funding: toFormValue(project.total_requested_funding),
+        budget_exception_basis: project.budget_exception_basis ?? "",
+        duration_months: toFormValue(project.duration_months),
+      })
+      setLoadError(false)
+    } catch {
+      setLoadError(true)
+    }
+  }, [projectId])
+
+  React.useEffect(() => {
+    void loadProject()
+  }, [loadProject])
 
   const set = (patch: Partial<BudgetFormState>) => {
     setSaved(false)
@@ -137,6 +204,8 @@ export function BudgetForm({ projectId }: { projectId: string }) {
     try {
       await patchProject(projectId, patch)
       setSaved(true)
+      // Vorprüfung sofort mit den gespeicherten Werten aktualisieren.
+      void loadPrecheck()
     } catch {
       setError("Budgetangaben konnten nicht gespeichert werden.")
     } finally {
@@ -151,6 +220,21 @@ export function BudgetForm({ projectId }: { projectId: string }) {
         Beträge in CHF, direkte Projektkosten ohne Overhead. Die formale
         Bewertung sehen Sie im Schritt Anforderungen.
       </p>
+
+      {loadError && (
+        <div
+          role="alert"
+          className="mt-4 flex flex-wrap items-center justify-between gap-2 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3"
+        >
+          <p className="text-sm text-foreground">
+            Budgetangaben konnten nicht geladen werden.
+          </p>
+          <Button type="button" variant="outline" size="sm" onClick={() => void loadProject()}>
+            <RefreshCw data-icon="inline-start" />
+            Erneut versuchen
+          </Button>
+        </div>
+      )}
 
       <form
         onSubmit={onSubmit}
@@ -186,6 +270,10 @@ export function BudgetForm({ projectId }: { projectId: string }) {
             onChange={(e) => set({ budget_exception_basis: e.target.value })}
             placeholder="z. B. Start-up-Ausnahme gemäss Vereinbarung"
           />
+          <p className="mt-1 text-xs text-muted-foreground">
+            Eine Ausnahme führt in der Vorprüfung zur Einstufung «Prüfen» —
+            sie wird von Menschen geprüft, nie automatisch akzeptiert.
+          </p>
         </div>
 
         {error && (
@@ -210,6 +298,126 @@ export function BudgetForm({ projectId }: { projectId: string }) {
           </Button>
         </div>
       </form>
+
+      <section
+        data-testid="budget-precheck"
+        className="mt-6 rounded-lg border border-border bg-card p-4"
+      >
+        <h3 className="text-sm font-medium">Formale Vorprüfung</h3>
+        <p className="mt-1 text-xs text-muted-foreground">
+          Auf Basis der aktuellen Eingaben, berechnet vom Regelwerk — ersetzt
+          weder die Analyse noch die menschliche Prüfung.
+        </p>
+
+        {precheckUnavailable && (
+          <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+            <p className="text-sm text-muted-foreground">
+              Die Vorprüfung ist derzeit nicht verfügbar.
+            </p>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void loadPrecheck()}
+            >
+              <RefreshCw data-icon="inline-start" />
+              Erneut versuchen
+            </Button>
+          </div>
+        )}
+
+        {precheck && (
+          <>
+            <dl className="mt-3 grid gap-x-6 gap-y-1 text-sm sm:grid-cols-[auto_1fr]">
+              <dt className="text-muted-foreground">
+                Eigenleistung + Barbeitrag = Umsetzungspartnerbeitrag
+              </dt>
+              <dd data-testid="precheck-contribution">
+                {precheck.figures.implementation_contribution_chf !== null &&
+                precheck.figures.own_contribution_chf !== null &&
+                precheck.figures.cash_contribution_chf !== null
+                  ? `${chf(precheck.figures.own_contribution_chf)} + ${chf(precheck.figures.cash_contribution_chf)} = ${chf(precheck.figures.implementation_contribution_chf)} CHF` +
+                    (precheck.figures.implementation_share_percent !== null
+                      ? ` (${NUMBER_FORMAT.format(precheck.figures.implementation_share_percent)} % der direkten Projektkosten)`
+                      : "")
+                  : "Angabe fehlt"}
+              </dd>
+              <dt className="text-muted-foreground">Barbeitrag (Cash-Anteil)</dt>
+              <dd data-testid="precheck-cash">
+                {precheck.figures.cash_share_percent !== null
+                  ? `${NUMBER_FORMAT.format(precheck.figures.cash_share_percent)} % der direkten Projektkosten`
+                  : "Angabe fehlt"}
+              </dd>
+              <dt className="text-muted-foreground">Förderanteil (informativ)</dt>
+              <dd data-testid="precheck-funding">
+                {precheck.figures.funding_share_percent !== null
+                  ? `${NUMBER_FORMAT.format(precheck.figures.funding_share_percent)} %`
+                  : "Angabe fehlt"}
+              </dd>
+            </dl>
+
+            <ul className="mt-4 flex flex-col gap-2">
+              {precheck.checks.map((check) => (
+                <li
+                  key={check.rule_id}
+                  data-testid="precheck-check"
+                  className="flex flex-col gap-1 rounded-md border border-border px-3 py-2"
+                >
+                  <span className="flex flex-wrap items-center gap-2">
+                    <Badge
+                      variant="outline"
+                      className={PRECHECK_BADGE[check.status].className}
+                    >
+                      {PRECHECK_BADGE[check.status].label}
+                    </Badge>
+                    <span className="text-sm font-medium text-foreground">
+                      {check.title}
+                    </span>
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    {check.reason}
+                  </span>
+                  {check.status === "review" && (
+                    <span className="text-xs text-status-partial">
+                      Die Ausnahmebegründung wird von Menschen geprüft — die
+                      App bestätigt keine Ausnahme.
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+
+            <Accordion className="mt-2">
+              <AccordionItem value="warum" className="border-b-0">
+                <AccordionTrigger>Warum wird das geprüft?</AccordionTrigger>
+                <AccordionContent>
+                  <ul className="flex flex-col gap-2 text-xs text-muted-foreground">
+                    {precheck.checks.map((check) => (
+                      <li key={check.rule_id}>
+                        <span className="font-medium text-foreground">
+                          {check.title}:
+                        </span>{" "}
+                        {conditionSentence(check)}{" "}
+                        <span>
+                          Quelle: {check.source_ref ?? "—"}
+                          {check.last_checked
+                            ? ` (geprüft am ${check.last_checked})`
+                            : ""}
+                          , Regelstand {check.rule_version}.
+                        </span>
+                      </li>
+                    ))}
+                    <li>
+                      Eine erfüllte Rechnung ist eine formale Vorprüfung — die
+                      menschliche Prüfung erfolgt im Schritt Qualitätsprüfung.
+                    </li>
+                  </ul>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </>
+        )}
+      </section>
     </section>
   )
 }

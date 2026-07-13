@@ -54,6 +54,8 @@ def to_contracts(
 ) -> list[AssessmentSchema]:
     issues = _issues_by_target(db, run_id)
     links = evidence_repo.links_by_assessment(db, run_id)
+    all_links = [link for group in links.values() for link in group]
+    link_statuses = evidence_repo.link_support_statuses(db, run_id, all_links)
     registry_requirements = get_registry().requirements
     out: list[AssessmentSchema] = []
     for assessment in list_for_run(db, run_id):
@@ -69,7 +71,10 @@ def to_contracts(
                 # Staleness reflects current project/partner inputs vs snapshot.
                 stale=stale or assessment.stale,
                 evidence_links=[
-                    evidence_repo.to_link_contract(link)
+                    evidence_repo.to_link_contract(
+                        link,
+                        support_status=link_statuses.get(link.evidence_link_id),
+                    )
                     for link in links.get(assessment.assessment_id, [])
                 ],
                 open_issues=[

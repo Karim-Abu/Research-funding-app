@@ -19,7 +19,9 @@ from app.evidence.tokenize import content_terms
 # Versioned, explicit market-signal vocabulary (German + English). Deliberately small
 # and generic — NOT domain synonyms, NOT company names. Used only to PRE-FILTER which
 # already-imported public passages are worth structuring; it never invents content.
-MARKET_SIGNAL_VERSION = "market-signal-1"
+# market-signal-2 (R8): + Marktgrössen-/Wachstums- und Kundenproblem-Signale für die
+# neuen Kategorien market_size_claim / customer_problem.
+MARKET_SIGNAL_VERSION = "market-signal-2"
 MARKET_SIGNAL_TERMS = frozenset(
     {
         # English
@@ -28,12 +30,16 @@ MARKET_SIGNAL_TERMS = frozenset(
         "market", "customers", "customer", "segment", "vendor", "vendors", "provider",
         "providers", "compared", "comparison", "unlike", "versus", "incumbent",
         "substitute", "offering", "differentiation", "competing", "rival", "rivals",
+        "growth", "revenue", "demand", "problem", "problems", "pain", "need", "needs",
+        "challenge", "challenges",
         # German
         "konkurrent", "konkurrenten", "konkurrenz", "wettbewerb", "wettbewerber",
         "alternative", "alternativen", "lösung", "lösungen", "plattform", "produkt",
         "produkte", "markt", "kunden", "kunde", "kundensegment", "anbieter", "anbietern",
         "vergleich", "verglichen", "unterschied", "differenzierung", "mitbewerber",
         "marktteilnehmer", "ersatz", "angebot",
+        "marktgrösse", "marktgroesse", "marktvolumen", "wachstum", "umsatz", "nachfrage",
+        "problem", "probleme", "bedarf", "herausforderung", "herausforderungen",
     }
 )
 

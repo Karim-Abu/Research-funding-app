@@ -1,18 +1,29 @@
 "use client"
 
 import * as React from "react"
-import { AlertTriangle, Info } from "lucide-react"
-import { FieldTransferCard } from "@/components/portal-transfer/field-transfer-card"
+import { AlertTriangle, Copy, Info } from "lucide-react"
+import {
+  FieldTransferCard,
+  OVERRIDE_REASONS,
+} from "@/components/portal-transfer/field-transfer-card"
 import {
   COVERAGE_STATEMENT,
   CLIPBOARD_PRIVACY_NOTE,
   UNSUPPORTED_AREAS,
+  assembleChapterText,
+  assembleFullDraftText,
   fieldWarnings,
   groupBySection,
   type WarningCode,
 } from "@/lib/portal-transfer"
 import { fieldReadinessRows, readinessSummary } from "@/lib/export-view"
-import type { PortalFieldDraftDto } from "@/lib/fields"
+import { copyPlain } from "@/lib/clipboard"
+import {
+  FieldError,
+  recordCopyEvent,
+  type OverrideReasonCode,
+  type PortalFieldDraftDto,
+} from "@/lib/fields"
 import { fieldModeLabel, type PortalFieldInfoDto } from "@/lib/portal-fields"
 import { SECTION_LABELS, SECTION_ORDER } from "@/lib/portal-transfer"
 import { Button } from "@/components/ui/button"
@@ -162,23 +173,54 @@ export function PortalTransfer({
           Für diesen Lauf liegen noch keine übernehmbaren Feldtexte vor.
         </p>
       ) : (
-        groups.map((group) => (
-          <section key={group.key} className="flex flex-col gap-3">
-            <h2 className="text-sm font-semibold text-muted-foreground">{group.label}</h2>
-            {group.fields.map((field) => (
-              <FieldTransferCard
-                key={field.field_id}
-                field={field}
-                review={review}
-                copiedAt={copiedAt.get(field.field_id) ?? null}
-                onCopied={markCopied}
-                runId={mockMode ? null : runId}
-                copyEventsEnabled={copyEventsEnabled}
-                onReload={onReload}
-              />
-            ))}
-          </section>
-        ))
+        <>
+          {/* R6: Gesamtentwurf als Arbeitskopie kopieren (mit Feldüberschriften). */}
+          <BulkCopyButton
+            label="Gesamten Textentwurf kopieren"
+            fields={fields}
+            review={review}
+            copyText={assembleFullDraftText(fields)}
+            runId={mockMode ? null : runId}
+            copyEventsEnabled={copyEventsEnabled}
+            onCopied={markCopied}
+            onReload={onReload}
+          />
+          {groups.map((group) => (
+            <section key={group.key} className="flex flex-col gap-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-sm font-semibold text-muted-foreground">
+                  {group.label}
+                </h2>
+                <BulkCopyButton
+                  label="Kapitel kopieren"
+                  fields={group.fields}
+                  review={review}
+                  copyText={assembleChapterText(group)}
+                  runId={mockMode ? null : runId}
+                  copyEventsEnabled={copyEventsEnabled}
+                  onCopied={markCopied}
+                  onReload={onReload}
+                />
+              </div>
+              {group.fields.map((field) => (
+                <FieldTransferCard
+                  key={field.field_id}
+                  field={field}
+                  review={review}
+                  copiedAt={copiedAt.get(field.field_id) ?? null}
+                  onCopied={markCopied}
+                  runId={mockMode ? null : runId}
+                  copyEventsEnabled={copyEventsEnabled}
+                  subsections={
+                    portalFields?.find((p) => p.field_id === field.field_id)
+                      ?.subsections ?? []
+                  }
+                  onReload={onReload}
+                />
+              ))}
+            </section>
+          ))}
+        </>
       )}
 
       {/* Slice 4: read-only checklist of the portal fields the Beta does not
@@ -216,6 +258,165 @@ export function PortalTransfer({
           </div>
         </div>
       </section>
+    </div>
+  )
+}
+
+/**
+ * R6 Kapitel-/Gesamt-Kopie: kopiert die Arbeitskopie mehrerer Felder in einem
+ * Schritt. Je enthaltenem Feld wird ein metadata-only CopyEvent protokolliert
+ * (bestehende API, kein Rohtext); Felder mit Hinweisen verlangen wie bei der
+ * Einzelkopie eine dokumentierte Begründung. Nie "einreichbereit".
+ */
+function BulkCopyButton({
+  label,
+  fields,
+  review,
+  copyText,
+  runId = null,
+  copyEventsEnabled = false,
+  onCopied,
+  onReload,
+}: Readonly<{
+  label: string
+  fields: PortalFieldDraftDto[]
+  review: ReviewPackageDto | null
+  copyText: string
+  runId?: string | null
+  copyEventsEnabled?: boolean
+  onCopied: (fieldId: string, at?: Date) => void
+  onReload?: () => void
+}>) {
+  const [confirming, setConfirming] = React.useState(false)
+  const [reasonCode, setReasonCode] = React.useState<OverrideReasonCode | null>(null)
+  const [reasonNote, setReasonNote] = React.useState("")
+  const [message, setMessage] = React.useState<string | null>(null)
+
+  const warningsByField = fields.map(
+    (field) => [field, fieldWarnings(field, review)] as const
+  )
+  const warnedCount = warningsByField.filter(([, w]) => w.length > 0).length
+  const loggingActive = Boolean(runId) && copyEventsEnabled
+  const needsReason = loggingActive && warnedCount > 0
+  const reasonMissing =
+    needsReason &&
+    (reasonCode === null || (reasonCode === "other" && reasonNote.trim() === ""))
+
+  async function copyAll() {
+    setMessage(null)
+    if (loggingActive && runId) {
+      const results = await Promise.allSettled(
+        warningsByField.map(([field, warnings]) =>
+          recordCopyEvent(runId, field.field_id, {
+            draft_version_id: field.current_version.draft_version_id,
+            client_warnings: warnings.map((w) => w.code),
+            ...(warnings.length > 0 && reasonCode
+              ? {
+                  override_reason_code: reasonCode,
+                  ...(reasonCode === "other"
+                    ? { override_reason_note: reasonNote.trim() }
+                    : {}),
+                }
+              : {}),
+          })
+        )
+      )
+      const stale = results.some(
+        (r) =>
+          r.status === "rejected" &&
+          r.reason instanceof FieldError &&
+          r.reason.status === 409
+      )
+      if (stale) {
+        // Angezeigter Stand ist veraltet — nicht kopieren, neu laden.
+        setConfirming(false)
+        setMessage(
+          "Mindestens ein Feldtext wurde zwischenzeitlich geändert und wird neu geladen."
+        )
+        onReload?.()
+        return
+      }
+      if (results.some((r) => r.status === "rejected")) {
+        // Fail-open wie bei der Einzelkopie: Logging blockiert das Kopieren nie.
+        setMessage("Übernahme konnte nicht vollständig protokolliert werden.")
+      }
+    }
+    setConfirming(false)
+    setReasonCode(null)
+    setReasonNote("")
+    try {
+      await copyPlain(copyText)
+      const now = new Date()
+      for (const field of fields) onCopied(field.field_id, now)
+    } catch {
+      setMessage(
+        "Automatisches Kopieren ist nicht möglich. Bitte kopieren Sie die Felder einzeln."
+      )
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-2">
+      <Button
+        type="button"
+        size="sm"
+        variant="outline"
+        onClick={() => (warnedCount > 0 ? setConfirming(true) : void copyAll())}
+      >
+        <Copy data-icon="inline-start" />
+        {label}
+      </Button>
+      {confirming && (
+        <div className="flex flex-col gap-2 rounded border border-amber-300 bg-amber-50 px-2 py-2 text-xs text-amber-900">
+          <span>
+            {warnedCount} {warnedCount === 1 ? "Feld enthält" : "Felder enthalten"}{" "}
+            noch Hinweise. Sie kopieren eine Arbeitskopie — keine geprüfte
+            Endfassung.
+          </span>
+          {needsReason && (
+            <fieldset className="flex flex-col gap-1">
+              <legend className="font-semibold">
+                Grund für Übernahme trotz Hinweisen
+              </legend>
+              {OVERRIDE_REASONS.map((reason) => (
+                <label key={reason.code} className="flex items-center gap-2">
+                  <input
+                    type="radio"
+                    name={`bulk-copy-reason-${label}`}
+                    checked={reasonCode === reason.code}
+                    onChange={() => setReasonCode(reason.code)}
+                  />
+                  {reason.label}
+                </label>
+              ))}
+              {reasonCode === "other" && (
+                <input
+                  type="text"
+                  value={reasonNote}
+                  onChange={(e) => setReasonNote(e.target.value)}
+                  maxLength={200}
+                  placeholder="Kurze Begründung"
+                  aria-label="Kurze Begründung"
+                  className="rounded border border-amber-300 bg-white px-2 py-1 text-xs text-foreground"
+                />
+              )}
+            </fieldset>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <Button size="sm" disabled={reasonMissing} onClick={() => void copyAll()}>
+              Trotzdem kopieren
+            </Button>
+            <Button size="sm" variant="outline" onClick={() => setConfirming(false)}>
+              Abbrechen
+            </Button>
+          </div>
+        </div>
+      )}
+      {message && (
+        <p role="status" className="text-xs text-amber-900">
+          {message}
+        </p>
+      )}
     </div>
   )
 }

@@ -138,3 +138,64 @@ export async function cancelRun(runId: string): Promise<AnalysisRunDto> {
   if (!res.ok) throw await toError(res)
   return (await res.json()) as AnalysisRunDto
 }
+
+// --- Persistierte Run-Phasen (GET /runs/{id}/phases) -------------------------
+// Reload-sicherer Phasenstand + technische Zusammenfassung. Kein erfundener
+// Fortschritt: die Werte kommen 1:1 aus der Datenbank des Laufs.
+
+export type RunPhaseKey =
+  | "prepare_documents"
+  | "detect_facts"
+  | "formal_checks"
+  | "web_research"
+  | "draft_fields"
+  | "quality_review"
+
+export type RunPhaseStatus =
+  | "pending"
+  | "running"
+  | "succeeded"
+  | "failed"
+  | "skipped"
+
+export interface RunPhaseDto {
+  phase_key: RunPhaseKey
+  status: RunPhaseStatus
+  started_at?: string | null
+  ended_at?: string | null
+  error_code?: string | null
+  detail: Record<string, unknown>
+}
+
+export interface AgentUsageSummaryDto {
+  agent_id: string
+  invocations: number
+  providers: string[]
+  models: string[]
+  input_tokens: number
+  output_tokens: number
+  priced_cost_chf: number
+  has_unpriced_usage: boolean
+  latency_ms_total: number
+}
+
+export interface RunTechnicalSummaryDto {
+  run_id: string
+  agents: AgentUsageSummaryDto[]
+  priced_cost_chf_total: number
+  has_unpriced_usage: boolean
+  same_provider_a2_a3?: boolean | null
+}
+
+export interface RunPhasesDto {
+  run_id: string
+  run_status: RunStatus
+  phases: RunPhaseDto[]
+  technical: RunTechnicalSummaryDto
+}
+
+export async function getRunPhases(runId: string): Promise<RunPhasesDto> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/phases`)
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as RunPhasesDto
+}

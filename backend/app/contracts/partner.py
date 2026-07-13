@@ -35,6 +35,9 @@ class PartnerCreate(BaseModel):
     official_representative: PersonRef | None = None
     personnel_independence_status: IndependenceStatus | None = None
     financial_independence_status: IndependenceStatus | None = None
+    # Kurze Begründung; die API erzwingt sie, wenn ein Status explizit als
+    # unklar/nicht bestätigt erfasst wird (Konsistenzregel, kein Urteil).
+    review_comment: str | None = None
 
 
 class Partner(PartnerCreate):

@@ -978,7 +978,7 @@ portal_quality_gates:
   affected_field_ids:
   - VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_1
   - VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_2
-  - VC.IMPACT.ENERGY_ECOLOGICAL_SOCIAL
+  - VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_3
   triggers:
   - on-edit
   severity: blocker
@@ -1088,7 +1088,11 @@ portal_quality_gates:
   - SOL.INNOVATION_SOLUTION.MANDATORY_4_2
   - SOL.INNOVATION_SOLUTION.MANDATORY_4_3
   - SOL.INNOVATION_SOLUTION.MANDATORY_4_4
-  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5_1
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5_2
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5_3
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5_4
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_6
   triggers:
   - on-edit
   severity: blocker
@@ -1164,7 +1168,7 @@ portal_quality_gates:
   category: portal_quality_gate
   portal_section: Solution
   affected_field_ids:
-  - SOL.INNOVATION_SOLUTION.MANDATORY_4_5
+  - SOL.INNOVATION_SOLUTION.MANDATORY_4_6
   triggers:
   - pre-review
   severity: warning
@@ -1919,7 +1923,7 @@ cross_field_rules:
 - rule_id: XF.VC.IMPACT_IF_YES
   description: Bei „Yes" zur Impact-Frage ist Higher Purpose und konkreter Beitrag zu beschreiben
   affected_field_ids:
-  - VC.IMPACT.ENERGY_ECOLOGICAL_SOCIAL
+  - VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_3
   source_reference: Value Creation.md §5
   status: active_specification
   implementation_state: requires_condition_mapping
@@ -3636,7 +3640,7 @@ portal_fields:
   support_mode: user_input_or_suggestion
   agent_writable: false
   structured_data_path: application_structure.portal_field_values
-- field_id: VC.IMPACT.ENERGY_ECOLOGICAL_SOCIAL
+- field_id: VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_3
   legacy_id: VC.BMM.IMPACT
   portal_section: Value Creation
   subsection: Business Targets & Business Model
@@ -3879,12 +3883,108 @@ portal_fields:
   support_mode: user_input_or_suggestion
   agent_writable: false
   structured_data_path: application_structure.portal_field_values
-- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_5
+- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_5_1
+  legacy_id: null
+  portal_section: Solution
+  subsection: Innovation Solution
+  portal_area: Mandatory Content 4.5.1
+  label_or_question: 4.5.1 Describe the results of the patent research
+  ui_element: Pflichtfrage
+  mandatory_status: required
+  options_raw: null
+  character_limit: null
+  character_limit_raw: null
+  upload_rule: null
+  governance_or_hitl: HITL Patentrecherche-Ergebnisse
+  suggested_module_legacy: Human Review
+  quality_gate_ids:
+  - QG.SOL.MAIN_QUESTIONS_NOT_DELETABLE
+  evidence_requirement: conditional
+  source_status: portal-dokumentiert
+  source_confidence: portal_documentation
+  notes: 'IP-Block 4.5: Portal-Schema-Minimum (Repair-Auftrag).'
+  field_kind: text_or_structured_input
+  support_mode: user_input_or_suggestion
+  agent_writable: false
+  structured_data_path: application_structure.portal_field_values
+- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_5_2
+  legacy_id: null
+  portal_section: Solution
+  subsection: Innovation Solution
+  portal_area: Mandatory Content 4.5.2
+  label_or_question: 4.5.2 Describe the freedom-to-operate analysis
+  ui_element: Pflichtfrage
+  mandatory_status: required
+  options_raw: null
+  character_limit: null
+  character_limit_raw: null
+  upload_rule: null
+  governance_or_hitl: HITL Freedom-to-Operate
+  suggested_module_legacy: Human Review
+  quality_gate_ids:
+  - QG.SOL.MAIN_QUESTIONS_NOT_DELETABLE
+  evidence_requirement: conditional
+  source_status: portal-dokumentiert
+  source_confidence: portal_documentation
+  notes: 'IP-Block 4.5: Portal-Schema-Minimum (Repair-Auftrag).'
+  field_kind: text_or_structured_input
+  support_mode: user_input_or_suggestion
+  agent_writable: false
+  structured_data_path: application_structure.portal_field_values
+- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_5_3
+  legacy_id: null
+  portal_section: Solution
+  subsection: Innovation Solution
+  portal_area: Mandatory Content 4.5.3
+  label_or_question: 4.5.3 Describe the IP protection strategy
+  ui_element: Pflichtfrage
+  mandatory_status: required
+  options_raw: null
+  character_limit: null
+  character_limit_raw: null
+  upload_rule: null
+  governance_or_hitl: HITL IP-Schutzstrategie
+  suggested_module_legacy: Human Review
+  quality_gate_ids:
+  - QG.SOL.MAIN_QUESTIONS_NOT_DELETABLE
+  evidence_requirement: conditional
+  source_status: portal-dokumentiert
+  source_confidence: portal_documentation
+  notes: 'IP-Block 4.5: Portal-Schema-Minimum (Repair-Auftrag).'
+  field_kind: text_or_structured_input
+  support_mode: user_input_or_suggestion
+  agent_writable: false
+  structured_data_path: application_structure.portal_field_values
+- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_5_4
+  legacy_id: null
+  portal_section: Solution
+  subsection: Innovation Solution
+  portal_area: Mandatory Content 4.5.4
+  label_or_question: 4.5.4 Describe the legal and contractual situation
+  ui_element: Pflichtfrage
+  mandatory_status: required
+  options_raw: null
+  character_limit: null
+  character_limit_raw: null
+  upload_rule: null
+  governance_or_hitl: HITL Rechts- und Vertragslage
+  suggested_module_legacy: Human Review
+  quality_gate_ids:
+  - QG.SOL.MAIN_QUESTIONS_NOT_DELETABLE
+  evidence_requirement: conditional
+  source_status: portal-dokumentiert
+  source_confidence: portal_documentation
+  notes: 'IP-Block 4.5: Portal-Schema-Minimum (Repair-Auftrag).'
+  field_kind: text_or_structured_input
+  support_mode: user_input_or_suggestion
+  agent_writable: false
+  structured_data_path: application_structure.portal_field_values
+- field_id: SOL.INNOVATION_SOLUTION.MANDATORY_4_6
   legacy_id: SOL.INNO.PARTNER
   portal_section: Solution
   subsection: Innovation Solution
-  portal_area: Mandatory Content 4.5
-  label_or_question: 4.5 Please describe how the selected partners are suited for the planned project
+  portal_area: Mandatory Content 4.6
+  label_or_question: 4.6 Please describe how the selected partners are suited for the planned project
   ui_element: Pflichtfrage
   mandatory_status: required
   options_raw: null

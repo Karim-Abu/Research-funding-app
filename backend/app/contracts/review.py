@@ -48,6 +48,77 @@ class ReviewPackage(BaseModel):
     stale_finding_count: int
 
 
+class ReviewStatusView(BaseModel):
+    """R1.2 — kanonischer, schlanker Status-Read-View für alle Screens.
+
+    Additiv und read-only; Zahlen kommen aus denselben Zählfunktionen wie das
+    ReviewPackage (``review.package.counts`` / ``approval_status``) — keine
+    parallele Zähllogik. ``human_review_count`` zählt Requirement-Assessments
+    mit Status ``needs_input`` (menschliche Angabe/Prüfung nötig).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    blocker_count: int
+    warning_count: int
+    human_review_count: int
+    stale: bool
+    approval_status: ApprovalStatus
+    review_package_version: str
+    per_area_counts: dict[str, int]
+    last_reviewed_at: datetime | None = None
+
+
+SeverityClass = Literal[
+    "export_blocker", "eligibility_blocker", "budget_blocker",
+    "reviewer_risk", "evidence_risk", "style_risk",
+]
+
+
+class GroupedFindingExample(BaseModel):
+    """Ein Einzel-Finding als Beispiel innerhalb einer Gruppe — die
+    individuellen Claims/Felder bleiben hier sichtbar."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    finding_id: str
+    field_id: str | None = None
+    description: str
+    target_type: str | None = None
+    target_id: str | None = None
+
+
+class GroupedFinding(BaseModel):
+    """R2.4 — UI-Gruppierung gleichartiger Meldungen. ``group_key`` ist der
+    display_group_key (severity_class|Meldungsfamilie) und enthält NIE
+    Roh-Claim-Text."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    group_key: str
+    title: str
+    count: int
+    severity_class: SeverityClass
+    severity: FindingSeverity
+    affected_fields: list[str]
+    examples: list[GroupedFindingExample]
+    recommended_next_action: str | None = None
+    target_field_id: str | None = None
+
+
+class FixQueueView(BaseModel):
+    """R2.4 — Gruppierungs-/Fix-Queue-Read-View über den offenen Findings
+    eines Runs. Read-only, additiv; ändert keine Findings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    grouped_findings: list[GroupedFinding]
+    next_actions: list[GroupedFinding]
+    total_open_findings: int
+
+
 # --- human decisions (discriminated by target_type) ------------------------
 
 

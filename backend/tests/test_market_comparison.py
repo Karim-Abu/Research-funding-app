@@ -184,6 +184,37 @@ def test_generate_produces_source_backed_item(client, db, web_enabled):
     assert "anthropic" not in blob and "haiku" not in blob and "firecrawl" not in blob
 
 
+def test_market_size_and_customer_problem_categories(client, db, web_enabled):
+    """R8 (Anforderung 11): die persistierte Zusammenfassung strukturiert auch
+    Marktgrössen-Kandidaten und Kundenprobleme — nur mit verifiziertem Zitat,
+    nie als gesicherte Tatsache (Anforderung 12)."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    _seed_imported_public_source(
+        db, project_id, project.workspace_id,
+        text=(
+            "Der Markt für Anomalieerkennung wächst laut Bericht deutlich. "
+            "Kunden beschreiben das Problem manueller Qualitätsprüfung als grösste "
+            "Herausforderung. Anbieter und Wettbewerber bieten alternative Lösungen an."
+        ),
+    )
+    body, op = _generate(client, csrf, project_id)
+    assert op["status"] == "succeeded"
+    view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
+    by_category = {i["category"]: i for i in view["items"]}
+    assert "market_size_claim" in by_category
+    assert "customer_problem" in by_category
+    for item in by_category.values():
+        # Kein Market-Claim ohne Quelle als Tatsache: entweder verifiziertes Zitat
+        # (source_backed) oder ehrlich needs_human_review.
+        if item["confidence_label"] == "source_backed":
+            assert item["evidence_quotes"] and item["source_document_ids"]
+        else:
+            assert item["status"] == "needs_human_review"
+    assert by_category["market_size_claim"]["confidence_label"] == "source_backed"
+
+
 def test_no_imported_sources_gives_empty_with_gaps(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)

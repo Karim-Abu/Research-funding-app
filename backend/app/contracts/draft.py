@@ -11,7 +11,12 @@ from app.contracts.evidence import EvidenceLink
 from app.contracts.requirement import OpenIssue
 
 DraftStatus = Literal["draft", "needs_review", "reviewed", "blocked", "stale"]
-CreatedBy = Literal["agent", "user", "template", "carried_over"]
+CreatedBy = Literal["agent", "user", "template", "carried_over", "import"]
+# R6 Copy-Readiness (additiv): kanonische Kopierbereitschaft je Feld,
+# abgeleitet in app/review/copy_readiness.py. Führt, sperrt nie.
+CopyReadiness = Literal[
+    "blocker", "placeholders_open", "not_reviewed", "draft", "copy_ready"
+]
 
 
 class DraftVersion(BaseModel):
@@ -34,6 +39,7 @@ class PortalFieldDraft(BaseModel):
     open_issue_count: int = 0
     evidence_links: list[EvidenceLink] = []
     open_issues: list[OpenIssue] = []
+    copy_readiness: CopyReadiness | None = None
 
 
 class DraftPatch(BaseModel):
@@ -49,6 +55,15 @@ class EvidenceLinkCreate(BaseModel):
 
     anchor_id: str
     base_version_id: str
+
+
+class FieldSuggestionRead(BaseModel):
+    """Read-only Antwort von GET /runs/{id}/fields/{field}/suggestion:
+    die offene (proposed) A2-Suggestion zur AKTUELLEN Basisversion — derselbe
+    View wie das Redraft-Operation-Result — oder null. Additiv; die Annahme
+    läuft unverändert über updateField mit source_operation_id."""
+
+    suggestion: dict | None = None
 
 
 class RedraftRequest(BaseModel):

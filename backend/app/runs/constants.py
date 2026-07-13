@@ -12,8 +12,10 @@ WORKFLOW_STAGES = [
     "extract_facts_and_map_evidence",
     "verify_evidence",
     "evaluate_requirements_and_rules",
-    "draft_fields",
+    # Templates VOR der A2-Stufe: advisory Vorschläge brauchen eine
+    # existierende Basisversion (draft_fields ruft A2 im normalen Lauf).
     "create_template_drafts",
+    "draft_fields",
     "critic_review",
     "aggregate_review",
     "human_review",
@@ -30,8 +32,8 @@ STAGE_PROGRESS = {
     "extract_facts_and_map_evidence": 27,
     "verify_evidence": 36,
     "evaluate_requirements_and_rules": 45,
-    "draft_fields": 55,
-    "create_template_drafts": 64,
+    "create_template_drafts": 55,
+    "draft_fields": 64,
     "critic_review": 73,
     "aggregate_review": 82,
     "human_review": 91,

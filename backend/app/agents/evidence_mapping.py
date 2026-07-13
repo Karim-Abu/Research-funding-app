@@ -48,6 +48,20 @@ _NO_CALL_MODES = ("deterministic_only", "local_only")
 _PROVIDER_RESOLVER = gateway.default_provider_resolver
 
 
+def _default_resolver():
+    """Wie A2/A3: mit ``agent_fake_provider`` liefert der Default einen
+    deterministischen Fake (leeres, schema-gültiges Ergebnis) — CI/E2E machen
+    nie echte Provider-Calls, auch wenn API-Keys gesetzt sind."""
+    if get_settings().agent_fake_provider:
+        import json
+
+        from app.agents.providers import FakeProvider
+
+        payload = {"candidates": [], "unmapped_targets": [], "conflicts": []}
+        return lambda _route: FakeProvider(raw_output=json.dumps(payload))
+    return _PROVIDER_RESOLVER
+
+
 @dataclass
 class A1MappingOutcome:
     status: str  # reused | skipped | blocked | succeeded | failed
@@ -74,7 +88,7 @@ def run_a1_evidence_mapping(
 ) -> A1MappingOutcome:
     """Run A1 evidence mapping safely. Always returns; never raises into the graph."""
     try:
-        return _run(db, run, provider_resolver or _PROVIDER_RESOLVER)
+        return _run(db, run, provider_resolver or _default_resolver())
     except Exception:  # defensive: A1 must never break the run
         logger.exception("A1 evidence mapping crashed; continuing run %s", run.run_id)
         _audit(db, run, "agent.evidence_mapping.failed", {"reason": "internal_error"})

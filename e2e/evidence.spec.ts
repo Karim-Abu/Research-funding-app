@@ -119,18 +119,21 @@ test("M5 deterministic evidence end-to-end", async ({ page }) => {
       /* storage may be blocked */
     }
   }, projectId)
-  await page.goto("/quellen?tab=evidenz")
-  await expect(page.getByText("Fundstelle bestätigt").first()).toBeVisible({
-    timeout: 20_000,
-  })
+  // R6-Statusleiter: eine exakt gefundene Textstelle rendert als
+  // "Textstelle gefunden" (Coverage) — nie mehr als grünes "Fundstelle
+  // bestätigt" (das bleibt Zusatzinfo in den Details).
+  await page.goto("/anforderungen?tab=evidenz")
+  await expect(
+    page.getByText("Textstelle gefunden – fachliche Prüfung offen").first()
+  ).toBeVisible({ timeout: 20_000 })
   // No human-check affordance in M5.
   await expect(page.getByText(/Geprüft von/)).toHaveCount(0)
 
   // Refresh — evidence persists.
   await page.reload()
-  await expect(page.getByText("Fundstelle bestätigt").first()).toBeVisible({
-    timeout: 20_000,
-  })
+  await expect(
+    page.getByText("Textstelle gefunden – fachliche Prüfung offen").first()
+  ).toBeVisible({ timeout: 20_000 })
 
   await page.getByText("Anna Keller").first().click()
   await page.getByText("Abmelden").click()

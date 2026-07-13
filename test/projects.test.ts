@@ -10,9 +10,7 @@ const intake: IntakeFormData = {
   titel: "Alpha",
   projektidee: "An innovation idea.",
   innovationsfeld: "",
-  budgetrahmen: "350000",
   vertraulichkeit: "public",
-  partner: [],
 }
 
 function projectFromBody(body: Record<string, unknown>) {
@@ -69,7 +67,9 @@ describe("projects client (live mode)", () => {
       web_research_mode: "validated_public",
       nda_applies: false,
     })
-    expect(body.budget_framework_chf).toBe(350000)
+    // Budget wird nicht mehr im Intake erfasst — Erfassungsort ist
+    // «Partner & Budget» (PATCH /projects).
+    expect(body.budget_framework_chf).toBeNull()
   })
 
   it("rejects intake without confidentiality before sending a create payload", async () => {
@@ -129,8 +129,9 @@ describe("projects client (live mode)", () => {
       })
     )
     expect(card.progressPercent).toBe(72)
-    // Backend step 5 (Entwurf) → UI step 6 (Partner & Budget inserted at 2).
-    expect(card.currentStep).toBe(6)
+    // Backend step 5 (Entwurf) → UI step 4 «Antragsentwurf» (6-Schritte-
+    // Katalog, lib/workflow.ts).
+    expect(card.currentStep).toBe(4)
     expect(card.nextAction).toBe("continue_draft")
     expect(card.isDemo).toBe(true)
     expect(card.warningBadge).toBeUndefined()

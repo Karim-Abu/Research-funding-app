@@ -13,7 +13,8 @@ import {
   activeProjectId,
 } from "@/lib/mock-data"
 import { useSession } from "@/components/providers/app-providers"
-import { listProjects, toDashboardCard } from "@/lib/projects"
+import { listProjects, toDashboardCard, withCanonicalStatus } from "@/lib/projects"
+import { getReviewStatus } from "@/lib/status"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { setActiveProjectId } from "@/lib/intake-store"
@@ -55,10 +56,25 @@ export default function DashboardPage() {
     let active = true
     setPageState("loading")
     listProjects()
-      .then((items) => {
+      .then(async (items) => {
+        const cards = items.map(toDashboardCard)
+        // R1.3 — kanonischer Status je Projekt (eine Quelle, lib/status.ts):
+        // die Dashboard-Blockerzahl kommt aus dem Status-View des letzten Runs,
+        // nicht mehr aus der «run_stopped»-Heuristik.
+        const enriched = await Promise.all(
+          cards.map(async (card) => {
+            if (!card.latestRunId) return card
+            try {
+              const status = await getReviewStatus(card.latestRunId)
+              return withCanonicalStatus(card, status.blocker_count)
+            } catch {
+              return card
+            }
+          })
+        )
         if (!active) return
-        setLiveCards(items.map(toDashboardCard))
-        setPageState(items.length > 0 ? "default" : "empty")
+        setLiveCards(enriched)
+        setPageState(enriched.length > 0 ? "default" : "empty")
       })
       .catch(() => {
         if (active) setPageState("error")

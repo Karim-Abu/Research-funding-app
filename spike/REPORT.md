@@ -54,3 +54,12 @@ backend\.venv\Scripts\python.exe spike\make_fixture.py
 backend\.venv\Scripts\python.exe spike\map_pdf.py
 backend\.venv\Scripts\python.exe spike\map_pdf.py spike\fixtures\innolink_sample_degraded.pdf
 ```
+
+## 8. Nachtrag R3.GATE (2026-07-07)
+
+Der in §6 geforderte Nachtest mit einem echten Innolink-Export wurde durchgeführt
+(lokales PDF ausserhalb der Versionskontrolle). Ergebnis, Doppelmessung und
+Entscheid E-01 («R3 bauen») sind in `docs/evaluation/pdf-import-gate-report.md`
+dokumentiert. `map_pdf.py` wurde dafür additiv um das reale Portal-Vokabular
+erweitert; die synthetische Regression (8/8) und die degradierte Messlatte (0/8)
+bleiben unverändert gültig.

@@ -20,6 +20,11 @@ class ProviderRequest:
     output_schema_id: str
     timeout_seconds: int
     max_output_tokens: int | None = None
+    # R5.5b: optional JSON Schema of the declared output (pydantic
+    # model_json_schema). Adapters MAY use it for provider-native structured
+    # output (OpenAI response_format / Anthropic forced tool use). Advisory
+    # only — the gateway's pydantic validation stays the sole authority.
+    output_json_schema: dict | None = None
 
 
 @dataclass(frozen=True)

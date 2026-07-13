@@ -5,8 +5,18 @@ Logik hier bewusst dupliziert statt importiert — Spike-Regel: kein Import aus
 backend/app) und mappt Textblöcke per Label-/Synonymliste auf die 8 vom MVP
 unterstützten M6-Felder. Misst die Mapping-Quote gegen fixtures/ground_truth.json.
 
+R3.GATE-Iteration (2026-07-07): Nachtest mit einem echten Portal-Export (lokal,
+nicht versioniert) zeigte abweichendes Label-Vokabular gegenüber dem synthetischen
+Fixture: `Title in English:`-Kurzlabels, `Management summary` statt `Executive
+summary`, Kapitel im Format `N. Name`, nummerierte Hauptfragen (3.1/4.1) statt
+Sektions-Headings, `Please note`-Hinweise und Seitenköpfe mit `n/m`-Paginierung.
+Die Patterns unten decken beide Vokabulare ab; die synthetische Regression
+(8/8 gegen ground_truth.json) bleibt Pflicht.
+
 Aufruf:  python spike/map_pdf.py [pfad/zum.pdf]
-         (Default: spike/fixtures/innolink_sample.pdf)
+         (Default: spike/fixtures/innolink_sample.pdf; bei fremden PDFs wird ohne
+         Ground Truth nur die Anker-/Konfidenz-Tabelle gedruckt — die Bewertung
+         correct/partial/… erfolgt manuell im Gate-Report.)
 """
 from __future__ import annotations
 
@@ -44,11 +54,19 @@ class FieldPattern:
 FIELDS: tuple[FieldPattern, ...] = (
     FieldPattern(
         "INTRO.APP.NAME",
-        (r"^application name$", r"^application name \(", r"^projektname\b"),
+        # Echte Portal-Exporte können den Haupttitel ganz ohne Label führen
+        # (Nachtest R3.GATE) — dann bleibt das Feld ehrlich "nicht gefunden".
+        (
+            r"^application name$", r"^application name \(", r"^projektname\b",
+            r"^title\s*:$", r"^project title\b",
+        ),
     ),
     FieldPattern(
         "INTRO.APP.NAME_EN",
-        (r"^application name in english\b", r"^projektname englisch\b"),
+        (
+            r"^application name in english\b", r"^projektname englisch\b",
+            r"^title in english\s*:?$",
+        ),
     ),
     FieldPattern(
         "INTRO.APP.ABSTRACT",
@@ -56,7 +74,7 @@ FIELDS: tuple[FieldPattern, ...] = (
     ),
     FieldPattern(
         "INTRO.APP.EXECUTIVE_SUMMARY",
-        (r"^executive summary\b",),
+        (r"^executive summary\b", r"^management summary$"),
     ),
     FieldPattern(
         "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS",
@@ -65,12 +83,18 @@ FIELDS: tuple[FieldPattern, ...] = (
     ),
     FieldPattern(
         "VC.BUSINESS_TARGETS_MODEL.EDITOR",
-        (r"^business targets\s*&\s*business model$", r"^business targets and business model$"),
+        # Portal-Export führt keinen Editor-Heading; Kapitel 3 (Value Creation)
+        # beginnt inhaltlich mit der nummerierten Hauptfrage 3.1.
+        (
+            r"^business targets\s*&\s*business model$",
+            r"^business targets and business model$",
+            r"^3\.1\s",
+        ),
         section_hint="editor",
     ),
     FieldPattern(
         "SOL.INNOVATION_SOLUTION.EDITOR",
-        (r"^innovation solution$",),
+        (r"^innovation solution$", r"^4\.1\s"),
         section_hint="editor",
     ),
     FieldPattern(
@@ -90,17 +114,32 @@ NOISE_PATTERNS = (
     r"-\s+seite\s+\d+$",
     r"^\d+\s*$",
     r"^[a-zäöü ]+\|.*\|",  # einfache Tabellenzeilen "a | b | c"
+    r"^please note\b",  # Portal-Hinweistexte (kein Antragsinhalt)
+    r"^.{0,80}\s\d{1,3}/\d{1,3}$",  # Seitenkopf/-fuss mit n/m-Paginierung
+    r"^\d{1,3}/\d{1,3}$",  # nackte Paginierung (Seitenkopf ueber 2 Zeilen gebrochen)
+    r"^\d{3}\.\d{3}\b",  # laufender Seitenkopf mit Antragsnummer (NNN.NNN …)
 )
 
 # Sektionen (h1/h2) als Content-Stopper.
 SECTION_PATTERNS = (
     r"^\d+\s+(introduction|organisations?\s*&\s*people|value creation|solution|project setup)$",
+    # Portal-Export: Kapitel im Format "N. Name" (Nachtest R3.GATE).
+    r"^\d+\.\s+(introduction|organisations( and |\s*&\s*)people|value creation|solution|project setup)$",
     r"^application name and abstract$",
     r"^independence of research and implementation partners$",
     r"^business targets\s*&\s*business model$",
     r"^innovation solution$",
     r"^planned hours$",
+    r"^total planned hours\b",
+    r"^project budget distribution\b",
+    r"^project budget$",  # dasselbe Heading, vom Export ueber 2 Zeilen gebrochen
+    r"^explanations regarding\b",
 )
+
+# Kurzes Metadaten-Label mit Doppelpunkt ("project duration:") beendet den
+# Inhalt eines KURZfelds (Titel u. ä.). In Editor-Blöcken sind Doppelpunkt-
+# Zeilen normale Aufzählungen im Fliesstext — dort gilt dieser Stopper nicht.
+SHORT_FIELD_STOP = r"^[a-z][a-z /()&-]{2,40}:$"
 
 
 def normalize(line: str) -> str:
@@ -182,6 +221,8 @@ def map_fields(lines: list[str]) -> dict[str, Mapped]:
                 continue
             if is_section(norm):
                 break
+            if fp.section_hint != "editor" and re.match(SHORT_FIELD_STOP, norm):
+                break
             content.append(raw.strip())
         text = "\n".join(content).strip()
         # Editor-Felder ohne nummerierte Hauptfrage → unsicher (Struktur fehlt).
@@ -249,6 +290,29 @@ def main() -> None:
         sys.exit(1)
 
     mapped = map_fields(lines)
+
+    # Ground Truth existiert nur für die synthetischen Fixtures. Fremde PDFs
+    # (z. B. der lokale R3.GATE-Nachtest) bekommen nur die Anker-/Konfidenz-
+    # Tabelle — ohne Inhalte, die Bewertung erfolgt manuell im Gate-Report.
+    known_fixtures = {DEFAULT_PDF.resolve(), (SPIKE_DIR / "fixtures" / "innolink_sample_degraded.pdf").resolve()}
+    if pdf_path.resolve() not in known_fixtures:
+        print()
+        print(f"{'Feld':55} {'Anker':10} {'Konfidenz':10} Zeichen")
+        for fp in FIELDS:
+            got = mapped.get(fp.field_id)
+            anchor = f"Zeile {got.label_line}" if got else "—"
+            print(
+                f"{fp.field_id:55} {anchor:10} "
+                f"{(got.confidence if got else '-'):10} {len(got.text) if got else 0}"
+            )
+        print()
+        print(
+            "Keine Ground Truth für dieses PDF — Bewertung "
+            "correct/partial/uncertain/missed/false-positive manuell "
+            "(docs/evaluation/pdf-import-gate-report.md)."
+        )
+        return
+
     truth = json.loads(GROUND_TRUTH.read_text(encoding="utf-8"))
     report = evaluate(mapped, truth)
 

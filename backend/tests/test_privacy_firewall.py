@@ -197,6 +197,35 @@ def test_d2_full_sanitized_flow(client, db, web_enabled, spy_provider):
     assert "Acme" not in appr.sanitized_query and "500" not in appr.sanitized_query
 
 
+def test_d2_hyphenated_partner_and_word_budget_sanitized(client, web_enabled):
+    """R8-Leakage: zusammengesetzte/Bindestrich-Partnernamen und Beträge in Zahlwörtern
+    werden auch dann entfernt, wenn sie nicht exakt der erfassten Schreibweise entsprechen."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _project(client, csrf, sensitivity="confidential", origin="real_project")
+    _partner(client, csrf, pid)  # "Acme Robotics AG"
+
+    prev = _preview(
+        client, csrf, pid, "Marktübersicht Acme-Robotics halbe Million Franken Automatisierung"
+    ).json()
+    assert prev["decision"] == "require_human_approval"
+    low = prev["sanitized_query"].lower()
+    assert "acme" not in low and "robotics" not in low
+    assert "million" not in low and "franken" not in low
+    cats = {c["category"] for c in prev["redaction_summary"]}
+    assert "partner_name" in cats and "budget_amount" in cats
+
+
+def test_d2_project_codename_sanitized(client, web_enabled):
+    # Der Projektcodename (Titel) steht im D2-Lexikon (project_name) und wird entfernt.
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _project(client, csrf, sensitivity="confidential", origin="real_project",
+                   title="QuantumFoam")
+    prev = _preview(client, csrf, pid, "Wettbewerber QuantumFoam Anomalieerkennung").json()
+    assert prev["decision"] == "require_human_approval"
+    assert "quantumfoam" not in prev["sanitized_query"].lower()
+    assert "project_name" in {c["category"] for c in prev["redaction_summary"]}
+
+
 def test_d2_full_idea_blocked(client, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid = _project(client, csrf, sensitivity="confidential", origin="real_project")

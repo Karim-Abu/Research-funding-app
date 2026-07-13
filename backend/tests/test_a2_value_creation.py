@@ -51,7 +51,8 @@ def test_vc_config_resolves_from_registry():
     config = a2_fields.resolve_field_config(VC_FIELD_ID)
     assert config.profile_id == "A2.value_creation_market_logic"
     assert config.char_limit == 15000
-    assert config.mandatory_markers == ("3.1", "3.2")
+    # Portal-Schema-Minimum: 3.3 (Impact) ist eine Editor-Hauptfrage.
+    assert config.mandatory_markers == ("3.1", "3.2", "3.3")
 
 
 def test_unsupported_field_has_no_config():
@@ -205,7 +206,8 @@ def test_create_redraft_sol_still_works(client, monkeypatch):
 def test_create_redraft_unsupported_field_404(client):
     run_id, _draft_id, base = _setup()
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    res = _create_redraft(client, csrf, run_id, "INTRO.APP.ABSTRACT", base)
+    # INTRO.APP.NAME is not in the A2 allow-list (Abstract/Exec Summary now are).
+    res = _create_redraft(client, csrf, run_id, "INTRO.APP.NAME", base)
     assert res.status_code == 404
 
 

@@ -7,18 +7,15 @@ import {
   Info,
   RefreshCw,
   ExternalLink,
-  CheckCircle2,
-  AlertTriangle,
-  XCircle,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { EvidenceFilterBar } from "@/components/quellen/evidence-filter-bar"
+import { SupportStatusBadge } from "@/components/status/support-status-badge"
 import { cn } from "@/lib/utils"
 import {
   listEvidence,
   VERIFICATION_LABELS,
-  EVIDENCE_VERIFIED_HINT,
   EVIDENCE_SOURCE_TYPE_LABELS,
   REQUIREMENT_FALLBACK,
   REVIEWER_FALLBACK,
@@ -29,33 +26,12 @@ import {
   type EvidenceAnchorDto,
   type EvidenceFilter,
   type EvidenceStatusFilter,
-  type VerificationStatus,
 } from "@/lib/evidence"
+import {
+  SUPPORT_LADDER_HINT,
+  supportStatusFromVerification,
+} from "@/lib/evidence-ladder"
 import { listRequirements } from "@/lib/requirements"
-
-// Colour + icon per verification status (green / orange / red). Labels stay in
-// VERIFICATION_LABELS so the wording remains "Fundstelle bestätigt" etc.
-const STATUS_STYLE: Record<
-  VerificationStatus,
-  { className: string; icon: typeof CheckCircle2 }
-> = {
-  exact_verified: {
-    className: "bg-status-fulfilled/12 text-status-fulfilled",
-    icon: CheckCircle2,
-  },
-  human_verified: {
-    className: "bg-status-fulfilled/12 text-status-fulfilled",
-    icon: CheckCircle2,
-  },
-  unverified: {
-    className: "bg-status-partial/12 text-status-partial",
-    icon: AlertTriangle,
-  },
-  rejected: {
-    className: "bg-destructive/10 text-destructive",
-    icon: XCircle,
-  },
-}
 
 interface JoinedAnchor extends EvidenceAnchorDto {
   requirementTitle: string | null
@@ -158,7 +134,7 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
     <div className="flex flex-col gap-6">
       <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
         <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>{EVIDENCE_VERIFIED_HINT}</span>
+        <span>{SUPPORT_LADDER_HINT}</span>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -169,7 +145,7 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
           onChange={setFilter}
         />
         <span className="text-xs text-muted-foreground">
-          {verifiedCount} bestätigte Fundstelle(n)
+          {verifiedCount} gefundene Textstelle(n)
         </span>
       </div>
 
@@ -183,8 +159,9 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
         <ul className="flex flex-col gap-3">
           {visible.map((anchor) => {
             const isOpen = expanded === anchor.anchor_id
-            const style = STATUS_STYLE[anchor.verification_status]
-            const StatusIcon = style.icon
+            const supportStatus =
+              anchor.support_status ??
+              supportStatusFromVerification(anchor.verification_status)
             const reviewer = formatReviewer(
               anchor.human_checked_by,
               anchor.human_checked_at
@@ -223,15 +200,10 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                       {formatFundstelle(anchor)}
                     </span>
                   </div>
-                  <span
-                    className={cn(
-                      "inline-flex shrink-0 items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium",
-                      style.className
-                    )}
-                  >
-                    <StatusIcon className="size-3.5" />
-                    {VERIFICATION_LABELS[anchor.verification_status]}
-                  </span>
+                  <SupportStatusBadge
+                    status={supportStatus}
+                    className="shrink-0"
+                  />
                 </div>
 
                 {/* Aussage / Zitat */}
@@ -294,6 +266,10 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                       <dd>{anchor.source_name}</dd>
                       <dt>Fundstelle</dt>
                       <dd>{formatFundstelle(anchor)}</dd>
+                      {/* Technischer Fundstellen-Abgleich — Zusatzinfo, kein
+                          Beleg-Status (Coverage ≠ Correctness). */}
+                      <dt>Textabgleich</dt>
+                      <dd>{VERIFICATION_LABELS[anchor.verification_status]}</dd>
                     </dl>
                   </div>
                 )}

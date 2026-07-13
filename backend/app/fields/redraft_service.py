@@ -17,6 +17,7 @@ from app.api.errors import ProblemException
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun, AsyncOperation, PortalFieldDraft
 from app.db.session import SessionLocal
+from app.fields import reason_codes
 from app.repositories import audit
 from app.runs.constants import TERMINAL_OPERATION_STATUSES
 from app.runs.transitions import transition_operation
@@ -48,9 +49,12 @@ def prepare_redraft(
         )
     available, reason = field_drafting.availability(run, draft.field_id)
     if not available:
+        # R4.2: konkreter Grund statt Generiktext — code bleibt ai_unavailable,
+        # reason_code + freigegebener deutscher Text kommen zusätzlich mit.
+        reason_code, reason_text = reason_codes.to_reason(reason)
         raise ProblemException(
             status=503, code="ai_unavailable", title="Service Unavailable",
-            detail="KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.",
+            detail=reason_text, reason_code=reason_code,
         )
     operation_id = str(uuid.uuid4())
     operation = AsyncOperation(
@@ -72,6 +76,59 @@ def prepare_redraft(
     return operation, accepted, guidance
 
 
+def execute_a2_operation(
+    db,
+    *,
+    operation: AsyncOperation,
+    run: AnalysisRun,
+    draft_id: str,
+    base_version_id: str,
+    field_id: str,
+    guidance: str | None = None,
+):
+    """Gemeinsamer A2-Kern für Redraft-Executor UND Run-Graph: Operation
+    running → A2 → succeeded/failed inkl. result/error-Bookkeeping. Jede
+    Suggestion hängt so an einer echten, erfolgreichen AsyncOperation — der
+    bestehende Annahme-Pfad (updateField mit source_operation_id) greift
+    unverändert. Committet selbst; gibt das A2Outcome zurück."""
+    operation_id = operation.operation_id
+    transition_operation(operation, "running")
+    operation.started_at = _now()
+    db.commit()
+
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
+        operation_id=operation_id, guidance=guidance,
+    )
+
+    op = db.get(AsyncOperation, operation_id)
+    if op is None:
+        return outcome
+    if outcome.status in ("succeeded", "reused") and outcome.view is not None:
+        transition_operation(op, "succeeded")
+        op.result = outcome.view
+        op.progress_percent = 100
+    else:
+        op.status = "failed"
+        op.last_error_code = outcome.reason or "ai_unavailable"
+        # R4.2: Verfügbarkeits-Skips (z. B. mode_deterministic_only) tragen
+        # den Katalog-Reason; reine Generierungsfehler bleiben generisch.
+        mapped = reason_codes.maybe_reason(outcome.reason or "")
+        op.error = {
+            "code": outcome.reason or "ai_unavailable",
+            "detail": mapped[1] if mapped else "Es konnte kein Vorschlag erstellt werden.",
+            **({"reason_code": mapped[0]} if mapped else {}),
+        }
+    op.finished_at = _now()
+    audit.record(
+        db, workspace_id=run.workspace_id, actor_user_id=None,
+        action=f"operation.{op.status}", target_type="operation",
+        target_id=operation_id,
+    )
+    db.commit()
+    return outcome
+
+
 def redraft_executor(
     operation_id: str, run_id: str, draft_id: str, base_version_id: str,
     guidance: str | None, field_id: str,
@@ -83,36 +140,10 @@ def redraft_executor(
         run = db.get(AnalysisRun, run_id)
         if op is None or run is None or op.status in TERMINAL_OPERATION_STATUSES:
             return
-        transition_operation(op, "running")
-        op.started_at = _now()
-        db.commit()
-
-        outcome = field_drafting.run_a2_field_drafting(
-            db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
-            operation_id=operation_id, guidance=guidance,
+        execute_a2_operation(
+            db, operation=op, run=run, draft_id=draft_id,
+            base_version_id=base_version_id, field_id=field_id, guidance=guidance,
         )
-
-        op = db.get(AsyncOperation, operation_id)
-        if op is None:
-            return
-        if outcome.status in ("succeeded", "reused") and outcome.view is not None:
-            transition_operation(op, "succeeded")
-            op.result = outcome.view
-            op.progress_percent = 100
-        else:
-            op.status = "failed"
-            op.last_error_code = outcome.reason or "ai_unavailable"
-            op.error = {
-                "code": outcome.reason or "ai_unavailable",
-                "detail": "Es konnte kein Vorschlag erstellt werden.",
-            }
-        op.finished_at = _now()
-        audit.record(
-            db, workspace_id=run.workspace_id, actor_user_id=None,
-            action=f"operation.{op.status}", target_type="operation",
-            target_id=operation_id,
-        )
-        db.commit()
     except Exception:  # noqa: BLE001
         logger.exception("redraft execution failed")
         db.rollback()

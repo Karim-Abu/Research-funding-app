@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+from datetime import datetime, timezone
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -27,6 +28,11 @@ from app.registry import get_registry
 from app.repositories import audit
 from app.review import REVIEW_PROFILE_VERSION
 from app.review.checks import compute_finding_specs
+from app.review.fingerprint import (
+    classify_severity_class,
+    compute_finding_fingerprint,
+    finding_code_family,
+)
 
 DETERMINISTIC = "deterministic_review"
 AGENT = "agent"
@@ -121,6 +127,11 @@ def apply_findings(db: Session, run: AnalysisRun) -> None:
     registry = get_registry()
     profile_id = registry.profile_id or REVIEW_PROFILE_VERSION
     specs = compute_finding_specs(db, run)
+    # R6 Rubric v0: qualitative Heuristiken (reviewer_risk, nie Blocker) laufen
+    # in derselben idempotenten Upsert-Pipeline wie die deterministischen Checks.
+    from app.review.rubric import compute_rubric_specs
+
+    specs = [*specs, *compute_rubric_specs(db, run)]
 
     existing = {
         f.finding_code: f
@@ -131,11 +142,28 @@ def apply_findings(db: Session, run: AnalysisRun) -> None:
             )
         )
     }
+    now = datetime.now(timezone.utc)
     seen: set[str] = set()
     for spec in specs:
         seen.add(spec.finding_code)
         finding = existing.get(spec.finding_code)
         advisory = spec.severity != "blocker"
+        # Issue-Modell v2 (R2.3, additiv): technische Identität + Klasse je
+        # Emission. Kategorie der zugrunde liegenden Anforderung ordnet
+        # Blocker-OpenIssues ein (budget → budget_blocker, sonst eligibility).
+        requirement = (
+            registry.requirements.get(spec.requirement_id)
+            if spec.requirement_id
+            else None
+        )
+        severity_class = classify_severity_class(
+            spec.finding_code,
+            requirement.category if requirement is not None else None,
+        )
+        fp = compute_finding_fingerprint(
+            finding_code_family(spec.finding_code),
+            spec.field_id or spec.requirement_id or spec.target_id,
+        )
         if finding is None:
             finding = ReviewFinding(
                 finding_id=str(uuid.uuid4()),
@@ -154,6 +182,9 @@ def apply_findings(db: Session, run: AnalysisRun) -> None:
                 target_type=spec.target_type,
                 target_id=spec.target_id,
                 recommended_next_action=spec.recommended_next_action,
+                fingerprint=fp,
+                severity_class=severity_class,
+                last_seen_at=now,
             )
             db.add(finding)
             audit.record(
@@ -172,6 +203,9 @@ def apply_findings(db: Session, run: AnalysisRun) -> None:
             finding.target_id = spec.target_id
             finding.recommended_next_action = spec.recommended_next_action
             finding.advisory = advisory
+            finding.fingerprint = fp
+            finding.severity_class = severity_class
+            finding.last_seen_at = now
             if finding.status == "resolved":
                 finding.status = "open"
                 audit.record(

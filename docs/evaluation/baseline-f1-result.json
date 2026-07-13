@@ -1,0 +1,275 @@
+{
+  "f1_project_id": "fd609a64-ff32-4228-83ef-7bc5ed4ab39b",
+  "run_id": "e080336e-6b45-43a9-a6b4-5bf443bceefc",
+  "elapsed_seconds_scripted": 5.0,
+  "manual_steps_checklist": [
+    "Login",
+    "Projekt anlegen (Intake)",
+    "Budget-Snapshot eintragen",
+    "Partner erfassen: research_partner",
+    "Partner erfassen: implementation_partner",
+    "Partner erfassen: other",
+    "Quelle hochladen + Verarbeitung abwarten",
+    "Standard-Analyse starten + abwarten",
+    "Feldtext eintragen: INTRO.APP.NAME",
+    "Feldtext eintragen: INTRO.APP.NAME_EN",
+    "Feldtext eintragen: INTRO.APP.ABSTRACT",
+    "Feldtext eintragen: INTRO.APP.EXECUTIVE_SUMMARY",
+    "Feldtext eintragen: ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS",
+    "Feldtext eintragen: VC.BUSINESS_TARGETS_MODEL.EDITOR",
+    "Feldtext eintragen: SOL.INNOVATION_SOLUTION.EDITOR",
+    "Feldtext eintragen: PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION",
+    "Prüfung aktualisieren (Recheck)",
+    "Qualitäts-/Reliability-Prüfung ausführen"
+  ],
+  "manual_step_count": 18,
+  "screen_sources": {
+    "dashboard": {
+      "definition": "Anzahl Projekte mit cardStatus 'blockiert' (lib/dashboard.ts::summarizeProjects; blockiert nur bei warning_badge run_stopped)",
+      "f1_card_status": "in_bearbeitung",
+      "workspace_blocked_projects": 0,
+      "workspace_project_count": 8
+    },
+    "anforderungen": {
+      "definition": "RequirementAssessments + deren OpenIssues (GET /runs/{id}/requirements)",
+      "assessment_count": 11,
+      "status_counts": {
+        "partial": 2,
+        "needs_input": 4,
+        "blocked": 2,
+        "open": 2,
+        "fulfilled": 1
+      },
+      "open_issue_severity_counts": {
+        "info": 2,
+        "warning": 6,
+        "blocker": 2
+      }
+    },
+    "pruefung_review_package_vor_recheck": {
+      "definition": "ReviewPackage direkt nach Feld-Edits, VOR dem Recheck — zeigt veraltete Findings der Template-Stände",
+      "blocker_count": 10,
+      "warning_count": 4,
+      "recheck_required": true
+    },
+    "pruefung_review_package": {
+      "definition": "ReviewPackage (GET /runs/{id}/review) — Quelle der Qualitätsprüfung",
+      "blocker_count": 18,
+      "warning_count": 54,
+      "approval_status": "blocked",
+      "recheck_required": false,
+      "open_findings": 72,
+      "open_issues": 14
+    },
+    "pruefung_reliability": {
+      "definition": "ReliabilityView (GET /runs/{id}/reliability) — Zuverlässigkeits-Kacheln",
+      "blocker_count": 12,
+      "warning_count": 42,
+      "claim_count": 61,
+      "unsupported_claims": 38,
+      "open_findings": 54,
+      "stale": false
+    },
+    "export": {
+      "definition": "lib/export-view.ts::summarizeExportReadiness — blockerCount = ReviewPackage.blocker_count; fieldsReady = Felder mit status 'reviewed'",
+      "blocker_count": 18,
+      "fields_ready": 0,
+      "fields_total": 8
+    }
+  },
+  "findings_by_message_review": [
+    {
+      "count": 31,
+      "severity": "warning",
+      "description": "Nicht belegte Aussage: für diese Aussage wurde keine verknüpfte Quelle gefunden (Beleg-Suffizienzprüfung). Bitte belegen oder abschwächen."
+    },
+    {
+      "count": 10,
+      "severity": "warning",
+      "description": "Marktaussage ohne quellenbelegte Markt-/Konkurrenzangabe."
+    },
+    {
+      "count": 7,
+      "severity": "blocker",
+      "description": "Nicht belegte Aussage: für diese Aussage wurde keine verknüpfte Quelle gefunden (Beleg-Suffizienzprüfung). Bitte belegen oder abschwächen."
+    },
+    {
+      "count": 5,
+      "severity": "blocker",
+      "description": "Quantifizierte Aussage ohne passende Zahl im Beleg (Beleg-Suffizienzprüfung)."
+    },
+    {
+      "count": 4,
+      "severity": "warning",
+      "description": "Diese Anforderung benötigt zusätzliche Angaben, bevor sie abschliessend beurteilt werden kann."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Barbeitrag 3% < 5%."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Umsetzungsanteil 39% ausserhalb 40–60%."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Das Feld „Abstract (wird in Aramis publiziert)“ enthält noch sichtbare Platzhalter ([[Angabe ergänzen: …]])."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Das Feld „Executive summary (wird nicht in Aramis publiziert)“ enthält noch sichtbare Platzhalter ([[Angabe ergänzen: …]])."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Das Feld „Open Editor (Editor für Innovation Solution)“ enthält noch sichtbare Platzhalter ([[Angabe ergänzen: …]])."
+    },
+    {
+      "count": 1,
+      "severity": "blocker",
+      "description": "Das Feld „Open Editor (Editor für Business Targets & Business Model)“ enthält noch sichtbare Platzhalter ([[Angabe ergänzen: …]])."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Abstract (wird in Aramis publiziert)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Executive summary (wird nicht in Aramis publiziert)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Application name“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Application Name in English“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Explanations and Comments (financial independence)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Explanation (zur Verteilung der Management hours)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Open Editor (Editor für Innovation Solution)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Für „Open Editor (Editor für Business Targets & Business Model)“ ist kein aktiver Evidenz-Verweis hinterlegt, obwohl verifizierte Fundstellen vorliegen."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Quantifizierte Aussage ohne passende Zahl im Beleg (Beleg-Suffizienzprüfung)."
+    }
+  ],
+  "findings_by_message_reliability": [
+    {
+      "count": 31,
+      "severity": "warning",
+      "description": "Nicht belegte Aussage: für diese Aussage wurde keine verknüpfte Quelle gefunden (Beleg-Suffizienzprüfung). Bitte belegen oder abschwächen."
+    },
+    {
+      "count": 10,
+      "severity": "warning",
+      "description": "Marktaussage ohne quellenbelegte Markt-/Konkurrenzangabe."
+    },
+    {
+      "count": 7,
+      "severity": "blocker",
+      "description": "Nicht belegte Aussage: für diese Aussage wurde keine verknüpfte Quelle gefunden (Beleg-Suffizienzprüfung). Bitte belegen oder abschwächen."
+    },
+    {
+      "count": 5,
+      "severity": "blocker",
+      "description": "Quantifizierte Aussage ohne passende Zahl im Beleg (Beleg-Suffizienzprüfung)."
+    },
+    {
+      "count": 1,
+      "severity": "warning",
+      "description": "Quantifizierte Aussage ohne passende Zahl im Beleg (Beleg-Suffizienzprüfung)."
+    }
+  ],
+  "fields": [
+    {
+      "field_id": "INTRO.APP.NAME",
+      "status": "needs_review",
+      "character_count": 66,
+      "character_limit": null,
+      "open_issue_count": 0,
+      "placeholder_marker_count": 0
+    },
+    {
+      "field_id": "INTRO.APP.NAME_EN",
+      "status": "needs_review",
+      "character_count": 59,
+      "character_limit": null,
+      "open_issue_count": 0,
+      "placeholder_marker_count": 0
+    },
+    {
+      "field_id": "INTRO.APP.ABSTRACT",
+      "status": "needs_review",
+      "character_count": 243,
+      "character_limit": 300,
+      "open_issue_count": 1,
+      "placeholder_marker_count": 1
+    },
+    {
+      "field_id": "INTRO.APP.EXECUTIVE_SUMMARY",
+      "status": "needs_review",
+      "character_count": 1006,
+      "character_limit": 2000,
+      "open_issue_count": 1,
+      "placeholder_marker_count": 1
+    },
+    {
+      "field_id": "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS",
+      "status": "needs_review",
+      "character_count": 240,
+      "character_limit": 300,
+      "open_issue_count": 0,
+      "placeholder_marker_count": 0
+    },
+    {
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "status": "needs_review",
+      "character_count": 1436,
+      "character_limit": 15000,
+      "open_issue_count": 1,
+      "placeholder_marker_count": 1
+    },
+    {
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "status": "needs_review",
+      "character_count": 2142,
+      "character_limit": 25000,
+      "open_issue_count": 1,
+      "placeholder_marker_count": 1
+    },
+    {
+      "field_id": "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION",
+      "status": "needs_review",
+      "character_count": 272,
+      "character_limit": 1000,
+      "open_issue_count": 0,
+      "placeholder_marker_count": 0
+    }
+  ]
+}

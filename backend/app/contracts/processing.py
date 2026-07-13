@@ -15,7 +15,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 class ProcessingConfirmationCreate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    processing_mode: Literal["cloud_assisted"]
+    # R4.3 (additiv, Owner-Entscheid 2026-07-08): "local_only" = KI-Opt-in für
+    # interne/vertrauliche Projekte über den lokalen Verarbeitungspfad.
+    processing_mode: Literal["cloud_assisted", "local_only"]
     source_version_ids: list[str] = Field(min_length=1)
     accepted_policy_version: str
     purpose: str

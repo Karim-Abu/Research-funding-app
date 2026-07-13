@@ -5,12 +5,14 @@ import {
   CheckCircle2,
   Loader2,
   AlertTriangle,
+  MinusCircle,
   OctagonX,
   ChevronRight,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import type { AnalysisProgressStep } from "@/lib/quellen-mock-data"
+import type { RunPhaseView } from "@/lib/run-steps"
 import type { RunCostDto } from "@/lib/backend-contract"
 
 // ---------------------------------------------------------------------------
@@ -19,6 +21,8 @@ import type { RunCostDto } from "@/lib/backend-contract"
 
 interface AnalysisProgressBannerProps {
   steps: AnalysisProgressStep[]
+  /** Persistierte Backend-Phasen (Live-Pfad) — hat Vorrang vor steps. */
+  phases?: RunPhaseView[]
   /** Laufende Kosten aus den Run-Daten (kein Dummy). */
   cost?: RunCostDto
   /** Called when the user clicks "Analyse abbrechen" */
@@ -27,10 +31,13 @@ interface AnalysisProgressBannerProps {
 
 export function AnalysisProgressBanner({
   steps,
+  phases,
   cost,
   onStop,
 }: AnalysisProgressBannerProps) {
-  const runningStep = steps.find((s) => s.state === "running")
+  const runningPhase = phases?.find((p) => p.state === "running")
+  const runningStep = phases ? undefined : steps.find((s) => s.state === "running")
+  const runningLabel = runningPhase?.label ?? runningStep?.label
 
   return (
     <div
@@ -43,9 +50,9 @@ export function AnalysisProgressBanner({
           <Loader2 className="size-4 shrink-0 animate-spin text-foreground" />
           <span className="text-sm font-medium text-foreground">
             Analyse läuft
-            {runningStep ? (
+            {runningLabel ? (
               <span className="ml-1 font-normal text-muted-foreground">
-                — {runningStep.label}…
+                — {runningLabel}…
               </span>
             ) : null}
           </span>
@@ -69,26 +76,64 @@ export function AnalysisProgressBanner({
         </div>
       </div>
 
-      <ol className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-x-6 sm:gap-y-1">
-        {steps.map((step) => (
-          <li key={step.id} className="flex items-center gap-1.5">
-            <ProgressStepIcon state={step.state} />
-            <span
-              className={cn(
-                "text-xs",
-                step.state === "done"
-                  ? "text-muted-foreground line-through decoration-muted-foreground/50"
-                  : step.state === "running"
-                    ? "font-medium text-foreground"
-                    : "text-muted-foreground"
-              )}
-            >
-              {step.label}
-              {step.state === "running" ? "…" : ""}
-            </span>
-          </li>
-        ))}
-      </ol>
+      {phases ? (
+        <ol className="flex flex-col gap-1.5">
+          {phases.map((phase) => (
+            <li key={phase.key} className="flex items-start gap-1.5">
+              <PhaseIcon state={phase.state} />
+              <span className="flex flex-col">
+                <span
+                  className={cn(
+                    "text-xs",
+                    phase.state === "done"
+                      ? "text-muted-foreground"
+                      : phase.state === "running"
+                        ? "font-medium text-foreground"
+                        : phase.state === "failed"
+                          ? "font-medium text-foreground"
+                          : "text-muted-foreground"
+                  )}
+                >
+                  {phase.label}
+                  {phase.state === "running" ? "…" : ""}
+                  {(phase.info || phase.durationSeconds !== undefined) && (
+                    <span className="ml-1 font-normal text-muted-foreground">
+                      {phase.info ? `— ${phase.info}` : ""}
+                      {phase.durationSeconds !== undefined
+                        ? ` (${phase.durationSeconds} s)`
+                        : ""}
+                    </span>
+                  )}
+                </span>
+                {phase.error && (
+                  <span className="text-xs text-destructive">{phase.error}</span>
+                )}
+              </span>
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <ol className="flex flex-col gap-1.5 sm:flex-row sm:flex-wrap sm:gap-x-6 sm:gap-y-1">
+          {steps.map((step) => (
+            <li key={step.id} className="flex items-center gap-1.5">
+              <ProgressStepIcon state={step.state} />
+              <span
+                className={cn(
+                  "text-xs",
+                  step.state === "done"
+                    ? "text-muted-foreground line-through decoration-muted-foreground/50"
+                    : step.state === "running"
+                      ? "font-medium text-foreground"
+                      : "text-muted-foreground"
+                )}
+              >
+                {step.label}
+                {step.state === "running" ? "…" : ""}
+              </span>
+            </li>
+          ))}
+        </ol>
+      )}
     </div>
   )
 }
@@ -100,6 +145,26 @@ function ProgressStepIcon({ state }: { state: AnalysisProgressStep["state"] }) {
     return <Loader2 className="size-3.5 shrink-0 animate-spin text-foreground" />
   return (
     <ChevronRight className="size-3.5 shrink-0 text-muted-foreground/50" />
+  )
+}
+
+function PhaseIcon({ state }: { state: RunPhaseView["state"] }) {
+  if (state === "done")
+    return (
+      <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-status-fulfilled" />
+    )
+  if (state === "running")
+    return (
+      <Loader2 className="mt-0.5 size-3.5 shrink-0 animate-spin text-foreground" />
+    )
+  if (state === "failed")
+    return <OctagonX className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+  if (state === "skipped")
+    return (
+      <MinusCircle className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/60" />
+    )
+  return (
+    <ChevronRight className="mt-0.5 size-3.5 shrink-0 text-muted-foreground/50" />
   )
 }
 
@@ -147,11 +212,15 @@ interface CompletedAnalysisBannerProps {
   onGoToRequirements?: () => void
   /** Called when the user clicks "Belege ansehen" */
   onShowEvidence?: () => void
+  /** Label der fehlgeschlagenen Phase — macht aus «abgeschlossen» ehrlich
+   *  «teilweise abgeschlossen» (z. B. Kritik fehlgeschlagen). */
+  partialPhaseLabel?: string | null
 }
 
 export function CompletedAnalysisBanner({
   onGoToRequirements,
   onShowEvidence,
+  partialPhaseLabel,
 }: CompletedAnalysisBannerProps) {
   return (
     <div
@@ -160,10 +229,15 @@ export function CompletedAnalysisBanner({
       className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-5 py-4"
     >
       <div className="flex items-start gap-2">
-        <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-fulfilled" />
+        {partialPhaseLabel ? (
+          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-partial" />
+        ) : (
+          <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-fulfilled" />
+        )}
         <p className="text-sm text-foreground">
-          Analyse abgeschlossen. Öffnen Sie Anforderungen und Evidenz für die
-          Ergebnisse.
+          {partialPhaseLabel
+            ? `Analyse teilweise abgeschlossen — «${partialPhaseLabel}» ist fehlgeschlagen. Die erstellten Prüfergebnisse und Feldvorschläge bleiben erhalten.`
+            : "Analyse abgeschlossen. Öffnen Sie Anforderungen und Evidenz für die Ergebnisse."}
         </p>
       </div>
       <div className="flex items-center gap-2">

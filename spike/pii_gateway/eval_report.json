@@ -1,0 +1,169 @@
+{
+  "generated_at": "2026-07-13T12:58:50",
+  "matching": "type-aware overlap, 1:1",
+  "fixtures": {
+    "count": 17,
+    "entity_counts": {
+      "PERSON": 10,
+      "EMAIL": 4,
+      "PHONE": 4,
+      "ADDRESS": 4,
+      "DOB": 3,
+      "IBAN": 2,
+      "USERNAME": 3
+    }
+  },
+  "tiers": {
+    "deterministic": {
+      "available": true,
+      "latency_ms": {
+        "total_median": 0.48,
+        "per_doc_avg": 0.028
+      },
+      "per_entity": {
+        "PERSON": {
+          "tp": 8,
+          "fp": 0,
+          "fn": 2,
+          "precision": 1.0,
+          "recall": 0.8
+        },
+        "EMAIL": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "PHONE": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "ADDRESS": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1.0,
+          "recall": 0.75
+        },
+        "DOB": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "IBAN": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "USERNAME": {
+          "tp": 3,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        }
+      },
+      "overall": {
+        "precision": 1.0,
+        "recall": 0.9,
+        "false_negatives": 3
+      }
+    },
+    "presidio": {
+      "available": true,
+      "latency_ms": {
+        "total_median": 90.11,
+        "per_doc_avg": 5.301
+      },
+      "per_entity": {
+        "PERSON": {
+          "tp": 10,
+          "fp": 2,
+          "fn": 0,
+          "precision": 0.8333,
+          "recall": 1.0
+        },
+        "EMAIL": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "PHONE": {
+          "tp": 4,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "ADDRESS": {
+          "tp": 3,
+          "fp": 3,
+          "fn": 1,
+          "precision": 0.5,
+          "recall": 0.75
+        },
+        "DOB": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 1,
+          "precision": 1.0,
+          "recall": 0.6667
+        },
+        "IBAN": {
+          "tp": 2,
+          "fp": 0,
+          "fn": 0,
+          "precision": 1.0,
+          "recall": 1.0
+        },
+        "USERNAME": {
+          "tp": 2,
+          "fp": 4,
+          "fn": 1,
+          "precision": 0.3333,
+          "recall": 0.6667
+        }
+      },
+      "overall": {
+        "precision": 0.75,
+        "recall": 0.9,
+        "false_negatives": 3
+      },
+      "model": "de_core_news_md"
+    }
+  },
+  "go_no_go": {
+    "recommendation": "Pseudonymisierungs-Vorfilter: JA (formatierte PII); Anonymisierungsersatz: NEIN.",
+    "rationale": [
+      "GO als Pseudonymisierungs-Vorfilter für klar formatierte PII (E-Mail/Telefon/IBAN/Datum/Benutzername): Recall 100%, Precision 100%.",
+      "NO-GO als alleinige Anonymisierung: freie Namen/Adressen erreichen nur Recall 79% (deterministisch) — Restrisiko bleibt.",
+      "ML-Tier (Presidio+spaCy) hebt freie Namen/Adressen auf Recall 93%; auch damit ist es Pseudonymisierung, keine Garantie.",
+      "In JEDEM Fall bleibt die Search Query Firewall der zwingende, separate Schutz; Rohidee, Geschäftsgeheimnisse, Methodik, Partnerstrategie und Budgetlogik werden von einem PII-Detektor NICHT zuverlässig entfernt."
+    ],
+    "thresholds": {
+      "recall_go": 0.95,
+      "precision_go": 0.9,
+      "formatted": [
+        "EMAIL",
+        "PHONE",
+        "IBAN",
+        "DOB",
+        "USERNAME"
+      ],
+      "free": [
+        "PERSON",
+        "ADDRESS"
+      ]
+    }
+  }
+}

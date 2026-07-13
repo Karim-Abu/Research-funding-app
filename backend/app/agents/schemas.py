@@ -202,7 +202,7 @@ class FieldDraftingInput(BaseModel):
     run_id: str
     profile_id: str
     field_profiles: list[PortalFieldProfileView]
-    confirmed_facts: list[ExtractedFactRecord]
+    confirmed_facts: list[ExtractedFactRecord]  # contract-pinned: schema_catalog.yaml FieldDraftingInput@v1 — Inhalt ist advisory (R5.1)
     verified_evidence: list[EvidenceLinkRecord]
     structured_project_data: StructuredProjectDataResult
     open_issues: list[OpenIssueRecord]
@@ -278,7 +278,7 @@ class CriticReviewInput(BaseModel):
     evidence_links: list[EvidenceLinkRecord]
     # M9G/corr-1: confirmed facts ONLY. Proposed A1 facts are passed as marked
     # context text, never here. Usually empty in the current system.
-    confirmed_facts: list[ExtractedFactRecord]
+    confirmed_facts: list[ExtractedFactRecord]  # contract-pinned: schema_catalog.yaml CriticReviewInput@v1
     structured_project_data: StructuredProjectDataResult
 
 
@@ -389,7 +389,7 @@ class PublicCompetenceResearchResult(BaseModel):
 
 MarketCategory = Literal[
     "competitor", "alternative_solution", "substitute", "incumbent_process",
-    "reference_solution", "unknown",
+    "reference_solution", "market_size_claim", "customer_problem", "unknown",
 ]
 MarketRelation = Literal["similar", "complementary", "competing", "reference", "unclear"]
 
@@ -474,6 +474,14 @@ def validate_payload(schema_id: str, data: object) -> BaseModel:
     return model.model_validate(data)
 
 
+def json_schema_for(schema_id: str) -> dict | None:
+    """JSON Schema of the declared output model (R5.5b) — handed to provider
+    adapters for provider-native structured output. ``None`` for schema ids
+    without an implemented model; validation stays with ``validate_payload``."""
+    model = SCHEMA_MODELS.get(schema_id)
+    return model.model_json_schema() if model is not None else None
+
+
 def fact_reference_violations(
     result: ProjectFactExtractionResult, allowed_fragment_ids: set[str]
 ) -> list[str]:
@@ -489,6 +497,7 @@ def fact_reference_violations(
 
 __all__ = [
     "SCHEMA_MODELS",
+    "json_schema_for",
     "DataClassificationRef",
     "ProjectFactExtractionInput",
     "ProjectFactExtractionResult",

@@ -1,22 +1,26 @@
 "use client"
 
 import * as React from "react"
+import { usePathname } from "next/navigation"
 import { Sidebar } from "./sidebar"
 import { Topbar } from "./topbar"
 import { WorkflowStepper } from "./workflow-stepper"
 import { useSession } from "@/components/providers/app-providers"
-import { getActiveProjectId, setActiveProjectId } from "@/lib/intake-store"
+import { WorkflowRunProvider } from "@/components/providers/workflow-run-provider"
+import {
+  getActiveProjectId,
+  redactIntakeInSession,
+  setActiveProjectId,
+} from "@/lib/intake-store"
 import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
 import { listProjects, toDashboardCard } from "@/lib/projects"
-import { PROJECT_STATUS_LABELS, type Project, type StepStatus, type User } from "@/lib/types"
+import { stepForPathname } from "@/lib/workflow"
+import { PROJECT_STATUS_LABELS, type Project, type User } from "@/lib/types"
 
 interface AppShellProps {
   user: User
   projects: Project[]
   activeProjectId: string
-  /** When provided, renders the WorkflowStepper under the topbar. */
-  currentStep?: number
-  stepStatus?: StepStatus[]
   /** "full" renders the horizontal step nav; "mini" renders the compact summary line. Defaults to "full". */
   stepperVariant?: "full" | "mini"
   children: React.ReactNode
@@ -29,11 +33,10 @@ export function AppShell({
   user,
   projects,
   activeProjectId,
-  currentStep,
-  stepStatus,
   stepperVariant = "full",
   children,
-}: AppShellProps) {
+}: Readonly<AppShellProps>) {
+  const pathname = usePathname()
   const [collapsed, setCollapsed] = React.useState(false)
   const [projectId, setProjectId] = React.useState(activeProjectId)
   const [liveProjects, setLiveProjects] = React.useState<Project[] | null>(null)
@@ -87,13 +90,13 @@ export function AppShell({
 
   React.useEffect(() => {
     try {
-      const stored = window.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
+      const stored = globalThis.localStorage.getItem(SIDEBAR_COLLAPSED_STORAGE_KEY)
       if (stored === "true" || stored === "false") {
         setCollapsed(stored === "true")
         return
       }
       setCollapsed(
-        window.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
+        globalThis.matchMedia?.(SIDEBAR_COMPACT_MEDIA_QUERY)?.matches ?? false
       )
     } catch {
       setCollapsed(false)
@@ -108,7 +111,7 @@ export function AppShell({
     setCollapsed((current) => {
       const next = !current
       try {
-        window.localStorage.setItem(
+        globalThis.localStorage.setItem(
           SIDEBAR_COLLAPSED_STORAGE_KEY,
           String(next)
         )
@@ -125,37 +128,39 @@ export function AppShell({
       setActiveProjectId(id)
       // Switching Antrag → drop the previous application's formatting cache.
       clearAllRichEditorSessionCache()
+      // R4.4: das Intake gehört zum vorherigen Antrag — Inhalte leeren
+      // (die Vertraulichkeitsstufe bleibt als restriktives Signal erhalten).
+      redactIntakeInSession()
       // Screens read the active Antrag on mount — a full reload re-anchors
       // every open view to the newly selected application.
-      window.location.reload()
+      globalThis.location.reload()
     }
   }
 
   return (
-    <div className="flex h-screen min-w-0 overflow-hidden bg-background">
-      <Sidebar
-        role={effectiveUser.role}
-        collapsed={collapsed}
-        onToggle={handleSidebarToggle}
-        activeProjectTitle={activeProject?.title ?? null}
-        activeProjectStatusLabel={activeProject?.statusLabel ?? null}
-      />
-      <div className="flex min-w-0 flex-1 flex-col">
-        <Topbar
-          user={effectiveUser}
-          projects={shellProjects}
-          activeProjectId={projectId}
-          onProjectChange={handleProjectChange}
+    <WorkflowRunProvider>
+      <div className="flex h-screen min-w-0 overflow-hidden bg-background">
+        <Sidebar
+          collapsed={collapsed}
+          onToggle={handleSidebarToggle}
+          activeProjectTitle={activeProject?.title ?? null}
+          activeProjectStatusLabel={activeProject?.statusLabel ?? null}
         />
-        {currentStep && stepStatus && (
-          <WorkflowStepper
-            currentStep={currentStep}
-            stepStatus={stepStatus}
-            variant={stepperVariant}
+        <div className="flex min-w-0 flex-1 flex-col">
+          <Topbar
+            user={effectiveUser}
+            projects={shellProjects}
+            activeProjectId={projectId}
+            onProjectChange={handleProjectChange}
           />
-        )}
-        <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+          {/* Der Stepper erscheint auf allen Workflow-Routen — der aktuelle
+              Schritt kommt aus der Route, die Statuswerte aus dem Provider. */}
+          {stepForPathname(pathname) && (
+            <WorkflowStepper variant={stepperVariant} />
+          )}
+          <main className="min-h-0 flex-1 overflow-y-auto">{children}</main>
+        </div>
       </div>
-    </div>
+    </WorkflowRunProvider>
   )
 }

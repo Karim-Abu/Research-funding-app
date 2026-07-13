@@ -69,7 +69,7 @@ describe("SourceTable live statuses", () => {
     expect(screen.getByText("Ausstehend")).toBeInTheDocument()
   })
 
-  it("sends the selected data class when adding a text source", async () => {
+  it("sends the inherited project data class when adding a text source (no forced question)", async () => {
     const onAddTextSource = vi.fn()
     render(
       <SourceTable
@@ -81,8 +81,18 @@ describe("SourceTable live statuses", () => {
     )
 
     fireEvent.click(screen.getByRole("button", { name: "Text einfügen" }))
+    // Die wirksame (geerbte) Einstufung ist sichtbar; die Stufenwahl selbst
+    // ist optional eingeklappt («Abweichende Einstufung»).
     expect(
-      screen.getByText(
+      screen.getByText(/Einstufung dieser Quelle:/)
+    ).toBeInTheDocument()
+    expect(screen.getByText(/wie im Projekt festgelegt/)).toBeInTheDocument()
+    // Der Hinweistext erscheint erst nach dem Aufklappen.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Abweichende Einstufung (optional)" })
+    )
+    expect(
+      await screen.findByText(
         "Bitte wählen Sie die Vertraulichkeitsstufe dieser Quelle. Wenn Sie unsicher sind, wählen Sie Vertraulich. Die restriktivere Einstufung von Projekt und Quelle gilt."
       )
     ).toBeInTheDocument()
@@ -103,7 +113,36 @@ describe("SourceTable live statuses", () => {
     })
   })
 
-  it("confirms file upload with the selected data class", async () => {
+  it("inherits a public project class without opening the override", async () => {
+    const onAddTextSource = vi.fn()
+    render(
+      <SourceTable
+        sources={[]}
+        controlled
+        defaultDataClass="public"
+        onAddTextSource={onAddTextSource}
+      />
+    )
+
+    fireEvent.click(screen.getByRole("button", { name: "Text einfügen" }))
+    fireEvent.change(screen.getByLabelText("Titel der Quelle"), {
+      target: { value: "Notiz" },
+    })
+    fireEvent.change(screen.getByLabelText("Textinhalt"), {
+      target: { value: "Inhalt" },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Als Quelle hinzufügen" }))
+
+    await waitFor(() => {
+      expect(onAddTextSource).toHaveBeenCalledWith({
+        title: "Notiz",
+        text: "Inhalt",
+        dataClass: "public",
+      })
+    })
+  })
+
+  it("confirms file upload with the inherited data class", async () => {
     const onUploadFiles = vi.fn()
     const { container } = render(
       <SourceTable
@@ -121,7 +160,59 @@ describe("SourceTable live statuses", () => {
     fireEvent.click(screen.getByRole("button", { name: "Hochladen" }))
 
     await waitFor(() => {
-      expect(onUploadFiles).toHaveBeenCalledWith([file], "internal")
+      // Drittes Argument: der echte Byte-Fortschritts-Callback des Dialogs.
+      expect(onUploadFiles).toHaveBeenCalledWith(
+        [file],
+        "internal",
+        expect.any(Function)
+      )
     })
+    // Erfolg: Phase «Gespeichert» ist sichtbar, bevor der Dialog schliesst.
+    expect(screen.getByText(/Gespeichert — der Text wird jetzt extrahiert/)).toBeInTheDocument()
+  })
+
+  it("keeps the file on upload error and shows retry + technical details", async () => {
+    class FakeSourceError extends Error {
+      readonly status = 413
+      readonly code = "too_many_files"
+      readonly correlationId = "corr-77"
+    }
+    const onUploadFiles = vi
+      .fn()
+      .mockRejectedValueOnce(new FakeSourceError("Zu viele Dateien in einem Vorgang."))
+      .mockResolvedValueOnce(undefined)
+    const { container } = render(
+      <SourceTable
+        sources={[]}
+        controlled
+        defaultDataClass="internal"
+        onUploadFiles={onUploadFiles}
+      />
+    )
+    const input = container.querySelector('input[type="file"]') as HTMLInputElement
+    const file = new File(["hello"], "a.txt", { type: "text/plain" })
+
+    fireEvent.change(input, { target: { files: [file] } })
+    const dialog = await screen.findByRole("dialog", { name: "Datei hochladen" })
+    fireEvent.click(screen.getByRole("button", { name: "Hochladen" }))
+
+    // Ursachen-spezifische Meldung + Dialog bleibt offen, Datei erhalten.
+    expect(
+      await screen.findByText(/Zu viele Dateien in einem Vorgang/)
+    ).toBeInTheDocument()
+    expect(dialog).toBeInTheDocument()
+    expect(screen.getByText("a.txt")).toBeInTheDocument()
+
+    // Technische Details: Fehlercode + Correlation-ID nur eingeklappt.
+    fireEvent.click(screen.getByRole("button", { name: "Technische Details" }))
+    expect(await screen.findByText("too_many_files")).toBeInTheDocument()
+    expect(screen.getByText("corr-77")).toBeInTheDocument()
+
+    // «Erneut versuchen» stösst den Upload mit derselben Datei erneut an.
+    fireEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }))
+    await waitFor(() => {
+      expect(onUploadFiles).toHaveBeenCalledTimes(2)
+    })
+    expect(onUploadFiles.mock.calls[1][0]).toEqual([file])
   })
 })

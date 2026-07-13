@@ -269,7 +269,7 @@ export function primaryActionFor(v: {
     return v.firstAnchorId
       ? {
           label: "Beleg ansehen",
-          href: `/quellen?tab=evidenz&anchor=${encodeURIComponent(v.firstAnchorId)}`,
+          href: `/anforderungen?tab=evidenz&anchor=${encodeURIComponent(v.firstAnchorId)}`,
         }
       : null
   }

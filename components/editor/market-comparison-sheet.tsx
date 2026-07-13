@@ -181,7 +181,7 @@ export function MarketComparisonSheet({
 
           {comparison && comparison.research_gaps.length > 0 && (
             <div>
-              <p className="text-xs font-medium text-foreground">Offene Marktfragen</p>
+              <p className="text-xs font-medium text-foreground">Offene Evidenzlücken</p>
               <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
                 {comparison.research_gaps.map((gap, i) => (
                   <li key={i}>{gap}</li>

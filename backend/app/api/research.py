@@ -136,6 +136,31 @@ def list_research_results(
     return [service.result_to_contract(r) for r in results]
 
 
+@router.post("/research-results/{result_id}/discard",
+             response_model=ResearchResultContract)
+def discard_research_result(
+    result_id: str,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> ResearchResultContract:
+    """R8 (Anforderung 9): Ergebnis-Kandidat explizit verwerfen (persistiert) —
+    verworfene Ergebnisse werden nie A2-Kontext und bleiben nach Reload verworfen."""
+    result = service.get_result(db, result_id, context.user.workspace_id)
+    if result is None:
+        raise ProblemException(
+            status=404, code="not_found", title="Resource not found",
+            detail="Research result not found.",
+        )
+    try:
+        service.discard_result(db, result=result, actor_user_id=context.user.id)
+    except service.ResearchBlocked as exc:
+        raise ProblemException(
+            status=exc.status, code=exc.code, title="Discard refused", detail=exc.detail,
+        ) from exc
+    db.commit()
+    return service.result_to_contract(result)
+
+
 @router.post("/research-results/{result_id}/import", status_code=201,
              response_model=SourceDocument)
 def import_research_result(

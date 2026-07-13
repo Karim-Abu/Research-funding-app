@@ -195,6 +195,181 @@ def test_budget_patch_rejects_invalid_duration(client):
     assert res.status_code == 422
 
 
+# --- (5b) Budget-Vorprüfung (read-only, run-unabhängig) -----------------------
+
+
+def _patch_budget(client, csrf, project_id, **overrides):
+    payload = {**BUDGET_PATCH, "budget_exception_basis": None, **overrides}
+    res = client.patch(
+        f"/api/v1/projects/{project_id}", json=payload,
+        headers=unsafe_headers(csrf),
+    )
+    assert res.status_code == 200, res.text
+
+
+def _precheck(client, project_id):
+    res = client.get(f"/api/v1/projects/{project_id}/budget/precheck")
+    assert res.status_code == 200, res.text
+    return res.json()
+
+
+def _check_by_rule(body, rule_id):
+    return next(c for c in body["checks"] if c["rule_id"] == rule_id)
+
+
+class TestBudgetPrecheck:
+    def test_fulfilled_figures_and_registry_condition(self, client):
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+        _patch_budget(client, csrf, project_id)
+
+        body = _precheck(client, project_id)
+        figures = body["figures"]
+        # Identität Own + Cash = Umsetzungspartnerbeitrag, Anteile aus dem
+        # Rule-Kern (observed.percent-Rechnung).
+        assert figures["implementation_contribution_chf"] == 50000
+        assert figures["implementation_share_percent"] == 50.0
+        assert figures["cash_share_percent"] == 5.0
+        assert figures["funding_share_percent"] == 50.0
+        assert figures["exception_claimed"] is False
+
+        share = _check_by_rule(body, "INNO.BUDGET.IMPLEMENTATION_SHARE_40_60")
+        cash = _check_by_rule(body, "INNO.BUDGET.CASH_MIN5")
+        assert share["status"] == "fulfilled" and cash["status"] == "fulfilled"
+        # Schwellen kommen 1:1 aus der Registry — keine Zweit-Hardcodierung.
+        assert share["condition"] == RANGE_RULE.condition
+        assert cash["condition"] == CASH_RULE.condition
+        assert share["rule_version"] == RV
+        assert share["title"] and "REQ." not in share["title"]
+
+    def test_exact_thresholds_from_contract(self, client):
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+        # Grenzen exakt an den Registry-Schwellen (40/60 inkl., 5 inkl.).
+        cases = [
+            ({"implementation_own_contribution": 34990, "cash_contribution": 5000}, "blocker"),   # 39.99 %
+            ({"implementation_own_contribution": 35000, "cash_contribution": 5000}, "fulfilled"), # 40 %
+            ({"implementation_own_contribution": 55000, "cash_contribution": 5000}, "fulfilled"), # 60 %
+            ({"implementation_own_contribution": 55010, "cash_contribution": 5000}, "blocker"),   # 60.01 %
+        ]
+        for overrides, expected in cases:
+            _patch_budget(client, csrf, project_id, **overrides)
+            share = _check_by_rule(
+                _precheck(client, project_id),
+                "INNO.BUDGET.IMPLEMENTATION_SHARE_40_60",
+            )
+            assert share["status"] == expected, (overrides, share)
+
+        for cash_value, expected in ((4990, "blocker"), (5000, "fulfilled")):
+            _patch_budget(
+                client, csrf, project_id,
+                implementation_own_contribution=45000, cash_contribution=cash_value,
+            )
+            cash = _check_by_rule(
+                _precheck(client, project_id), "INNO.BUDGET.CASH_MIN5"
+            )
+            assert cash["status"] == expected, (cash_value, cash)
+
+    def test_exception_yields_review_not_acceptance(self, client):
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+        _patch_budget(
+            client, csrf, project_id,
+            implementation_own_contribution=60000, cash_contribution=5000,
+            budget_exception_basis="Start-up-Ausnahme gemäss Vereinbarung",
+        )
+        body = _precheck(client, project_id)
+        share = _check_by_rule(body, "INNO.BUDGET.IMPLEMENTATION_SHARE_40_60")
+        # Ausnahme geltend gemacht → menschliche Prüfung, nie auto-akzeptiert.
+        assert share["status"] == "review"
+        assert body["figures"]["exception_claimed"] is True
+
+    def test_missing_and_zero_denominator_yield_missing(self, client):
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+
+        # Ohne jede Budget-Angabe: alles «Angabe fehlt», keine Falschurteile.
+        body = _precheck(client, project_id)
+        assert all(c["status"] == "missing" for c in body["checks"])
+        figures = body["figures"]
+        assert figures["implementation_share_percent"] is None
+        assert figures["cash_share_percent"] is None
+        assert figures["funding_share_percent"] is None
+
+        # 0-Nenner ebenso.
+        _patch_budget(
+            client, csrf, project_id,
+            direct_total_project_costs_excluding_overhead=0,
+        )
+        body = _precheck(client, project_id)
+        assert all(c["status"] == "missing" for c in body["checks"])
+        assert body["figures"]["implementation_share_percent"] is None
+
+    def test_parity_with_run_rule_results(self, client):
+        """Derselbe Datensatz → Precheck und Run-Auswertung liefern dieselben
+        Regel-Ausgänge (kein zweiter Rechenweg)."""
+        csrf, project_id, run_id = setup_completed_run(client, title="Precheck Parity")
+        _patch_budget(client, csrf, project_id)
+        body = _precheck(client, project_id)
+
+        db = SessionLocal()
+        try:
+            snapshot = db.get(RunProjectSnapshot, run_id)
+            project_dict = dict(snapshot.project_json)
+            # Gleiche Eingaben wie im Precheck (der Lauf oben fror leere
+            # Budgetwerte ein — für die Parität denselben Stand herstellen).
+            project_dict.update(
+                {k: v for k, v in BUDGET_PATCH.items() if k != "budget_exception_basis"}
+            )
+            project_dict["budget_exception_basis"] = None
+            inputs = inputs_from_snapshot(
+                profile_id=project_dict.get("funding_instrument_profile_id"),
+                partner_dicts=list(snapshot.partners_json),
+                project_dict=project_dict,
+            )
+        finally:
+            db.close()
+        for rule in (RANGE_RULE, CASH_RULE):
+            outcome = evaluate_rule(rule, inputs, rule_version=RV)
+            check = _check_by_rule(body, rule.rule_id)
+            assert check["observed"] == outcome.observed
+            assert check["reason"] == outcome.reason
+
+    def test_precheck_persists_nothing(self, client):
+        from sqlalchemy import func, select
+
+        from app.db.models import AuditEvent, OpenIssue, RuleResult
+
+        def _counts():
+            db = SessionLocal()
+            try:
+                return (
+                    db.scalar(select(func.count()).select_from(RuleResult)),
+                    db.scalar(select(func.count()).select_from(OpenIssue)),
+                    db.scalar(select(func.count()).select_from(AuditEvent)),
+                )
+            finally:
+                db.close()
+
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+        _patch_budget(client, csrf, project_id)
+
+        before = _counts()
+        _precheck(client, project_id)
+        # Reine Leseableitung: kein RuleResult, kein OpenIssue, kein Audit.
+        assert _counts() == before
+
+    def test_precheck_workspace_isolation(self, client):
+        from tests.conftest import OUTSIDER_EMAIL, OUTSIDER_PASSWORD
+
+        csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+        project_id = create_project(client, csrf)
+        login(client, OUTSIDER_EMAIL, OUTSIDER_PASSWORD)
+        res = client.get(f"/api/v1/projects/{project_id}/budget/precheck")
+        assert res.status_code == 404
+
+
 # --- (6) snapshot staleness on budget edit -----------------------------------
 
 

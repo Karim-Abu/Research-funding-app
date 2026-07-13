@@ -28,6 +28,7 @@ from app.db.models import Partner, Project
 from app.evidence.tokenize import STOPWORDS, normalize_for_match
 from app.security.confidential_terms import (
     BUDGET_RE,
+    BUDGET_WORD_RE,
     CATEGORY_LABELS,
     CATEGORY_WEIGHTS,
     CONFIDENTIAL_KEYWORDS,
@@ -190,9 +191,16 @@ def evaluate_query(
     intended_tool: str,
     purpose: str | None = None,
     source_context_ids: list[str] | None = None,
+    apply_project_lexicon: bool = False,
 ) -> FirewallResult:
     """Screen ``raw_query`` and return a sanitized query + decision. Pure w.r.t. the DB
-    (reads project/partners for the lexicon; writes nothing)."""
+    (reads project/partners for the lexicon; writes nothing).
+
+    ``apply_project_lexicon=True`` wendet das Projekt-Lexikon (Partnernamen,
+    Projekttitel/-kürzel, Budgetzahl) zusätzlich auch für D0 an — genutzt von der
+    Markt-Query-Freigabe (R8), damit editierte Queries eines öffentlichen Projekts
+    diese Bezeichner ebenfalls nie nach aussen tragen. Nur Verschärfung; das
+    Standardverhalten (D1/D2-only) bleibt unverändert."""
     qhash = raw_query_hash(raw_query)
     detected: dict[str, int] = {}
     working = raw_query
@@ -208,6 +216,7 @@ def evaluate_query(
     apply(EMAIL_RE, "email")
     apply(PHONE_RE, "phone")
     apply(BUDGET_RE, "budget_amount")
+    apply(BUDGET_WORD_RE, "budget_amount")
     for marker in NDA_MARKERS:
         p = _phrase_pattern(marker)
         if p is not None:
@@ -217,8 +226,11 @@ def evaluate_query(
         if p is not None:
             apply(p, "confidential_keyword")
 
-    # Project-specific lexicon — confidential classes only (D0 names are public).
-    if data_class in (DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA):
+    # Project-specific lexicon — confidential classes only (D0 names are public),
+    # ausser der Aufrufer verlangt es ausdrücklich (Markt-Query-Freigabe, R8).
+    if apply_project_lexicon or data_class in (
+        DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA
+    ):
         lexicon = build_lexicon(db, project_id=project_id, workspace_id=workspace_id)
         for entry in lexicon.entries:
             apply(entry.pattern, entry.category)

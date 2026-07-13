@@ -16,8 +16,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files
+# env files (Vorlagen ohne echte Werte sind erlaubt)
 .env*
+!.env.example
+!backend/.env.example
 
 # vercel
 .vercel
@@ -30,3 +32,16 @@ next-env.d.ts
 /test-results/
 /playwright-report/
 /playwright/.cache/
+
+# Innolink
+private_inputs/
+*.original.pdf
+
+# Laufzeit-Logs der Evaluation-Server (von verify_all/Dev-Servern beschrieben)
+backend.evaluation.stdout.log
+backend.evaluation.stderr.log
+frontend.evaluation.stdout.log
+frontend.evaluation.stderr.log
+
+# Python-Bytecode der CI-Check-Skripte (scripts/check_*.py)
+scripts/__pycache__/

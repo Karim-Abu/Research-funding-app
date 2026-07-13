@@ -3,8 +3,9 @@
 // "Öffentliche Recherche" — user-initiated public web research (M9I-A) with the M9J
 // Search Query Firewall for confidential projects. For a public (D0) project the query
 // runs directly. For an internal/confidential (D1/D2) project the query is first screened
-// and sanitized; only a human-approved, sanitized query is ever searched. No provider/
-// Firecrawl/API terminology and no raw confidential query is surfaced.
+// and sanitized; only a human-approved, sanitized query is ever searched. For D3 (NDA)
+// and UNKNOWN the panel is fully blocked (R4.1) — the backend matrix enforces the same.
+// No provider/Firecrawl/API terminology and no raw confidential query is surfaced.
 
 import * as React from "react"
 import { Globe, Loader2, ShieldAlert, Sparkles } from "lucide-react"
@@ -27,7 +28,11 @@ import {
   FirewallError,
   type FirewallPreview,
 } from "@/lib/firewall"
-import { flatToPrivacyClass, requiresSanitizedApproval } from "@/lib/data-class"
+import {
+  flatToPrivacyClass,
+  isExternalBlocked,
+  requiresSanitizedApproval,
+} from "@/lib/data-class"
 import type { DataClass } from "@/lib/types"
 
 type PanelState =
@@ -56,7 +61,9 @@ export function PublicResearchPanel({
   dataClass?: DataClass
   onImported?: () => void
 }) {
-  const needsFirewall = requiresSanitizedApproval(flatToPrivacyClass(dataClass))
+  const privacyClass = flatToPrivacyClass(dataClass)
+  const researchBlocked = isExternalBlocked(privacyClass)
+  const needsFirewall = requiresSanitizedApproval(privacyClass)
 
   const [query, setQuery] = React.useState("")
   const [state, setState] = React.useState<PanelState>("idle")
@@ -175,6 +182,27 @@ export function PublicResearchPanel({
     },
     [onImported]
   )
+
+  // R4.1: D3 (NDA) / unklassifiziert — keine Webrecherche, auch nicht sanitisiert.
+  if (researchBlocked) {
+    return (
+      <section
+        data-testid="public-research-panel"
+        className="rounded-lg border border-border bg-card p-5"
+      >
+        <div className="mb-1 flex items-center gap-2">
+          <ShieldAlert className="size-4 text-status-partial" />
+          <h3 className="text-sm font-semibold text-foreground">
+            Öffentliche Recherche
+          </h3>
+        </div>
+        <p data-testid="research-blocked" className="text-xs text-muted-foreground">
+          Für NDA-geschützte, gesperrte oder noch nicht eingestufte Inhalte ist
+          keine Webrecherche möglich. Es werden keine externen Dienste aufgerufen.
+        </p>
+      </section>
+    )
+  }
 
   return (
     <section

@@ -18,12 +18,8 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog"
 import { ContactForm } from "@/components/contact-form"
-import {
-  currentUser,
-  projects,
-  activeProjectId,
-  workflowSteps,
-} from "@/lib/mock-data"
+import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
+import { WORKFLOW_STEPS } from "@/lib/workflow"
 
 // Static help page — no stepper, no search, no contextual help system.
 export default function HilfePage() {
@@ -38,7 +34,7 @@ export default function HilfePage() {
 
         <section className="mb-8">
           <h2 className="mb-2 text-base font-semibold text-foreground">
-            Der Workflow in 7 Schritten
+            Der Workflow in 6 Schritten
           </h2>
           <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
             Die Plattform führt Sie Schritt für Schritt von der Projektidee bis
@@ -46,7 +42,7 @@ export default function HilfePage() {
             Schrittleiste markiert.
           </p>
           <ol className="flex list-decimal flex-col gap-1.5 pl-5 text-sm leading-relaxed text-foreground">
-            {workflowSteps.map((step) => (
+            {WORKFLOW_STEPS.map((step) => (
               <li key={step.step}>
                 <span className="font-medium">{step.label}</span>
                 {" — "}

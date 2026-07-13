@@ -5,12 +5,18 @@ draft suggestion, and which agent profile serves each. There is **no** generic
 "all A2 enabled" mechanism — every pair is listed here, backed by the registries,
 and validated fail-closed at import:
 
-- SOL.INNOVATION_SOLUTION.EDITOR  → A2.solution_innovation        (M9D)
-- VC.BUSINESS_TARGETS_MODEL.EDITOR → A2.value_creation_market_logic (M9E)
+- SOL.INNOVATION_SOLUTION.EDITOR              → A2.solution_innovation         (M9D)
+- VC.BUSINESS_TARGETS_MODEL.EDITOR            → A2.value_creation_market_logic (M9E)
+- INTRO.APP.ABSTRACT                          → A2.introduction_public_summary (R5.5)
+- INTRO.APP.EXECUTIVE_SUMMARY                 → A2.introduction_public_summary (R5.5)
+- ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS → A2.organisations_governance (R5.6)
+- PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION     → A2.project_setup_workplan      (R5.6)
 
 Character limit and the mandatory question structure are resolved from the portal
-field registry (never hardcoded), so each profile validates against its field's
-actual registered questions.
+field registry (never hardcoded). Composite editor fields (``*.EDITOR``) carry
+mandatory sub-questions; singleton narrative fields (Abstract, Executive Summary,
+Financial-Independence comment, Management-hours explanation) legitimately have
+none, so ``mandatory_markers`` may be empty for them.
 """
 from __future__ import annotations
 
@@ -24,24 +30,63 @@ from app.registry import get_registry
 A2_FIELD_PROFILES: dict[str, str] = {
     "SOL.INNOVATION_SOLUTION.EDITOR": "A2.solution_innovation",
     "VC.BUSINESS_TARGETS_MODEL.EDITOR": "A2.value_creation_market_logic",
+    "INTRO.APP.ABSTRACT": "A2.introduction_public_summary",
+    "INTRO.APP.EXECUTIVE_SUMMARY": "A2.introduction_public_summary",
+    "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS": "A2.organisations_governance",
+    "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION": "A2.project_setup_workplan",
 }
 
 # Per-field deterministic fake output (dev/test only — settings.agent_fake_provider).
-# Each text MUST contain the field's registry mandatory markers so the structural
-# validation passes, and uses explicit placeholders (never invented facts).
+# Composite editor texts MUST contain the field's registry mandatory markers so the
+# structural validation passes; singleton narrative fields (Abstract, Executive
+# Summary) have none. All use explicit placeholders, never invented facts. The
+# Abstract text must stay within its 300-char registry limit.
 _FAKE_TEXTS: dict[str, str] = {
     "SOL.INNOVATION_SOLUTION.EDITOR": (
         "4.1 Stand der Technik: bestehende Verfahren und deren Grenzen.\n"
         "4.2 Neuheit: klare Abgrenzung gegenüber dem Stand der Technik.\n"
         "4.3 Ziele: messbare Ziele mit Baseline und Zielwert, wo belegbar.\n"
         "4.4 Vorarbeiten: abgeschlossene Vorstudien getrennt von geplanter Arbeit.\n"
-        "4.5 Partner: geeignete Kompetenzen und Infrastruktur der Partner."
+        "4.5.1 Patentrecherche: Ergebnisse als [Platzhalter], keine erfundenen Treffer.\n"
+        "4.5.2 Freedom-to-Operate: Analysestand als [Platzhalter] ohne Rechtsaussage.\n"
+        "4.5.3 IP-Schutzstrategie: geplanter Schutzweg als [Platzhalter].\n"
+        "4.5.4 Rechts- und Vertragslage: bestehende Vereinbarungen als [Platzhalter].\n"
+        "4.6 Partner: geeignete Kompetenzen und Infrastruktur der Partner."
     ),
     "VC.BUSINESS_TARGETS_MODEL.EDITOR": (
         "3.1 Wertschöpfung: erwartete wirtschaftliche und gesellschaftliche Wirkung, "
         "mit Belegen oder – wo Marktdaten fehlen – als Platzhalter markiert.\n"
         "3.2 Geschäftsmodell und Markt: Zielkunden, Markteintritt und Differenzierung; "
-        "fehlende Markt-, Wettbewerbs- oder Umsatzzahlen bleiben explizite Platzhalter."
+        "fehlende Markt-, Wettbewerbs- oder Umsatzzahlen bleiben explizite Platzhalter.\n"
+        "3.3 Energie-/Umwelt-/Sozialwirkung: relevante Wirkungen als [Platzhalter], "
+        "ohne erfundene Wirkungszahlen."
+    ),
+    "INTRO.APP.ABSTRACT": (
+        "Öffentliche Kurzfassung des Vorhabens und seines Innovationsziels, allgemein "
+        "und ohne vertrauliche Details oder Partnernamen. Wo belastbare Angaben fehlen, "
+        "bleibt eine [Platzhalter]-Markierung statt erfundener Zahlen."
+    ),
+    "INTRO.APP.EXECUTIVE_SUMMARY": (
+        "Ausführlichere Zusammenfassung des Projekts: Ausgangslage, Innovationsziel, "
+        "geplanter Nutzen und Umsetzung, in allgemein verständlicher Sprache. Fehlende "
+        "Baselines, Markt- oder Wirkungszahlen bleiben als [Platzhalter] markiert statt "
+        "erfunden; konkrete KPIs werden nur mit Beleg genannt."
+    ),
+    # Vorsichtig, HITL-pflichtig: keine Bestätigung der Unabhängigkeit ohne Nachweis,
+    # keine erfundenen Anteils-/Beteiligungswerte, fehlende Daten als [Platzhalter].
+    "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS": (
+        "Erläuterung zur finanziellen Unabhängigkeit der Partner gemäss den vorliegenden "
+        "Angaben. Eigentums- und Beteiligungsverhältnisse sind noch zu belegen "
+        "[Platzhalter]; ohne Nachweis wird die Unabhängigkeit nicht bestätigt. Eine "
+        "abschliessende Prüfung ist vor der Einreichung erforderlich."
+    ),
+    # Keine erfundenen Stunden-/Prozentwerte; allgemeine Management-Tätigkeiten,
+    # fehlende Verteilung als [Platzhalter].
+    "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION": (
+        "Die Management-Stunden umfassen allgemein Projektkoordination, Reporting, "
+        "Review-Meetings, Projektsteuerung und Partnerabstimmung. Die konkrete Verteilung "
+        "der Stunden auf diese Aufgaben ist noch zu ergänzen [Platzhalter]; ohne belegte "
+        "Grundlage werden keine Stunden- oder Prozentwerte genannt."
     ),
 }
 
@@ -76,7 +121,9 @@ def resolve_field_config(field_id: str) -> A2FieldConfig | None:
     if fdef is None or fdef.character_limit is None:
         return None
     markers = _registry_markers(field_id)
-    if not markers:
+    # Composite editor fields (SOL/VC) must expose their mandatory sub-questions;
+    # singleton narrative fields (Abstract/Exec Summary) legitimately have none.
+    if field_id.endswith(".EDITOR") and not markers:
         return None
     return A2FieldConfig(
         field_id=field_id,

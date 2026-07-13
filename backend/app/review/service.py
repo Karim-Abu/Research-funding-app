@@ -21,7 +21,7 @@ from app.contracts.review import (
 from app.contracts.review import (
     ReviewFinding as ReviewFindingContract,
 )
-from app.contracts.review import ApprovalCreate, ReviewPackage
+from app.contracts.review import ApprovalCreate, ReviewPackage, ReviewStatusView
 from app.db.models import (
     AnalysisRun,
     DraftVersion,
@@ -42,6 +42,7 @@ from app.repositories import audit, controls
 from app.repositories import drafts as drafts_repo
 from app.repositories import requirements as requirements_repo
 from app.review import package as review_package
+from app.review.copy_readiness import copy_readiness_for_run
 from app.runs import project_snapshot
 
 _NOT_FOUND = "Resource not found"
@@ -108,10 +109,15 @@ def read_review_package(db: Session, run: AnalysisRun) -> ReviewPackage:
         db, run.run_id, stale=_is_stale(db, run)
     )
     fields = []
+    readiness = copy_readiness_for_run(db, run)
     for field in get_registry().m6_draft_fields():
         draft = drafts_repo.get_draft(db, run.run_id, field.field_id)
         if draft is not None:
-            fields.append(drafts_repo.to_contract(db, draft))
+            fields.append(
+                drafts_repo.to_contract(
+                    db, draft, copy_readiness=readiness.get(field.field_id)
+                )
+            )
 
     findings = [
         _finding_to_contract(f)
@@ -148,6 +154,51 @@ def read_review_package(db: Session, run: AnalysisRun) -> ReviewPackage:
         current_approval_scope_hash=scope_hash,
         recheck_required=run.recheck_required,
         stale_finding_count=stale,
+    )
+
+
+def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
+    """R1.2 — kanonischer Status-View. Pure read, additive.
+
+    Reuses the exact ReviewPackage primitives (``counts``/``approval_status``/
+    ``package_version``) so every screen showing these numbers agrees with the
+    Qualitätsprüfung. ``stale`` mirrors the user-facing «Prüfung nicht aktuell»:
+    a draft edit sets ``recheck_required`` (scope hash outdated) or the project
+    snapshot diverged.
+    """
+    scope_hash = review_package.compute_scope_hash(db, run)
+    blocker, warning, _stale_findings = review_package.counts(db, run)
+    status = review_package.approval_status(db, run, scope_hash)
+
+    human_review = db.scalars(
+        select(RequirementAssessment).where(
+            RequirementAssessment.run_id == run.run_id,
+            RequirementAssessment.status == "needs_input",
+        )
+    )
+    human_review_count = sum(1 for _ in human_review)
+
+    per_area: dict[str, int] = {}
+    for finding in db.scalars(
+        select(ReviewFinding).where(
+            ReviewFinding.run_id == run.run_id,
+            ReviewFinding.status == "open",
+        )
+    ):
+        area = (finding.field_id or "").split(".")[0] or "general"
+        per_area[area] = per_area.get(area, 0) + 1
+
+    latest = review_package.latest_approval(db, run)
+    return ReviewStatusView(
+        run_id=run.run_id,
+        blocker_count=blocker,
+        warning_count=warning,
+        human_review_count=human_review_count,
+        stale=bool(run.recheck_required or _is_stale(db, run)),
+        approval_status=status,
+        review_package_version=review_package.package_version(scope_hash),
+        per_area_counts=per_area,
+        last_reviewed_at=latest.created_at if latest is not None else None,
     )
 
 

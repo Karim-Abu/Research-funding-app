@@ -73,8 +73,8 @@ export function WebSearchToggle(
   return (
     <ServiceToggle
       {...props}
-      title="Webrecherche"
-      subtitle="Sucht öffentliche Informationen, z. B. zu Markt und Partnern"
+      title="Öffentliche Webrecherche"
+      subtitle="Sucht öffentliche Informationen, z. B. zu Markt und Umfeld — nur bei öffentlicher Vertraulichkeitsstufe verfügbar. Jede Suchanfrage passiert die Query-Prüfung."
       availableLabel="Webrecherche verfügbar"
     />
   )

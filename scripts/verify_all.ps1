@@ -21,7 +21,8 @@ $env:E2E_EMAIL    = if ($env:E2E_EMAIL)    { $env:E2E_EMAIL }    else { "anna.ke
 $env:E2E_PASSWORD = if ($env:E2E_PASSWORD) { $env:E2E_PASSWORD } else { "changeme-dev-lead" }
 
 $R = @{ backend="skip"; migration="skip"; frontend="skip"; quality="skip";
-        playwright="skip"; apismoke="skip"; evalpath="-" }
+        playwright="skip"; golden2="skip"; apismoke="skip"; testdata="skip";
+        legacyguard="skip"; evalpath="-" }
 $e2eDb = Join-Path $backend "var\verify_e2e.db"
 
 function Stop-Servers {
@@ -35,6 +36,16 @@ function Stop-Servers {
 
 Write-Host "== M10 verification ==  package manager: $PM"
 try {
+    # --- Testdaten-Marker-Check (R0.4) ---
+    Write-Host "-- testdata marker check --"
+    & $py (Join-Path $root "scripts\check_testdata_markers.py") --root $root
+    $R.testdata = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+
+    # --- Legacy-Status-Guard (R1.4) ---
+    Write-Host "-- legacy status guard --"
+    & $py (Join-Path $root "scripts\check_legacy_status_paths.py") --root $root
+    $R.legacyguard = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+
     # --- Backend: migration check + pytest ---
     Write-Host "-- backend: fresh-DB migration check --"
     $migDb = Join-Path $backend "var\verify_migrate.db"
@@ -58,6 +69,9 @@ try {
     $R.quality = "pass"
     PmRun "lint";           if ($LASTEXITCODE -ne 0) { $R.quality = "FAIL" }
     PmExec "tsc --noEmit";  if ($LASTEXITCODE -ne 0) { $R.quality = "FAIL" }
+    # OneDrive-Sync kann eine stale .next sperren (EPERM beim unlink) → vor dem
+    # Build best-effort räumen. Kein Hänger; nur ein Lock auf Altbeständen.
+    try { Remove-Item (Join-Path $root ".next") -Recurse -Force -ErrorAction Stop } catch {}
     PmRun "build";          if ($LASTEXITCODE -ne 0) { $R.quality = "FAIL" }
 
     # --- E2E + smokes ---
@@ -100,6 +114,12 @@ try {
         Write-Host "-- Playwright --"
         PmExec "playwright test --workers=1"
         $R.playwright = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+        # Akzeptanz: der Golden Path läuft ZWEIMAL hintereinander auf der frischen
+        # Demo-DB (die Suite oben ist Lauf 1; hier folgt Lauf 2). Eindeutige
+        # Projekttitel machen den zweiten Lauf kollisionsfrei.
+        Write-Host "-- Golden Path (2. Lauf, frische Demo-DB) --"
+        PmExec "playwright test e2e/golden-path.spec.ts --workers=1"
+        $R.golden2 = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
         Write-Host "-- API smoke --"
         & $py (Join-Path $root "scripts\smoke_api.py")
         $R.apismoke = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
@@ -112,7 +132,8 @@ try {
         if ($LASTEXITCODE -eq 0) { $R.evalpath = (Join-Path $backend "var\evaluation\EvaluationRunSummary.json") }
         Pop-Location
     } else {
-        $R.playwright = "FAIL(servers not ready)"; $R.apismoke = "FAIL(servers not ready)"
+        $R.playwright = "FAIL(servers not ready)"; $R.golden2 = "FAIL(servers not ready)"
+        $R.apismoke = "FAIL(servers not ready)"
     }
 }
 finally {
@@ -128,13 +149,16 @@ Write-Host "migration                : $($R.migration)"
 Write-Host "frontend tests (vitest)  : $($R.frontend)"
 Write-Host "build/typecheck/lint     : $($R.quality)"
 Write-Host "Playwright               : $($R.playwright)"
+Write-Host "golden path (2nd run)    : $($R.golden2)   (e2e/golden-path.spec.ts)"
 Write-Host "API smoke                : $($R.apismoke)"
 Write-Host "export smoke             : $exportR   (test_m10_smoke.py::test_export_all_types)"
 Write-Host "no-raw-log               : $norawR   (test_m10_smoke.py::test_no_raw_log)"
+Write-Host "testdata markers         : $($R.testdata)   (scripts/check_testdata_markers.py)"
+Write-Host "legacy status guard      : $($R.legacyguard)   (scripts/check_legacy_status_paths.py)"
 Write-Host "evaluation summary       : $($R.evalpath)"
 Write-Host "========================================================="
 
-$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright, $R.apismoke) |
+$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright, $R.golden2, $R.apismoke, $R.testdata, $R.legacyguard) |
         Where-Object { $_ -like "FAIL*" }
 if ($fail.Count -gt 0) { exit 1 }
 Write-Host "ALL GREEN"

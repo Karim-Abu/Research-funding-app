@@ -7,7 +7,22 @@ import type { EvidenceLinkDto } from "./evidence"
 import type { OpenIssueDto } from "./requirements"
 
 export type DraftStatus = "draft" | "needs_review" | "reviewed" | "blocked" | "stale"
-export type CreatedBy = "agent" | "user" | "template" | "carried_over"
+
+// R6 Copy-Readiness (additiv, backend-abgeleitet): kanonische
+// Kopierbereitschaft je Feld. Führt die Kopieransicht, sperrt nie.
+export type CopyReadiness =
+  | "blocker"
+  | "placeholders_open"
+  | "not_reviewed"
+  | "draft"
+  | "copy_ready"
+
+export type CreatedBy =
+  | "agent"
+  | "user"
+  | "template"
+  | "carried_over"
+  | "import"
 
 export interface DraftVersionDto {
   draft_version_id: string
@@ -29,6 +44,7 @@ export interface PortalFieldDraftDto {
   open_issue_count: number
   evidence_links: EvidenceLinkDto[]
   open_issues: OpenIssueDto[]
+  copy_readiness?: CopyReadiness | null
 }
 
 // Canonical character count — Unicode code points; matches backend len(str).

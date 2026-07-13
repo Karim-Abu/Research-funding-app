@@ -35,6 +35,7 @@ import {
   readRichEditorSessionCache,
   writeRichEditorSessionCache,
   clearRichEditorSessionCache,
+  clearProjectRichEditorSessionCache,
 } from "@/lib/rich-editor-cache"
 import { EditorToolbar } from "@/components/editor/editor-toolbar"
 
@@ -44,6 +45,9 @@ export interface RichTextEditorHandle {
   insertTextAtCursor: (text: string) => void
   /** Select the Nth placeholder in the document (best effort; may no-op). */
   selectPlaceholder: (index: number) => void
+  /** Select the first occurrence of a text (best effort; may no-op) — used
+   * for subsection-marker jumps ("3.1", "4.5.1"). */
+  selectMatch: (query: string) => void
   clearFormatCache: () => void
 }
 
@@ -134,6 +138,12 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
     const cacheAllowed = Boolean(projectId) && isRichCacheAllowed(dataClass)
     const serverTextHash = React.useMemo(() => hashServerText(serverText), [serverText])
     const debounceRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+    // R4.4: Alt-Cache-Bereinigung — wird ein nicht-öffentliches Projekt
+    // geladen, werden vorhandene (vor dem Fix geschriebene) Einträge entfernt.
+    React.useEffect(() => {
+      if (projectId && !cacheAllowed) clearProjectRichEditorSessionCache(projectId)
+    }, [projectId, cacheAllowed])
 
     // Content for the CURRENT field: cache hit → rich JSON, else built from the
     // server plain text. Used at creation and on every field switch (setContent).
@@ -288,6 +298,21 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
             .setTextSelection({ from: target.from, to: target.to })
             .scrollIntoView()
             .run()
+        },
+        selectMatch: (query: string) => {
+          if (!editor || !query) return
+          let target: { from: number; to: number } | null = null
+          editor.state.doc.descendants((node, pos) => {
+            if (target || !node.isText || !node.text) return target === null
+            const idx = node.text.indexOf(query)
+            if (idx >= 0) target = { from: pos + idx, to: pos + idx + query.length }
+            return target === null
+          })
+          if (!target) {
+            editor.chain().focus().run() // fallback: no jump, just focus
+            return
+          }
+          editor.chain().focus().setTextSelection(target).scrollIntoView().run()
         },
         clearFormatCache: () => {
           if (projectId) clearRichEditorSessionCache(projectId, fieldKey)

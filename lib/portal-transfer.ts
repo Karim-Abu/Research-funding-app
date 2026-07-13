@@ -2,7 +2,7 @@
 // detection, per-field copy warnings, and the unsupported-area coverage list.
 // Pure functions over existing DTOs — no new API, no backend.
 
-import type { PortalFieldDraftDto } from "./fields"
+import type { CopyReadiness, PortalFieldDraftDto } from "./fields"
 import { hasPlaceholder } from "./placeholders"
 import type { ReviewPackageDto } from "./review"
 
@@ -59,6 +59,63 @@ export function groupBySection(fields: PortalFieldDraftDto[]): FieldGroup[] {
   )
 }
 
+// ---------------------------------------------------------------------------
+// R6 Copy-Readiness — Backend leitet ab, hier wird NUR gerendert. Bewusst nie
+// "einreichbereit": copy_ready heisst "bereit zum Kopieren" (Arbeitsstand).
+// ---------------------------------------------------------------------------
+export const COPY_READINESS_LABELS: Record<CopyReadiness, string> = {
+  copy_ready: "Bereit zum Kopieren",
+  draft: "Arbeitskopie",
+  placeholders_open: "Platzhalter offen",
+  not_reviewed: "Prüfung nicht aktuell",
+  blocker: "Blocker",
+}
+
+export const COPY_READINESS_STYLE: Record<CopyReadiness, string> = {
+  copy_ready: "bg-status-fulfilled/12 text-status-fulfilled",
+  draft: "bg-muted text-muted-foreground",
+  placeholders_open: "bg-status-partial/12 text-status-partial",
+  not_reviewed: "bg-status-partial/12 text-status-partial",
+  blocker: "bg-status-blocker/12 text-status-blocker",
+}
+
+/** Backend-Wert bevorzugt; Anzeige-Fallback aus den Warnungen (Mock-Modus /
+ * ältere Antworten) — spiegelt die Backend-Präzedenz, nie "copy_ready" ohne
+ * aktuelle Freigabe. */
+export function fieldCopyReadiness(
+  field: PortalFieldDraftDto,
+  review: ReviewPackageDto | null
+): CopyReadiness {
+  if (field.copy_readiness) return field.copy_readiness
+  const warnings = fieldWarnings(field, review)
+  const codes = new Set(warnings.map((w) => w.code))
+  if (codes.has("limit")) return "blocker"
+  if (codes.has("open")) return "placeholders_open"
+  if (codes.has("review")) return "not_reviewed"
+  if (review?.approval_status === "approved" && !review.recheck_required) {
+    return "copy_ready"
+  }
+  return "draft"
+}
+
+// ---------------------------------------------------------------------------
+// R6 Kapitel-/Gesamt-Kopie: Client-seitige Assemblierung in Registry-Reihen-
+// folge. Feldüberschriften sind Orientierung für die Arbeitskopie — der
+// Portaltext je Feld bleibt der reine Feldtext (Feld-Kopie bleibt "nur Text").
+// ---------------------------------------------------------------------------
+export function assembleChapterText(group: FieldGroup): string {
+  const parts = group.fields.map(
+    (field) => `${field.field_name}\n${field.current_version.text.trim()}`
+  )
+  return [group.label, ...parts].join("\n\n")
+}
+
+export function assembleFullDraftText(fields: PortalFieldDraftDto[]): string {
+  return groupBySection(fields)
+    .map((group) => assembleChapterText(group))
+    .join("\n\n\n")
+}
+
 export type WarningCode = "open" | "limit" | "review"
 
 export interface CopyWarning {
@@ -88,8 +145,11 @@ export function fieldWarnings(
     const blocker = review.findings.some(
       (f) => f.field_id === field.field_id && f.severity === "blocker" && f.status === "open"
     )
-    const approvalNotCurrent =
-      review.recheck_required || review.approval_status !== "approved"
+    // Mit Backend-Copy-Readiness ist DIESE die kanonische Freigabe-Aussage
+    // (kennt auch Feld-Freigaben); sonst wie bisher die Lauf-Freigabe.
+    const approvalNotCurrent = field.copy_readiness
+      ? field.copy_readiness !== "copy_ready"
+      : review.recheck_required || review.approval_status !== "approved"
     if (approvalNotCurrent || blocker) {
       warnings.push({ code: "review", message: "Die Prüfungs-Freigabe ist nicht aktuell." })
     }

@@ -1,14 +1,17 @@
-// Cloud-processing confirmation client (Milestone 9D.2). A per-run user
-// acknowledgement that selected public/synthetic content may be sent to the
-// configured cloud AI for one cloud_assisted run. Same-origin BFF.
+// Processing-confirmation client (Milestone 9D.2; erweitert in R4.3). A per-run
+// user acknowledgement: "cloud_assisted" = public/synthetic content may be sent
+// to the configured cloud AI; "local_only" = KI-Opt-in für interne/vertrauliche
+// Projekte über den lokalen Verarbeitungspfad (Warnung verstanden). Same-origin BFF.
 
 import { getCsrfToken } from "./session"
 import { RunError } from "./runs"
 
 export const POLICY_VERSION = "1.1.0"
 
+export type ConfirmationProcessingMode = "cloud_assisted" | "local_only"
+
 export interface ProcessingConfirmationCreate {
-  processing_mode: "cloud_assisted"
+  processing_mode: ConfirmationProcessingMode
   source_version_ids: string[]
   accepted_policy_version: string
   purpose: string
@@ -59,10 +62,11 @@ async function toError(res: Response): Promise<RunError> {
 export async function createProcessingConfirmation(
   projectId: string,
   sourceVersionIds: string[],
-  purpose = "KI-Vorschläge für Textentwürfe vorbereiten"
+  purpose = "KI-Vorschläge für Textentwürfe vorbereiten",
+  processingMode: ConfirmationProcessingMode = "cloud_assisted"
 ): Promise<ProcessingConfirmationDto> {
   const payload: ProcessingConfirmationCreate = {
-    processing_mode: "cloud_assisted",
+    processing_mode: processingMode,
     source_version_ids: sourceVersionIds,
     accepted_policy_version: POLICY_VERSION,
     purpose,

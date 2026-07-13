@@ -98,10 +98,17 @@ def run_preview(
     intended_tool: str = "firecrawl",
     purpose: str | None = None,
     source_context_ids: list[str] | None = None,
+    force_approval: bool = False,
+    apply_project_lexicon: bool = False,
 ) -> PreviewOutcome:
     """Screen a query. For ``require_human_approval`` persist a ``pending`` approval so
     the user can approve the sanitized query; for ``allow``/``block`` persist no approval
-    (D0 allow needs none; block cannot proceed)."""
+    (D0 allow needs none; block cannot proceed).
+
+    ``force_approval=True`` (Markt-Query-Freigabe, R8) persists a ``pending`` approval
+    also for an ``allow`` decision, so EVERY planner-generated outgoing query needs an
+    explicit human approval before it may execute — never a weakening (``block`` still
+    creates none)."""
     data_class = derive_data_class(project.data_classification)
     result = evaluate_query(
         db,
@@ -113,10 +120,13 @@ def run_preview(
         intended_tool=intended_tool,
         purpose=purpose,
         source_context_ids=source_context_ids,
+        apply_project_lexicon=apply_project_lexicon,
     )
 
     approval: SearchQueryApproval | None = None
-    if result.decision == "require_human_approval":
+    if result.decision == "require_human_approval" or (
+        force_approval and result.decision == "allow"
+    ):
         approval = SearchQueryApproval(
             approval_id=str(uuid.uuid4()),
             project_id=project.project_id,
@@ -211,6 +221,31 @@ def consume_for_task(
             "approval_query_changed",
             "Die Suchanfrage wurde geändert; bitte erneut prüfen lassen.",
             status=409,
+        )
+    approval.status = "used"
+    approval.used_by_research_task_id = research_task_id
+    approval.decided_at = _now()
+    return approval.sanitized_query
+
+
+def consume_approved(
+    db: Session, *, approval: SearchQueryApproval, research_task_id: str
+) -> str:
+    """Single-use-consume a SERVER-loaded approval (Markt-Query-Freigabe, R8).
+
+    Unlike ``consume_for_task`` there is no client raw query to hash-compare — the
+    caller MUST execute exactly ``approval.sanitized_query`` (a stronger binding:
+    only the human-approved text can go out). All status checks stay identical:
+    approved → used, single-use, rejected/expired/pending never execute."""
+    if approval.status == "used":
+        raise ApprovalError(
+            "approval_already_used", "Diese Freigabe wurde bereits verwendet.", status=409
+        )
+    if approval.status != "approved":
+        raise ApprovalError(
+            "approval_not_approved",
+            "Für diese Suchanfrage liegt keine gültige Freigabe vor.",
+            status=422,
         )
     approval.status = "used"
     approval.used_by_research_task_id = research_task_id

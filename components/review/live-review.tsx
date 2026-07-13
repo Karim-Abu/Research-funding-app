@@ -15,7 +15,14 @@ import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { getCapabilities } from "@/lib/capabilities"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { QualitySummary } from "@/components/review/quality-summary"
+import {
+  GroupedFindingsSection,
+  NextActionsCard,
+} from "@/components/review/fix-queue"
+import { flags } from "@/lib/flags"
+import { useFixQueue } from "@/lib/fix-queue"
 import {
   getReview,
   startRecheck,
@@ -81,6 +88,18 @@ export function LiveReview({ runId }: { runId: string }) {
   }, [runId])
 
   React.useEffect(() => load(), [load])
+
+  // R2.5 — Fix Queue (Flag groupedFindings). Fällt bei Fehler/leerer Antwort
+  // automatisch auf die alte Darstellung zurück (fixQueueActive = false).
+  const { queue: fixQueue } = useFixQueue(
+    runId,
+    pkg?.review_package_version,
+    flags.groupedFindings
+  )
+  const fixQueueActive =
+    flags.groupedFindings &&
+    fixQueue !== null &&
+    fixQueue.grouped_findings.length > 0
 
   async function recheck() {
     if (!pkg) return
@@ -170,6 +189,14 @@ export function LiveReview({ runId }: { runId: string }) {
             Prüft Pflichtfelder, Belege, Zeichenlimits, Platzhalter und offene
             Punkte vor Export oder Weiterbearbeitung.
           </p>
+          {/* R1.3 — kanonischer Gesamtstatus; key erzwingt Neuladen nach
+              Recheck/Freigabe (neue Package-Version). */}
+          <div className="mt-1">
+            <CanonicalStatusBadge
+              key={pkg.review_package_version}
+              runId={runId}
+            />
+          </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
           {/* Recheck always re-runs the WHOLE quality check — there is no
@@ -225,14 +252,19 @@ export function LiveReview({ runId }: { runId: string }) {
         recheckRequired={pkg.recheck_required}
       />
 
-      {/* Nächste Schritte — the top actions derived from the current package */}
-      <NextStepsCard
-        pkg={pkg}
-        staleReliability={Boolean(staleReliability)}
-        groups={groups}
-        busy={busy}
-        onRecheck={recheck}
-      />
+      {/* Nächste Schritte/Aufgaben — mit aktiver Fix Queue (R2.5) kommen die
+          Top-5 priorisiert aus der Gruppierungs-API; sonst alte Ableitung. */}
+      {fixQueueActive ? (
+        <NextActionsCard groups={fixQueue.next_actions} limit={5} />
+      ) : (
+        <NextStepsCard
+          pkg={pkg}
+          staleReliability={Boolean(staleReliability)}
+          groups={groups}
+          busy={busy}
+          onRecheck={recheck}
+        />
+      )}
 
       {/* Approval / blocker panel */}
       <ApprovalPanel
@@ -262,21 +294,30 @@ export function LiveReview({ runId }: { runId: string }) {
         </div>
       </section>
 
-      {/* Blocker cards — grouped by portal field, top 3 groups first */}
-      {blockerFindings.length > 0 && (
-        <BlockerSection blockerFindings={blockerFindings} />
-      )}
+      {/* Offene Punkte: mit aktiver Fix Queue EINE gruppierte Liste («4 × …»,
+          aufklappbar mit Beispielen) statt Blocker-Karten + Hinweis-Liste;
+          Fallback bleibt die alte Darstellung. */}
+      {fixQueueActive ? (
+        <GroupedFindingsSection groups={fixQueue.grouped_findings} />
+      ) : (
+        <>
+          {/* Blocker cards — grouped by portal field, top 3 groups first */}
+          {blockerFindings.length > 0 && (
+            <BlockerSection blockerFindings={blockerFindings} />
+          )}
 
-      {/* Deduplicated hints */}
-      {dedupedHints.length > 0 && (
-        <section className="flex flex-col gap-3">
-          <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
-          <div className="flex flex-col gap-2">
-            {dedupedHints.map((h) => (
-              <DedupedHint key={h.description} hint={h} />
-            ))}
-          </div>
-        </section>
+          {/* Deduplicated hints */}
+          {dedupedHints.length > 0 && (
+            <section className="flex flex-col gap-3">
+              <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
+              <div className="flex flex-col gap-2">
+                {dedupedHints.map((h) => (
+                  <DedupedHint key={h.description} hint={h} />
+                ))}
+              </div>
+            </section>
+          )}
+        </>
       )}
 
       {/* KI-gestützte Hinweise (A3 evidence-consistency, advisory) */}
@@ -695,7 +736,7 @@ function BlockerCard({ finding }: { finding: ReviewFindingDto }) {
           </Button>
         )}
         {isEvidence && (
-          <Button variant="ghost" size="xs" render={<a href="/quellen?tab=evidenz" />} nativeButton={false}>
+          <Button variant="ghost" size="xs" render={<a href="/anforderungen?tab=evidenz" />} nativeButton={false}>
             Evidenz prüfen
           </Button>
         )}
@@ -735,7 +776,7 @@ function DedupedHint({ hint }: { hint: DedupedFinding }) {
   // Every hint gets at least one sensible action (M10.2 / E13).
   const action =
     group === "belege"
-      ? { label: "Belege prüfen", href: "/quellen?tab=evidenz" }
+      ? { label: "Belege prüfen", href: "/anforderungen?tab=evidenz" }
       : firstWithField
         ? {
             label: "Im Entwurf öffnen",

@@ -4,6 +4,7 @@ import * as React from "react"
 import { Info, AlertTriangle, ArrowRight, Plus, Circle } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LiveMarketComparison } from "@/components/editor/live-market-comparison"
+import { MarketResearchPanel } from "@/components/editor/market-research-panel"
 import { cn } from "@/lib/utils"
 import {
   MARKET_STATUS_LABELS,
@@ -79,6 +80,10 @@ interface MarketCompetitionPanelProps {
   /** capabilities.features.market_comparison — gates the live comparison view. */
   comparisonEnabled?: boolean
   onOpenComparison?: () => void
+  /** capabilities.features.web_research — gates the Market Research flow (RESEARCH.1b). */
+  marketResearchEnabled?: boolean
+  /** Called after a MarketCandidate was imported as a source. */
+  onSourceImported?: () => void
 }
 
 export function MarketCompetitionPanel({
@@ -91,6 +96,8 @@ export function MarketCompetitionPanel({
   comparisonLoaded = false,
   comparisonEnabled = false,
   onOpenComparison,
+  marketResearchEnabled = false,
+  onSourceImported,
 }: MarketCompetitionPanelProps) {
   const [note, setNote] = React.useState<string | null>(null)
   const [markedRisk, setMarkedRisk] = React.useState(false)
@@ -154,13 +161,14 @@ export function MarketCompetitionPanel({
             <Button variant="outline" size="xs" disabled>
               Offene Marktfrage erstellen
             </Button>
-            <Button variant="outline" size="xs" disabled>
-              Marktanalyse vorbereiten
-            </Button>
           </div>
-          <p className="text-[11px] text-muted-foreground">
-            „Marktanalyse vorbereiten" ist noch nicht verfügbar.
-          </p>
+          {marketResearchEnabled && projectId ? (
+            <MarketResearchPanel projectId={projectId} onImported={onSourceImported} />
+          ) : (
+            <p className="text-[11px] text-muted-foreground">
+              „Marktanalyse vorbereiten" ist noch nicht verfügbar.
+            </p>
+          )}
         </div>
       )
     }

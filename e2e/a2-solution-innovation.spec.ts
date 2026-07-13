@@ -124,9 +124,9 @@ test("A2 solution-innovation: safe unavailable + field scope (API context)", asy
   expect(redraft.status()).toBe(503)
   expect((await redraft.json()).code).toBe("ai_unavailable")
 
-  // A2 is scoped to the SOL field — any other field 404s (no AI surface there).
+  // A2 is scoped to the allow-list — a non-enabled field (INTRO.APP.NAME) 404s.
   const other = await page.request.post(
-    `/api/runs/${runId}/fields/INTRO.APP.ABSTRACT/redrafts`,
+    `/api/runs/${runId}/fields/INTRO.APP.NAME/redrafts`,
     { headers: mut(), data: { base_version_id: base } }
   )
   expect(other.status()).toBe(404)
@@ -257,6 +257,9 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
   expect(suggestion.character_limit).toBe(15000)
   expect(suggestion.suggested_text).toContain("3.1")
 
+  // Annahme-Schlüssel ist die Operation der Suggestion selbst (view.operation_id)
+  // — seit A2 im normalen Lauf läuft, kann der Redraft eine bestehende
+  // Suggestion wiederverwenden, die an ihrer ursprünglichen Operation hängt.
   const acceptRes = await page.request.patch(
     `/api/runs/${runId}/fields/${VC}`,
     {
@@ -264,7 +267,7 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
       data: {
         base_version_id: base,
         text: suggestion.suggested_text,
-        source_operation_id: redraftOp,
+        source_operation_id: suggestion.operation_id,
       },
     }
   )
@@ -276,9 +279,10 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
   const runAfter = await (await page.request.get(`/api/runs/${runId}`)).json()
   expect(runAfter.recheck_required).toBe(true)
 
-  // A2 is not exposed on an unsupported field (e.g. the Abstract).
+  // A2 is not exposed on an unsupported field (Abstract/Exec Summary are now
+  // enabled; INTRO.APP.NAME remains outside the A2 allow-list).
   const unsupported = await page.request.post(
-    `/api/runs/${runId}/fields/INTRO.APP.ABSTRACT/redrafts`,
+    `/api/runs/${runId}/fields/INTRO.APP.NAME/redrafts`,
     { headers: mut(), data: { base_version_id: base } }
   )
   expect(unsupported.status()).toBe(404)
@@ -403,6 +407,8 @@ test("Flow A: cloud confirmation enables A2 → accept → agent draft + recheck
   expect(suggestion.suggested_text).toBeTruthy()
 
   // Explicit accept → a new DraftVersion created_by=agent + recheck_required.
+  // Annahme-Schlüssel = Operation der Suggestion (kann bei Reuse aus dem
+  // normalen Lauf stammen), wie im echten UI-Client.
   const acceptRes = await page.request.patch(
     `/api/runs/${runId}/fields/${SOL}`,
     {
@@ -410,7 +416,7 @@ test("Flow A: cloud confirmation enables A2 → accept → agent draft + recheck
       data: {
         base_version_id: base,
         text: suggestion.suggested_text,
-        source_operation_id: redraftOp,
+        source_operation_id: suggestion.operation_id,
       },
     }
   )

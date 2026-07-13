@@ -200,5 +200,9 @@ test("M7 review: edit → recheck → field approval → stale; missing partner 
   await expect(
     page.getByRole("heading", { name: "Qualitätsprüfung", exact: true })
   ).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText("Blockiert")).toBeVisible()
+  // Präziser als getByText("Blockiert"): der Stepper zeigt denselben
+  // Statustext an mehreren Schritten (strict-mode).
+  await expect(
+    page.getByRole("heading", { name: "Freigabe blockiert" })
+  ).toBeVisible()
 })

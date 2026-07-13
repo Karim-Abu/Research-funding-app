@@ -24,6 +24,7 @@ import {
 import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
 import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { getCapabilities } from "@/lib/capabilities"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
   EXPORT_REVIEW_LABELS,
@@ -163,7 +164,9 @@ export function LiveExport({ runId }: { runId: string }) {
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-5">
       <div className="flex flex-col gap-1">
-        <h1 className="text-balance text-2xl font-semibold text-foreground">Export</h1>
+        <h1 className="text-balance text-2xl font-semibold text-foreground">
+          Innolink-Übernahme
+        </h1>
         <p className="text-sm text-muted-foreground">
           Erstellen Sie ein editierbares Arbeitsdokument oder übernehmen Sie
           geprüfte Feldinhalte manuell nach Innolink.
@@ -192,6 +195,11 @@ export function LiveExport({ runId }: { runId: string }) {
               >
                 {EXPORT_REVIEW_LABELS[readiness.reviewStatus]}
               </span>
+              {/* R1.3 — kanonischer Gesamtstatus (eine Quelle, lib/status.ts). */}
+              <CanonicalStatusBadge
+                key={pkg?.review_package_version ?? "no-pkg"}
+                runId={runId}
+              />
               {notForSubmission && (
                 <Badge
                   variant="outline"
@@ -203,10 +211,24 @@ export function LiveExport({ runId }: { runId: string }) {
             </div>
             <dl className="grid grid-cols-3 gap-3 text-center">
               <div className="rounded-md border border-border px-2 py-2">
-                <dd className={cn("text-lg font-semibold", readiness.blockerCount > 0 && "text-destructive")}>
-                  {readiness.blockerCount}
-                </dd>
-                <dt className="text-[11px] text-muted-foreground">Blocker</dt>
+                {/* Ohne durchgeführte Prüfung nie eine 0 behaupten (Regel 7). */}
+                {readiness.reviewStatus === "nicht_durchgefuehrt" ? (
+                  <dd
+                    className="text-lg font-semibold text-muted-foreground"
+                    title="Noch nicht geprüft"
+                  >
+                    —
+                  </dd>
+                ) : (
+                  <dd className={cn("text-lg font-semibold", readiness.blockerCount > 0 && "text-destructive")}>
+                    {readiness.blockerCount}
+                  </dd>
+                )}
+                <dt className="text-[11px] text-muted-foreground">
+                  {readiness.reviewStatus === "nicht_durchgefuehrt"
+                    ? "Blocker — noch nicht geprüft"
+                    : "Blocker"}
+                </dt>
               </div>
               <div className="rounded-md border border-border px-2 py-2">
                 <dd className="text-lg font-semibold text-status-fulfilled">{readiness.fieldsReady}</dd>

@@ -17,7 +17,8 @@ export interface AsyncOperationDto {
   updated_at?: string | null
   progress_percent?: number | null
   result?: Record<string, unknown> | null
-  error?: { code?: string; detail?: string } | null
+  // R4.2: reason_code = maschinenlesbarer Verfügbarkeits-Blockgrund (optional).
+  error?: { code?: string; detail?: string; reason_code?: string } | null
 }
 
 const TERMINAL: ReadonlyArray<OperationStatus> = ["succeeded", "failed", "cancelled"]

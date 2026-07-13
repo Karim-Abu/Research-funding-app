@@ -26,6 +26,7 @@ _MUTABLE_FIELDS = (
     "research_partner_eligibility_status",
     "personnel_independence_status",
     "financial_independence_status",
+    "review_comment",
 )
 
 
@@ -114,6 +115,7 @@ def to_contract(partner: Partner) -> PartnerSchema:
         official_representative=partner.official_representative,
         personnel_independence_status=partner.personnel_independence_status,
         financial_independence_status=partner.financial_independence_status,
+        review_comment=partner.review_comment,
     )
 
 

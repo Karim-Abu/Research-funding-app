@@ -12,6 +12,10 @@ import {
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
+import { CanonicalStatusBadge } from "@/components/status/canonical-status"
+import { NextActionsCard } from "@/components/review/fix-queue"
+import { flags } from "@/lib/flags"
+import { useFixQueue } from "@/lib/fix-queue"
 import {
   RequirementSummaryBar,
   RequirementFilterBar,
@@ -112,6 +116,10 @@ export function LiveRequirements({
   }, [runId])
 
   React.useEffect(() => load(), [load])
+
+  // R2.5 — kompakte «Nächste Aufgaben» (Fix Queue); bei Fehler/leer erscheint
+  // der Block nicht (alte Darstellung bleibt vollständig erhalten).
+  const { queue: fixQueue } = useFixQueue(runId, undefined, flags.groupedFindings)
 
   // Deep link: once the data is there, expand the targeted row (matched by
   // requirement_id or assessment_id), scroll to it and highlight it briefly.
@@ -215,13 +223,18 @@ export function LiveRequirements({
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
           {/* Header */}
           <div className="flex flex-col gap-1">
-            <h1 className="text-balance text-2xl font-semibold text-foreground">
+            {/* h2: Seiten-h1 ist «Analyse & Recherche» (app/anforderungen). */}
+            <h2 className="text-balance text-xl font-semibold text-foreground">
               Anforderungen &amp; Fördervoraussetzungen
-            </h1>
+            </h2>
             <p className="text-sm text-muted-foreground">
               Automatisch erkannte Voraussetzungen, Belege und offene Prüfpunkte
               für diesen Antrag.
             </p>
+            {/* R1.3 — kanonischer Gesamtstatus (eine Quelle für alle Screens). */}
+            <div className="mt-1">
+              <CanonicalStatusBadge runId={runId} />
+            </div>
           </div>
 
           {stale && (
@@ -233,6 +246,13 @@ export function LiveRequirements({
               <span>{STALE_NOTICE}</span>
             </div>
           )}
+
+          {/* R2.5 — priorisierte «Nächste Aufgaben» aus der Fix Queue. */}
+          {flags.groupedFindings &&
+            fixQueue !== null &&
+            fixQueue.next_actions.length > 0 && (
+              <NextActionsCard groups={fixQueue.next_actions} limit={5} />
+            )}
 
           {rows.length === 0 ? (
             <div className="rounded-lg border border-dashed border-border bg-muted/20 px-6 py-16 text-center">
@@ -316,8 +336,11 @@ export function LiveRequirements({
             <p className="text-sm text-muted-foreground">
               {hasBlockers ? (
                 <>
+                  {/* Präzise Teilmengen-Formulierung: blockierende Anforderungen,
+                      nicht die kanonische Gesamt-Blockerzahl (siehe Badge oben). */}
                   <span className="font-medium text-destructive">
-                    {summary.blocked} Blocker
+                    {summary.blocked} blockierende{" "}
+                    {summary.blocked === 1 ? "Anforderung" : "Anforderungen"}
                   </span>{" "}
                   {summary.blocked === 1 ? "verhindert" : "verhindern"} aktuell den
                   nächsten Schritt.
@@ -464,7 +487,7 @@ function LiveRequirementRow({
 function LiveRowActions({ row }: { row: LiveRow }) {
   const primary = primaryActionFor(row)
   const evidenceHref = row.firstAnchorId
-    ? `/quellen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`
+    ? `/anforderungen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`
     : null
 
   // Secondaries: evidence link + neutral review link, unless the primary

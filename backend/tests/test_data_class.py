@@ -28,6 +28,35 @@ def test_data_class_mapping():
     assert derive_data_class(_cls("public", nda=True)) == DataClass.D3_NDA_BLOCKED
 
 
+def test_owner_mapping_table_rows():
+    """R4.1 — die vier UI-Zeilen der Owner-Tabelle (docs/repair/data-class-mapping.md §2)
+    leiten exakt auf D0–D3 ab; Bestandswerte behalten ihre Interpretation."""
+    rows = {
+        DataClass.D0_PUBLIC: {
+            "sensitivity": "public", "origin": "synthetic",
+            "processing_mode": "cloud_assisted",
+            "web_research_mode": "validated_public", "nda_applies": False,
+        },
+        DataClass.D1_INTERNAL: {
+            "sensitivity": "internal", "origin": "real_project",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "off", "nda_applies": False,
+        },
+        DataClass.D2_CONFIDENTIAL_IDEA: {
+            "sensitivity": "confidential", "origin": "real_project",
+            "processing_mode": "local_only",
+            "web_research_mode": "off", "nda_applies": False,
+        },
+        DataClass.D3_NDA_BLOCKED: {
+            "sensitivity": "confidential", "origin": "real_project",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "off", "nda_applies": True,
+        },
+    }
+    for expected, classification in rows.items():
+        assert derive_data_class(classification) == expected
+
+
 def test_unknown_fail_closed():
     # Empty / missing classification and unrecognized values are UNKNOWN (deny-by-default).
     assert derive_data_class({}) == DataClass.UNKNOWN
@@ -90,6 +119,40 @@ def test_firewall_d0_email_and_budget_flagged():
     # sanitized removes the address + figure.
     assert "example.com" not in r.sanitized_query
     assert "500" not in r.sanitized_query
+
+
+def test_firewall_budget_in_number_words_flagged():
+    """R8-Leakage: Beträge in Zahlwörtern (nicht nur Ziffern) mit Währungskontext werden
+    erkannt und entfernt — «eine halbe Million Franken» darf keine Query erreichen."""
+    cases = [
+        "Marktpotenzial Robotik für eine halbe Million Franken",
+        "Anlage kostet fünfhunderttausend Franken pro Jahr",
+        "budget of half a million francs for automation",
+        "Förderung über zwei Millionen CHF geplant",
+    ]
+    for raw in cases:
+        r = evaluate_query(
+            None, project_id="p", workspace_id="w", actor_user_id="u",
+            raw_query=raw, data_class=DataClass.D0_PUBLIC, intended_tool="firecrawl",
+        )
+        assert "budget_amount" in r.detected_sensitive_categories, raw
+        low = r.sanitized_query.lower()
+        assert "million" not in low and "tausend" not in low, raw
+        assert "franken" not in low and "francs" not in low and "chf" not in low, raw
+
+
+def test_firewall_number_words_without_currency_not_flagged():
+    # «Millionen von Nutzern» ist eine Mengenangabe, kein Budget — kein False Positive.
+    for raw in (
+        "Robotik Plattform für Millionen von Nutzern",
+        "Markt mit zwei Millionen Anwendern in Europa",
+    ):
+        r = evaluate_query(
+            None, project_id="p", workspace_id="w", actor_user_id="u",
+            raw_query=raw, data_class=DataClass.D0_PUBLIC, intended_tool="firecrawl",
+        )
+        assert "budget_amount" not in r.detected_sensitive_categories, raw
+        assert r.decision == "allow", raw
 
 
 def test_firewall_d3_and_unknown_blocked():

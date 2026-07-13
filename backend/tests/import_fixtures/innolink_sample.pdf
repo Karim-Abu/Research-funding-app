@@ -1,0 +1,187 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R] /Count 2 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 2350 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 1) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F2 14.0 Tf
+(1 Introduction) Tj T*
+/F2 11.5 Tf
+(Application Name and Abstract) Tj T*
+/F2 10.0 Tf
+(Application name) Tj T*
+/F1 10.0 Tf
+(SmartGrid Optimizer - Adaptive Lastprognose für Verteilnetze) Tj T*
+/F2 10.0 Tf
+(Application Name in English) Tj T*
+/F1 8.5 Tf
+(Characters: 0/200) Tj T*
+/F2 10.0 Tf
+(Abstract \(wird in Aramis publiziert\)) Tj T*
+/F1 8.5 Tf
+(Characters: 254/300) Tj T*
+/F1 10.0 Tf
+(Das Projekt entwickelt eine adaptive Lastprognose für städtische) Tj T*
+/F1 10.0 Tf
+(Verteilnetze. Durch selbstkalibrierende Modelle sinken Prognosefehler) Tj T*
+/F1 10.0 Tf
+(um bis zu 30 Prozent, was Netzausbaukosten reduziert und die) Tj T*
+/F1 10.0 Tf
+(Integration erneuerbarer Energien beschleunigt.) Tj T*
+/F2 10.0 Tf
+(Executive summary \(wird nicht in Aramis publiziert\)) Tj T*
+/F1 8.5 Tf
+(Characters: 812/2000) Tj T*
+/F1 10.0 Tf
+(Verteilnetzbetreiber stehen vor stark schwankenden Lastprofilen durch) Tj T*
+/F1 10.0 Tf
+(Photovoltaik, Wärmepumpen und Elektromobilität. Bestehende Prognose-) Tj T*
+/F1 10.0 Tf
+(werkzeuge benötigen manuelle Nachkalibrierung und liefern in Quartieren) Tj T*
+/F1 10.0 Tf
+(mit hoher PV-Dichte unzuverlässige Werte.) Tj T*
+/F1 10.0 Tf
+(Der SmartGrid Optimizer kombiniert physikalische Netzmodelle mit einem) Tj T*
+/F1 10.0 Tf
+(lernenden Korrekturverfahren. Der Umsetzungspartner Netzwerk Stadt AG) Tj T*
+/F1 10.0 Tf
+(bringt Messdaten aus zwei Pilotquartieren ein; die Hochschule liefert) Tj T*
+/F1 10.0 Tf
+(die Modellarchitektur und Validierungsmethodik.) Tj T*
+/F2 14.0 Tf
+(2 Organisations & People) Tj T*
+/F2 11.5 Tf
+(Independence of Research and Implementation Partners) Tj T*
+/F1 8.5 Tf
+(Confirmation personal independence: Yes) Tj T*
+/F1 8.5 Tf
+(Confirmation financial independence: No) Tj T*
+/F2 10.0 Tf
+(Explanations and Comments) Tj T*
+/F1 8.5 Tf
+(Characters: 231/300) Tj T*
+/F1 10.0 Tf
+(Die Netzwerk Stadt AG hält eine Minderheitsbeteiligung von 8 Prozent an) Tj T*
+/F1 10.0 Tf
+(der Spin-off-Gesellschaft der Forschungsgruppe. Die Beteiligung hat) Tj T*
+/F1 10.0 Tf
+(keinen Einfluss auf Projektentscheide; Governance-Massnahmen sind im) Tj T*
+/F1 10.0 Tf
+(Konsortialvertrag geregelt.) Tj T*
+/F2 14.0 Tf
+(3 Value Creation) Tj T*
+/F2 11.5 Tf
+(Business Targets & Business Model) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 1960 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 2) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F1 8.5 Tf
+(Open Editor) Tj T*
+/F1 10.0 Tf
+(3.1 Which business targets do you pursue with this project?) Tj T*
+/F1 10.0 Tf
+(Innerhalb von drei Jahren nach Projektende sollen 12 Verteilnetz-) Tj T*
+/F1 10.0 Tf
+(betreiber die Lösung lizenzieren. Zielumsatz im dritten Jahr:) Tj T*
+/F1 10.0 Tf
+(CHF 1.8 Mio. wiederkehrend aus SaaS-Lizenzen.) Tj T*
+/F1 10.0 Tf
+(3.2 What is your business model?) Tj T*
+/F1 10.0 Tf
+(SaaS-Abonnement pro Netzgebiet, gestaffelt nach Anzahl Messpunkten.) Tj T*
+/F1 10.0 Tf
+(Vertrieb über bestehende Leittechnik-Integratoren als Partnerkanal.) Tj T*
+/F2 14.0 Tf
+(4 Solution) Tj T*
+/F2 11.5 Tf
+(Innovation Solution) Tj T*
+/F1 8.5 Tf
+(Open Editor) Tj T*
+/F1 10.0 Tf
+(4.1 What is the innovation in your solution?) Tj T*
+/F1 10.0 Tf
+(Neu ist die Kopplung eines physikalischen Netzmodells mit einem) Tj T*
+/F1 10.0 Tf
+(online lernenden Fehlerkorrektur-Modul, das ohne manuelle) Tj T*
+/F1 10.0 Tf
+(Rekalibrierung auskommt und Konzeptdrift automatisch erkennt.) Tj T*
+/F1 10.0 Tf
+(4.2 What is the current state of the art?) Tj T*
+/F1 10.0 Tf
+(Kommerzielle Werkzeuge nutzen statische Regressionsmodelle, die bei) Tj T*
+/F1 10.0 Tf
+(hoher PV-Dichte systematisch abweichen und quartalsweise manuell) Tj T*
+/F1 10.0 Tf
+(nachgeführt werden müssen.) Tj T*
+/F2 14.0 Tf
+(5 Project Setup) Tj T*
+/F2 11.5 Tf
+(Planned Hours) Tj T*
+/F1 8.5 Tf
+(Partner | Research | Implementation | Management) Tj T*
+/F1 8.5 Tf
+(Hochschule | 2400 | 0 | 180) Tj T*
+/F1 8.5 Tf
+(Netzwerk Stadt AG | 0 | 1600 | 120) Tj T*
+/F2 10.0 Tf
+(Explanation) Tj T*
+/F1 8.5 Tf
+(Characters: 176/1000) Tj T*
+/F1 10.0 Tf
+(Die Management-Stunden verteilen sich auf Projektleitung \(60 Prozent) Tj T*
+/F1 10.0 Tf
+(Hochschule\) und Koordination der Pilotquartiere \(40 Prozent) Tj T*
+/F1 10.0 Tf
+(Umsetzungspartner\), entsprechend der Arbeitspaketverantwortung.) Tj T*
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+xref
+0 9
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000121 00000 n 
+0000000218 00000 n 
+0000000320 00000 n 
+0000002722 00000 n 
+0000002858 00000 n 
+0000004870 00000 n 
+trailer
+<< /Size 9 /Root 1 0 R >>
+startxref
+5006
+%%EOF

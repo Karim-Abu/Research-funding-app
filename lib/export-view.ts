@@ -34,7 +34,8 @@ export type ExportReviewStatus =
 export const EXPORT_REVIEW_LABELS: Record<ExportReviewStatus, string> = {
   bestanden: "Bestanden",
   blockiert: "Blockiert",
-  veraltet: "Veraltet",
+  // R1.3 — einheitlicher Stale-Wortlaut auf allen Screens (lib/status.ts).
+  veraltet: "Prüfung nicht aktuell",
   offen: "Offen",
   nicht_durchgefuehrt: "Nicht durchgeführt",
 }

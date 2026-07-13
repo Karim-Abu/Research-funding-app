@@ -85,7 +85,7 @@ export function LiveMarketComparison({
                 </blockquote>
               )}
               <span className="mt-1 inline-block text-[11px] text-muted-foreground">
-                Quelle erwähnt
+                Textstelle gefunden
               </span>
             </li>
           ))}
@@ -94,7 +94,7 @@ export function LiveMarketComparison({
 
       {comparison && comparison.research_gaps.length > 0 && (
         <div>
-          <p className="text-[11px] font-medium text-foreground">Offene Marktfragen</p>
+          <p className="text-[11px] font-medium text-foreground">Offene Evidenzlücken</p>
           <ul className="mt-1 list-disc pl-5 text-[11px] text-muted-foreground">
             {comparison.research_gaps.slice(0, 3).map((gap, i) => (
               <li key={i}>{gap}</li>

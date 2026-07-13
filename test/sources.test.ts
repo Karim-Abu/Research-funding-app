@@ -156,6 +156,128 @@ describe("sources client (live mode)", () => {
     expect(caught?.message).toContain("zu groß")
   })
 
+  // Schritt-0-Repro: 413 kann «zu groß» ODER «zu viele Dateien» sein — die
+  // Meldung muss dem Backend-Fehlercode folgen, nicht nur dem HTTP-Status.
+  it("distinguishes too_many_files from file_too_large (both 413)", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () =>
+        HttpResponse.json({ code: "too_many_files" }, { status: 413 })
+      )
+    )
+    const files = [new File(["x"], "a.txt")]
+    let caught: SourceError | null = null
+    try {
+      await uploadFiles("p1", files, CLASSIFICATION)
+    } catch (e) {
+      caught = e as SourceError
+    }
+    expect(caught?.status).toBe(413)
+    expect(caught?.code).toBe("too_many_files")
+    expect(caught?.message).toContain("Zu viele Dateien")
+    expect(caught?.message).not.toContain("zu groß")
+  })
+
+  it("carries the correlation id from the problem body", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () =>
+        HttpResponse.json(
+          { code: "file_too_large", correlation_id: "corr-body-1" },
+          { status: 413 }
+        )
+      )
+    )
+    let caught: SourceError | null = null
+    try {
+      await uploadFiles("p1", [new File(["x"], "a.txt")], CLASSIFICATION)
+    } catch (e) {
+      caught = e as SourceError
+    }
+    expect(caught?.correlationId).toBe("corr-body-1")
+  })
+
+  it("falls back to the X-Correlation-ID header", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () =>
+        HttpResponse.json(
+          { code: "unsupported_media_type" },
+          { status: 415, headers: { "X-Correlation-ID": "corr-header-2" } }
+        )
+      )
+    )
+    let caught: SourceError | null = null
+    try {
+      await uploadFiles("p1", [new File(["x"], "a.pdf")], CLASSIFICATION)
+    } catch (e) {
+      caught = e as SourceError
+    }
+    expect(caught?.correlationId).toBe("corr-header-2")
+  })
+
+  it("maps the bridge envelope (502) to the bridge message", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () =>
+        HttpResponse.json(
+          { error: { code: "bridge_unreachable", message: "…" } },
+          { status: 502 }
+        )
+      )
+    )
+    let caught: SourceError | null = null
+    try {
+      await uploadFiles("p1", [new File(["x"], "a.txt")], CLASSIFICATION)
+    } catch (e) {
+      caught = e as SourceError
+    }
+    expect(caught?.code).toBe("bridge_unreachable")
+    expect(caught?.message).toContain("Analysedienst")
+  })
+
+  it("maps a network failure to a user-safe network_error", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () => HttpResponse.error())
+    )
+    let caught: SourceError | null = null
+    try {
+      await uploadFiles("p1", [new File(["x"], "a.txt")], CLASSIFICATION)
+    } catch (e) {
+      caught = e as SourceError
+    }
+    expect(caught?.code).toBe("network_error")
+    expect(caught?.message).toContain("nicht erreichbar")
+  })
+
+  it("maps a network failure on GET requests too", async () => {
+    server.use(
+      http.get("/api/sources/s1", () => HttpResponse.error())
+    )
+    const { getSource } = await import("@/lib/sources")
+    await expect(getSource("s1")).rejects.toMatchObject({
+      code: "network_error",
+    })
+  })
+
+  it("reports real byte progress during upload when available", async () => {
+    server.use(
+      http.post("/api/projects/p1/sources/files", () =>
+        HttpResponse.json([sourceDoc({ status: "uploaded" })], { status: 202 })
+      )
+    )
+    const percents: number[] = []
+    const res = await uploadFiles(
+      "p1",
+      [new File(["hello world"], "a.txt")],
+      CLASSIFICATION,
+      { onProgress: (p) => percents.push(p) }
+    )
+    expect(res[0].status).toBe("uploaded")
+    // jsdom/MSW liefert nicht zwingend Upload-Progress-Events; wenn ja,
+    // müssen die Werte echte Prozentwerte sein.
+    for (const p of percents) {
+      expect(p).toBeGreaterThanOrEqual(0)
+      expect(p).toBeLessThanOrEqual(100)
+    }
+  })
+
   it("deletes a source", async () => {
     let method = ""
     server.use(

@@ -1,0 +1,66 @@
+# Model-Routing-Draft für R5-Feldagenten (EVAL.3-Vorbereitung)
+
+- **Status: DRAFT / Planungsdokument — KEIN Runtime-Config.** Das produktive
+  Routing bleibt ausschliesslich die eingefrorene Contract-YAML
+  (`final_backend_contracts_v1_1/agents_v1_1.yaml`, `model_catalog` +
+  Profil-`model:`-Blöcke) über die AgentRegistry. Dieses Dokument bindet nichts.
+- **Datum:** 2026-07-09 (zuletzt R5.7) · **Owner-Review ausstehend** für alle
+  `TODO_OWNER`-Zeilen.
+- **Keine Preise:** Preislogik läuft ausschliesslich über die EVAL.1-Preistabelle
+  (`backend/app/evaluation/pricing.py`, aktuell bewusst leer). Hier stehen nur
+  Modellklassen bzw. Routen-Aliasse als Vorschlag.
+
+## Routing-Vorschläge (Feld-Keys → Modellklasse)
+
+| Key | Contract-Profil (agents_v1_1.yaml) | Modellklasse (Vorschlag) | Routen-Alias (Vorschlag) | Status |
+|---|---|---|---|---|
+| A2_ABSTRACT | `A2.introduction_public_summary` (**code-aktiv, R5.5**) | kleine Klasse | Shared-Profil-Route; Contract-Primary heute `anthropic_sonnet_46`; finale Modell-ID TODO_OWNER | **code-aktiv (R5.5)** |
+| A2_EXECUTIVE_SUMMARY | `A2.introduction_public_summary` (**code-aktiv, R5.5**) | mittlere Klasse | Shared-Profil-Route; Contract-Primary heute `anthropic_sonnet_46`; finale Modell-ID TODO_OWNER | **code-aktiv (R5.5)** |
+| A2_VALUE_CREATION | `A2.value_creation_market_logic` (**code-aktiv, R5.7**) | frontier / TODO_OWNER | Provider-Klasse openai/anthropic/fake als **Kandidaten** (keine harte Runtime-Änderung); Contract-Primary heute `anthropic_sonnet_46` / fallback `openai_gpt_54`; concrete_model_id **TODO_OWNER** | **code-aktiv (R5.7)** |
+| A2_SOLUTION | `A2.solution_innovation` (**code-aktiv, R5.7**) | frontier / TODO_OWNER | Provider-Klasse openai/anthropic/fake als **Kandidaten** (keine harte Runtime-Änderung); Contract-Primary heute `anthropic_sonnet_46` / fallback `openai_gpt_54`; concrete_model_id **TODO_OWNER** | **code-aktiv (R5.7)** |
+| A2_FINANCIAL_INDEP | `A2.organisations_governance` (**code-aktiv, R5.6**) | fast–mid Klasse | Contract-Primary heute `anthropic_sonnet_46` (current route, **nicht** finale Owner-Entscheidung); finale Modell-ID TODO_OWNER | **code-aktiv (R5.6)** |
+| A2_MGMT_HOURS | `A2.project_setup_workplan` (**code-aktiv, R5.6**) | fast–mid Klasse | Contract-Primary heute `anthropic_sonnet_46` (current route, **nicht** finale Owner-Entscheidung); finale Modell-ID TODO_OWNER | **code-aktiv (R5.6)** |
+
+Fallbacks folgen dem bestehenden Contract-Muster (mittlere Klasse ⇒
+`openai_gpt_54`, kleine Klasse ⇒ `openai_gpt_54_mini`) — verbindlich erst mit
+einem künftigen Contract-Slice.
+
+## Demo-Default & Compare-Provider (A2_ABSTRACT / A2_EXECUTIVE_SUMMARY, R5.5)
+
+- Beide Felder werden vom **einzigen** Profil `A2.introduction_public_summary`
+  bedient; dessen eingefrorener Contract-Block ist heute `model.primary:
+  anthropic_sonnet_46`, `fallback: openai_gpt_54`. Das ist die **verbindliche
+  Runtime** — R5.5 ändert daran nichts (keine Runtime-/Contract-Änderung).
+- **OpenAI (`openai_gpt_54`)** ist als **initialer Demo-Default** dokumentiert
+  (Kandidat) — **nicht** hardcodiert und **nicht** erzwungen. Ein Wechsel des
+  Runtime-Primaries erfordert einen Contract-Slice **+ Owner-Freigabe**.
+- **Anthropic (`anthropic_sonnet_46`)** ist der heutige Contract-Primary und dient
+  als **Compare-Provider** — dokumentiert, nicht erzwungen.
+- Finale Modell-ID je Feld: **TODO_OWNER** (kleine vs. mittlere Klasse, entschieden
+  über Kosten/Qualität via EVAL.1/EVAL.2). Keine Preise in diesem Dokument.
+
+## Explizite Ausschlüsse (verbindlich für EVAL.3)
+
+- **A3_REVIEW wird NICHT als LLM eingetragen** — der A3-Review läuft heute
+  deterministisch (`a3_review`-Scope); eine LLM-A3-Implementierung ist nicht
+  Teil von R5.1/R5.2.
+- **MARKET_SYNTHESIS wird bewusst NICHT gelistet** (kein R5-Scope).
+- **Budget / Eligibility / Policy werden NIE als LLM geroutet** — Budgetlogik,
+  Zulässigkeits- und Policy-Entscheide bleiben deterministisch
+  (vgl. Repair-Leitplanke „Kein LLM im Budgetpfad").
+
+## Hinweise
+
+- Feld-Prompts für Abstract/Executive Summary sind mit R5.5 aktiv
+  (`a2_introduction_public_summary_v2`, gemeinsames Profil; v2 aus R5.5b).
+- Feld-Prompts für Financial Independence (`a2_organisations_governance_v1`) und
+  Management Hours (`a2_project_setup_workplan_v1`) sind mit R5.6 aktiv.
+- **R5.7:** Value Creation (`a2_value_creation_market_logic_v2`) und Solution
+  (`a2_solution_innovation_v2`) konsumieren jetzt **advisory Research-Kontext**
+  (importierte D0/public-Quellen + nicht-importierte Market-/Partner-ResearchCandidates,
+  feld-spezifisch nach `ResearchTask.purpose`). Kandidaten/Snippets sind **keine Fakten
+  und keine Evidence**; Marktzahlen/Partner-Fit bleiben Kandidaten → `missing_inputs`.
+  **Keine** Firecrawl-Recherche in R5.7, **keine** Runtime-/Contract-Routen-Änderung.
+- Aktivierung eines neuen Keys erfordert: Contract-Slice (Profil/Route),
+  Prompt-Datei mit Version, `a2_fields`-Aktivierung, EVAL-Abdeckung — nicht
+  dieses Dokument allein.

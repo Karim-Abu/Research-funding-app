@@ -4,12 +4,12 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
   Info,
-  Plus,
   Trash2,
   CheckCircle2,
   Circle,
   XCircle,
   Loader2,
+  FileUp,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -38,16 +38,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { DataClassBadge } from "@/components/status/data-class-badge"
 import { cn } from "@/lib/utils"
+import { flags } from "@/lib/flags"
 import { saveIntake, setActiveProjectId } from "@/lib/intake-store"
 import { createProjectFromIntake } from "@/lib/projects"
-import {
-  createPartner,
-  PARTNER_SAVE_HINT_KEY,
-  type PartnerType,
-} from "@/lib/partners"
+import { uploadFiles, UPLOAD_HINT_KEY } from "@/lib/sources"
 import { useSession } from "@/components/providers/app-providers"
-import type { DataClass, IntakeFormData, IntakePartner } from "@/lib/types"
+import type { DataClass, IntakeFormData } from "@/lib/types"
 
 // ---------------------------------------------------------------------------
 // Constants / static data
@@ -64,6 +62,14 @@ const INNOVATIONSFELDER = [
 ]
 
 const PROJEKTIDEE_MAX = 1200
+
+// Erlaubte Upload-Formate — deckungsgleich mit der Quellen-Ingestion.
+const ACCEPTED_EXTENSIONS = [".pdf", ".docx", ".txt"]
+
+/** Neutrale, editierbare Beschreibung für Upload-first-Projekte (das Backend
+ *  verlangt eine Beschreibung; sie kann später jederzeit ergänzt werden). */
+export const INTAKE_DESCRIPTION_PLACEHOLDER =
+  "Aus den hochgeladenen Unterlagen übernommen — Beschreibung folgt."
 
 interface VertraulichkeitOption {
   value: DataClass
@@ -96,6 +102,14 @@ const VERTRAULICHKEIT_OPTIONS: VertraulichkeitOption[] = [
     ki: "nicht möglich",
     web: "nicht möglich",
   },
+  {
+    value: "nda",
+    title: "NDA / gesperrt",
+    description:
+      "Für NDA-geschützte oder rechtlich gesperrte Inhalte. Keine KI-Verarbeitung, keine Webrecherche, keine Browser-Zwischenspeicherung.",
+    ki: "nicht möglich",
+    web: "nicht möglich",
+  },
 ]
 
 const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
@@ -105,39 +119,39 @@ const VERTRAULICHKEIT_SUMMARY: Record<DataClass, string> = {
     "Intern gewählt: Externe KI-Dienste nur mit Freigabe, Webrecherche bedingt möglich.",
   confidential:
     "Vertraulich gewählt: Verarbeitung nur lokal — keine externen KI-Dienste, keine Webrecherche.",
+  nda: "NDA / gesperrt gewählt: Keine KI-Verarbeitung, keine Webrecherche, keine Browser-Zwischenspeicherung.",
 }
 
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
 
-function newPartner(): IntakePartner {
-  return { id: crypto.randomUUID(), name: "", type: "Forschungspartner" }
-}
-
-function partnerTypeFor(type: IntakePartner["type"]): PartnerType {
-  if (type === "Forschungspartner") return "research_partner"
-  if (type === "Umsetzungspartner") return "implementation_partner"
-  return "other"
-}
-
-function isDirty(data: IntakeFormData): boolean {
+function isDirty(data: IntakeFormData, files: File[]): boolean {
   return (
     data.titel.trim() !== "" ||
     data.projektidee.trim() !== "" ||
     data.innovationsfeld !== "" ||
-    data.budgetrahmen.trim() !== "" ||
-    data.vertraulichkeit !== "" ||
-    data.partner.some((p) => p.name.trim() !== "")
+    files.length > 0 ||
+    data.vertraulichkeit !== "confidential"
   )
 }
 
-function isSubmitEnabled(data: IntakeFormData): boolean {
+/** Minimalangaben: eine Datei ODER (Titel UND Projektidee). Die
+ *  Vertraulichkeit hat immer einen Wert (restriktiver Default). */
+function isSubmitEnabled(data: IntakeFormData, files: File[]): boolean {
   return (
-    data.titel.trim() !== "" &&
-    data.projektidee.trim() !== "" &&
-    data.vertraulichkeit !== ""
+    files.length > 0 ||
+    (data.titel.trim() !== "" && data.projektidee.trim() !== "")
   )
+}
+
+function hasAcceptedExtension(name: string): boolean {
+  const lower = name.toLowerCase()
+  return ACCEPTED_EXTENSIONS.some((ext) => lower.endsWith(ext))
+}
+
+function titleFromFilename(name: string): string {
+  return name.replace(/\.[^.]+$/, "")
 }
 
 // ---------------------------------------------------------------------------
@@ -208,8 +222,7 @@ function ConsequenceLine({
 interface IntakeFormErrors {
   titel?: string
   projektidee?: string
-  budgetrahmen?: string
-  vertraulichkeit?: string
+  dateien?: string
 }
 
 type SaveState = "idle" | "saving" | "error"
@@ -221,13 +234,17 @@ export function IntakeForm() {
     titel: "",
     projektidee: "",
     innovationsfeld: "",
-    budgetrahmen: "",
-    vertraulichkeit: "",
-    partner: [],
+    // Restriktiver Default (D2): nie eine leere Stufe, kein Kartenzwang.
+    vertraulichkeit: "confidential",
   })
+  // Ausgewählte Unterlagen bleiben bis zur Projektanlage nur im Speicher —
+  // nie im Browser-Storage (R4.4).
+  const [files, setFiles] = React.useState<File[]>([])
   const [errors, setErrors] = React.useState<IntakeFormErrors>({})
   const [saveState, setSaveState] = React.useState<SaveState>("idle")
   const [cancelDialogOpen, setCancelDialogOpen] = React.useState(false)
+  const [classDialogOpen, setClassDialogOpen] = React.useState(false)
+  const fileInputRef = React.useRef<HTMLInputElement>(null)
   // Ref for the scrollable content area — used to ensure page opens at top.
   const scrollRef = React.useRef<HTMLDivElement>(null)
   React.useEffect(() => {
@@ -244,41 +261,46 @@ export function IntakeForm() {
     }
   }
 
-  // -- partner list ---------------------------------------------------------
+  // -- files ----------------------------------------------------------------
 
-  function addPartner() {
-    setData((prev) => ({ ...prev, partner: [...prev.partner, newPartner()] }))
-  }
-
-  function removePartner(id: string) {
-    setData((prev) => ({
+  function addFiles(list: FileList | File[]) {
+    const incoming = Array.from(list)
+    const rejected = incoming.filter((f) => !hasAcceptedExtension(f.name))
+    const accepted = incoming.filter((f) => hasAcceptedExtension(f.name))
+    setErrors((prev) => ({
       ...prev,
-      partner: prev.partner.filter((p) => p.id !== id),
+      dateien: rejected.length
+        ? "Nicht unterstütztes Format. Erlaubt: PDF, DOCX, TXT."
+        : undefined,
+      titel: undefined,
+      projektidee: undefined,
     }))
+    if (accepted.length === 0) return
+    setFiles((prev) => [...prev, ...accepted])
+    // Upload-first: Titel aus dem ersten Dateinamen vorbelegen (editierbar).
+    if (!data.titel.trim()) {
+      set("titel", titleFromFilename(accepted[0].name))
+    }
   }
 
-  function updatePartner(id: string, patch: Partial<Omit<IntakePartner, "id">>) {
-    setData((prev) => ({
-      ...prev,
-      partner: prev.partner.map((p) => (p.id === id ? { ...p, ...patch } : p)),
-    }))
+  function removeFile(index: number) {
+    setFiles((prev) => prev.filter((_, i) => i !== index))
   }
+
+  const hasPdf = files.some((f) => f.name.toLowerCase().endsWith(".pdf"))
 
   // -- validation -----------------------------------------------------------
 
   function validate(): boolean {
     const next: IntakeFormErrors = {}
-    if (!data.titel.trim()) {
-      next.titel = "Bitte geben Sie einen Antragstitel ein."
-    }
-    if (!data.projektidee.trim()) {
-      next.projektidee = "Bitte beschreiben Sie die Projektidee."
-    }
-    if (!data.vertraulichkeit) {
-      next.vertraulichkeit = "Bitte wählen Sie eine Vertraulichkeitsstufe."
-    }
-    if (data.budgetrahmen && !/^\d+([.,]\d+)?$/.test(data.budgetrahmen.trim())) {
-      next.budgetrahmen = "Bitte geben Sie einen gültigen Betrag ein (nur Zahlen)."
+    if (files.length === 0) {
+      if (!data.titel.trim()) {
+        next.titel = "Bitte geben Sie einen Projekttitel ein."
+      }
+      if (!data.projektidee.trim()) {
+        next.projektidee =
+          "Bitte beschreiben Sie die Projektidee — oder laden Sie eine Datei hoch."
+      }
     }
     setErrors(next)
     return Object.keys(next).length === 0
@@ -286,57 +308,86 @@ export function IntakeForm() {
 
   // -- submit / save --------------------------------------------------------
 
-  async function handleSubmit(e: React.FormEvent) {
-    e.preventDefault()
+  /** Effektive Intake-Daten gemäss Matrix: Titel aus Dateiname ist bereits
+   *  vorbelegt; leere Projektidee wird bei Upload-first durch die neutrale,
+   *  später editierbare Platzhalter-Beschreibung ersetzt (Backend verlangt
+   *  eine Beschreibung — bewusst kein Contract-Change). */
+  function resolveIntake(): IntakeFormData {
+    return {
+      ...data,
+      titel: data.titel.trim(),
+      projektidee:
+        data.projektidee.trim() ||
+        (files.length > 0 ? INTAKE_DESCRIPTION_PLACEHOLDER : ""),
+    }
+  }
+
+  /** Beide Aktionen erstellen das Projekt serverseitig (status «Entwurf») —
+   *  «Später fortsetzen» ist echte Persistenz, kein Fake-Feedback. */
+  async function handleCreate(destination: "weiter" | "home") {
     if (!validate()) return
     setSaveState("saving")
-    // Intake bleibt in der Session (für spätere Slices); in Live-Mode wird
-    // zusätzlich ein echtes Projekt angelegt und als aktives Projekt gemerkt.
-    saveIntake(data)
+    const resolved = resolveIntake()
+    // Session-Store: für nicht-public wird nur die Stufe gehalten (R4.4);
+    // die Wahrheit liegt ab jetzt beim Server.
+    saveIntake(resolved)
     try {
-      const project = await createProjectFromIntake(data)
+      const project = await createProjectFromIntake(resolved)
       setActiveProjectId(project.project_id)
       setSaveState("idle")
-      // Live mode: persist the intake partners on the real project. A failure
-      // never loses the project — the user lands on Partner & Budget with a
-      // hint and can add them there (B2). Mock mode stays network-free.
-      if (mode === "live") {
-        const results = await Promise.allSettled(
-          data.partner
-            .filter((p) => p.name.trim() !== "")
-            .map((p) =>
-              createPartner(project.project_id, {
-                name: p.name.trim(),
-                partner_type: partnerTypeFor(p.type),
-              })
-            )
-        )
-        if (results.some((r) => r.status === "rejected")) {
-          try {
-            window.sessionStorage.setItem(PARTNER_SAVE_HINT_KEY, "1")
-          } catch {
-            // storage blocked — the /partner page simply shows no hint
+
+      // Unterlagen hochladen (nur live) — die Quelle erbt die Projektklasse
+      // aus der Create-Antwort; die restriktivere Einstufung von Projekt und
+      // Quelle setzt der Server durch (restrictive wins).
+      if (mode === "live" && files.length > 0) {
+        try {
+          const docs = await uploadFiles(
+            project.project_id,
+            files,
+            project.data_classification
+          )
+          if (destination === "home") {
+            router.push("/")
+            return
           }
-          router.push("/partner")
+          // Innolink-PDF: weiter zur Felderkennung (Import-Review übernimmt
+          // Verarbeitung + Kandidaten; Übernahme bleibt einzeln und manuell).
+          const firstPdf = docs.find((d) => d.type === "pdf")
+          if (flags.innolinkImport && firstPdf) {
+            router.push(
+              `/import?source=${encodeURIComponent(firstPdf.source_id)}`
+            )
+            return
+          }
+          router.push("/quellen")
+          return
+        } catch {
+          // Projekt ist gespeichert — Upload ehrlich als offen markieren.
+          try {
+            window.sessionStorage.setItem(UPLOAD_HINT_KEY, "1")
+          } catch {
+            // Storage blockiert — /quellen zeigt dann keinen Hinweis.
+          }
+          router.push("/quellen")
           return
         }
       }
-      router.push("/quellen")
+
+      router.push(destination === "home" ? "/" : "/quellen")
     } catch {
       setSaveState("error")
     }
   }
 
-  async function handleDraftSave() {
-    setSaveState("saving")
-    await new Promise((r) => setTimeout(r, 800))
-    setSaveState("idle")
+  function handleSubmit(e: React.FormEvent) {
+    e.preventDefault()
+    void handleCreate("weiter")
   }
 
   // -- cancel ---------------------------------------------------------------
 
   function handleCancelClick() {
-    if (isDirty(data)) {
+    if (isDirty(data, files)) {
       setCancelDialogOpen(true)
     } else {
       router.push("/")
@@ -346,14 +397,18 @@ export function IntakeForm() {
   // -------------------------------------------------------------------------
 
   const charCount = data.projektidee.length
-  const submitEnabled = isSubmitEnabled(data)
+  const submitEnabled = isSubmitEnabled(data, files)
   const saving = saveState === "saving"
+  const dataClass: DataClass = data.vertraulichkeit || "confidential"
 
-  // Derive the list of missing required field names for the footer hint.
-  const missingFields: string[] = []
-  if (!data.titel.trim()) missingFields.push("Antragstitel")
-  if (!data.projektidee.trim()) missingFields.push("Projektidee")
-  if (!data.vertraulichkeit) missingFields.push("Vertraulichkeitsstufe")
+  // Konkrete Erklärung für den deaktivierten Zustand (nur fehlende Teile).
+  const missingParts: string[] = []
+  if (!data.titel.trim()) missingParts.push("Projekttitel")
+  if (!data.projektidee.trim()) missingParts.push("kurze Projektidee")
+  const missingHint =
+    missingParts.length > 0
+      ? `Noch offen: ${missingParts.join(" und ")} — oder laden Sie eine Datei hoch.`
+      : null
 
   return (
     <>
@@ -367,21 +422,13 @@ export function IntakeForm() {
           <div className="mx-auto w-full max-w-[720px] px-6 py-8">
 
             {/* Page header */}
-            <div className="mb-6 flex flex-col gap-1">
-              <h1 className="text-balance text-2xl font-semibold text-foreground">Intake</h1>
+            <div className="mb-8 flex flex-col gap-1">
+              <h1 className="text-balance text-2xl font-semibold text-foreground">Projekt anlegen</h1>
               <p className="text-sm text-muted-foreground">
-                Erfassen Sie die Eckdaten Ihres Innosuisse-Projekts.
+                Beschreiben Sie Ihre Projektidee, laden Sie vorhandene
+                Unterlagen hoch oder kombinieren Sie beides.
               </p>
             </div>
-
-            {/* Non-dismissible info box */}
-            <Alert className="mb-8 flex items-start gap-3 border-border bg-accent/40 text-sm text-foreground">
-              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-              <span>
-                Diese Angaben braucht die Plattform, um Anforderungen, Belege
-                und erste Entwürfe korrekt vorzubereiten.
-              </span>
-            </Alert>
 
             {/* Save error banner */}
             {saveState === "error" && (
@@ -402,91 +449,10 @@ export function IntakeForm() {
               </Alert>
             )}
 
-            {/* ── SECTION 1: Vertraulichkeit ─────────────────────────── */}
-            {/* Deliberately FIRST: the Datenklasse must be clear before the
-                user types a sensitive Projektidee (G1). */}
             <div className="flex flex-col gap-6">
-              <SectionHeading
-                title="Vertraulichkeit"
-                subtitle="Bitte zuerst festlegen — bestimmt, welche Dienste genutzt werden dürfen"
-              />
-
-              <RadioGroup
-                value={data.vertraulichkeit}
-                onValueChange={(v) =>
-                  set("vertraulichkeit", v as DataClass)
-                }
-                aria-invalid={!!errors.vertraulichkeit}
-                className="flex flex-col gap-3"
-              >
-                {VERTRAULICHKEIT_OPTIONS.map((opt) => {
-                  const selected = data.vertraulichkeit === opt.value
-                  return (
-                    <label
-                      key={opt.value}
-                      htmlFor={`vtrl-${opt.value}`}
-                      className={cn(
-                        "flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors",
-                        selected
-                          ? "border-primary bg-accent/40"
-                          : "border-border hover:border-primary/40 hover:bg-accent/20"
-                      )}
-                    >
-                      <RadioGroupItem
-                        id={`vtrl-${opt.value}`}
-                        value={opt.value}
-                        className="mt-0.5 shrink-0"
-                      />
-                      <div className="flex min-w-0 flex-col gap-1">
-                        <span className="text-sm font-medium text-foreground">
-                          {opt.title}
-                        </span>
-                        <span className="text-xs text-muted-foreground">
-                          {opt.description}
-                        </span>
-                        <div className="mt-1 flex flex-col gap-1">
-                          <ConsequenceLine
-                            label="Externe KI-Dienste"
-                            value={opt.ki}
-                          />
-                          <ConsequenceLine
-                            label="Webrecherche"
-                            value={opt.web}
-                          />
-                        </div>
-                      </div>
-                    </label>
-                  )
-                })}
-              </RadioGroup>
-
-              <FieldError message={errors.vertraulichkeit} />
-
-              {/* Summary line after selection */}
-              {data.vertraulichkeit && (
-                <p className="rounded-md bg-accent/40 px-4 py-2.5 text-sm text-foreground">
-                  {VERTRAULICHKEIT_SUMMARY[data.vertraulichkeit as DataClass]}
-                </p>
-              )}
-            </div>
-
-            <Separator className="my-8" />
-
-            {/* ── SECTION 2: Projekt ─────────────────────────────────── */}
-            <div className="flex flex-col gap-6">
-              <SectionHeading
-                title="Projekt"
-                subtitle="Worum geht es?"
-              />
-
-              {/* Antragstitel */}
+              {/* Projekttitel */}
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="titel">
-                  Antragstitel
-                  <span className="ml-1 text-destructive" aria-hidden>
-                    *
-                  </span>
-                </Label>
+                <Label htmlFor="titel">Projekttitel</Label>
                 <Input
                   id="titel"
                   value={data.titel}
@@ -499,31 +465,14 @@ export function IntakeForm() {
                 <FieldError message={errors.titel} />
               </div>
 
-              {/* Vertraulichkeit steht bewusst über diesem Abschnitt; der
-                  Hinweis erscheint nur, wenn sie übersprungen wurde. */}
-              {!data.vertraulichkeit && (
-                <p
-                  role="note"
-                  className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-                >
-                  Bitte wählen Sie zuerst oben die Vertraulichkeit, bevor Sie
-                  sensible Projektideen eingeben. Die Stufe bestimmt, welche
-                  externen Dienste genutzt werden dürfen.
-                </p>
-              )}
-
               {/* Projektidee */}
               <div className="flex flex-col gap-1.5">
-                <Label htmlFor="projektidee">
-                  Projektidee
-                  <span className="ml-1 text-destructive" aria-hidden>
-                    *
-                  </span>
-                </Label>
+                <Label htmlFor="projektidee">Kurze Projektidee</Label>
                 <p id="projektidee-hilfe" className="text-xs text-muted-foreground">
                   Beschreiben Sie kurz: Welches Problem wird gelöst? Was ist neu
-                  gegenüber dem heutigen Stand? Wer nutzt die Lösung? Welche
-                  Rolle hat der Umsetzungspartner? Was soll am Ende entstehen?
+                  gegenüber dem heutigen Stand? Wer nutzt die Lösung? Wenn Sie
+                  Unterlagen hochladen, können Sie die Beschreibung auch später
+                  ergänzen.
                 </p>
                 <Textarea
                   id="projektidee"
@@ -531,7 +480,7 @@ export function IntakeForm() {
                   onChange={(e) => set("projektidee", e.target.value)}
                   maxLength={PROJEKTIDEE_MAX}
                   rows={5}
-                  placeholder="z. B.: Problem — … · Neu daran — … · Nutzerinnen/Nutzer — … · Rolle des Umsetzungspartners — … · Ergebnis — …"
+                  placeholder="z. B.: Problem — … · Neu daran — … · Nutzerinnen/Nutzer — … · Ergebnis — …"
                   aria-invalid={!!errors.projektidee}
                   aria-describedby="projektidee-hilfe projektidee-count"
                   disabled={saving}
@@ -577,16 +526,113 @@ export function IntakeForm() {
                   </SelectContent>
                 </Select>
               </div>
-            </div>
 
-            <Separator className="my-8" />
+              {/* Kompakte Vertraulichkeit: restriktiver Default + «Ändern» */}
+              <div className="flex flex-col gap-1.5">
+                <Label>Vertraulichkeit der Daten</Label>
+                <div className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-border bg-muted/40 px-3 py-2.5">
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <DataClassBadge dataClass={dataClass} />
+                    <span className="text-xs text-muted-foreground">
+                      {VERTRAULICHKEIT_SUMMARY[dataClass]}
+                    </span>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={saving}
+                    onClick={() => setClassDialogOpen(true)}
+                  >
+                    Ändern
+                  </Button>
+                </div>
+              </div>
 
-            {/* ── SECTION 3: Rahmen ──────────────────────────────────── */}
-            <div className="flex flex-col gap-6">
-              <SectionHeading
-                title="Rahmen"
-                subtitle="Förderprofil, Partner und Budget"
-              />
+              {/* Unterlagen (optional) */}
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="intake-file-input">Unterlagen (optional)</Label>
+                <p className="text-xs text-muted-foreground">
+                  Innolink-Antrag (PDF) oder weitere Unterlagen. Neue Quellen
+                  übernehmen die oben gewählte Vertraulichkeitsstufe.
+                </p>
+                <button
+                  type="button"
+                  disabled={saving}
+                  onClick={() => fileInputRef.current?.click()}
+                  onDragOver={(e) => e.preventDefault()}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    if (!saving) addFiles(e.dataTransfer.files)
+                  }}
+                  className={cn(
+                    "flex flex-col items-center gap-2 rounded-lg border border-dashed border-border px-4 py-6 text-center transition-colors",
+                    "outline-none hover:border-primary/40 hover:bg-accent/20 focus-visible:ring-2 focus-visible:ring-ring",
+                    "disabled:pointer-events-none disabled:opacity-50"
+                  )}
+                >
+                  <FileUp className="size-5 text-muted-foreground" aria-hidden />
+                  <span className="text-sm text-foreground">
+                    Datei auswählen oder hier ablegen
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Erlaubt: PDF, DOCX, TXT
+                  </span>
+                </button>
+                <input
+                  ref={fileInputRef}
+                  id="intake-file-input"
+                  data-testid="intake-file-input"
+                  type="file"
+                  accept={ACCEPTED_EXTENSIONS.join(",")}
+                  multiple
+                  className="sr-only"
+                  onChange={(e) => {
+                    if (e.target.files) addFiles(e.target.files)
+                    e.target.value = ""
+                  }}
+                />
+                <FieldError message={errors.dateien} />
+                {files.length > 0 && (
+                  <ul className="flex flex-col gap-1.5">
+                    {files.map((file, index) => (
+                      <li
+                        key={`${file.name}-${index}`}
+                        className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                      >
+                        <span className="min-w-0 truncate text-sm text-foreground">
+                          {file.name}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => removeFile(index)}
+                          disabled={saving}
+                          aria-label={`${file.name} entfernen`}
+                          className="flex size-8 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
+                        >
+                          <Trash2 className="size-4" />
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {hasPdf && flags.innolinkImport && (
+                  <p className="flex items-start gap-2 rounded-md bg-accent/40 px-3 py-2 text-xs text-foreground">
+                    <Info className="mt-0.5 size-3.5 shrink-0 text-primary" />
+                    <span>
+                      Innolink-PDF erkannt: Nach dem Anlegen prüfen Sie die
+                      erkannten Feldinhalte und übernehmen sie einzeln.
+                    </span>
+                  </p>
+                )}
+              </div>
+
+              {/* Nicht-blockierender Hinweis statt Doppelerfassung */}
+              <p className="text-xs text-muted-foreground">
+                Partner und Budget ergänzen Sie im nächsten Schritt.
+              </p>
+
+              <Separator />
 
               {/* Förderprofil (read-only) */}
               <div className="flex flex-col gap-1.5">
@@ -615,112 +661,6 @@ export function IntakeForm() {
                   </span>
                 </div>
               </div>
-
-              {/* Partner */}
-              <div className="flex flex-col gap-3">
-                <Label>Projektpartner</Label>
-                <p className="text-xs text-muted-foreground">
-                  Für ein Standard-Innosuisse-Innovationsprojekt braucht es
-                  typischerweise mindestens einen beitragsberechtigten Schweizer
-                  Forschungspartner und einen Umsetzungspartner mit
-                  Wertschöpfung in der Schweiz. Details wie Land, Kontaktperson
-                  oder Beiträge erfassen Sie später im Bereich «Partner».
-                </p>
-                {data.partner.length > 0 && (
-                  <div className="flex flex-col gap-2">
-                    {data.partner.map((p) => (
-                      <div
-                        key={p.id}
-                        className="flex items-center gap-2"
-                      >
-                        <Input
-                          value={p.name}
-                          onChange={(e) =>
-                            updatePartner(p.id, { name: e.target.value })
-                          }
-                          placeholder="Name der Organisation"
-                          aria-label="Partnername"
-                          disabled={saving}
-                          className="min-w-0 flex-1"
-                        />
-                        <Select
-                          value={p.type}
-                          onValueChange={(v) =>
-                            updatePartner(p.id, {
-                              type: v as IntakePartner["type"],
-                            })
-                          }
-                          disabled={saving}
-                        >
-                          <SelectTrigger className="w-[200px] shrink-0">
-                            <span>{p.type}</span>
-                          </SelectTrigger>
-                          <SelectContent>
-                            <SelectGroup>
-                              <SelectItem value="Forschungspartner">
-                                Forschungspartner
-                              </SelectItem>
-                              <SelectItem value="Umsetzungspartner">
-                                Umsetzungspartner
-                              </SelectItem>
-                            </SelectGroup>
-                          </SelectContent>
-                        </Select>
-                        <button
-                          type="button"
-                          onClick={() => removePartner(p.id)}
-                          disabled={saving}
-                          aria-label="Partner entfernen"
-                          className="flex size-10 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-destructive/10 hover:text-destructive focus-visible:ring-2 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50"
-                        >
-                          <Trash2 className="size-4" />
-                        </button>
-                      </div>
-                    ))}
-                  </div>
-                )}
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={addPartner}
-                  disabled={saving}
-                  className="self-start"
-                >
-                  <Plus data-icon="inline-start" />
-                  Partner hinzufügen
-                </Button>
-              </div>
-
-              {/* Budgetrahmen */}
-              <div className="flex flex-col gap-1.5">
-                <Label htmlFor="budget">Grob geschätzter Budgetrahmen (CHF)</Label>
-                <p id="budget-hilfe" className="text-xs text-muted-foreground">
-                  Eine grobe Schätzung des Gesamtbudgets genügt.
-                  Innosuisse-relevante Beiträge wie Umsetzungspartneranteil und
-                  Barbeitrag werden später separat geprüft.
-                </p>
-                <Input
-                  id="budget"
-                  value={data.budgetrahmen}
-                  onChange={(e) => set("budgetrahmen", e.target.value)}
-                  placeholder="z. B. 350000"
-                  aria-invalid={!!errors.budgetrahmen}
-                  aria-describedby="budget-hilfe"
-                  inputMode="decimal"
-                  disabled={saving}
-                  className="max-w-[240px]"
-                />
-                <FieldError message={errors.budgetrahmen} />
-              </div>
-
-              {/* Frist & Projektdauer — not in the backend contract yet.
-                  TODO(contract): add planned duration / desired start /
-                  relevant deadline once the project DTO supports them. */}
-              <p className="text-xs text-muted-foreground">
-                Frist und Projektdauer werden in der Beta noch nicht
-                strukturiert erfasst.
-              </p>
             </div>
 
             {/* Bottom padding so sticky footer doesn't overlap last content */}
@@ -740,13 +680,10 @@ export function IntakeForm() {
               Abbrechen
             </button>
 
-            {/* Missing-fields hint — only shown when primary button is disabled */}
-            {!submitEnabled && missingFields.length > 0 && (
+            {/* Erklärung des deaktivierten Zustands (Minimalangaben) */}
+            {!submitEnabled && missingHint && (
               <p className="order-last w-full text-xs text-muted-foreground sm:order-none sm:w-auto sm:flex-1 sm:text-right">
-                Noch offen:{" "}
-                <span className="font-medium text-foreground">
-                  {missingFields.join(", ")}
-                </span>
+                {missingHint}
               </p>
             )}
 
@@ -754,8 +691,8 @@ export function IntakeForm() {
               <Button
                 type="button"
                 variant="outline"
-                disabled={saving}
-                onClick={handleDraftSave}
+                disabled={!submitEnabled || saving}
+                onClick={() => void handleCreate("home")}
               >
                 {saving && (
                   <Loader2
@@ -763,7 +700,7 @@ export function IntakeForm() {
                     className="animate-spin"
                   />
                 )}
-                Als Entwurf speichern
+                Später fortsetzen
               </Button>
 
               <Button
@@ -776,12 +713,73 @@ export function IntakeForm() {
                     className="animate-spin"
                   />
                 )}
-                Antrag anlegen
+                Projekt erstellen und weiter
               </Button>
             </div>
           </div>
         </div>
       </form>
+
+      {/* Vertraulichkeit ändern */}
+      <Dialog open={classDialogOpen} onOpenChange={setClassDialogOpen}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Vertraulichkeit ändern</DialogTitle>
+            <DialogDescription>
+              Die Stufe bestimmt, welche Dienste genutzt werden dürfen. Die
+              restriktivere Einstufung von Projekt und Quellen gilt.
+            </DialogDescription>
+          </DialogHeader>
+          <RadioGroup
+            value={dataClass}
+            onValueChange={(v) => set("vertraulichkeit", v as DataClass)}
+            className="flex flex-col gap-3"
+          >
+            {VERTRAULICHKEIT_OPTIONS.map((opt) => {
+              const selected = dataClass === opt.value
+              return (
+                <label
+                  key={opt.value}
+                  htmlFor={`vtrl-${opt.value}`}
+                  className={cn(
+                    "flex cursor-pointer gap-3 rounded-lg border p-4 transition-colors",
+                    selected
+                      ? "border-primary bg-accent/40"
+                      : "border-border hover:border-primary/40 hover:bg-accent/20"
+                  )}
+                >
+                  <RadioGroupItem
+                    id={`vtrl-${opt.value}`}
+                    value={opt.value}
+                    className="mt-0.5 shrink-0"
+                  />
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <span className="text-sm font-medium text-foreground">
+                      {opt.title}
+                    </span>
+                    <span className="text-xs text-muted-foreground">
+                      {opt.description}
+                    </span>
+                    <div className="mt-1 flex flex-col gap-1">
+                      <ConsequenceLine
+                        label="Externe KI-Dienste"
+                        value={opt.ki}
+                      />
+                      <ConsequenceLine
+                        label="Webrecherche"
+                        value={opt.web}
+                      />
+                    </div>
+                  </div>
+                </label>
+              )
+            })}
+          </RadioGroup>
+          <DialogFooter>
+            <Button onClick={() => setClassDialogOpen(false)}>Fertig</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Cancel confirmation dialog */}
       <Dialog open={cancelDialogOpen} onOpenChange={setCancelDialogOpen}>

@@ -115,7 +115,7 @@ afterEach(() => {
   window.sessionStorage.clear()
 })
 
-describe("Anforderungen tab (per-field join)", () => {
+describe("Fehlende Angaben tab (per-field join)", () => {
   it("lists requirements joined via finding requirement_id with status + evidence", async () => {
     mock({
       findings: [finding({ requirement_id: "REQ.PARTNER.CH" })],
@@ -123,7 +123,7 @@ describe("Anforderungen tab (per-field join)", () => {
     })
     render(<LiveEditor runId="r1" />)
     await screen.findByLabelText("Entwurf Abstract")
-    fireEvent.click(screen.getByRole("tab", { name: "Anforderungen" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Fehlende Angaben" }))
 
     expect(await screen.findByText("Schweizer Wertschöpfung")).toBeInTheDocument()
     expect(screen.getByText("Teilweise erfüllt")).toBeInTheDocument()
@@ -135,13 +135,40 @@ describe("Anforderungen tab (per-field join)", () => {
     mock({ requirements: [assessment()] }) // no finding links it to this field
     render(<LiveEditor runId="r1" />)
     await screen.findByLabelText("Entwurf Abstract")
-    fireEvent.click(screen.getByRole("tab", { name: "Anforderungen" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Fehlende Angaben" }))
 
     expect(
       await screen.findByText(/Keine Anforderungen mit diesem Feld verknüpft/)
     ).toBeInTheDocument()
     expect(
       screen.getByRole("button", { name: "Anforderungen prüfen" })
+    ).toBeInTheDocument()
+  })
+
+  it("zeigt Platzhalter als konkrete Fragen mit Sprung-Aktion (R6)", async () => {
+    mock({
+      fields: [
+        draft({
+          current_version: {
+            draft_version_id: "v1",
+            text: "Teiltext [[Angabe ergänzen: Marktgrösse]] weiter.",
+            character_count: 48,
+            created_by: "user",
+            created_at: "2026-07-01T09:30:00Z",
+            content_hash: "h",
+          },
+        }),
+      ],
+    })
+    render(<LiveEditor runId="r1" />)
+    await screen.findByLabelText("Entwurf Abstract")
+    fireEvent.click(screen.getByRole("tab", { name: "Fehlende Angaben" }))
+
+    expect(
+      await screen.findByText(/Welche Angabe gehört hier hin\?/)
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole("button", { name: "Im Text markieren" })
     ).toBeInTheDocument()
   })
 })
@@ -195,6 +222,9 @@ describe("Kommentar-Typ (visible prefix, no contract change)", () => {
     )
     render(<LiveEditor runId="r1" />)
     await screen.findByLabelText("Entwurf Abstract")
+    // Findings öffnen jetzt standardmässig „Schwächen“ — der Kommentarfluss
+    // lebt im nachgeordneten Kommentare-Tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Kommentare" }))
 
     // Stored prefix renders as a badge; the text is shown without the prefix.
     // (Scoped to the finding row — "Frage" also exists as a type chip below.)
@@ -219,7 +249,7 @@ describe("Markt tab + comparison sheet", () => {
     mock({ fields: [draft({ draft_id: "d-vc", field_id: VC, field_name: "Value Creation" })] })
     render(<LiveEditor runId="r1" />)
     await screen.findByLabelText("Entwurf Value Creation")
-    fireEvent.click(screen.getByRole("tab", { name: "Markt" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Markt & Wettbewerb" }))
 
     expect(await screen.findByText("Noch keine Marktanalyse vorhanden")).toBeInTheDocument()
     expect(screen.queryByRole("button", { name: "Marktvergleich öffnen" })).toBeNull()
@@ -281,7 +311,7 @@ describe("Markt tab + comparison sheet", () => {
     const textarea = (await screen.findByLabelText(
       "Entwurf Value Creation"
     )) as HTMLTextAreaElement
-    fireEvent.click(screen.getByRole("tab", { name: "Markt" }))
+    fireEvent.click(screen.getByRole("tab", { name: "Markt & Wettbewerb" }))
 
     const openButton = await screen.findByRole("button", {
       name: "Marktvergleich öffnen",

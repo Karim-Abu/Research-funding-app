@@ -11,6 +11,7 @@ import {
   PanelLeftOpen,
   PanelRightClose,
   PanelRightOpen,
+  PanelRight,
   Maximize2,
   Minimize2,
 } from "lucide-react"
@@ -28,17 +29,31 @@ import {
 import { cn } from "@/lib/utils"
 import { charCount } from "@/lib/fields"
 import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import {
   charLimitInfo,
   placeholderMatches,
   placeholderCountText,
   DRAFT_STATUS_LABELS,
+  DRAFT_STATUS_STYLE,
   DRAFT_FALLBACK,
   OVER_LIMIT_WARNING,
   PLACEHOLDER_TITLE,
   type DraftFieldStatus,
 } from "@/lib/draft-view"
+import {
+  buildOutline,
+  SUBSECTION_STATE_LABELS,
+  type SubsectionDef,
+  type SubsectionState,
+} from "@/lib/subsections"
 import { AI_PRIMARY } from "@/lib/draft-ai-actions"
 import { isMarketRelevantFieldId, type DraftFieldViewModel } from "@/lib/draft-viewmodel"
+import { isRichCacheAllowed } from "@/lib/rich-editor-cache"
 
 export interface DraftWorkspaceSuggestion {
   text: string
@@ -73,9 +88,19 @@ const MODES: { key: WorkspaceMode; label: string; hint: string }[] = [
 const STATUS_DOT: Record<DraftFieldStatus, string> = {
   ready: "bg-status-fulfilled",
   needs_review: "bg-status-partial",
+  in_progress: "bg-muted-foreground/70",
+  ai_suggestion: "bg-primary/60",
+  no_draft: "bg-muted-foreground/40",
   no_evidence: "bg-status-partial",
   blocked: "bg-destructive",
   open: "bg-muted-foreground/40",
+}
+
+// Punktfarbe je Unterabschnitts-Status (R6-Gliederung der Composite-Felder).
+const SUBSECTION_DOT: Record<SubsectionState, string> = {
+  vorhanden: "bg-status-fulfilled",
+  platzhalter: "bg-status-partial",
+  fehlt: "bg-muted-foreground/40",
 }
 
 // Browser spellcheck for the editor textarea. Proposals are written in German
@@ -118,6 +143,10 @@ interface DraftWorkspaceShellProps {
   projectId?: string
   /** Data class of the project; restricted classes disable the cache. */
   dataClass?: string | null
+  /** R6: Registry-Unterabschnitte des aktiven Composite-Felds (Gliederung). */
+  subsections?: SubsectionDef[]
+  /** Klick auf einen Gliederungseintrag springt zur Markerstelle im Text. */
+  onJumpToSubsection?: (marker: string) => void
 
   /**
    * When set, the KI-Vorschlag pane renders this instead of the mock
@@ -162,6 +191,8 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     serverText,
     projectId,
     dataClass,
+    subsections = [],
+    onJumpToSubsection,
     kiContent,
     aiActions = [],
     aiEnabled = false,
@@ -180,6 +211,8 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
 
   const [mode, setMode] = React.useState<WorkspaceMode>("bearbeiten")
   const [navCollapsed, setNavCollapsed] = React.useState(false)
+  // Kleine Screens: rechtes Panel als Drawer statt gestapelt (R6).
+  const [assistantDrawerOpen, setAssistantDrawerOpen] = React.useState(false)
   // null = mode-dependent default: collapsed while writing (Bearbeiten +
   // KI-Assist), open in Prüfen. A click stores an explicit user override.
   const [contextOverride, setContextOverride] = React.useState<boolean | null>(null)
@@ -217,6 +250,8 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
   const placeholders = placeholderMatches(text)
   const showPlaceholder = placeholders.length > 0
   const portalPath = `${activeVm.sectionLabel} › ${activeVm.fieldLabel}`
+  // R6-Gliederung: Status je Unterabschnitt aus dem aktuellen Text.
+  const outline = subsections.length > 0 ? buildOutline(text, subsections) : []
 
   // Explain why the Speichern button is disabled (P0 requirement #6). Derived
   // from the label + limit state so it works for both the live and mock editors.
@@ -404,6 +439,16 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                       <Maximize2 className="mr-1.5 size-3.5" />
                       Fokus
                     </Button>
+                    {/* Unterhalb lg öffnet der Kontext als Drawer. */}
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="lg:hidden"
+                      onClick={() => setAssistantDrawerOpen(true)}
+                    >
+                      <PanelRight className="mr-1.5 size-3.5" />
+                      Quellen & Hinweise
+                    </Button>
                   </div>
                 </div>
               </>
@@ -496,6 +541,12 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                     <span>{activeVm.openIssueCount} offene Punkte</span>
                     <span aria-hidden>·</span>
                     <span>{activeVm.commentCount} Kommentare</span>
+                    {activeVm.originLabel && (
+                      <>
+                        <span aria-hidden>·</span>
+                        <span>Herkunft: {activeVm.originLabel}</span>
+                      </>
+                    )}
                     {marketHeaderLabel && (
                       <>
                         <span aria-hidden>·</span>
@@ -503,6 +554,36 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                       </>
                     )}
                   </p>
+                  {/* R6: sichtbare Unterabschnitte (3.1–3.3 / 4.1–4.6) des
+                      Composite-Felds — Klick springt zur Markerstelle. */}
+                  {outline.length > 0 && (
+                    <nav
+                      aria-label="Unterabschnitte"
+                      className="mt-1 flex flex-wrap items-center gap-1.5"
+                    >
+                      {outline.map((entry) => (
+                        <button
+                          key={entry.marker}
+                          type="button"
+                          onClick={() => onJumpToSubsection?.(entry.marker)}
+                          title={`${entry.label} — ${SUBSECTION_STATE_LABELS[entry.state]}`}
+                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
+                        >
+                          <span
+                            aria-hidden
+                            className={cn(
+                              "size-1.5 rounded-full",
+                              SUBSECTION_DOT[entry.state]
+                            )}
+                          />
+                          {entry.marker}
+                          <span className="sr-only">
+                            {` — ${SUBSECTION_STATE_LABELS[entry.state]}`}
+                          </span>
+                        </button>
+                      ))}
+                    </nav>
+                  )}
                 </div>
 
                 {/* Panes: Dein Text always visible; KI-Vorschlag only in KI-Assist. */}
@@ -563,17 +644,31 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                       saveDisabled={saveDisabled}
                     />
                     <p className="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-[11px] text-muted-foreground">
-                      <span>
-                        Formatierungen werden während der Sitzung gespeichert. Innolink übernimmt
-                        beim Kopieren reinen Text; Listen und Absätze bleiben erhalten.
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => editorRef.current?.clearFormatCache()}
-                        className="font-medium text-primary hover:underline"
-                      >
-                        Format-Zwischenspeicher löschen
-                      </button>
+                      {/* R4.4: für nicht-öffentliche Klassen ist der Format-
+                          Cache aus Sicherheitsgründen deaktiviert — Hinweis
+                          statt Löschen-Button (es gibt nichts zu löschen). */}
+                      {projectId && !isRichCacheAllowed(dataClass) ? (
+                        <span>
+                          Vertrauliche Inhalte werden nicht im Browser
+                          zwischengespeichert — Formatierungen gehen beim
+                          Feldwechsel verloren. Innolink übernimmt beim Kopieren
+                          reinen Text.
+                        </span>
+                      ) : (
+                        <>
+                          <span>
+                            Formatierungen werden während der Sitzung gespeichert. Innolink übernimmt
+                            beim Kopieren reinen Text; Listen und Absätze bleiben erhalten.
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => editorRef.current?.clearFormatCache()}
+                            className="font-medium text-primary hover:underline"
+                          >
+                            Format-Zwischenspeicher löschen
+                          </button>
+                        </>
+                      )}
                     </p>
                     {noticeSlot}
                     <div
@@ -672,12 +767,14 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                 </div>
               </div>
 
-              {/* Right: assistant panel (collapsible; prominent in Prüfen; hidden in focus) */}
+              {/* Right: assistant panel (collapsible; prominent in Prüfen; hidden in
+                  focus). Below lg the panel lives in a drawer (Sheet) instead of
+                  stacking under the editor. */}
               <aside
                 aria-label="Assistent"
                 className={cn(
-                  "shrink-0",
-                  focus && "hidden",
+                  "hidden shrink-0 lg:block",
+                  focus && "lg:hidden",
                   mode === "pruefen"
                     ? "lg:w-[380px] xl:w-[440px]"
                     : contextCollapsed
@@ -736,6 +833,19 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
 
         {footer}
         {conflictDialog}
+
+        {/* Drawer-Variante des Assistenten für kleine Screens. Der Inhalt wird
+            nur bei geöffnetem Drawer gerendert (kein doppelter DOM sonst). */}
+        <Sheet open={assistantDrawerOpen} onOpenChange={setAssistantDrawerOpen}>
+          {assistantDrawerOpen && (
+            <SheetContent side="right" className="overflow-y-auto">
+              <SheetHeader>
+                <SheetTitle>Quellen & Hinweise</SheetTitle>
+              </SheetHeader>
+              <div className="px-4 pb-6">{assistant}</div>
+            </SheetContent>
+          )}
+        </Sheet>
       </div>
     </TooltipProvider>
   )
@@ -747,9 +857,7 @@ function FieldStatusBadge({ status }: { status: DraftFieldStatus }) {
     <span
       className={cn(
         "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
-        status === "blocked"
-          ? "bg-destructive/10 text-destructive"
-          : "bg-muted text-muted-foreground"
+        DRAFT_STATUS_STYLE[status]
       )}
     >
       {DRAFT_STATUS_LABELS[status]}

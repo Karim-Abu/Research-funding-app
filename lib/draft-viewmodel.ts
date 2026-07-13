@@ -15,6 +15,8 @@ export const CREATED_BY_LABELS: Record<CreatedBy, string> = {
   user: "Manuell bearbeitet",
   template: "Strukturvorlage",
   carried_over: "Übernommen aus vorherigem Durchlauf",
+  // Importierte Texte sind nie automatisch final — immer Prüfung nötig.
+  import: "Aus PDF übernommen – Prüfung nötig",
 }
 
 export interface VMPerson {
@@ -61,6 +63,8 @@ export interface DraftFieldViewModel {
   /** Original/technical label — only shown under "Technische Details". */
   originalFieldLabel?: string
   status: DraftFieldStatus
+  /** Herkunft des aktuellen Texts (CREATED_BY_LABELS) — nie das rohe Enum. */
+  originLabel?: string
   characterLimit?: number | null
   /** Server/initial text (the editor manages its own editable buffer). */
   text: string
@@ -153,7 +157,8 @@ export function liveFieldToViewModel(
     fieldLabel: cleanedName,
     helperLabel: helperLabel(cleanedName),
     originalFieldLabel: original,
-    status: liveStatusToDraftStatus(dto.status, dto.open_issue_count),
+    status: liveStatusToDraftStatus(dto),
+    originLabel: CREATED_BY_LABELS[dto.current_version.created_by],
     characterLimit: dto.character_limit ?? null,
     text: dto.current_version.text,
     lastEditedLabel: dto.current_version.created_at
@@ -184,31 +189,42 @@ export function liveFieldToViewModel(
   }
 }
 
-function liveStatusToDraftStatus(
-  status: PortalFieldDraftDto["status"],
-  openIssueCount: number
-): DraftFieldStatus {
-  switch (status) {
-    case "reviewed":
-      return "ready"
-    case "needs_review":
-      return "needs_review"
-    case "blocked":
-      return "blocked"
-    case "stale":
-      return "needs_review"
-    case "draft":
-      return openIssueCount > 0 ? "open" : "needs_review"
+// 5-Stufen-Feldstatus (R6): Kein Entwurf → KI-Vorschlag → In Bearbeitung →
+// Prüfung nötig → Bereit (+ Blockiert). Kanonische Quelle ist die Backend-
+// Copy-Readiness; Herkunft (created_by) unterscheidet die Arbeitszustände.
+export function liveStatusToDraftStatus(dto: PortalFieldDraftDto): DraftFieldStatus {
+  const readiness = dto.copy_readiness
+  if (readiness === "blocker" || dto.status === "blocked") return "blocked"
+  if (readiness === "copy_ready") return "ready"
+  const createdBy = dto.current_version.created_by
+  if (dto.current_version.text.trim() === "" || createdBy === "template") {
+    return "no_draft"
   }
+  if (createdBy === "agent") return "ai_suggestion"
+  // Import-Texte sind nie automatisch final; ohne aktuelle Freigabe gilt
+  // "Prüfung nötig" (Readiness draft/not_reviewed).
+  if (
+    createdBy === "import" ||
+    readiness === "not_reviewed" ||
+    readiness === "draft"
+  ) {
+    return "needs_review"
+  }
+  // Platzhalter offen oder (Mock/ältere Antworten) keine Readiness: der Text
+  // ist in Arbeit.
+  return "in_progress"
 }
 
 // ---------------------------------------------------------------------------
 // Default assistant tab — priority order (see plan). Pure UI decision.
 // ---------------------------------------------------------------------------
+// R6-Zieltabs: Quellen · Fehlende Angaben · Schwächen · Markt & Wettbewerb,
+// nachgeordnet Kommentare und Versionen.
 export type AssistantTab =
+  | "quellen"
+  | "fehlende"
+  | "schwaechen"
   | "markt"
-  | "belege"
-  | "anforderungen"
   | "kommentare"
   | "versionen"
 
@@ -217,8 +233,9 @@ export function pickDefaultTab(
   opts: { hasMarketData: boolean; hasFindings: boolean; hasBlocker: boolean }
 ): AssistantTab {
   if (opts.hasMarketData && vm.isMarketRelevant) return "markt"
-  if (opts.hasFindings || vm.commentCount > 0 || opts.hasBlocker) return "kommentare"
-  if (vm.evidenceCount > 0) return "belege"
+  if (opts.hasFindings || opts.hasBlocker) return "schwaechen"
+  if (vm.commentCount > 0) return "kommentare"
+  if (vm.evidenceCount > 0) return "quellen"
   if (vm.isMarketRelevant) return "markt"
-  return "anforderungen"
+  return "fehlende"
 }

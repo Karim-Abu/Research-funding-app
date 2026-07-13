@@ -401,7 +401,40 @@ def links_by_assessment(db: Session, run_id: str) -> dict[str, list[EvidenceLink
 # --- contract mapping ------------------------------------------------------
 
 
-def to_anchor_contract(anchor: EvidenceAnchor) -> AnchorSchema:
+def link_support_statuses(
+    db: Session, run_id: str, links: list[EvidenceLink]
+) -> dict[str, str]:
+    """R6-Statusleiter je Link (Schlüssel: evidence_link_id). Abgeleitet aus
+    Anker-Verifikation + Reliability-Urteilen; ``removed``-Links ausgenommen."""
+    from app.review.evidence_status import (
+        lineage_by_anchor,
+        support_status_for_anchor,
+    )
+
+    anchor_ids = {link.anchor_id for link in links if link.status != "removed"}
+    if not anchor_ids:
+        return {}
+    anchors = {
+        a.anchor_id: a
+        for a in db.scalars(
+            select(EvidenceAnchor).where(EvidenceAnchor.anchor_id.in_(anchor_ids))
+        )
+    }
+    judgments = lineage_by_anchor(db, run_id)
+    result: dict[str, str] = {}
+    for link in links:
+        anchor = anchors.get(link.anchor_id)
+        if link.status == "removed" or anchor is None:
+            continue
+        result[link.evidence_link_id] = support_status_for_anchor(
+            anchor.verification_status, judgments.get(anchor.anchor_id)
+        )
+    return result
+
+
+def to_anchor_contract(
+    anchor: EvidenceAnchor, support_status: str | None = None
+) -> AnchorSchema:
     return AnchorSchema(
         anchor_id=anchor.anchor_id,
         source_version_id=anchor.source_version_id,
@@ -422,10 +455,13 @@ def to_anchor_contract(anchor: EvidenceAnchor) -> AnchorSchema:
         match_score=anchor.match_score,
         coverage=anchor.coverage,
         source_accessed_at=anchor.source_accessed_at,
+        support_status=support_status,
     )
 
 
-def to_link_contract(link: EvidenceLink) -> LinkSchema:
+def to_link_contract(
+    link: EvidenceLink, support_status: str | None = None
+) -> LinkSchema:
     return LinkSchema(
         evidence_link_id=link.evidence_link_id,
         anchor_id=link.anchor_id,
@@ -435,4 +471,5 @@ def to_link_contract(link: EvidenceLink) -> LinkSchema:
         created_at=link.created_at,
         claim_id=link.claim_id,
         claim_text=link.claim_text,
+        support_status=support_status,
     )

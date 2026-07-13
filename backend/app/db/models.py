@@ -290,6 +290,62 @@ class SourceFragment(Base):
     )
 
 
+class ImportCandidate(Base):
+    """R3.2 — ein erkanntes Feld aus einem Innolink-Antragsimport.
+
+    Jeder Kandidat braucht eine explizite menschliche Entscheidung (HITL);
+    ``uncertain`` ist nie automatisch übernehmbar. decision enum:
+    pending | conflict | accepted | saved_as_source | ignored — ``conflict``
+    ist ein Zwischenzustand (bestehender bearbeiteter Draft, Entscheid mit
+    expliziter Bestätigung nötig), kein Endzustand.
+    """
+
+    __tablename__ = "import_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_version_id", "field_id", name="uq_import_candidate_version_field"
+        ),
+    )
+
+    import_candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.source_id"), nullable=False, index=True
+    )
+    source_version_id: Mapped[str] = mapped_column(
+        ForeignKey("source_versions.source_version_id"), nullable=False
+    )
+    field_id: Mapped[str] = mapped_column(String, nullable=False)
+    # Extrahierter Antragstext (D2) — bleibt in der DB, nie in Logs/Audit.
+    extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # «Bearbeitet übernommen»: menschlich editierter Text (D2, nie in Logs).
+    # extracted_text bleibt als Originalausschnitt unverändert erhalten.
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    # Mapping-Konfidenz: found | uncertain (uncertain nie auto-übernehmbar).
+    confidence: Mapped[str] = mapped_column(String, nullable=False)
+    # Menschlich lesbare Fundstelle, z. B. "Seite 3"; None bei Textquellen.
+    source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    decided_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Provenienz: die durch «Übernehmen» erzeugte DraftVersion.
+    accepted_draft_version_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
 class ControlResult(Base):
     """Minimal deterministic control outcomes (size, type, signature,
     archive-safety, classification, path-safety, processing). Distinct from
@@ -456,6 +512,43 @@ class RunPolicySnapshot(Base):
     )
 
 
+class RunPhase(Base):
+    """User-facing phase status of one analysis run, persisted so a reload
+    shows the same progress. Additive next to the technical stage columns on
+    ``AnalysisRun`` (which stay authoritative for the contract RunStage).
+    ``detail`` holds counters and skip reasons only — never raw texts,
+    prompts or keys."""
+
+    __tablename__ = "run_phases"
+    __table_args__ = (
+        UniqueConstraint("run_id", "phase_key", name="uq_run_phase_key"),
+    )
+
+    run_phase_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    # prepare_documents | detect_facts | formal_checks | web_research |
+    # draft_fields | quality_review
+    phase_key: Mapped[str] = mapped_column(String, nullable=False)
+    # pending | running | succeeded | failed | skipped
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
@@ -473,6 +566,16 @@ class UsageRecord(Base):
     input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
     cost_chf: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    # EVAL.1 — Kostensemantik: priced | unknown_price | not_applicable.
+    # cost_chf=0.0 darf NIE als "kostenlos" gelesen werden; Summen nur über
+    # cost_status='priced'. Fail-closed Default: unknown_price (Backfill +
+    # vergessliche Schreiber). Kein DB-Enum (Codebase-Konvention: plain String).
+    cost_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="unknown_price",
+        server_default="unknown_price",
+    )
+    # Version der Preistabelle, nur gesetzt wenn cost_status='priced'.
+    price_version: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -520,6 +623,9 @@ class Partner(Base):
     financial_independence_status: Mapped[str | None] = mapped_column(
         String, nullable=True
     )
+    # Kurze menschliche Begründung, Pflicht bei explizit unklar/nicht
+    # bestätigt (API-Konsistenzregel) — fliesst NICHT in Run-Snapshots/Regeln.
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -631,6 +737,14 @@ class OpenIssue(Base):
     responsible_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    # Issue-Modell v2 (R2.2, additiv/nullable): technische Identität + Klasse
+    # für Dedupe/Fix Queue. Befüllung folgt schrittweise (R2.3+).
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    severity_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    fix_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -921,6 +1035,15 @@ class ReviewFinding(Base):
     )
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+    # Issue-Modell v2 (R2.2, additiv/nullable): stabile technische Identität
+    # (R2.1-Fingerprint), sechs severity-Klassen, ableitbare Fix-Empfehlung,
+    # letzter Emissionszeitpunkt. finding_code bleibt der Idempotenz-Schlüssel.
+    fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    severity_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    fix_recommendation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    last_seen_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
 
 
@@ -1470,7 +1593,7 @@ class MarketComparisonItem(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     name_normalized: Mapped[str] = mapped_column(String, nullable=False)
     # competitor | alternative_solution | substitute | incumbent_process |
-    # reference_solution | unknown
+    # reference_solution | market_size_claim | customer_problem (R8) | unknown
     category: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_customer_segment: Mapped[str | None] = mapped_column(String, nullable=True)

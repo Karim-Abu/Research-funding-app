@@ -31,10 +31,26 @@ from app.db.models import (
     RequirementAssessment,
     ToolInvocation,
 )
+from app.market import source_scope
 from app.registry.loader import get_registry
 from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import extracted_facts as facts_repo
+
+# R5.7/R8: only these two "big" A2 fields consume advisory research context. R8
+# (Anforderung 10): NUR vom Menschen akzeptierte (importierte) D0/public-Quellen werden
+# Kontext — nicht importierte ResearchResult-Kandidaten nie. All other A2 profiles get
+# no research context (context_text/hash unchanged).
+_MARKET_PURPOSE = "market_comparison"          # RESEARCH.1
+_PARTNER_PURPOSE = "partner_research_org_topic"  # RESEARCH.2
+_RESEARCH_CONTEXT_PURPOSES: dict[str, tuple[str, ...]] = {
+    "A2.value_creation_market_logic": (_MARKET_PURPOSE,),
+    "A2.solution_innovation": (_PARTNER_PURPOSE,),
+}
+# Bounded so advisory research context never dominates the A2 context budget.
+_RESEARCH_SOURCE_CHAR_BUDGET = 4000
+_RESEARCH_SOURCE_MAX_FRAGMENTS = 8
+_RESEARCH_SNIPPET_MAX = 300
 
 
 @dataclass
@@ -42,13 +58,17 @@ class A2Context:
     field_id: str = ""
     profile_id: str = ""
     field_profile: dict = field(default_factory=dict)
-    confirmed_facts: list[dict] = field(default_factory=list)
+    # R5.1: advisory/proposed A1-Fakten — nie als bestätigte Wahrheit behandeln.
+    advisory_facts: list[dict] = field(default_factory=list)
     verified_evidence: list[dict] = field(default_factory=list)
     structured_project_data: dict = field(default_factory=dict)
     open_issues: list[dict] = field(default_factory=list)
     language: str = "de"
     current_draft_text: str = ""
     requirement_assessments: list[dict] = field(default_factory=list)
+    # R5.7: advisory research context (imported D0/public sources + non-imported research
+    # candidates) — NEVER evidence, NEVER an anchor. Empty for non-VC/SOL profiles.
+    research_context: dict = field(default_factory=dict)
     context_text: str = ""
     context_hash: str = ""
     allowed_anchor_ids: set = field(default_factory=set)
@@ -102,8 +122,10 @@ def _current_draft_text(db: Session, run: AnalysisRun, field_id: str) -> str:
     return version.text if version is not None else ""
 
 
-def retrieve_confirmed_project_facts(db: Session, run: AnalysisRun) -> list[dict]:
-    """A1 ExtractedFacts — advisory/proposed (not confirmed truth)."""
+def retrieve_advisory_project_facts(db: Session, run: AnalysisRun) -> list[dict]:
+    """A1 ExtractedFacts — advisory/proposed (not confirmed truth). R5.1: vormals
+    ``retrieve_confirmed_project_facts`` (contract-pinned tool_id, tools_v1_1.yaml);
+    der Wire-String bleibt bei der ToolInvocation-Aufzeichnung unverändert."""
     facts = []
     for f in facts_repo.list_for_run(db, run.run_id):
         # Advisory facts that carry provenance (so they satisfy ExtractedFactRecord).
@@ -205,6 +227,53 @@ def _requirement_assessments(db: Session, run: AnalysisRun, requirement_ids: set
     ]
 
 
+def _trim(text: str | None, limit: int) -> str:
+    one_line = " ".join((text or "").split())
+    return one_line[:limit] + "…" if len(one_line) > limit else one_line
+
+
+def retrieve_advisory_research_context(
+    db: Session, run: AnalysisRun, profile_id: str
+) -> dict:
+    """R5.7/R8 — advisory research context for the two big fields only.
+
+    Returns ``{}`` for any other profile (so their context is unchanged). For VC/SOL it
+    gathers, bounded and deterministically, ONLY fragments of imported D0/public
+    SourceDocuments (market-signal fragments). R8 (Anforderung 10): nicht importierte
+    ResearchResult-Kandidaten fliessen NICHT mehr in den A2-Kontext — erst die vom
+    Menschen akzeptierte («Als Quelle speichern») Quelle wird Kontext; verworfene nie.
+    Everything here is UNTRUSTED, ADVISORY context — never evidence, never an anchor id.
+    """
+    purposes = _RESEARCH_CONTEXT_PURPOSES.get(profile_id)
+    if not purposes or not run.project_id:
+        return {}
+
+    sources = source_scope.imported_public_sources(db, run.project_id, run.workspace_id)
+    fragments = source_scope.prefilter_fragments(
+        db, sources, max_fragments=_RESEARCH_SOURCE_MAX_FRAGMENTS,
+        char_budget=_RESEARCH_SOURCE_CHAR_BUDGET,
+    )
+    imported = [
+        {"source_name": f.source_name, "snippet": _trim(f.text, _RESEARCH_SNIPPET_MAX)}
+        for f in fragments
+    ]
+    if not imported:
+        return {}
+    return {"imported_sources": imported}
+
+
+def _render_research_context(rc: dict) -> str:
+    lines = [
+        "RESEARCH CONTEXT (advisory, human-accepted public sources — NOT evidence, NOT "
+        "validated facts; any market number or partner name here is an UNVALIDATED "
+        "CANDIDATE. Cite nothing from here as evidence_anchor_ids; if a claim would rely "
+        "on it, keep a placeholder / missing_input instead):"
+    ]
+    for s in rc.get("imported_sources", []):
+        lines.append(f"- [imported public source | {s['source_name']}] {s['snippet']}")
+    return "\n".join(lines)
+
+
 def _render_context_text(ctx: A2Context) -> str:
     parts = [
         "CURRENT DRAFT (the text to improve):\n" + (ctx.current_draft_text or "(empty)"),
@@ -219,8 +288,10 @@ def _render_context_text(ctx: A2Context) -> str:
             f"{e['quote']}" for e in ctx.verified_evidence
         ),
         "OPEN ISSUES: " + str(ctx.open_issues),
-        "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.confirmed_facts),
+        "PROPOSED A1 FACTS (advisory, NOT confirmed): " + str(ctx.advisory_facts),
     ]
+    if ctx.research_context:
+        parts.append(_render_research_context(ctx.research_context))
     return "\n\n".join(parts)
 
 
@@ -231,19 +302,22 @@ def assemble_a2_context(
     ctx = A2Context(field_id=field_id, profile_id=profile_id, language=language)
     ctx.field_profile = _field_profile_view(field_id)
     ctx.current_draft_text = _current_draft_text(db, run, field_id)
-    ctx.confirmed_facts = retrieve_confirmed_project_facts(db, run)
+    ctx.advisory_facts = retrieve_advisory_project_facts(db, run)
     ctx.verified_evidence = retrieve_verified_evidence(db, run)
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
+    # R5.7: advisory research context (VC/SOL only) — never added to allowed_anchor_ids.
+    ctx.research_context = retrieve_advisory_research_context(db, run, profile_id)
     ctx.allowed_anchor_ids = {e["anchor_id"] for e in ctx.verified_evidence}
     ctx.allowed_issue_ids = {i["issue_id"] for i in ctx.open_issues}
 
     # Record the tool invocations (authorization checked against the registry).
     _record_tool(db, run, "lookup_portal_field_profile",
                  _hash_text(str(ctx.field_profile)), caller=profile_id)
-    _record_tool(db, run, "retrieve_confirmed_project_facts",
-                 _hash_text(",".join(f["fact_id"] for f in ctx.confirmed_facts)), caller=profile_id)
+    # Code liefert advisory Facts; der Wire-Name bleibt bis Contract v1.2.
+    _record_tool(db, run, "retrieve_confirmed_project_facts",  # contract-pinned: tools_v1_1.yaml tool_id
+                 _hash_text(",".join(f["fact_id"] for f in ctx.advisory_facts)), caller=profile_id)
     _record_tool(db, run, "retrieve_verified_evidence",
                  _hash_text(",".join(sorted(ctx.allowed_anchor_ids))), caller=profile_id)
     _record_tool(db, run, "retrieve_structured_project_data",
@@ -263,7 +337,8 @@ def assemble_a2_context(
         "context_hash": ctx.context_hash,
         "evidence_count": len(ctx.verified_evidence),
         "open_issue_count": len(ctx.open_issues),
-        "fact_count": len(ctx.confirmed_facts),
+        "fact_count": len(ctx.advisory_facts),
+        "research_context_count": len(ctx.research_context.get("imported_sources", [])),
         "char_budget": budget,
         "total_chars": len(ctx.context_text),
     }
@@ -275,12 +350,13 @@ def build_input_payload(ctx: A2Context, run_id: str) -> dict:
         "run_id": run_id,
         "profile_id": ctx.profile_id,
         "field_profiles": [ctx.field_profile],
-        "confirmed_facts": [
+        # Inhalt sind advisory Facts (R5.1); Wire-Key bleibt Contract v1.1.
+        "confirmed_facts": [  # contract-pinned: schema_catalog.yaml FieldDraftingInput@v1
             {"fact_id": f["fact_id"], "statement": f["statement"],
              "fact_type": f.get("fact_type"), "normalized_value": f.get("normalized_value"),
              "source_fragment_ids": f.get("source_fragment_ids", []),
              "versioned_user_input_ids": []}
-            for f in ctx.confirmed_facts
+            for f in ctx.advisory_facts
         ],
         "verified_evidence": ctx.verified_evidence,
         "structured_project_data": ctx.structured_project_data,

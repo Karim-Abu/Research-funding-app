@@ -8,20 +8,17 @@ import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellung
 import { SourceTable } from "@/components/quellen/source-table"
 import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
 import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
-import { EvidenceTab } from "@/components/quellen/evidence-tab"
 import {
   AnalysisProgressBanner,
   StoppedAnalysisBanner,
   CompletedAnalysisBanner,
   LocalOnlyBanner,
 } from "@/components/quellen/analysis-progress-banner"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import {
   dummySources,
-  dummyEvidence,
   dummyAnalysisSteps,
   URL_SOURCE_KIND_LABELS,
   type AnalysisProgressStep,
@@ -39,7 +36,13 @@ import {
   type RunCostDto,
   type RunStartRequestDto,
 } from "@/lib/api"
-import { loadIntake, setCurrentRunId, getActiveProjectId } from "@/lib/intake-store"
+import {
+  loadIntake,
+  setCurrentRunId,
+  setSelectedRunId,
+  getActiveProjectId,
+} from "@/lib/intake-store"
+import { useActiveRun } from "@/components/providers/workflow-run-provider"
 import { DataClassBadge } from "@/components/status/data-class-badge"
 import {
   isCloudAllowed,
@@ -56,20 +59,31 @@ import {
   createTextSource,
   createUrlSource,
   deleteSource,
+  UPLOAD_HINT_KEY,
   type SourceDocumentDto,
 } from "@/lib/sources"
 import { getCapabilities, type Capabilities } from "@/lib/capabilities"
 import {
   cancelRun,
   createRun,
-  listProjectRuns,
+  getRunPhases,
   RunError,
   type RunSettings,
+  type RunStatus,
+  type RunTechnicalSummaryDto,
 } from "@/lib/runs"
+import {
+  failedPhaseLabel,
+  phasesToView,
+  type RunPhaseView,
+} from "@/lib/run-steps"
+import { RunTechnicalDetails } from "@/components/run/run-technical-details"
 import { createProcessingConfirmation } from "@/lib/processing-confirmations"
-import { pollOperation, type PollHandle } from "@/lib/operations"
-import { LiveEvidence } from "@/components/quellen/live-evidence"
-import { dataClassificationFromFlat } from "@/lib/data-classification"
+import {
+  dataClassificationFromFlat,
+  flatFromDataClassification,
+} from "@/lib/data-classification"
+import { getProject } from "@/lib/projects"
 import {
   computeSourceUsage,
   listEvidence,
@@ -85,6 +99,14 @@ const SOURCE_TYPE_LABEL: Record<string, Source["type"]> = {
   url: "URL",
 }
 
+// Ursachen-spezifische Handlungshinweise (error_code der aktuellen Version).
+const NEEDS_INPUT_HINTS: Record<string, string> = {
+  SOURCE_PDF_ENCRYPTED:
+    "Das PDF ist passwortgeschützt. Bitte entfernen Sie den Passwortschutz oder erfassen Sie den Inhalt als Text.",
+  SOURCE_NO_TEXT_LAYER:
+    "Kein Textlayer erkannt (vermutlich ein Scan). Bitte verwenden Sie einen digitalen PDF-Export oder erfassen Sie den Inhalt als Text.",
+}
+
 function toSourceRow(s: SourceDocumentDto): Source {
   let errorHint: string | undefined
   if (s.status === "failed") {
@@ -93,6 +115,7 @@ function toSourceRow(s: SourceDocumentDto): Source {
       "Die Quelle konnte nicht verarbeitet werden. Bitte Format prüfen, erneut hochladen oder entfernen."
   } else if (s.status === "needs_manual_input") {
     errorHint =
+      NEEDS_INPUT_HINTS[s.error_code ?? ""] ??
       "Kein durchsuchbarer Text gefunden. Bitte Datei prüfen oder Inhalt als Text erfassen."
   }
   return {
@@ -227,94 +250,47 @@ const DIALOG_SCENARIOS: DialogScenario[] = [
 ]
 
 // ---------------------------------------------------------------------------
-// Step status
-// ---------------------------------------------------------------------------
-
-const quellenStepStatus = [
-  "done",
-  "done",
-  "current",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-] as const
-
-// ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
 
 // Set to true only during internal prototyping — never in the evaluation view.
 const SHOW_DEBUG_CONTROLS = false
 
-function liveAnalysisSteps(progressPercent: number): AnalysisProgressStep[] {
-  const progress = Math.max(0, Math.min(100, progressPercent))
-  const labels = [
-    "Quellen werden gesichert",
-    "Anforderungen werden geprueft",
-    "Belege werden verknuepft",
-    "Ergebnisse werden gespeichert",
-  ]
-  const thresholds = [10, 35, 70, 95]
-  const currentIndex = thresholds.findIndex((threshold) => progress < threshold)
-  const activeIndex = currentIndex === -1 ? labels.length - 1 : currentIndex
-  return labels.map((label, index) => ({
-    id: `live-${index + 1}`,
-    label,
-    state:
-      progress >= 100 || index < activeIndex
-        ? "done"
-        : index === activeIndex
-          ? "running"
-          : "pending",
-  }))
-}
-
 export default function QuellenPage() {
-  // useSearchParams requires a Suspense boundary in the App Router.
   return (
-    <React.Suspense fallback={null}>
-      <QuellenPageContent />
-    </React.Suspense>
+    <AppShell
+      user={currentUser}
+      projects={projects}
+      activeProjectId={activeProjectId}
+    >
+      {/* useSearchParams requires a Suspense boundary in the App Router. */}
+      <React.Suspense fallback={null}>
+        <QuellenPageContent />
+      </React.Suspense>
+    </AppShell>
   )
 }
-
-type QuellenTab = "quellen" | "evidenz"
 
 function QuellenPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
-  const tabFromUrl: QuellenTab =
-    searchParams.get("tab") === "evidenz" ? "evidenz" : "quellen"
-  // Deep link from Anforderungen ("Beleg ansehen"): focus one evidence card.
-  const focusAnchorId = searchParams.get("anchor")
   // Deep link (?source=…): open that source's details directly.
   const sourceFromUrl = searchParams.get("source")
 
-  const [activeTab, setActiveTab] = React.useState<QuellenTab>(tabFromUrl)
-  // Evidence → source navigation: switch tab + open that source's details.
+  // Die Evidenz-Ansicht lebt jetzt im Schritt «Analyse & Recherche»
+  // (/anforderungen?tab=evidenz) — alte Links/Bookmarks weiterleiten.
+  React.useEffect(() => {
+    if (searchParams.get("tab") !== "evidenz") return
+    const anchor = searchParams.get("anchor")
+    router.replace(
+      `/anforderungen?tab=evidenz${anchor ? `&anchor=${encodeURIComponent(anchor)}` : ""}`
+    )
+  }, [searchParams, router])
+
+  // Evidence → source navigation: open that source's details.
   const [sourceDetailId, setSourceDetailId] = React.useState<string | null>(
     sourceFromUrl
   )
-  // Stepper deep links (step 2 -> Quellen, step 4 -> Evidenz) navigate within
-  // this route, so follow URL changes after mount as well.
-  React.useEffect(() => {
-    setActiveTab(tabFromUrl)
-  }, [tabFromUrl])
-
-  function handleTabChange(value: unknown) {
-    const tab: QuellenTab = value === "evidenz" ? "evidenz" : "quellen"
-    setActiveTab(tab)
-    router.replace(tab === "evidenz" ? "/quellen?tab=evidenz" : "/quellen", {
-      scroll: false,
-    })
-  }
-
-  function handleOpenSourceFromEvidence(sourceId: string) {
-    handleTabChange("quellen")
-    setSourceDetailId(sourceId)
-  }
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
   const [activeScenario, setActiveScenario] = React.useState<DialogScenario>(
@@ -324,6 +300,11 @@ function QuellenPageContent() {
     React.useState<PageAnalysisState>("idle")
   const [analysisSteps, setAnalysisSteps] =
     React.useState<AnalysisProgressStep[]>(dummyAnalysisSteps)
+  // Live-Pfad: echte, persistierte Phasen (kein erfundener Prozentwert).
+  const [runPhases, setRunPhases] = React.useState<RunPhaseView[] | null>(null)
+  const [runTechnical, setRunTechnical] =
+    React.useState<RunTechnicalSummaryDto | null>(null)
+  const [partialLabel, setPartialLabel] = React.useState<string | null>(null)
   const [runCost, setRunCost] = React.useState<RunCostDto | undefined>(undefined)
   const [canResume, setCanResume] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
@@ -340,26 +321,32 @@ function QuellenPageContent() {
   // Vom Backend gemeldete effektive Klasse hat Vorrang vor dem Intake-Wert.
   const [backendDataClass, setBackendDataClass] =
     React.useState<DataClass | null>(null)
+  // Im Projekt gespeicherte Klassifizierung (Backend ist die Wahrheit) — deckt
+  // Projekte ohne Intake-Session ab (z. B. API-erstellt oder frischer Browser).
+  const [projectDataClass, setProjectDataClass] =
+    React.useState<DataClass | null>(null)
 
-  // Quellen tragen eine eigene Datenklasse; der Backend-Run meldet die
-  // restriktivste Einstufung aus Projekt und Snapshot-Quellen zurück.
-  const effectiveDataClass: DataClass | null =
-    backendDataClass ??
-    (intake
-      ? mostRestrictiveDataClass([intake.vertraulichkeit || "confidential"])
-      : null)
+  // Restriktivste bekannte Einstufung gewinnt (nie Downgrade); ohne jedes
+  // Signal bleibt null und die Konsumenten fallen fail-closed auf
+  // "confidential" zurück.
+  const knownDataClasses: DataClass[] = [
+    ...(backendDataClass ? [backendDataClass] : []),
+    ...(projectDataClass ? [projectDataClass] : []),
+    ...(intake ? [intake.vertraulichkeit || ("confidential" as DataClass)] : []),
+  ]
+  const effectiveDataClass: DataClass | null = knownDataClasses.length
+    ? mostRestrictiveDataClass(knownDataClasses)
+    : null
 
   // Run lifecycle: the page only starts a run and polls its status via the
   // API layer; the progression itself lives behind lib/api.ts (mock or bridge).
   const runIdRef = React.useRef<string | null>(null)
-  const operationPollRef = React.useRef<PollHandle | null>(null)
   const pollTimer = React.useRef<ReturnType<typeof setInterval> | undefined>(
     undefined
   )
   React.useEffect(
     () => () => {
       clearInterval(pollTimer.current)
-      operationPollRef.current?.stop()
     },
     []
   )
@@ -367,9 +354,25 @@ function QuellenPageContent() {
   const stopPolling = React.useCallback(() => {
     clearInterval(pollTimer.current)
     pollTimer.current = undefined
-    operationPollRef.current?.stop()
-    operationPollRef.current = null
   }, [])
+
+  // Persistierten Phasenstand des Laufs nachladen (Live-Pfad). Transiente
+  // Fehler behalten den letzten bekannten Stand — kein Flackern, kein Raten.
+  const refreshRunPhases = React.useCallback(
+    async (runId: string): Promise<RunStatus | null> => {
+      try {
+        const data = await getRunPhases(runId)
+        setRunPhases(phasesToView(data.phases))
+        setRunTechnical(data.technical)
+        setPartialLabel(failedPhaseLabel(data.phases))
+        return data.run_status
+      } catch {
+        // letzte bekannte Phasen behalten; der Watcher versucht es erneut.
+        return null
+      }
+    },
+    []
+  )
 
   const startPolling = React.useCallback(() => {
     stopPolling()
@@ -425,14 +428,19 @@ function QuellenPageContent() {
     setDialogOpen(false)
     setApiError(null)
     stopPolling()
-    setAnalysisSteps(
-      liveMode
-        ? liveAnalysisSteps(1)
-        : dummyAnalysisSteps.map((s, i) => ({
-            ...s,
-            state: i === 0 ? ("running" as const) : ("pending" as const),
-          }))
-    )
+    // Live: die echten Phasen kommen aus GET /runs/{id}/phases; bis zum
+    // ersten Poll zeigt das Banner nur «Analyse läuft».
+    setRunPhases(liveMode ? [] : null)
+    setRunTechnical(null)
+    setPartialLabel(null)
+    if (!liveMode) {
+      setAnalysisSteps(
+        dummyAnalysisSteps.map((s, i) => ({
+          ...s,
+          state: i === 0 ? ("running" as const) : ("pending" as const),
+        }))
+      )
+    }
     setAnalysisState("running")
     setCanResume(false)
     setRunCost(undefined)
@@ -440,7 +448,9 @@ function QuellenPageContent() {
       if (liveMode && projectId) {
         // Derive the processing mode from the run-settings opt-in. Cloud-KI is
         // only used when the user enabled it AND explicitly confirmed for a
-        // public/synthetic project; otherwise the run stays deterministic.
+        // public/synthetic project. R4.3: intern/vertraulich erhalten nach
+        // Opt-in + verstandener Warnung den LOKALEN KI-Pfad (local_only +
+        // Bestätigung); NDA/unklassifiziert bleiben regelbasiert.
         const processedVersionIds = liveSources
           .filter((s) => s.status === "processed" && s.current_source_version_id)
           .map((s) => s.current_source_version_id as string)
@@ -449,7 +459,18 @@ function QuellenPageContent() {
           settings.cloudConfirmed === true &&
           !isLocalOnly &&
           processedVersionIds.length > 0
+        const useLocalAi =
+          settings.ki &&
+          settings.cloudConfirmed === true &&
+          (effectiveDataClass === "internal" ||
+            effectiveDataClass === "confidential") &&
+          processedVersionIds.length > 0
 
+        // Run-Budgets aus dem Dialog: KI-Aufrufe (Default 25) und — nur für
+        // öffentliche Cloud-Läufe mit aktivierter Webrecherche — die Zahl der
+        // Suchanfragen. Beide Limits werden im Backend durchgesetzt.
+        const maxLlmCalls = settings.maxLlmCalls ?? 25
+        const maxWebCalls = settings.web ? (settings.maxWebCalls ?? 5) : 0
         let runSettings: RunSettings = {
           processing_mode: "deterministic_only",
           max_cost_chf: settings.costLimit,
@@ -464,7 +485,23 @@ function QuellenPageContent() {
           runSettings = {
             processing_mode: "cloud_assisted",
             max_cost_chf: settings.costLimit,
-            max_llm_calls: 25,
+            max_llm_calls: maxLlmCalls,
+            max_web_calls: maxWebCalls,
+            source_version_ids: processedVersionIds,
+            internal_cloud_confirmation_id: confirmation.confirmation_id,
+          }
+        } else if (useLocalAi) {
+          const confirmation = await createProcessingConfirmation(
+            projectId,
+            processedVersionIds,
+            "KI-Vorschläge für Textentwürfe vorbereiten (lokaler Pfad)",
+            "local_only"
+          )
+          runSettings = {
+            processing_mode: "local_only",
+            max_cost_chf: settings.costLimit,
+            max_llm_calls: maxLlmCalls,
+            // Webrecherche ist auf den öffentlichen Cloud-Pfad beschränkt.
             max_web_calls: 0,
             source_version_ids: processedVersionIds,
             internal_cloud_confirmation_id: confirmation.confirmation_id,
@@ -473,30 +510,8 @@ function QuellenPageContent() {
         const accepted = await createRun(projectId, runSettings)
         runIdRef.current = accepted.resource_id
         setCurrentRunId(accepted.resource_id)
-        operationPollRef.current = pollOperation(accepted.operation_id, {
-          intervalMs: (capabilities?.polling_interval_seconds ?? 1) * 1000,
-          onUpdate: (operation) => {
-            setAnalysisSteps(liveAnalysisSteps(operation.progress_percent ?? 25))
-          },
-          onTerminal: (operation) => {
-            operationPollRef.current = null
-            if (operation.status === "succeeded") {
-              setAnalysisSteps(liveAnalysisSteps(100))
-              setCompletedRunId(operation.resource_id)
-              setAnalysisState("completed")
-              void refreshSources()
-              return
-            }
-            setCanResume(false)
-            setAnalysisState("stopped")
-            if (operation.status === "failed") {
-              setApiError(
-                operation.error?.detail ??
-                  "Die Analyse konnte nicht abgeschlossen werden."
-              )
-            }
-          },
-        })
+        // Echter, persistierter Phasen-/Run-Status statt Prozent-Heuristik.
+        watchRun(accepted.resource_id)
         return
       }
       const startRequest: RunStartRequestDto = {
@@ -560,19 +575,51 @@ function QuellenPageContent() {
   // --- Live sources (Milestone 2) --------------------------------------------
   const { mode } = useSession()
   const liveMode = mode === "live"
+  // Zentrale Run-Auswahl (Ladder): dieselbe Run-ID wie auf allen anderen
+  // Screens; reload() nach einem abgeschlossenen Lauf auf dieser Seite.
+  const {
+    runId: completedRunId,
+    runs: workflowRuns,
+    reload: reloadWorkflow,
+  } = useActiveRun()
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [liveSources, setLiveSources] = React.useState<SourceDocumentDto[]>([])
   const [localSourceRows, setLocalSourceRows] = React.useState<Source[]>([])
-  const [completedRunId, setCompletedRunId] = React.useState<string | null>(null)
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
   )
+  // Einmaliger Hinweis aus dem Intake: Projekt gespeichert, Upload offen.
+  const [uploadHint, setUploadHint] = React.useState(false)
 
   React.useEffect(() => {
     if (!liveMode) return
     setProjectId(getActiveProjectId())
     void getCapabilities().then(setCapabilities)
+    try {
+      if (window.sessionStorage.getItem(UPLOAD_HINT_KEY) === "1") {
+        window.sessionStorage.removeItem(UPLOAD_HINT_KEY)
+        setUploadHint(true)
+      }
+    } catch {
+      // Storage blockiert — kein Hinweis.
+    }
   }, [liveMode])
+
+  // Gespeicherte Projektklasse nachladen; bei Fehler bleibt der
+  // fail-closed-Fallback ("confidential") bestehen.
+  React.useEffect(() => {
+    if (!liveMode || !projectId) return
+    let active = true
+    getProject(projectId)
+      .then((p) => {
+        if (active)
+          setProjectDataClass(flatFromDataClassification(p.data_classification))
+      })
+      .catch(() => {})
+    return () => {
+      active = false
+    }
+  }, [liveMode, projectId])
 
   React.useEffect(() => {
     if (!liveMode) setLocalSourceRows([])
@@ -591,6 +638,63 @@ function QuellenPageContent() {
     void refreshSources()
   }, [refreshSources])
 
+  // EIN Watcher für Start UND Reload-Resume: verfolgt den persistierten
+  // Phasen-/Run-Status bis zum terminalen Zustand. Einzelne fehlgeschlagene
+  // Polls werden übersprungen — die Anzeige verliert den Lauf nie.
+  const watchRun = React.useCallback(
+    (runId: string) => {
+      stopPolling()
+      const tick = async () => {
+        const status = await refreshRunPhases(runId)
+        if (status === "completed") {
+          stopPolling()
+          // Der eben abgeschlossene Lauf wird zur expliziten Auswahl
+          // (Ladder-Stufe 2), bis der Projekt-Refetch die vom Backend
+          // gesetzte active_run_id liefert.
+          setSelectedRunId(runId)
+          reloadWorkflow()
+          setAnalysisState("completed")
+          void refreshSources()
+        } else if (
+          status === "failed" ||
+          status === "stopped" ||
+          status === "cancelled"
+        ) {
+          stopPolling()
+          setCanResume(false)
+          setAnalysisState("stopped")
+          if (status === "failed") {
+            setApiError("Die Analyse konnte nicht abgeschlossen werden.")
+          }
+        }
+      }
+      void tick()
+      pollTimer.current = setInterval(
+        () => void tick(),
+        (capabilities?.polling_interval_seconds ?? 1) * 1000
+      )
+    },
+    [capabilities, refreshRunPhases, stopPolling, reloadWorkflow, refreshSources]
+  )
+
+  // Reload-Fähigkeit: läuft für dieses Projekt bereits eine Analyse, wird die
+  // Fortschrittsansicht nach einem Seiten-Reload wieder aufgenommen — die
+  // Phasen sind im Backend persistiert, nichts geht verloren. Die Run-Liste
+  // kommt aus der zentralen Workflow-Wahrheit (useActiveRun), nie aus einer
+  // eigenen Abfrage der Seite.
+  React.useEffect(() => {
+    if (!liveMode) return
+    const active = workflowRuns.find(
+      (r) => r.status === "running" || r.status === "created"
+    )
+    if (!active || runIdRef.current === active.run_id) return
+    runIdRef.current = active.run_id
+    setCurrentRunId(active.run_id)
+    setRunPhases([])
+    setAnalysisState("running")
+    watchRun(active.run_id)
+  }, [liveMode, workflowRuns, watchRun])
+
   // Poll while any source is still being processed.
   React.useEffect(() => {
     if (!liveMode || !projectId) return
@@ -604,9 +708,18 @@ function QuellenPageContent() {
   }, [liveMode, projectId, liveSources, capabilities, refreshSources])
 
   const handleUploadSources = React.useCallback(
-    async (files: File[], dataClass: DataClass) => {
+    async (
+      files: File[],
+      dataClass: DataClass,
+      onProgress?: (percent: number) => void
+    ) => {
       if (!projectId) throw new Error("Kein aktives Projekt ausgewählt.")
-      await uploadFiles(projectId, files, dataClassificationFromFlat(dataClass))
+      await uploadFiles(
+        projectId,
+        files,
+        dataClassificationFromFlat(dataClass),
+        { onProgress }
+      )
       await refreshSources()
     },
     [projectId, refreshSources]
@@ -719,52 +832,23 @@ function QuellenPageContent() {
     }
   }, [liveMode, completedRunId])
 
-  // Resolve the latest completed run so the Evidenz tab can show live evidence.
-  React.useEffect(() => {
-    if (!liveMode || !projectId) {
-      setCompletedRunId(null)
-      return
-    }
-    let cancelled = false
-    listProjectRuns(projectId)
-      .then((runs) => {
-        if (cancelled) return
-        const completed = runs.find((r) => r.status === "completed")
-        setCompletedRunId(completed?.run_id ?? null)
-      })
-      .catch(() => {
-        if (!cancelled) setCompletedRunId(null)
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [liveMode, projectId, liveSources])
-
   const sourceRows: Source[] = liveMode
     ? [...localSourceRows, ...liveSources.map(toSourceRow)]
     : dummySources
-  const sourceCount = sourceRows.length
-  const evidenceCount = dummyEvidence.length
 
   // STEP 12: the live "Analyse starten" action stays disabled until the server
   // capability (features.runs) enables it (Milestone 4). Mock mode is unaffected.
   const runsEnabled = !liveMode || Boolean(capabilities?.features?.runs)
 
   return (
-    <AppShell
-      user={currentUser}
-      projects={projects}
-      activeProjectId={activeProjectId}
-      currentStep={3}
-      stepStatus={[...quellenStepStatus]}
-    >
+    <>
       <div className="mx-auto max-w-5xl px-6 py-8">
 
         {/* Page header */}
         <div className="mb-6 flex items-start justify-between gap-4">
           <div className="flex flex-col gap-2">
             <h1 className="text-balance text-2xl font-semibold text-foreground">
-              Quellen &amp; Evidenz
+              Quellen
             </h1>
             <p className="text-sm text-muted-foreground">
               Laden Sie Unterlagen hoch. Die Plattform erkennt daraus Anforderungen und passende Belege.
@@ -818,6 +902,17 @@ function QuellenPageContent() {
         {/* Confidentiality banner */}
         {isLocalOnly && <div className="mb-4"><LocalOnlyBanner /></div>}
 
+        {/* Intake-Hinweis: Projekt gespeichert, Unterlagen-Upload offen */}
+        {uploadHint && (
+          <div
+            role="alert"
+            className="mb-4 rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3 text-sm text-foreground"
+          >
+            Das Projekt wurde gespeichert, aber die Unterlagen konnten nicht
+            hochgeladen werden. Bitte laden Sie sie hier erneut hoch.
+          </div>
+        )}
+
         {/* API error banner (German message from the error envelope) */}
         {apiError && (
           <div
@@ -834,6 +929,7 @@ function QuellenPageContent() {
           <div className="mb-4">
             <AnalysisProgressBanner
               steps={analysisSteps}
+              phases={runPhases ?? undefined}
               cost={runCost}
               onStop={handleAnalysisStop}
             />
@@ -848,94 +944,71 @@ function QuellenPageContent() {
           </div>
         )}
         {analysisState === "completed" && (
-          <div className="mb-4">
+          <div className="mb-4 flex flex-col gap-3">
             <CompletedAnalysisBanner
+              partialPhaseLabel={partialLabel}
               onGoToRequirements={() => router.push("/anforderungen")}
-              onShowEvidence={() => handleTabChange("evidenz")}
+              onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
             />
+            {liveMode && runTechnical && (
+              <RunTechnicalDetails technical={runTechnical} />
+            )}
           </div>
         )}
 
-        {/* Tabs */}
-        <Tabs value={activeTab} onValueChange={handleTabChange}>
-          <TabsList className="mb-6">
-            <TabsTrigger value="quellen">
-              Quellen ({sourceCount})
-            </TabsTrigger>
-            <TabsTrigger value="evidenz">
-              {liveMode ? "Evidenz" : `Evidenz (${evidenceCount})`}
-            </TabsTrigger>
-          </TabsList>
-
-          <TabsContent value="quellen">
-            {liveMode ? (
-              <div className="flex flex-col gap-6">
-                {!projectId && (
-                  <p
-                    role="alert"
-                    className="rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3 text-sm text-foreground"
-                  >
-                    Kein aktives Projekt — bitte legen Sie zuerst im Intake ein
-                    Projekt an.
-                  </p>
-                )}
-                <SourceTable
-                  sources={sourceRows}
-                  controlled
-                  onUploadFiles={handleUploadSources}
-                  onAddTextSource={handleAddTextSource}
-                  onAddUrlSource={handleAddUrlSource}
-                  onImportSources={handleImportSources}
-                  onDeleteSource={handleDeleteSource}
-                  acceptExtensions={[".pdf", ".docx", ".txt"]}
-                  defaultDataClass={effectiveDataClass ?? "confidential"}
-                  currentUserName={currentUser.name}
-                  openDetailsForId={sourceDetailId}
-                  onDetailsOpenChange={(open) => {
-                    if (!open) setSourceDetailId(null)
-                  }}
-                  sourceUsage={sourceUsage}
-                  onShowEvidence={() => handleTabChange("evidenz")}
-                />
-                {projectId && capabilities?.features?.web_research && (
-                  <PublicResearchPanel
-                    projectId={projectId}
-                    dataClass={effectiveDataClass ?? "confidential"}
-                    onImported={refreshSources}
-                  />
-                )}
-                {projectId && capabilities?.features?.market_comparison && (
-                  <MarketComparisonSection projectId={projectId} />
-                )}
-              </div>
-            ) : (
-              <SourceTable
-                sources={dummySources}
-                currentUserName={currentUser.name}
-                onShowEvidence={() => handleTabChange("evidenz")}
+        {/* Quellen — die Evidenz-Ansicht lebt unter «Analyse & Recherche» */}
+        {liveMode ? (
+          <div className="flex flex-col gap-6">
+            {!projectId && (
+              <p
+                role="alert"
+                className="rounded-lg border border-status-partial/40 bg-status-partial/8 px-4 py-3 text-sm text-foreground"
+              >
+                Kein aktives Projekt — bitte legen Sie zuerst unter «Projekt
+                anlegen» ein Projekt an.
+              </p>
+            )}
+            <SourceTable
+              sources={sourceRows}
+              controlled
+              onUploadFiles={handleUploadSources}
+              onAddTextSource={handleAddTextSource}
+              onAddUrlSource={handleAddUrlSource}
+              onImportSources={handleImportSources}
+              onDeleteSource={handleDeleteSource}
+              acceptExtensions={[".pdf", ".docx", ".txt"]}
+              defaultDataClass={effectiveDataClass ?? "confidential"}
+              currentUserName={currentUser.name}
+              openDetailsForId={sourceDetailId}
+              onDetailsOpenChange={(open) => {
+                if (!open) setSourceDetailId(null)
+              }}
+              sourceUsage={sourceUsage}
+              onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
+            />
+            {projectId && capabilities?.features?.web_research && (
+              <PublicResearchPanel
+                projectId={projectId}
+                dataClass={effectiveDataClass ?? "confidential"}
+                onImported={refreshSources}
               />
             )}
-          </TabsContent>
-
-          <TabsContent value="evidenz">
-            {liveMode ? (
-              completedRunId ? (
-                <LiveEvidence
-                  runId={completedRunId}
-                  focusAnchorId={focusAnchorId}
-                  onOpenSource={handleOpenSourceFromEvidence}
-                />
-              ) : (
-                <p className="py-10 text-center text-sm text-muted-foreground">
-                  Noch keine abgeschlossene Analyse. Starten Sie die Analyse, um
-                  Belege zu erzeugen.
-                </p>
-              )
-            ) : (
-              <EvidenceTab cards={dummyEvidence} />
+            {projectId && capabilities?.features?.market_comparison && (
+              <MarketComparisonSection
+                projectId={projectId}
+                sourceNames={Object.fromEntries(
+                  liveSources.map((s) => [s.source_id, s.name])
+                )}
+              />
             )}
-          </TabsContent>
-        </Tabs>
+          </div>
+        ) : (
+          <SourceTable
+            sources={dummySources}
+            currentUserName={currentUser.name}
+            onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
+          />
+        )}
 
         {/* Debug: dialog-variant switcher — hidden from normal user-facing UI */}
         {SHOW_DEBUG_CONTROLS && (
@@ -1031,10 +1104,10 @@ function QuellenPageContent() {
           web: activeScenario.webAvailable,
         }}
         hasActiveRun={activeScenario.hasActiveRun}
-        estimateState={activeScenario.estimateState}
+        projectId={liveMode ? (projectId ?? undefined) : undefined}
         onStart={handleAnalysisStart}
         onCancel={() => setDialogOpen(false)}
       />
-    </AppShell>
+    </>
   )
 }

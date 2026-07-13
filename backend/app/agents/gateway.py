@@ -21,18 +21,21 @@ from sqlalchemy.orm import Session
 
 from app.agents import cost_guard, data_policy
 from app.agents.prompt_assets import prompt_version_for
+from app.config import provider_policy
 from app.agents.providers.base import (
     ProviderAdapter,
     ProviderError,
     ProviderRequest,
     ProviderTimeout,
     ProviderUnavailable,
+    ProviderUsage,
 )
 from app.agents.registry import AgentRegistry, ModelRoute, get_agent_registry
 from app.agents.schemas import (
     ProjectFactExtractionResult,
     SchemaNotImplementedError,
     fact_reference_violations,
+    json_schema_for,
     validate_payload,
 )
 from app.config.settings import get_settings
@@ -88,7 +91,24 @@ class SafeFailure:
 
 
 class _SchemaFailure(Exception):
-    """Output failed schema/reference validation after the allowed retries."""
+    """Output failed schema/reference validation after the allowed retries.
+
+    EVAL.2: trägt die über alle Versuche akkumulierte Provider-Usage — der
+    Provider hat real geantwortet, die Tokens müssen gemetert werden, auch
+    wenn der Output das Schema verfehlt.
+    """
+
+    def __init__(self, reason: str, usage: ProviderUsage | None = None) -> None:
+        super().__init__(reason)
+        self.usage = usage
+
+
+@dataclass(frozen=True)
+class _FailedUsage:
+    """Failure-Zweig-Metering: konsumierte Tokens + tatsächlicher Adapter."""
+
+    usage: ProviderUsage | None
+    adapter_name: str | None
 
 
 def _now() -> datetime:
@@ -193,8 +213,13 @@ def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[B
     """Run a single route with at most ``retries`` retries on schema failure.
     Provider timeout/error propagate (→ fallback). Returns (validated, usage)."""
     last: Exception | None = None
+    spent = ProviderUsage()
     for _ in range(1 + retries):
         result = adapter.generate(preq)  # ProviderTimeout/Error propagate
+        spent = ProviderUsage(
+            spent.input_tokens + result.usage.input_tokens,
+            spent.output_tokens + result.usage.output_tokens,
+        )
         try:
             parsed = json.loads(result.raw_output)
             model = validate_payload(output_schema, parsed)
@@ -207,7 +232,9 @@ def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[B
                 last = _SchemaFailure(f"invalid_evidence_reference:{violations[0]}")
                 continue
         return model, result.usage
-    raise _SchemaFailure(str(last) if last else "schema_validation_failed")
+    raise _SchemaFailure(
+        str(last) if last else "schema_validation_failed", usage=spent
+    )
 
 
 def invoke(
@@ -245,11 +272,16 @@ def invoke(
     db.add(inv)
     db.flush()
 
-    # 1. Data Policy (before any external call).
+    # 1. Data Policy (before any external call). R4.3: der lokale Fake-Provider
+    # eröffnet den contract-konformen local_only-Pfad (D1/D2 nur mit Opt-in).
+    local_provider = (
+        provider_policy.kind_of_adapter(resolver(primary))
+        == provider_policy.ProviderKind.FAKE_LOCAL
+    )
     decision = data_policy.evaluate(
         profile=profile, classification=request.classification,
         processing_mode=request.processing_mode, settings=settings,
-        run_confirmation=request.run_confirmation,
+        run_confirmation=request.run_confirmation, local_provider=local_provider,
     )
     _control(db, inv, "CTRL.DATA_POLICY", decision.status, decision.reason)
     if decision.blocked:
@@ -273,18 +305,34 @@ def invoke(
 
 
 def _try_route(inv, profile, request, registry, resolver, route_key):
-    """Attempt one route. Returns (model_out, usage, route) on success, or a
-    ``(None, status, reason)`` tuple on failure."""
+    """Attempt one route. Returns (model_out, usage, route, adapter_name) on
+    success, or ``(None, status, reason, extra)`` on failure — ``extra`` ist
+    ``None`` ausser bei Schema-Failures, wo ein ``_FailedUsage`` die real
+    konsumierten Tokens fürs Metering trägt (EVAL.2). Der Adapter-Name
+    (Selbstauskunft) steuert die Kostensemantik: fake-served Calls dürfen
+    nicht als externe Calls gemetert werden (EVAL.1)."""
     route = registry.route(route_key)
     inv.model_route, inv.provider, inv.model_id = route_key, route.provider, route.model_id
     adapter = resolver(route)
-    if adapter is None or not adapter.available():
-        return None, "failed", "provider_unavailable"
+    if adapter is None:
+        return None, "failed", "provider_unavailable", None
+    # R4.3 ProviderPolicy: provider × data_class (× origin/eval) — geprüft VOR
+    # available(), damit gesetzte API-Keys nie eine blockierte Klasse öffnen.
+    p_decision = provider_policy.decide_for_adapter(
+        adapter, request.classification, get_settings()
+    )
+    if not p_decision.allowed:
+        return None, "blocked", p_decision.reason, None
+    if not adapter.available():
+        return None, "failed", "provider_unavailable", None
     preq = ProviderRequest(
         model_id=route.model_id, prompt=_assemble_prompt(profile, request),
         output_schema_id=profile.output_schema,
         timeout_seconds=cost_guard.timeout_seconds(profile),
         max_output_tokens=profile.invocation_limits.get("max_output_tokens"),
+        # R5.5b: provider-native structured output (advisory) — pydantic below
+        # remains the sole validation authority.
+        output_json_schema=json_schema_for(profile.output_schema),
     )
     try:
         model_out, usage = _execute(
@@ -293,12 +341,16 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
             allowed_frags=request.allowed_fragment_ids,
         )
     except ProviderTimeout:
-        return None, "timed_out", "provider_timeout"
+        return None, "timed_out", "provider_timeout", None
     except (ProviderError, ProviderUnavailable):
-        return None, "failed", "provider_error"
+        return None, "failed", "provider_error", None
     except _SchemaFailure as exc:
-        return None, "failed", str(exc)
-    return model_out, usage, route
+        # EVAL.2: 4. Slot trägt hier die konsumierten Tokens (der Provider hat
+        # geantwortet) — auf Erfolg trägt er den Adapter-Namen (str).
+        return None, "failed", str(exc), _FailedUsage(
+            exc.usage, getattr(adapter, "name", None)
+        )
+    return model_out, usage, route, getattr(adapter, "name", None)
 
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
@@ -308,13 +360,28 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
     last_status, last_reason = "failed", "provider_unavailable"
 
     for route_key in routes:
-        model_out, second, third = _try_route(
+        model_out, second, third, extra = _try_route(
             inv, profile, request, registry, resolver, route_key
         )
         if model_out is None:
             last_status, last_reason = second, third
+            # EVAL.2: Schema-Failure nach realer Provider-Antwort — die
+            # konsumierten Tokens werden trotzdem gemetert (run-scoped).
+            if (
+                request.run_id is not None
+                and isinstance(extra, _FailedUsage)
+                and extra.usage is not None
+            ):
+                failed_route = registry.route(route_key)
+                cost_guard.record_usage(
+                    db, run_id=request.run_id, workspace_id=request.workspace_id,
+                    provider=failed_route.provider,
+                    model_id=failed_route.model_id,
+                    usage=extra.usage, adapter_name=extra.adapter_name,
+                )
             continue
         usage, route = second, third
+        adapter_name = extra
         if not cost_guard.output_within_limit(profile, usage):
             _control(db, inv, "CTRL.COST_GUARD", "blocked", "max_output_tokens")
             return _safe(db, inv, "blocked", "cost_guard_output_blocked", "max_output_tokens")
@@ -323,6 +390,7 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             rec = cost_guard.record_usage(
                 db, run_id=request.run_id, workspace_id=request.workspace_id,
                 provider=route.provider, model_id=route.model_id, usage=usage,
+                adapter_name=adapter_name,
             )
             usage_record_id = rec.usage_record_id
         inv.output_hash = _hash(model_out.model_dump())
@@ -337,5 +405,9 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             output_tokens=usage.output_tokens,
         )
 
+    # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.
+    if last_reason in (provider_policy.BLOCKED_REASON, "provider_unknown_adapter"):
+        _control(db, inv, "CTRL.DATA_POLICY", "blocked", last_reason)
+        return _safe(db, inv, "blocked", "provider_policy_blocked", last_reason)
     _control(db, inv, "CTRL.OUTPUT_SCHEMA", "failed", last_reason)
     return _safe(db, inv, last_status, "agent_invocation_failed", last_reason)

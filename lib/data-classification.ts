@@ -46,10 +46,28 @@ const FLAT_TO_CLASSIFICATION: Record<DataClass, DataClassification> = {
     web_research_mode: "off",
     nda_applies: false,
   },
+  // R4.1 (Owner-Tabelle docs/repair/data-class-mapping.md §2): NDA/gesperrt →
+  // deterministic_only — kein KI-Pfad irgendeiner Art für NDA-Material.
+  nda: {
+    sensitivity: "confidential",
+    origin: "real_project",
+    processing_mode: "deterministic_only",
+    web_research_mode: "off",
+    nda_applies: true,
+  },
 }
 
 export function dataClassificationFromFlat(
   flat: DataClass
 ): DataClassification {
   return { ...FLAT_TO_CLASSIFICATION[flat] }
+}
+
+/** Inverse mapping for display/gating. R4.1: NDA ist jetzt als flacher Wert
+ *  ausdrückbar — kein Kollaps mehr auf "confidential" (kein Marker-Verlust). */
+export function flatFromDataClassification(
+  classification: DataClassification
+): DataClass {
+  if (classification.nda_applies) return "nda"
+  return classification.sensitivity
 }

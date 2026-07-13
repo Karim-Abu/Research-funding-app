@@ -61,6 +61,17 @@ describe("PublicResearchPanel", () => {
     ).toBeNull()
   })
 
+  // R4.1: D3 (NDA / gesperrt) — Webrecherche vollständig blockiert, kein Formular.
+  it("nda: blocks web research entirely — no search form, no dead-end submit", () => {
+    render(<PublicResearchPanel projectId={PROJECT} dataClass="nda" />)
+    expect(screen.getByTestId("research-blocked")).toBeInTheDocument()
+    expect(
+      screen.getByText(/keine Webrecherche möglich/)
+    ).toBeInTheDocument()
+    expect(screen.queryByLabelText(/Öffentlicher Suchbegriff/)).toBeNull()
+    expect(screen.queryByRole("button", { name: /Suchen|prüfen/ })).toBeNull()
+  })
+
   it("runs a search and lists candidate results", async () => {
     server.use(...acceptedHandlers())
     render(<PublicResearchPanel projectId={PROJECT} />)

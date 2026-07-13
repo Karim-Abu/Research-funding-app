@@ -35,9 +35,13 @@ def build_source_snapshot(
     project_id: str,
     workspace_id: str,
     requested_version_ids: list[str] | None,
+    allow_empty: bool = False,
 ) -> list[SourceVersion]:
     """Resolve + validate the frozen source set. Excludes processing/failed/
-    needs_manual_input/deleted/foreign versions. Raises 422 if invalid/empty."""
+    needs_manual_input/deleted/foreign versions. Raises 422 if invalid — or if
+    empty, ausser der Aufrufer erlaubt einen quellenlosen Lauf explizit
+    (Intake-only: die strukturierte Projektbeschreibung ist der versionierte
+    Input, eingefroren im RunProjectSnapshot)."""
     eligible = {v.source_version_id: v for v in _eligible_versions(db, project_id, workspace_id)}
 
     if requested_version_ids:
@@ -56,7 +60,7 @@ def build_source_snapshot(
     else:
         versions = list(eligible.values())
 
-    if not versions:
+    if not versions and not allow_empty:
         raise ProblemException(
             status=422,
             code="no_valid_sources",

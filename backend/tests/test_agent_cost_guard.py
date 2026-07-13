@@ -46,8 +46,11 @@ def test_fake_provider_cost_is_zero(db):
         db, run_id=run_id, workspace_id="ws-demo", provider="fake", model_id="x",
         usage=ProviderUsage(input_tokens=5, output_tokens=7),
     )
-    assert rec.cost_chf == 0.0  # no pricing config → placeholder only
+    assert rec.cost_chf == 0.0  # kein externer Call → kein Preis
     assert rec.input_tokens == 5 and rec.output_tokens == 7
+    # EVAL.1: fake ⇒ not_applicable, nie unknown_price; keine Preisversion.
+    assert rec.cost_status == "not_applicable"
+    assert rec.price_version is None
 
 
 def test_output_token_cap(db):

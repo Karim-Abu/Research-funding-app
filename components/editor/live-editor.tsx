@@ -1,8 +1,10 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { ExternalLink, Link2, RefreshCw, Sparkles, Trash2 } from "lucide-react"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
+import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Textarea } from "@/components/ui/textarea"
@@ -26,11 +28,14 @@ import {
 import {
   listEvidence,
   formatFundstelle,
-  VERIFICATION_LABELS,
   EVIDENCE_LINK_STATUS_LABELS,
   EVIDENCE_SOURCE_TYPE_LABELS,
   type EvidenceAnchorDto,
 } from "@/lib/evidence"
+import { supportStatusFromVerification } from "@/lib/evidence-ladder"
+import { SupportStatusBadge } from "@/components/status/support-status-badge"
+import { listPortalFields, type PortalFieldInfoDto } from "@/lib/portal-fields"
+import { placeholderMatches } from "@/lib/draft-view"
 import {
   getReview,
   createHumanDecision,
@@ -69,7 +74,7 @@ import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
 import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
-import { getActiveProjectId } from "@/lib/intake-store"
+import { getActiveProjectId, loadIntake } from "@/lib/intake-store"
 import {
   CREATED_BY_LABELS,
   liveFieldToViewModel,
@@ -77,13 +82,81 @@ import {
   type AssistantTab,
 } from "@/lib/draft-viewmodel"
 import {
+  AI_REASON_INFO,
   createRedraft,
+  FALLBACK_AI_REASON,
+  getRunFieldSuggestion,
   isA2Field,
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
+
+// R4.2 — jeder KI-Blockgrund nennt Grund + Ausweg. Navigations-CTAs führen zur
+// Quellen-/Analyseseite (Datenklasse, Analyse-Einstellungen, Quellen hinzufügen).
+const REASON_CTA_HREF: Record<string, string> = {
+  nda_locked: "/quellen",
+  mode_deterministic_only: "/quellen",
+  run_mode_mismatch: "/quellen",
+  missing_sources: "/quellen",
+}
+
+function A2ReasonNotice({
+  reason,
+  onUseTemplate,
+}: {
+  reason: string
+  onUseTemplate?: () => void
+}) {
+  const [adminHintOpen, setAdminHintOpen] = React.useState(false)
+  const info = AI_REASON_INFO[reason] ?? AI_REASON_INFO[FALLBACK_AI_REASON]
+  const href = REASON_CTA_HREF[reason]
+  return (
+    <div className="flex flex-col gap-1.5" data-reason-code={reason}>
+      <p role="status" className="text-xs text-muted-foreground">
+        {info.text}
+      </p>
+      {href ? (
+        <Link
+          href={href}
+          className={cn(
+            buttonVariants({ variant: "outline", size: "sm" }),
+            "self-start"
+          )}
+        >
+          {info.ctaLabel}
+        </Link>
+      ) : reason === "field_not_supported" ? (
+        <Button
+          size="sm"
+          variant="outline"
+          className="self-start"
+          onClick={onUseTemplate}
+        >
+          {info.ctaLabel}
+        </Button>
+      ) : (
+        <>
+          <Button
+            size="sm"
+            variant="outline"
+            className="self-start"
+            onClick={() => setAdminHintOpen((v) => !v)}
+          >
+            {info.ctaLabel}
+          </Button>
+          {adminHintOpen && (
+            <p className="text-xs text-muted-foreground">
+              Ein freigegebener KI-Provider muss durch Ihre Administration
+              konfiguriert werden. Alle übrigen Funktionen bleiben verfügbar.
+            </p>
+          )}
+        </>
+      )}
+    </div>
+  )
+}
 
 const RECHECK_NOTICE =
   "Änderungen gespeichert. Eine erneute Prüfung ist vor der Freigabe erforderlich."
@@ -109,8 +182,13 @@ export function LiveEditor({
 }) {
   // M9I-B: the active project drives the read-only market-comparison context.
   const marketProjectId = getActiveProjectId() ?? undefined
+  // R4.4: Datenklasse für das Format-Cache-Gate — fehlt jedes Signal, bleibt
+  // der Cache fail-closed deaktiviert (isRichCacheAllowed(undefined) = false).
+  const workspaceDataClass = loadIntake()?.vertraulichkeit || undefined
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
   const [anchors, setAnchors] = React.useState<EvidenceAnchorDto[]>([])
+  // R6: Registry-Katalog für die Unterabschnitts-Gliederung der Composite-Felder.
+  const [portalCatalog, setPortalCatalog] = React.useState<PortalFieldInfoDto[]>([])
   const [requirements, setRequirements] = React.useState<
     RequirementAssessmentDto[] | null
   >(null)
@@ -137,16 +215,24 @@ export function LiveEditor({
   // M9D/9E: A2 draft suggestions (Solution & Innovation + Value Creation fields).
   const [a2Suggestion, setA2Suggestion] = React.useState<A2Suggestion | null>(null)
   const [a2Loading, setA2Loading] = React.useState(false)
-  const [a2Unavailable, setA2Unavailable] = React.useState(false)
+  // R4.2: statt Boolean der konkrete Blockgrund (Katalog-Code) oder null.
+  const [a2UnavailableReason, setA2UnavailableReason] = React.useState<
+    string | null
+  >(null)
   const [a2Error, setA2Error] = React.useState<string | null>(null)
   const [a2ReviewOpen, setA2ReviewOpen] = React.useState(false)
   const [a2Accepting, setA2Accepting] = React.useState(false)
+  // True, wenn der angezeigte Vorschlag aus dem Analyse-Lauf stammt (statt
+  // aus einem manuellen «KI-Vorschlag erstellen»).
+  const [a2FromRun, setA2FromRun] = React.useState(false)
+  const selectedIdRef = React.useRef<string | null>(null)
   const autoSelectedRef = React.useRef(false)
   const editorRef = React.useRef<RichTextEditorHandle>(null)
 
   const selected = fields?.find((f) => f.field_id === selectedId) ?? null
   const showA2Controls = isA2Field(selected?.field_id)
   const comparisonEnabled = caps?.features?.market_comparison === true
+  const marketResearchEnabled = caps?.features?.web_research === true
 
   React.useEffect(() => {
     let active = true
@@ -177,10 +263,30 @@ export function LiveEditor({
   function resetA2() {
     setA2Suggestion(null)
     setA2Loading(false)
-    setA2Unavailable(false)
+    setA2UnavailableReason(null)
     setA2Error(null)
     setA2ReviewOpen(false)
     setA2Accepting(false)
+    setA2FromRun(false)
+  }
+
+  // Im Analyse-Lauf erzeugte Vorschläge (proposed, zur aktuellen Basis)
+  // beim Feldwechsel anzeigen — Anzeige only, nie Auto-Übernahme.
+  async function loadRunSuggestion(draft: PortalFieldDraftDto) {
+    if (!isA2Field(draft.field_id)) return
+    try {
+      const suggestion = await getRunFieldSuggestion(runId, draft.field_id)
+      if (
+        suggestion &&
+        suggestion.base_version_id === draft.current_version.draft_version_id &&
+        selectedIdRef.current === draft.field_id
+      ) {
+        setA2Suggestion(suggestion)
+        setA2FromRun(true)
+      }
+    } catch {
+      // Read-only-Zusatz: ein Fehler blockiert den Editor nie.
+    }
   }
 
   const loadReview = React.useCallback(() => {
@@ -192,10 +298,15 @@ export function LiveEditor({
   const load = React.useCallback(() => {
     setLoadError(null)
     setFields(null)
-    Promise.all([listFields(runId), listEvidence(runId).catch(() => [])])
-      .then(([drafts, ev]) => {
+    Promise.all([
+      listFields(runId),
+      listEvidence(runId).catch(() => []),
+      listPortalFields(runId).catch(() => []),
+    ])
+      .then(([drafts, ev, catalog]) => {
         setFields(drafts)
         setAnchors(ev)
+        setPortalCatalog(catalog)
         if (drafts.length && !autoSelectedRef.current) {
           autoSelectedRef.current = true
           // Deep link (?field=…) wins over the default first field; unknown
@@ -224,6 +335,7 @@ export function LiveEditor({
 
   function selectField(draft: PortalFieldDraftDto) {
     setSelectedId(draft.field_id)
+    selectedIdRef.current = draft.field_id
     setLocalText(draft.current_version.text)
     setBaseVersionId(draft.current_version.draft_version_id)
     setSaveState("saved")
@@ -233,20 +345,22 @@ export function LiveEditor({
     setConfirmResolveId(null)
     setAssistantTab(null)
     resetA2()
+    void loadRunSuggestion(draft)
   }
 
   async function generateSuggestion() {
     if (!selected) return
     setA2Loading(true)
     setA2Error(null)
-    setA2Unavailable(false)
+    setA2UnavailableReason(null)
     try {
       const suggestion = await createRedraft(runId, selected.field_id, baseVersionId)
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
     } catch (e) {
       if (e instanceof RedraftError && e.status === 503) {
-        setA2Unavailable(true)
+        // Ohne bekannten Code fail-closed auf provider_unavailable.
+        setA2UnavailableReason(e.reasonCode ?? FALLBACK_AI_REASON)
       } else if (e instanceof RedraftError && e.status === 409) {
         setConflict(true)
       } else {
@@ -391,7 +505,7 @@ export function LiveEditor({
       }
     }
     if (/beleg|evidenz|fundstelle|quelle/.test(text)) {
-      return { label: "Belege öffnen", onClick: () => setAssistantTab("belege") }
+      return { label: "Quellen öffnen", onClick: () => setAssistantTab("quellen") }
     }
     return null
   }
@@ -486,6 +600,10 @@ export function LiveEditor({
   const viewModels = fields.map((f) => liveFieldToViewModel(f, review))
   const activeVm = viewModels.find((v) => v.id === selected.field_id) ?? viewModels[0]
 
+  // R6: sichtbare Unterabschnitte des ausgewählten Composite-Felds (Registry).
+  const subsectionDefs =
+    portalCatalog.find((p) => p.field_id === selected.field_id)?.subsections ?? []
+
   const hasBlocker = (review?.blocker_count ?? 0) > 0 || selectedFindings.some((f) => f.severity === "blocker")
   const hasBackedMarketData =
     comparisonEnabled &&
@@ -515,7 +633,6 @@ export function LiveEditor({
             const anchor = anchorById.get(l.anchor_id)
             const claim = l.claim_text?.trim() || anchor?.quote || "Aussage nicht verfügbar"
             const isUrl = anchor?.source_type === "url"
-            const humanChecked = anchor?.verification_status === "human_verified"
             return (
               <li
                 key={l.evidence_link_id}
@@ -538,23 +655,16 @@ export function LiveEditor({
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
                   {anchor && (
-                    <Badge
-                      variant={
-                        anchor.verification_status === "exact_verified" || humanChecked
-                          ? "default"
-                          : "outline"
+                    <SupportStatusBadge
+                      status={
+                        l.support_status ??
+                        anchor.support_status ??
+                        supportStatusFromVerification(anchor.verification_status)
                       }
-                    >
-                      {VERIFICATION_LABELS[anchor.verification_status]}
-                    </Badge>
+                    />
                   )}
                   {l.status === "stale" && (
                     <Badge variant="outline">{EVIDENCE_LINK_STATUS_LABELS.stale}</Badge>
-                  )}
-                  {anchor && !humanChecked && (
-                    <span className="text-[11px] text-muted-foreground">
-                      fachliche Prüfung offen
-                    </span>
                   )}
                 </div>
                 <div className="flex flex-wrap items-center gap-3">
@@ -563,7 +673,7 @@ export function LiveEditor({
                       href={
                         isUrl
                           ? anchor.source_name
-                          : `/quellen?tab=evidenz&anchor=${encodeURIComponent(anchor.anchor_id)}`
+                          : `/anforderungen?tab=evidenz&anchor=${encodeURIComponent(anchor.anchor_id)}`
                       }
                       {...(isUrl ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                       className="inline-flex items-center gap-1 text-[11px] font-medium text-muted-foreground hover:text-foreground"
@@ -602,9 +712,13 @@ export function LiveEditor({
           <div key={a.anchor_id} className="rounded border border-border px-2 py-2 text-xs">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-muted-foreground">{a.source_name}</span>
-              <Badge variant={a.verification_status === "exact_verified" ? "default" : "outline"}>
-                {VERIFICATION_LABELS[a.verification_status]}
-              </Badge>
+              <SupportStatusBadge
+                short
+                status={
+                  a.support_status ??
+                  supportStatusFromVerification(a.verification_status)
+                }
+              />
             </div>
             <p className="mt-1 line-clamp-2">{a.quote}</p>
             <Button
@@ -623,7 +737,70 @@ export function LiveEditor({
     </div>
   )
 
-  // --- Right panel: Anforderungen (per-field join via review findings) ---
+  // --- Right panel: Fehlende Angaben (konkrete Fragen: Platzhalter +
+  // Anforderungen mit fehlenden Angaben + betroffene Anforderungen) ---
+  const openPlaceholders = placeholderMatches(localText)
+  const needsInputRequirements = fieldRequirements.filter(
+    (r) => r.status === "needs_input"
+  )
+  const fehlendeQuestions = (
+    <>
+      {openPlaceholders.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Offene Angaben im Text
+          </h4>
+          <ul className="flex flex-col gap-1">
+            {openPlaceholders.map((m, i) => {
+              const snippet = localText.slice(m.start, m.end)
+              return (
+                <li
+                  key={`${m.start}-${m.end}`}
+                  className="flex items-start justify-between gap-2 rounded border border-border px-2 py-1.5 text-xs"
+                >
+                  <span className="min-w-0 flex-1 text-foreground">
+                    Welche Angabe gehört hier hin? „{snippet}“
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => editorRef.current?.selectPlaceholder(i)}
+                    className="shrink-0 text-[11px] font-medium text-primary hover:underline"
+                  >
+                    Im Text markieren
+                  </button>
+                </li>
+              )
+            })}
+          </ul>
+        </div>
+      )}
+      {needsInputRequirements.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Fehlende Angaben zu Anforderungen
+          </h4>
+          <ul className="flex flex-col gap-1">
+            {needsInputRequirements.map((r) => (
+              <li
+                key={r.assessment_id}
+                className="rounded border border-border px-2 py-1.5 text-xs text-foreground"
+              >
+                {`Welche Angaben fehlen zu „${r.title?.trim() || REQ_FALLBACK.title}“?`}{" "}
+                <a
+                  href={`/anforderungen?requirement=${encodeURIComponent(r.requirement_id)}`}
+                  className="font-medium text-primary hover:underline"
+                >
+                  Angaben ergänzen
+                </a>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </>
+  )
+
+  // --- Right panel: betroffene Anforderungen (Teil von "Fehlende Angaben") ---
   const anforderungenContent =
     requirements === null ? (
       <Skeleton className="h-16 w-full" />
@@ -678,6 +855,85 @@ export function LiveEditor({
         })}
       </ul>
     )
+
+  const fehlendeContent = (
+    <div className="flex flex-col gap-3">
+      {openPlaceholders.length === 0 && needsInputRequirements.length === 0 && (
+        <p className="text-xs text-muted-foreground">
+          Keine offenen Angaben im Text dieses Abschnitts.
+        </p>
+      )}
+      {fehlendeQuestions}
+      <div className="flex flex-col gap-1.5">
+        <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+          Betroffene Anforderungen
+        </h4>
+        {anforderungenContent}
+      </div>
+    </div>
+  )
+
+  // --- Right panel: Schwächen (feldbezogene Findings mit Warum/Aktion/HITL) ---
+  const schwaechenContent = (
+    <div className="flex flex-col gap-2">
+      {selectedFindings.length === 0 ? (
+        <p className="text-xs text-muted-foreground">
+          Für diesen Abschnitt liegen keine Schwächen-Hinweise vor.
+        </p>
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {selectedFindings.map((f) => {
+            const action = findingAction(f)
+            return (
+              <li
+                key={f.finding_id}
+                className="flex flex-col gap-1.5 rounded-md border border-border px-3 py-2 text-xs"
+              >
+                <div className="flex items-start gap-2">
+                  <Badge
+                    variant={f.severity === "blocker" ? "destructive" : "outline"}
+                    className="shrink-0"
+                  >
+                    {f.severity === "blocker" ? "Blocker" : "Hinweis"}
+                  </Badge>
+                  {isAiFinding(f) && (
+                    <Badge variant="outline" className="shrink-0">
+                      KI-Prüfung
+                    </Badge>
+                  )}
+                </div>
+                {/* Warum */}
+                <p className="text-foreground">{parseCommentType(f.description).text}</p>
+                {/* Nächste Aktion */}
+                {f.suggested_improvement && (
+                  <p className="text-muted-foreground">
+                    Nächster Schritt: {f.suggested_improvement}
+                  </p>
+                )}
+                {action && (
+                  <button
+                    type="button"
+                    onClick={action.onClick}
+                    className="self-start text-[11px] font-medium text-primary hover:underline"
+                  >
+                    {action.label}
+                  </button>
+                )}
+              </li>
+            )
+          })}
+        </ul>
+      )}
+      {/* HITL-Hinweis: die fachliche Entscheidung bleibt beim Menschen. */}
+      <p className="text-[11px] text-muted-foreground">
+        Hinweise sind Unterstützung für Ihre Prüfung — sie sind keine
+        Förderentscheidung.{" "}
+        <a href="/review" className="font-medium text-primary hover:underline">
+          Zur Gesamtprüfung
+        </a>
+      </p>
+    </div>
+  )
 
   // --- Right panel: Kommentare (review hints + comment box + approve) ---
   const kommentareContent = (
@@ -886,6 +1142,9 @@ export function LiveEditor({
       editorRef={editorRef}
       serverText={selected.current_version.text}
       projectId={marketProjectId}
+      dataClass={workspaceDataClass}
+      subsections={subsectionDefs}
+      onJumpToSubsection={(marker) => editorRef.current?.selectMatch(marker)}
       kiContent={
         <div className="flex flex-col gap-2">
           {showA2Controls ? (
@@ -906,12 +1165,18 @@ export function LiveEditor({
                   </Button>
                 )}
               </div>
-              {a2Unavailable && (
-                <p role="status" className="text-xs text-muted-foreground">
-                  KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.
+              {a2UnavailableReason && (
+                <A2ReasonNotice reason={a2UnavailableReason} />
+              )}
+              {a2Suggestion && a2FromRun && !a2ReviewOpen && (
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="run-suggestion-hint"
+                >
+                  Vorschlag aus der Analyse — Prüfung nötig.
                 </p>
               )}
-              {!a2Suggestion && !a2Loading && !a2Unavailable && !a2Error && (
+              {!a2Suggestion && !a2Loading && !a2UnavailableReason && !a2Error && (
                 <p className="text-xs text-muted-foreground">
                   KI-Vorschlag für diesen Abschnitt noch nicht erstellt.
                 </p>
@@ -919,13 +1184,20 @@ export function LiveEditor({
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
             </div>
           ) : (
-            <p
-              className="text-xs text-muted-foreground"
+            <div
+              className="flex flex-col gap-1.5"
               data-testid="a2-field-unavailable"
             >
-              KI-Vorschläge sind für dieses Feld nicht verfügbar — sie unterstützen
-              die Abschnitte «Lösung &amp; Innovation» und «Wertschöpfung».
-            </p>
+              <A2ReasonNotice
+                reason="field_not_supported"
+                onUseTemplate={() => editorRef.current?.focus?.()}
+              />
+              <p className="text-xs text-muted-foreground">
+                KI-Vorschläge unterstützen aktuell die Abschnitte «Abstract»,
+                «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,
+                «Finanzielle Unabhängigkeit» und «Management-Stunden».
+              </p>
+            </div>
           )}
           <p className="text-[11px] text-muted-foreground">
             Vorschläge werden nie automatisch übernommen — Sie prüfen, übernehmen
@@ -949,10 +1221,12 @@ export function LiveEditor({
             comparisonLoaded,
             comparisonEnabled,
             onOpenComparison: () => setMarketSheetOpen(true),
+            marketResearchEnabled,
           }}
           suggestionExists={false}
-          belegeContent={belegeContent}
-          anforderungenContent={anforderungenContent}
+          quellenContent={belegeContent}
+          fehlendeContent={fehlendeContent}
+          schwaechenContent={schwaechenContent}
           kommentareContent={kommentareContent}
           versionsFootnote={
             <p className="text-xs text-muted-foreground">

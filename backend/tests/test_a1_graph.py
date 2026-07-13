@@ -60,8 +60,10 @@ def test_cloud_path_persists_facts_and_runs_discovery(monkeypatch, fresh):
         select(ExtractedFact).where(ExtractedFact.run_id == run_id)
     ).all()
     assert len(facts) == 1  # A1 ran and persisted
-    # Fact extraction ran; only A1 agents are ever invoked (no A2/A3). The same
-    # stage also runs A1.evidence_candidate_mapping (M9C).
+    # Fact extraction ran; DIESER Knoten ruft ausschliesslich A1-Agenten auf
+    # (A2/A3 laufen seit der Graph-Anbindung in eigenen, späteren Knoten —
+    # test_run_a2_graph.py deckt das ab). Die Stage umfasst auch
+    # A1.evidence_candidate_mapping (M9C).
     invs = fresh.scalars(
         select(AgentInvocation).where(AgentInvocation.run_id == run_id)
     ).all()

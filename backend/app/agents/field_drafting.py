@@ -12,19 +12,23 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import a2_fields, data_policy, gateway
 from app.agents import field_drafting_context as a2_context
 from app.agents.a2_fields import A2FieldConfig
 from app.agents.prompt_assets import prompt_version_for
+from app.agents.proposal import build_proposal, proposal_anchor_violations
 from app.agents.schemas import (
     SchemaNotImplementedError,
     ValidationError,
     validate_payload,
 )
+from app.config import provider_policy
 from app.config.settings import get_settings
-from app.db.models import AnalysisRun
+from app.db.models import AgentInvocation, AnalysisRun, ProcessingConfirmation
+from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
 from app.repositories import draft_suggestions as suggestions_repo
@@ -33,7 +37,6 @@ logger = logging.getLogger("app.agents.field_drafting")
 
 INPUT_SCHEMA = "FieldDraftingInput@v1"
 OUTPUT_SCHEMA = "PortalFieldDraftBundle@v1"
-_NO_CALL_MODES = ("deterministic_only", "local_only")
 # Backward-compatible SOL entry point used by M9D tests.
 SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
@@ -82,6 +85,24 @@ def _classification(run: AnalysisRun) -> dict:
     return dict(run.effective_data_classification or {})
 
 
+def local_ai_confirmed(run: AnalysisRun) -> bool:
+    """R4.3: True, wenn dieser local_only-Lauf mit einer verbrauchten
+    Local-AI-Opt-in-Bestätigung erstellt wurde (Owner-Entscheid 2026-07-08)."""
+    try:
+        db = Session.object_session(run)
+    except Exception:  # kein ORM-Objekt (z. B. Test-Stub) → fail-closed
+        return False
+    if db is None:
+        return False
+    return db.scalar(
+        select(ProcessingConfirmation.confirmation_id).where(
+            ProcessingConfirmation.used_by_run_id == run.run_id,
+            ProcessingConfirmation.processing_mode == "local_only",
+            ProcessingConfirmation.status == "used",
+        )
+    ) is not None
+
+
 def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     """Per-run availability for createRedraft's 503 pre-check, for a specific A2
     field. Reads the run's existing processing mode + classification — NEVER upgrades
@@ -90,20 +111,40 @@ def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     if config is None:
         return False, "field_not_supported"
     mode = run.processing_mode
-    if mode in _NO_CALL_MODES:
-        return False, f"processing_mode_{mode}"
-    registry = gateway.get_agent_registry()
     settings = get_settings()
+    registry = gateway.get_agent_registry()
+    if mode == "deterministic_only":
+        return False, "processing_mode_deterministic_only"
+    confirmed = False
+    if mode == "local_only":
+        # R4.3: lokaler KI-Pfad nur mit Opt-in-Bestätigung des Laufs; ohne sie
+        # bleibt der Lauf regelbasiert (kein stiller Upgrade).
+        confirmed = local_ai_confirmed(run)
+        if not confirmed:
+            return False, "processing_mode_local_only"
+        if not settings.agent_fake_provider:
+            # Der lokale Pfad darf NUR von einem lokalen Adapter bedient werden
+            # — direkte Cloud-Adapter sind hier nie zulässig, egal welche Keys
+            # gesetzt sind. (Heute existiert nur der Fake als lokaler Adapter.)
+            route = registry.route(registry.profile(config.profile_id).primary_model)
+            adapter = _PROVIDER_RESOLVER(route)
+            if (
+                provider_policy.kind_of_adapter(adapter)
+                != provider_policy.ProviderKind.FAKE_LOCAL
+                or not adapter.available()
+            ):
+                return False, "provider_unavailable"
     decision = data_policy.evaluate(
         profile=registry.profile(config.profile_id), classification=_classification(run),
-        processing_mode=mode, settings=settings, run_confirmation=False,
+        processing_mode=mode, settings=settings, run_confirmation=confirmed,
+        local_provider=(mode == "local_only"),
     )
     if decision.blocked:
         return False, decision.reason
     # A provider must actually be available: a real configured route OR the dev/test
     # fake. Without either, A2 is unavailable (503) rather than a failing async job.
     # Uses the module-level resolver so the orchestrator and this pre-check agree.
-    if not settings.agent_fake_provider:
+    if mode == "cloud_assisted" and not settings.agent_fake_provider:
         route = registry.route(registry.profile(config.profile_id).primary_model)
         adapter = _PROVIDER_RESOLVER(route)
         if adapter is None or not adapter.available():
@@ -134,10 +175,8 @@ def _validate_candidate(bundle, ctx, config: A2FieldConfig) -> tuple[_Validated 
         return None, "character_limit_exceeded"
     if not _mandatory_structure_ok(cand.suggested_text, config.mandatory_markers):
         return None, "mandatory_structure_missing"
-    bad_anchor = next(
-        (a for a in cand.evidence_anchor_ids if a not in ctx.allowed_anchor_ids), None
-    )
-    if bad_anchor is not None:
+    # R5.2: used_anchor_ids ⊆ allowed_anchor_ids (wiederverwendbarer Helper).
+    if proposal_anchor_violations(cand.evidence_anchor_ids, ctx.allowed_anchor_ids):
         return None, "unknown_evidence_anchor"
     bad_issue = next(
         (i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None
@@ -147,7 +186,7 @@ def _validate_candidate(bundle, ctx, config: A2FieldConfig) -> tuple[_Validated 
     warnings = []
     if bundle.placeholders:
         warnings.append("contains_placeholders")
-    if ctx.confirmed_facts:
+    if ctx.advisory_facts:
         warnings.append("based_on_unconfirmed_facts")
     return _Validated(candidate=cand, warnings=warnings), ""
 
@@ -205,12 +244,20 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     existing = suggestions_repo.get_proposed_for(db, run.run_id, draft_id, base_version_id)
     if existing is not None:
         return A2Outcome(status="reused", suggestion_id=existing.suggestion_id,
-                         view=_suggestion_view(existing))
+                         view=_suggestion_view(db, run, existing))
 
     mode = run.processing_mode
-    if mode in _NO_CALL_MODES:
+    if mode == "deterministic_only":
         _audit(db, run, "agent.field_drafting.skipped", field_id, {"reason": f"mode_{mode}"})
         return A2Outcome(status="skipped", reason=f"mode_{mode}")
+    confirmed = False
+    if mode == "local_only":
+        # R4.3: nur mit Opt-in-Bestätigung des Laufs (kein stiller Upgrade).
+        confirmed = local_ai_confirmed(run)
+        if not confirmed:
+            _audit(db, run, "agent.field_drafting.skipped", field_id,
+                   {"reason": f"mode_{mode}"})
+            return A2Outcome(status="skipped", reason=f"mode_{mode}")
 
     _audit(db, run, "agent.field_drafting.started", field_id, {"profile_id": config.profile_id})
     ctx = a2_context.assemble_a2_context(db, run, field_id=field_id, profile_id=config.profile_id)
@@ -229,7 +276,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     request = gateway.ModelRequest(
         profile_id=config.profile_id, workspace_id=run.workspace_id, input_payload=input_payload,
         classification=_classification(run), processing_mode=mode, run_id=run.run_id,
-        project_id=run.project_id, run_confirmation=False,
+        project_id=run.project_id, run_confirmation=confirmed,
         prompt_version=prompt_version_for(config.profile_id), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
     )
@@ -281,15 +328,42 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     return A2Outcome(
         status="succeeded", suggestion_id=suggestion.suggestion_id,
         invocation_id=result.invocation_id,
-        view=_suggestion_view(suggestion, evidence=ctx.verified_evidence,
+        view=_suggestion_view(db, run, suggestion, evidence=ctx.verified_evidence,
                               warnings=validated.warnings),
     )
 
 
-def _suggestion_view(suggestion, *, evidence: list | None = None, warnings: list | None = None) -> dict:
+def proposed_suggestion_view(db, run, suggestion) -> dict:
+    """Read-only View einer bestehenden proposed Suggestion für den
+    Suggestion-Read-Endpoint — identisch zum Redraft-Operation-Result
+    (Reused-Pfad: Placeholder-Heuristik für die warnings)."""
+    return _suggestion_view(db, run, suggestion)
+
+
+def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
+                     warnings: list | None = None) -> dict:
+    """Operation-Result-View + typisiertes AIProposal (R5.2, additiv).
+
+    Reused-Pfad: warnings fallen auf die Placeholder-Heuristik zurück (kein
+    ctx verfügbar) — das AIProposal übernimmt dieselben safety_notes.
+    """
     anchor_ids = set(suggestion.evidence_anchor_ids or [])
     used = [e for e in (evidence or []) if e["anchor_id"] in anchor_ids]
     config = a2_fields.resolve_field_config(suggestion.field_id)
+    warn = warnings if warnings is not None else (
+        ["contains_placeholders"] if suggestion.placeholders else []
+    )
+    invocation = (
+        db.get(AgentInvocation, suggestion.agent_invocation_id)
+        if suggestion.agent_invocation_id else None
+    )
+    data_mode = derive_data_mode(
+        ai_eval_mode=get_settings().ai_eval_mode,
+        origin=(run.effective_data_classification or {}).get("origin"),
+    )
+    proposal = build_proposal(
+        suggestion, invocation, data_mode=data_mode, safety_notes=warn
+    )
     return {
         "suggestion_id": suggestion.suggestion_id,
         "operation_id": suggestion.operation_id,
@@ -302,7 +376,7 @@ def _suggestion_view(suggestion, *, evidence: list | None = None, warnings: list
         "placeholders": list(suggestion.placeholders or []),
         "character_count": suggestion.character_count,
         "character_limit": config.char_limit if config else None,
-        "warnings": warnings if warnings is not None else (
-            ["contains_placeholders"] if suggestion.placeholders else []
-        ),
+        "warnings": warn,
+        # mode="json": datetime → ISO-String für die AsyncOperation-JSON-Spalte.
+        "ai_proposal": proposal.model_dump(mode="json"),
     }

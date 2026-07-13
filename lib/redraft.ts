@@ -1,19 +1,29 @@
 // A2 draft-suggestion client (Milestone 9D; extended to Value Creation in 9E).
 // createRedraft (202 async) → poll the operation → the suggestion in result.
 // Advisory only: accepting is a separate updateField call with source_operation_id.
-// Scoped to the A2-enabled fields below; no provider/model details ever surface.
+// Scoped to the A2-enabled fields below. R5.2 (Owner-Entscheid): das typisierte
+// AIProposal (inkl. provider/model/model_ref) fliesst in die Datenschicht,
+// wird aber weiterhin nirgends in der Standard-UI angezeigt.
 
 import { getCsrfToken } from "./session"
 import { pollOperation, type AsyncOperationDto } from "./operations"
 
 export const SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 export const VALUE_CREATION_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+export const ABSTRACT_FIELD_ID = "INTRO.APP.ABSTRACT"
+export const EXECUTIVE_SUMMARY_FIELD_ID = "INTRO.APP.EXECUTIVE_SUMMARY"
+export const FINANCIAL_INDEPENDENCE_FIELD_ID = "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS"
+export const MANAGEMENT_HOURS_EXPLANATION_FIELD_ID = "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION"
 
 // The explicit set of fields that may request an A2 suggestion. Mirrors the
 // backend registry-backed allow-list; the backend stays authoritative.
 export const A2_FIELD_IDS: ReadonlySet<string> = new Set([
   SOLUTION_INNOVATION_FIELD_ID,
   VALUE_CREATION_FIELD_ID,
+  ABSTRACT_FIELD_ID,
+  EXECUTIVE_SUMMARY_FIELD_ID,
+  FINANCIAL_INDEPENDENCE_FIELD_ID,
+  MANAGEMENT_HOURS_EXPLANATION_FIELD_ID,
 ])
 
 export function isA2Field(fieldId: string | undefined | null): boolean {
@@ -34,6 +44,30 @@ export interface A2Placeholder {
   reason?: string | null
 }
 
+export interface AIMissingInput {
+  label: string
+  reason?: string | null
+}
+
+// R5.2 — typisiertes AIProposal (Spiegel von backend/app/agents/proposal.py).
+// human_review_required ist im Typ auf `true` fixiert: keine Auto-Übernahme.
+export interface AIProposal {
+  suggestion_text: string
+  used_anchor_ids: string[]
+  missing_inputs: AIMissingInput[]
+  profile_id: string
+  prompt_version: string | null
+  context_hash: string | null
+  model_ref: string
+  created_at: string
+  data_mode: string
+  provider: string
+  model: string
+  usage_record_id?: string | null
+  safety_notes?: string[]
+  human_review_required: true
+}
+
 export interface A2Suggestion {
   suggestion_id: string
   operation_id: string
@@ -47,23 +81,80 @@ export interface A2Suggestion {
   character_count: number
   character_limit: number
   warnings: string[]
+  ai_proposal?: AIProposal
+}
+
+/** Fail-closed AIProposal-Parser: ungültige/fremde Shapes ⇒ null. */
+export function parseAIProposal(value: unknown): AIProposal | null {
+  if (typeof value !== "object" || value === null) return null
+  const v = value as Record<string, unknown>
+  const requiredStrings = [
+    "suggestion_text", "profile_id", "model_ref", "created_at",
+    "data_mode", "provider", "model",
+  ] as const
+  if (requiredStrings.some((k) => typeof v[k] !== "string")) return null
+  if (v.human_review_required !== true) return null
+  if (!Array.isArray(v.used_anchor_ids) || !Array.isArray(v.missing_inputs)) return null
+  return v as unknown as AIProposal
 }
 
 export class RedraftError extends Error {
   readonly status: number
   readonly code: string
-  constructor(status: number, code: string, message: string) {
+  /** R4.2: maschinenlesbarer Verfügbarkeits-Blockgrund (Katalog-Code) oder null. */
+  readonly reasonCode: string | null
+  constructor(status: number, code: string, message: string, reasonCode: string | null = null) {
     super(message)
     this.name = "RedraftError"
     this.status = status
     this.code = code
+    this.reasonCode = reasonCode
   }
 }
 
+// R4.2 — Owner-approved Microcopy je Reason-Code (docs/repair/message-catalog.md
+// §R4.2). Text und CTA-Label sind freigegeben; Änderungen laufen über den Katalog.
+export interface AiReasonInfo {
+  text: string
+  ctaLabel: string
+}
+
+export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
+  nda_locked: {
+    text: "Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert.",
+    ctaLabel: "Verarbeitungsmodus prüfen",
+  },
+  mode_deterministic_only: {
+    text: "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt.",
+    ctaLabel: "Verarbeitungsmodus ändern",
+  },
+  provider_unavailable: {
+    text: "Es ist kein freigegebener KI-Provider konfiguriert.",
+    ctaLabel: "Provider-Konfiguration prüfen",
+  },
+  run_mode_mismatch: {
+    text: "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
+    ctaLabel: "Analysemodus prüfen",
+  },
+  missing_sources: {
+    text: "Für einen belastbaren Vorschlag fehlen passende Quellen.",
+    ctaLabel: "Quelle hinzufügen",
+  },
+  field_not_supported: {
+    text: "Für dieses Feld ist noch kein KI-Vorschlag verfügbar.",
+    ctaLabel: "Strukturvorlage nutzen",
+  },
+}
+
+/** Fail-closed-Anzeige, wenn ein 503 ohne bekannten Code eintrifft. */
+export const FALLBACK_AI_REASON = "provider_unavailable"
+
 const MESSAGES: Record<string, string> = {
-  ai_unavailable:
-    "KI-Vorschläge sind für diese Datenklasse oder Umgebung nicht verfügbar.",
   stale_base_version: "Dieser Abschnitt wurde zwischenzeitlich geändert.",
+}
+
+function reasonMessage(reasonCode: string | null): string | null {
+  return reasonCode ? (AI_REASON_INFO[reasonCode]?.text ?? null) : null
 }
 
 function csrfHeaders(): Record<string, string> {
@@ -73,15 +164,36 @@ function csrfHeaders(): Record<string, string> {
 
 async function toError(res: Response): Promise<RedraftError> {
   let code = "error"
+  let reasonCode: string | null = null
   try {
     const body = await res.json()
     if (body?.code) code = body.code
+    if (typeof body?.reason_code === "string") reasonCode = body.reason_code
   } catch {
     /* non-JSON */
   }
   const message =
-    MESSAGES[code] ?? "Der KI-Vorschlag konnte nicht erstellt werden."
-  return new RedraftError(res.status, code, message)
+    MESSAGES[code] ??
+    reasonMessage(reasonCode) ??
+    "Der KI-Vorschlag konnte nicht erstellt werden."
+  return new RedraftError(res.status, code, message, reasonCode)
+}
+
+/** Offene (proposed) Suggestion zur aktuellen Basisversion — z. B. aus dem
+ *  normalen Analyse-Lauf erzeugt. Read-only; null, wenn keine vorliegt. */
+export async function getRunFieldSuggestion(
+  runId: string,
+  fieldId: string
+): Promise<A2Suggestion | null> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestion`
+  )
+  if (!res.ok) throw await toError(res)
+  const body = (await res.json()) as { suggestion: Record<string, unknown> | null }
+  if (!body.suggestion) return null
+  const base = body.suggestion as unknown as A2Suggestion
+  const proposal = parseAIProposal(body.suggestion.ai_proposal)
+  return { ...base, ai_proposal: proposal ?? undefined }
 }
 
 /** Request a suggestion and resolve once the async operation produces it. */
@@ -109,14 +221,22 @@ export async function createRedraft(
     pollOperation(accepted.operation_id, {
       onTerminal: (op: AsyncOperationDto) => {
         if (op.status === "succeeded" && op.result) {
-          resolve(op.result as unknown as A2Suggestion)
+          const base = op.result as unknown as A2Suggestion
+          const proposal = parseAIProposal(
+            (op.result as Record<string, unknown>).ai_proposal
+          )
+          resolve({ ...base, ai_proposal: proposal ?? undefined })
         } else {
           const code = op.error?.code ?? "redraft_failed"
+          const reasonCode = op.error?.reason_code ?? null
           reject(
             new RedraftError(
               500,
               code,
-              MESSAGES[code] ?? "Der KI-Vorschlag konnte nicht erstellt werden."
+              MESSAGES[code] ??
+                reasonMessage(reasonCode) ??
+                "Der KI-Vorschlag konnte nicht erstellt werden.",
+              reasonCode
             )
           )
         }

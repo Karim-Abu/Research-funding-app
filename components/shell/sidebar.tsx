@@ -20,18 +20,20 @@ import {
   CheckSquare,
   Download,
   Users,
-  Wallet,
+  Bot,
   PanelLeftClose,
   PanelLeftOpen,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { flags } from "@/lib/flags"
+import { WORKFLOW_STEPS } from "@/lib/workflow"
 import {
   Tooltip,
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
-import type { Role } from "@/lib/types"
 
 interface NavLink {
   label: string
@@ -44,33 +46,63 @@ interface DisabledLink {
   icon?: LucideIcon
 }
 
-// "Aktueller Antrag" — the guided workflow for the active application.
-// Note: Quellen and Evidenz share the /quellen route (tabbed); Entwurf maps to
-// the editor. "Übersicht" points at the projects overview until a dedicated
-// per-application overview route exists (frontend fallback, no API change).
+// "Aktueller Antrag" — abgeleitet aus dem EINEN Workflow-Katalog
+// (lib/workflow.ts), damit Sidebar und Stepper nie divergieren. Icons sind
+// reine Darstellung und bleiben lokal. "Übersicht" zeigt auf die
+// Projektübersicht, bis eine eigene Antrags-Übersichtsroute existiert.
+const STEP_ICONS: Record<string, LucideIcon> = {
+  "/intake": ClipboardList,
+  "/import": FileSearch,
+  "/quellen": Database,
+  "/partner": Users,
+  "/anforderungen": ListChecks,
+  "/editor": PenLine,
+  "/review": CheckSquare,
+  "/export": Download,
+}
+
+// Schritt 1 («Projekt & Unterlagen») ist der einzige gruppierte Schritt:
+// seine Routen erscheinen mit ihrem eigenen (einzigen) Routennamen.
+// Schritte 2–6 haben genau eine Route — Routenname = Schrittname.
+const STEP1_ROUTE_LABELS: Record<string, string> = {
+  "/intake": "Projekt anlegen",
+  "/import": "Antrag importieren",
+  "/quellen": "Quellen",
+}
+
 const currentApplication: NavLink[] = [
   { label: "Übersicht", href: "/", icon: LayoutDashboard },
-  { label: "Intake", href: "/intake", icon: ClipboardList },
-  { label: "Partner & Budget", href: "/partner", icon: Users },
-  { label: "Quellen", href: "/quellen", icon: Database },
-  { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
-  { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },
-  { label: "Entwurf", href: "/editor", icon: PenLine },
-  { label: "Qualitätsprüfung", href: "/review", icon: CheckSquare },
-  // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
-  // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
-  { label: "Export", href: "/export", icon: Download },
-  { label: "Kosten & Laufzeit (Demo)", href: "/kosten", icon: Wallet },
+  ...WORKFLOW_STEPS.flatMap((s): NavLink[] =>
+    s.step === 1
+      ? s.routes.map((href) => ({
+          label: STEP1_ROUTE_LABELS[href] ?? s.label,
+          href,
+          icon: STEP_ICONS[href] ?? ClipboardList,
+        }))
+      : [{ label: s.label, href: s.href, icon: STEP_ICONS[s.href] ?? ClipboardList }]
+  ),
+]
+
+// Transparenzseite (KI-/Regel-/Mensch-Rollen) + Evaluations-Hub. Die
+// technischen Demo-/Evaluationsansichten (Provider-Tabellen, synthetische
+// Läufe) sind bewusst NICHT Teil des Nutzer-Workflows. Der Zugang «Evaluation &
+// Technik» ist im Standardmodus ausgeblendet (Demo-Golden-Path) und nur mit
+// NEXT_PUBLIC_EVAL_VIEWS=on sichtbar; die Routen bleiben direkt erreichbar.
+const moreItems: NavLink[] = [
+  { label: "KI-Team", href: "/ki-team", icon: Bot },
+  ...(flags.evalViews
+    ? [{ label: "Evaluation & Technik", href: "/admin", icon: FlaskConical }]
+    : []),
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
 const collapsedItems: NavLink[] = [
   { label: "Projekte", href: "/", icon: FolderKanban },
   ...currentApplication.filter((i) => i.label !== "Übersicht"),
+  ...moreItems,
 ]
 
 interface SidebarProps {
-  role: Role
   collapsed: boolean
   onToggle: () => void
   /** Title of the active Antrag; null → project-scoped links are disabled. */
@@ -86,14 +118,19 @@ function pathActive(pathname: string, href: string): boolean {
 }
 
 // Links that work without a selected Antrag (overview + creating a new one).
-const PROJECT_INDEPENDENT = new Set(["Übersicht", "Intake"])
+const PROJECT_INDEPENDENT = new Set([
+  "Übersicht",
+  "Projekt anlegen",
+  "KI-Team",
+  "Evaluation & Technik",
+])
 
 export function Sidebar({
   collapsed,
   onToggle,
   activeProjectTitle = null,
   activeProjectStatusLabel = null,
-}: SidebarProps) {
+}: Readonly<SidebarProps>) {
   const pathname = usePathname()
   const hasProject = activeProjectTitle !== null && activeProjectTitle !== ""
   const navigationId = "primary-sidebar-navigation"
@@ -154,7 +191,7 @@ export function Sidebar({
             <GroupLabel>Innosuisse</GroupLabel>
             <ExpandedLink
               item={{
-                label: "Create Innovation Project",
+                label: "Projekt anlegen",
                 href: "/intake",
                 icon: FilePlus2,
               }}
@@ -226,6 +263,15 @@ export function Sidebar({
                 />
               )
             )}
+
+            <SectionLabel>Weitere</SectionLabel>
+            {moreItems.map((item) => (
+              <ExpandedLink
+                key={item.label}
+                item={item}
+                active={pathActive(pathname, item.href)}
+              />
+            ))}
           </>
         )}
       </nav>
@@ -258,7 +304,7 @@ export function Sidebar({
 // ---------------------------------------------------------------------------
 // Building blocks
 // ---------------------------------------------------------------------------
-function SectionLabel({ children }: { children: ReactNode }) {
+function SectionLabel({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <p className="mt-4 px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-sidebar-foreground/50">
       {children}
@@ -266,7 +312,7 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
-function GroupLabel({ children }: { children: ReactNode }) {
+function GroupLabel({ children }: Readonly<{ children: ReactNode }>) {
   return (
     <p className="px-3 pt-1 text-xs font-medium text-sidebar-foreground/70">
       {children}
@@ -278,11 +324,11 @@ function ExpandedLink({
   item,
   active,
   badge,
-}: {
+}: Readonly<{
   item: NavLink
   active: boolean
   badge?: string
-}) {
+}>) {
   return (
     <Link
       href={item.href}
@@ -305,7 +351,7 @@ function ExpandedLink({
   )
 }
 
-function CollapsedLink({ item, active }: { item: NavLink; active: boolean }) {
+function CollapsedLink({ item, active }: Readonly<{ item: NavLink; active: boolean }>) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -333,10 +379,10 @@ function CollapsedLink({ item, active }: { item: NavLink; active: boolean }) {
 function DisabledRow({
   item,
   hint = "Nicht verfügbar",
-}: {
+}: Readonly<{
   item: DisabledLink
   hint?: string
-}) {
+}>) {
   return (
     <div
       aria-disabled="true"
@@ -352,7 +398,7 @@ function DisabledRow({
   )
 }
 
-function CollapsedDisabled({ item }: { item: NavLink }) {
+function CollapsedDisabled({ item }: Readonly<{ item: NavLink }>) {
   return (
     <Tooltip>
       <TooltipTrigger

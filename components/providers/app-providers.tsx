@@ -14,6 +14,7 @@ import {
   type SessionUser,
 } from "@/lib/session"
 import { clearAllRichEditorSessionCache } from "@/lib/rich-editor-cache"
+import { clearIntakeSession } from "@/lib/intake-store"
 
 type Status = "loading" | "authenticated" | "unauthenticated"
 
@@ -89,6 +90,9 @@ export function AppProviders({
     await apiLogout()
     // Proposal text lives in the rich-editor session cache — clear it on logout.
     clearAllRichEditorSessionCache()
+    // R4.4: das Intake (Projektidee, Budget, Partner) ist ebenfalls ein
+    // Inhalts-Key — beim Logout vollständig entfernen.
+    clearIntakeSession()
     setUser(null)
     setStatus("unauthenticated")
   }, [])

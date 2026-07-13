@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import re
 
-CONFIDENTIAL_DICTIONARY_VERSION = "m9j-confidential-1"
+CONFIDENTIAL_DICTIONARY_VERSION = "m9j-confidential-2"
 
 # NDA / legal-restriction markers (normalized, casefolded substrings). High weight.
 NDA_MARKERS: frozenset[str] = frozenset(
@@ -49,6 +49,26 @@ _CURRENCY = r"(?:chf|eur|usd|gbp|fr\.?|franken|€|\$|£|mio\.?|mrd\.?|million(?
 _AMOUNT = r"\d[\d'’.,\s]*"
 BUDGET_RE = re.compile(
     rf"(?i)(?:{_CURRENCY}\s*{_AMOUNT}|{_AMOUNT}\s*{_CURRENCY})"
+)
+
+# Beträge in Zahlwörtern (R8-Leakage): «eine halbe Million Franken»,
+# «fünfhunderttausend Franken», «half a million francs». Verlangt zwingend ein
+# Währungswort am Ende, damit Mengenangaben («Millionen von Nutzern») nicht als
+# Budget markiert werden. Erste Position muss ein Zahl-/Zahlkompositum sein, damit
+# ein blosses «Millionen …» nicht anschlägt.
+_NUM_WORD = (
+    r"(?:ein(?:e[nmrs]?)?|zwei|drei|vier|f(?:ü|ue)nf|sechs|sieben|acht|neun|zehn|"
+    r"elf|zw(?:ö|oe)lf|zwanzig|dreissig|dreißig|vierzig|f(?:ü|ue)nfzig|sechzig|"
+    r"siebzig|achtzig|neunzig|halbe?[nmrs]?|anderthalb|"
+    r"half|one|two|three|four|five|six|seven|eight|nine|ten|a|an)"
+)
+_NUM_COMPOUND = r"(?:[a-zäöüß]*(?:hundert|tausend)[a-zäöüß]*)"
+_MAGNITUDE_WORD = r"(?:million(?:en)?|mio\.?|milliarden?|mrd\.?|thousand|billion)"
+_CURRENCY_WORD = r"(?:chf|franken|francs?|euros?|eur|usd|dollars?|pfund|pounds?|€|\$|£)"
+BUDGET_WORD_RE = re.compile(
+    rf"(?i)\b(?:{_NUM_COMPOUND}|{_NUM_WORD})"
+    rf"(?:\s+(?:{_NUM_COMPOUND}|{_NUM_WORD}|{_MAGNITUDE_WORD})){{0,3}}"
+    rf"\s+{_CURRENCY_WORD}\b"
 )
 
 EMAIL_RE = re.compile(r"[\w.+-]+@[\w-]+\.[\w.-]+")

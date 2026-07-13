@@ -33,6 +33,9 @@ export interface ProjectSummary {
   activeCount: number
   reviewOpenCount: number
   blockerCount: number
+  /** false = keine Prüfung durchgeführt → UI zeigt «Noch nicht geprüft»,
+   *  nie eine 0 (Workflow-Regel 7). */
+  blockerCountKnown: boolean
   nextDeadlineLabel: string
 }
 
@@ -95,13 +98,28 @@ export function filterAndSortProjects(
   return out
 }
 
-/** Aggregate the compact overview shown above the project grid. */
+/** Aggregate the compact overview shown above the project grid.
+ *
+ * R1.3: `blockerCount` ist die Summe der offenen Blocker aus dem kanonischen
+ * Status-View (card.openBlockerCount) — dieselbe Zahl wie in Anforderungen,
+ * Qualitätsprüfung und Export. Nur wenn keine Karte kanonische Daten trägt
+ * (Demo-/Mock-Modus), fällt die Kachel auf die alte Zählung «blockierte
+ * Projekte» zurück. */
 export function summarizeProjects(cards: DashboardProject[]): ProjectSummary {
   const activeCount = cards.filter((c) => c.cardStatus !== "eingereicht").length
   const reviewOpenCount = cards.filter(
     (c) => c.cardStatus === "review_offen"
   ).length
-  const blockerCount = cards.filter((c) => c.cardStatus === "blockiert").length
+  const hasCanonical = cards.some(
+    (c) => typeof c.openBlockerCount === "number"
+  )
+  const fallbackCount = cards.filter((c) => c.cardStatus === "blockiert").length
+  const blockerCount = hasCanonical
+    ? cards.reduce((sum, c) => sum + (c.openBlockerCount ?? 0), 0)
+    : fallbackCount
+  // Ohne kanonische Daten und ohne blockierte Karten wurde nichts geprüft —
+  // dann darf die Kachel keine 0 behaupten («Noch nicht geprüft»).
+  const blockerCountKnown = hasCanonical || fallbackCount > 0
 
   const upcoming = cards
     .map((c) => c.deadlineIso)
@@ -109,5 +127,11 @@ export function summarizeProjects(cards: DashboardProject[]): ProjectSummary {
     .sort()
   const nextDeadlineLabel = upcoming.length > 0 ? formatDeadline(upcoming[0]) : "—"
 
-  return { activeCount, reviewOpenCount, blockerCount, nextDeadlineLabel }
+  return {
+    activeCount,
+    reviewOpenCount,
+    blockerCount,
+    blockerCountKnown,
+    nextDeadlineLabel,
+  }
 }

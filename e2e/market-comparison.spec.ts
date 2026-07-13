@@ -112,7 +112,7 @@ test("market comparison UI: Quellen section renders a source-backed item", async
 
   await page.getByRole("button", { name: "Vergleich erstellen" }).click()
   await expect(page.getByTestId("market-comparison-table")).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText("Quelle erwähnt").first()).toBeVisible()
+  await expect(page.getByText("Textstelle gefunden").first()).toBeVisible()
   // No provider/model branding anywhere on the page.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)
 

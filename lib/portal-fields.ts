@@ -4,6 +4,13 @@
 
 export type DisplayMode = "draft" | "checklist" | "upload" | "external_only"
 
+// R6 (additiv): registrierte Pflicht-Unterfragen eines Composite-Editors —
+// sichtbare Gliederung 3.1–3.3 / 4.1–4.6 inkl. 4.5.1–4.5.4.
+export interface PortalFieldSubsectionDto {
+  marker: string
+  label: string
+}
+
 export interface PortalFieldInfoDto {
   field_id: string
   section: string
@@ -15,6 +22,7 @@ export interface PortalFieldInfoDto {
   field_kind: string
   display_mode: DisplayMode
   draft_available: boolean
+  subsections?: PortalFieldSubsectionDto[]
 }
 
 // User-facing badge labels — never show the technical mode values.

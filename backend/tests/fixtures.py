@@ -41,6 +41,19 @@ def make_image_only_pdf() -> bytes:
     return _build_pdf(b"0 0 1 rg 72 72 200 200 re f")
 
 
+def make_encrypted_pdf(password: str = "secret") -> bytes:
+    """Passwortgeschütztes PDF: der Parser kann es ohne Passwort nicht öffnen
+    (→ needs_manual_input mit Warnung ``encrypted_pdf``)."""
+    from pypdf import PdfReader, PdfWriter
+
+    writer = PdfWriter()
+    writer.append(PdfReader(io.BytesIO(make_text_pdf("Encrypted content."))))
+    writer.encrypt(user_password=password)
+    buffer = io.BytesIO()
+    writer.write(buffer)
+    return buffer.getvalue()
+
+
 def make_docx(
     paragraphs: list[str] | None = None, with_table: bool = False
 ) -> bytes:

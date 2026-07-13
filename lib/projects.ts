@@ -88,14 +88,15 @@ function idempotencyKey(): string {
 function intakeToCreatePayload(intake: IntakeFormData) {
   const flat = intake.vertraulichkeit
   if (!flat) throw new Error("confidentiality_missing")
-  const budget = intake.budgetrahmen.trim()
   return {
     title: intake.titel,
     description: intake.projektidee,
     innovation_field: intake.innovationsfeld || null,
     funding_instrument_profile_id: BETA_FUNDING_PROFILE_ID,
     data_classification: dataClassificationFromFlat(flat),
-    budget_framework_chf: budget ? Number(budget.replace(",", ".")) : null,
+    // Budget wird nicht mehr im Intake erfasst — Erfassungsort ist
+    // ausschliesslich «Partner & Budget» (PATCH /projects).
+    budget_framework_chf: null,
   }
 }
 
@@ -160,20 +161,72 @@ export async function patchProject(
   return (await res.json()) as ProjectDto
 }
 
-// The backend workflow_summary keeps its own step numbering WITHOUT the
-// Partner & Budget step (1 Intake, 2 Quellen, 3 Anforderungen, 4 Evidenz,
-// 5 Entwurf, 6 Review, 7 Abschluss, 8 Export). The UI model inserts
-// "Partner & Budget" as step 2, so backend steps translate explicitly here —
-// never silently. Backend "Abschluss" (7) is part of the UI Qualitätsprüfung.
+// --- Budget-Vorprüfung (read-only, run-unabhängig) ---------------------------
+// Rechnung und Schwellen kommen ausschliesslich aus dem Backend-Rule-Kern;
+// das Frontend zeigt nur an. Status-Vokabular ist EIGENSTÄNDIG (kein
+// Requirement-Status): fulfilled | review | blocker | missing.
+export type BudgetPrecheckStatus = "fulfilled" | "review" | "blocker" | "missing"
+
+export interface BudgetPrecheckFiguresDto {
+  direct_costs_chf: number | null
+  own_contribution_chf: number | null
+  cash_contribution_chf: number | null
+  requested_funding_chf: number | null
+  implementation_contribution_chf: number | null
+  implementation_share_percent: number | null
+  cash_share_percent: number | null
+  funding_share_percent: number | null
+  exception_claimed: boolean
+}
+
+export interface BudgetPrecheckCheckDto {
+  rule_id: string
+  requirement_id: string | null
+  /** Deutscher Anzeigetitel — die UI zeigt nie rohe Regel-IDs. */
+  title: string
+  status: BudgetPrecheckStatus
+  reason: string
+  observed: Record<string, unknown>
+  condition: Record<string, unknown>
+  severity: string
+  source_ref: string | null
+  source_version: string | null
+  last_checked: string | null
+  rule_version: string
+}
+
+export interface BudgetPrecheckDto {
+  figures: BudgetPrecheckFiguresDto
+  checks: BudgetPrecheckCheckDto[]
+}
+
+export async function getBudgetPrecheck(
+  projectId: string
+): Promise<BudgetPrecheckDto> {
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/budget/precheck`
+  )
+  if (!res.ok) throw new Error("budget_precheck_failed")
+  return (await res.json()) as BudgetPrecheckDto
+}
+
+// The backend workflow_summary keeps its own 8-step numbering (1 Intake,
+// 2 Quellen, 3 Anforderungen, 4 Evidenz, 5 Entwurf, 6 Review, 7 Abschluss,
+// 8 Export). The UI uses the 6-step catalog from lib/workflow.ts
+// (1 Projekt & Unterlagen, 2 Partner & Budget, 3 Analyse & Recherche,
+// 4 Antragsentwurf, 5 Qualitätsprüfung, 6 Innolink-Übernahme) — backend steps
+// translate explicitly here, never silently. Anforderungen (3) und Evidenz (4)
+// sind beide Teil von «Analyse & Recherche»; «Abschluss» (7) gehört zur
+// Qualitätsprüfung. Der Partner-Schritt hat kein Backend-Pendant.
 const BACKEND_STEP_TO_UI_STEP: Record<number, number> = {
   1: 1,
-  2: 3,
-  3: 4,
-  4: 5,
-  5: 6,
-  6: 7,
-  7: 7,
-  8: 8,
+  2: 1,
+  3: 3,
+  4: 3,
+  5: 4,
+  6: 5,
+  7: 5,
+  8: 6,
 }
 
 function toUiStep(backendStep: number): number {
@@ -200,7 +253,6 @@ export function toDashboardCard(project: ProjectDto): DashboardProject {
     deadlineIso: null,
     progressPercent: summary?.bearbeitungsstand_percent ?? 0,
     currentStep: summary ? toUiStep(summary.current_step) : 1,
-    currentStepLabel: summary?.current_step_label ?? null,
     cardStatus: toCardStatus(summary),
     lastEditedLabel: `Angelegt: ${new Date(
       project.created_at
@@ -212,5 +264,20 @@ export function toDashboardCard(project: ProjectDto): DashboardProject {
     analysisRunning: summary?.next_action === "view_progress",
     isDemo: project.title.trim().endsWith("(Demo)"),
     people: [],
+    latestRunId: summary?.latest_run_id ?? null,
+  }
+}
+
+/** R1.3 — merge the canonical blocker count into a card. Cards with open
+ *  blockers surface as «Blockiert» so the dashboard no longer hides
+ *  content blockers behind «In Bearbeitung». */
+export function withCanonicalStatus(
+  card: DashboardProject,
+  blockerCount: number
+): DashboardProject {
+  return {
+    ...card,
+    openBlockerCount: blockerCount,
+    cardStatus: blockerCount > 0 ? "blockiert" : card.cardStatus,
   }
 }

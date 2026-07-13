@@ -18,6 +18,7 @@ from sqlalchemy.orm import Session
 from app.config.settings import get_settings
 from app.db.models import (
     AnalysisRun,
+    RunProjectSnapshot,
     RunSourceSnapshot,
     SourceDocument,
     SourceFragment,
@@ -177,6 +178,44 @@ def _record_tool_invocation(
     )
 
 
+# Obergrenze für die Intake-Beschreibung im Kontext (klein gegenüber dem
+# Fragment-Budget; verhindert, dass eine sehr lange Beschreibung Quellen verdrängt).
+_PROJECT_DESCRIPTION_CHAR_CAP = 4000
+
+
+def _project_description_block(db: Session, run: AnalysisRun) -> str:
+    """Strukturierte Projektbeschreibung aus dem eingefrorenen
+    RunProjectSnapshot als eigener untrusted-Block — der versionierte
+    Intake-Input, auch wenn keine Datei/Quelle vorhanden ist. Datenminimiert:
+    Titel + Beschreibung + Partnerzahlen, keine Partnernamen/Budgetzahlen."""
+    snapshot = db.get(RunProjectSnapshot, run.run_id)
+    if snapshot is None:
+        return ""
+    project = snapshot.project_json or {}
+    title = str(project.get("title") or "").strip()
+    description = str(project.get("description") or "").strip()
+    if not description and not title:
+        return ""
+    if len(description) > _PROJECT_DESCRIPTION_CHAR_CAP:
+        description = description[:_PROJECT_DESCRIPTION_CHAR_CAP]
+    partners = snapshot.partners_json or []
+    type_counts: dict[str, int] = {}
+    for partner in partners:
+        kind = str((partner or {}).get("partner_type") or "other")
+        type_counts[kind] = type_counts.get(kind, 0) + 1
+    partner_line = ", ".join(
+        f"{count}× {kind}" for kind, count in sorted(type_counts.items())
+    ) or "keine erfasst"
+    lines = [
+        "[structured_project_description source=intake "
+        "version=run_project_snapshot]",
+        f"Titel: {title or '—'}",
+        f"Projektbeschreibung: {description or '—'}",
+        f"Partner (Anzahl je Typ): {partner_line}",
+    ]
+    return "\n".join(lines)
+
+
 def _render_context_text(blocks: list[FragmentBlock]) -> str:
     lines: list[str] = []
     for block in blocks:
@@ -205,7 +244,14 @@ def assemble_a1_context(
     requirement_defs = lookup_requirement_definition(run)
     field_defs = lookup_portal_field_profile(run)
 
-    context_text = _render_context_text(blocks)
+    # Strukturierte Projektbeschreibung (Intake) als erster untrusted Block —
+    # macht Intake-only-Projekte (0 Dateien) zu einem gültigen A1-Input.
+    project_block = _project_description_block(db, run)
+    fragment_text = _render_context_text(blocks)
+    context_text = (
+        f"{project_block}\n\n{fragment_text}" if project_block and fragment_text
+        else project_block or fragment_text
+    )
     context_hash = _hash_text(context_text)
     selected_ids = [b.fragment_id for b in blocks]
     version_ids = sorted({b.source_version_id for b in blocks})
@@ -226,6 +272,7 @@ def assemble_a1_context(
     )
 
     meta["context_hash"] = context_hash
+    meta["project_description_chars"] = len(project_block)
     return A1Context(
         fragment_blocks=blocks,
         requirement_defs=requirement_defs,

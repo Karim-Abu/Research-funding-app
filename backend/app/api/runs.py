@@ -9,11 +9,13 @@ from app.api.errors import ProblemException, correlation_id
 from app.config.settings import Settings
 from app.contracts.run import AnalysisRun as AnalysisRunSchema
 from app.contracts.run import AsyncAccepted, RunCreate, RunList, ResumeRequest
+from app.contracts.run_phases import RunPhases
 from app.db.models import AsyncOperation
 from app.db.session import get_db
 from app.repositories import audit, controls, idempotency
 from app.repositories import projects as projects_repo
 from app.repositories import runs as runs_repo
+from app.runs import phases as run_phases
 from app.runs import service as run_service
 from app.runs.constants import TERMINAL_OPERATION_STATUSES, TERMINAL_RUN_STATUSES
 from app.runs.executor import run_executor
@@ -121,6 +123,40 @@ def get_run(
             detail="Run not found.",
         )
     return runs_repo.to_contract(run)
+
+
+@router.get("/runs/{run_id}/phases", response_model=RunPhases)
+def get_run_phases(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> RunPhases:
+    """Persistierter Phasenstand + technische Zusammenfassung (read-only).
+    Reload-sicher: die Phasen liegen in ``run_phases``, nicht im Client."""
+    run = runs_repo.get_scoped(db, run_id, context.user.workspace_id)
+    if run is None:
+        raise ProblemException(
+            status=404,
+            code="not_found",
+            title="Resource not found",
+            detail="Run not found.",
+        )
+    return RunPhases(
+        run_id=run.run_id,
+        run_status=run.status,
+        phases=[
+            {
+                "phase_key": row.phase_key,
+                "status": row.status,
+                "started_at": row.started_at,
+                "ended_at": row.ended_at,
+                "error_code": row.error_code,
+                "detail": row.detail or {},
+            }
+            for row in run_phases.list_for_run(db, run.run_id)
+        ],
+        technical=run_phases.technical_summary(db, run),
+    )
 
 
 @router.post("/runs/{run_id}/cancel", response_model=AnalysisRunSchema)

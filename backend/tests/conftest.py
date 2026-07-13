@@ -35,6 +35,7 @@ os.environ["CHECKPOINT_DB_PATH"] = _TMP_CHECKPOINTS
 
 from fastapi.testclient import TestClient  # noqa: E402
 
+from app.config.settings import get_settings  # noqa: E402
 from app.db.base import Base  # noqa: E402
 from app.db.models import FundingProfile, User, Workspace  # noqa: E402
 from app.db.session import SessionLocal, engine  # noqa: E402
@@ -92,6 +93,39 @@ def _database() -> Iterator[None]:
         db.close()
     yield
     Base.metadata.drop_all(engine)
+
+
+@pytest.fixture(autouse=True)
+def _no_real_provider_keys() -> Iterator[None]:
+    """R5.5b-Guard: mandatorische Tests erreichen NIE echte Provider.
+
+    Liegen echte Keys in ``backend/.env``, macht ``default_provider_resolver``
+    die realen Adapter ``available()`` — Module mit eigenem
+    ``_PROVIDER_RESOLVER``-Default (z. B. evidence_mapping im A1-Graph-Node)
+    würden dann still echte, bezahlte Calls aus der normalen Suite feuern
+    (vor R5.5b unsichtbar, weil reale Antworten schema-invalid blieben).
+    Darum werden die Keys pro Test genullt. Tests, die Keys brauchen, setzen
+    Dummies selbst via ``monkeypatch``; die bewusst env-gated Real-Smokes
+    (``RUN_REAL_PROVIDER_SMOKE=true``, nie CI) behalten die echten Keys.
+
+    Bewusst **ohne** ``monkeypatch``: würde diese autouse-Fixture ``monkeypatch``
+    anfordern, würde dessen Fixture vor ``client`` aufgebaut und damit (LIFO)
+    erst nach dem ``TestClient``-Shutdown zurückgesetzt. Tests, die per
+    ``monkeypatch`` ``socket.socket`` blockieren (test_export_security), ließen
+    den TestClient dann bei blockiertem Socket herunterfahren → Deadlock. Das
+    manuelle Save/Restore hält die monkeypatch-Teardown-Reihenfolge unverändert.
+    """
+    if os.environ.get("RUN_REAL_PROVIDER_SMOKE") == "true":
+        yield
+        return
+    settings = get_settings()
+    saved = settings.openai_api_key, settings.anthropic_api_key
+    settings.openai_api_key = None
+    settings.anthropic_api_key = None
+    try:
+        yield
+    finally:
+        settings.openai_api_key, settings.anthropic_api_key = saved
 
 
 @pytest.fixture
