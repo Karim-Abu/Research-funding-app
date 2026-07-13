@@ -323,6 +323,9 @@ class ImportCandidate(Base):
     field_id: Mapped[str] = mapped_column(String, nullable=False)
     # Extrahierter Antragstext (D2) — bleibt in der DB, nie in Logs/Audit.
     extracted_text: Mapped[str] = mapped_column(Text, nullable=False)
+    # «Bearbeitet übernommen»: menschlich editierter Text (D2, nie in Logs).
+    # extracted_text bleibt als Originalausschnitt unverändert erhalten.
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Mapping-Konfidenz: found | uncertain (uncertain nie auto-übernehmbar).
     confidence: Mapped[str] = mapped_column(String, nullable=False)
     # Menschlich lesbare Fundstelle, z. B. "Seite 3"; None bei Textquellen.
@@ -509,6 +512,43 @@ class RunPolicySnapshot(Base):
     )
 
 
+class RunPhase(Base):
+    """User-facing phase status of one analysis run, persisted so a reload
+    shows the same progress. Additive next to the technical stage columns on
+    ``AnalysisRun`` (which stay authoritative for the contract RunStage).
+    ``detail`` holds counters and skip reasons only — never raw texts,
+    prompts or keys."""
+
+    __tablename__ = "run_phases"
+    __table_args__ = (
+        UniqueConstraint("run_id", "phase_key", name="uq_run_phase_key"),
+    )
+
+    run_phase_id: Mapped[str] = mapped_column(String, primary_key=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    # prepare_documents | detect_facts | formal_checks | web_research |
+    # draft_fields | quality_review
+    phase_key: Mapped[str] = mapped_column(String, nullable=False)
+    # pending | running | succeeded | failed | skipped
+    status: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    error_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    detail: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
 class UsageRecord(Base):
     __tablename__ = "usage_records"
 
@@ -583,6 +623,9 @@ class Partner(Base):
     financial_independence_status: Mapped[str | None] = mapped_column(
         String, nullable=True
     )
+    # Kurze menschliche Begründung, Pflicht bei explizit unklar/nicht
+    # bestätigt (API-Konsistenzregel) — fliesst NICHT in Run-Snapshots/Regeln.
+    review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -1550,7 +1593,7 @@ class MarketComparisonItem(Base):
     name: Mapped[str] = mapped_column(String, nullable=False)
     name_normalized: Mapped[str] = mapped_column(String, nullable=False)
     # competitor | alternative_solution | substitute | incumbent_process |
-    # reference_solution | unknown
+    # reference_solution | market_size_claim | customer_problem (R8) | unknown
     category: Mapped[str] = mapped_column(String, nullable=False, default="unknown")
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
     target_customer_segment: Mapped[str | None] = mapped_column(String, nullable=True)

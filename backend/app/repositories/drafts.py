@@ -19,6 +19,7 @@ from app.db.models import (
     AnalysisRun,
     AsyncOperation,
     DraftVersion,
+    ImportCandidate,
     OpenIssue,
     PortalFieldDraft,
 )
@@ -42,8 +43,9 @@ FIELD_ISSUE_TEXT = (
 
 # Versions worth carrying into a new run (Slice 2, E1-A). Template versions are
 # never a carry source: a fresh template is identical or — after a catalog
-# update — the correct newer scaffold.
-CARRY_OVER_CREATED_BY = ("user", "agent", "carried_over")
+# update — the correct newer scaffold. "import" = aus einem Innolink-PDF
+# übernommener Text — menschlich entschieden, geht nie verloren.
+CARRY_OVER_CREATED_BY = ("user", "agent", "carried_over", "import")
 
 
 def _content_hash(text: str) -> str:
@@ -143,6 +145,26 @@ def _carry_over_source(
     return row[0], row[1]
 
 
+def _staged_import_candidate(
+    db: Session, run: AnalysisRun, field_id: str
+) -> ImportCandidate | None:
+    """Jüngster übernommener, noch nicht konsumierter ImportCandidate des
+    Projekts für dieses Feld — Übernahme vor dem ersten Analyse-Lauf.
+    Carry-over hat Vorrang (Nutzerarbeit wird nie still ersetzt)."""
+    return db.scalar(
+        select(ImportCandidate)
+        .where(
+            ImportCandidate.project_id == run.project_id,
+            ImportCandidate.workspace_id == run.workspace_id,
+            ImportCandidate.field_id == field_id,
+            ImportCandidate.decision == "accepted",
+            ImportCandidate.accepted_draft_version_id.is_(None),
+        )
+        .order_by(ImportCandidate.decided_at.desc())
+        .limit(1)
+    )
+
+
 def get_draft(db: Session, run_id: str, field_id: str) -> PortalFieldDraft | None:
     return db.scalar(
         select(PortalFieldDraft).where(
@@ -169,11 +191,25 @@ def create_initial_draft(
         if get_settings().draft_carry_over_enabled
         else None
     )
+    # Vorrang: carry-over (Nutzerarbeit) > vorgemerkte Import-Übernahme >
+    # Template. Ein konsumierter Kandidat wird über accepted_draft_version_id
+    # markiert und in späteren Runs vom Carry-over weitergetragen.
+    imported = (
+        _staged_import_candidate(db, run, field.field_id)
+        if carried is None
+        else None
+    )
     if carried is not None:
         # Carried text is never dropped, even over the current limit: the
         # existing draft_over_limit review blocker gates the run instead.
         text, created_by = carried[0].text, "carried_over"
         source_run_id = carried[1]
+    elif imported is not None:
+        # Wie carry-over gilt: Text wird nie abgeschnitten; über dem Limit
+        # greift der bestehende draft_over_limit-Review-Blocker.
+        text = imported.edited_text or imported.extracted_text
+        created_by = "import"
+        source_run_id = None
     else:
         text, created_by = build_template(field, get_registry()), "template"
         source_run_id = None
@@ -194,6 +230,9 @@ def create_initial_draft(
     db.flush()
     version = _new_version(db, draft_id, text, created_by)
     draft.current_version_id = version.draft_version_id
+    if imported is not None:
+        # Konsumiert: die Vormerkung zeigt jetzt auf die erzeugte Version.
+        imported.accepted_draft_version_id = version.draft_version_id
     draft.open_issue_count = _sync_field_issue(
         db, run, field.field_id, is_empty(text) or has_placeholder(text)
     )
@@ -202,7 +241,9 @@ def create_initial_draft(
         "carried_over": carried is not None,
         "source_run_id": source_run_id,
     }
-    if carried is not None and not within_limit(text, field.character_limit):
+    if imported is not None:
+        created_detail["import_candidate_id"] = imported.import_candidate_id
+    if created_by != "template" and not within_limit(text, field.character_limit):
         created_detail["over_limit_at_initialization"] = True
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=None,
@@ -263,10 +304,12 @@ def apply_update(
     text: str,
     source_operation_id: str | None,
     actor_user_id: str,
+    origin: str = "user",
 ) -> PortalFieldDraft:
     """Optimistic-concurrency edit. 409 on stale base, 422 over limit, no-op on
     identical text. On success: immutable user version + stale prior links +
-    recheck flag."""
+    recheck flag. ``origin`` markiert die Herkunft der neuen Version
+    ("user" | "import"); akzeptierte A2-Vorschläge bleiben "agent"."""
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=actor_user_id,
         action="draft.update_attempted", target_type="portal_field_draft",
@@ -306,7 +349,7 @@ def apply_update(
         db, run, draft, base_version_id=base_version_id, text=text,
         source_operation_id=source_operation_id,
     )
-    created_by = "agent" if accepted is not None else "user"
+    created_by = "agent" if accepted is not None else origin
     version = _new_version(
         db, draft.draft_id, text, created_by,
         base_version_id=base_version_id, source_operation_id=source_operation_id,
@@ -358,7 +401,9 @@ def _version_contract(version: DraftVersion) -> DraftVersionSchema:
     )
 
 
-def to_contract(db: Session, draft: PortalFieldDraft) -> DraftSchema:
+def to_contract(
+    db: Session, draft: PortalFieldDraft, *, copy_readiness: str | None = None
+) -> DraftSchema:
     current = db.get(DraftVersion, draft.current_version_id)
     version_ids = list(
         db.scalars(
@@ -368,6 +413,7 @@ def to_contract(db: Session, draft: PortalFieldDraft) -> DraftSchema:
         )
     )
     links = evidence_repo.links_for_draft_versions(db, version_ids)
+    link_statuses = evidence_repo.link_support_statuses(db, draft.run_id, links)
     issues = db.scalars(
         select(OpenIssue).where(
             OpenIssue.run_id == draft.run_id,
@@ -384,8 +430,14 @@ def to_contract(db: Session, draft: PortalFieldDraft) -> DraftSchema:
         character_count=current.character_count,
         character_limit=draft.character_limit,
         open_issue_count=draft.open_issue_count,
-        evidence_links=[evidence_repo.to_link_contract(link) for link in links],
+        evidence_links=[
+            evidence_repo.to_link_contract(
+                link, support_status=link_statuses.get(link.evidence_link_id)
+            )
+            for link in links
+        ],
         open_issues=[
             _issue_to_contract(issue) for issue in issues if issue.status == "open"
         ],
+        copy_readiness=copy_readiness,
     )

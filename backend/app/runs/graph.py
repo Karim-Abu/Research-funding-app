@@ -16,15 +16,23 @@ from langgraph.checkpoint.sqlite import SqliteSaver
 from langgraph.graph import END, START, StateGraph
 from sqlalchemy import select
 
-from app.agents import evidence_mapping, fact_extraction
+from app.agents import critic_review, evidence_mapping, fact_extraction, field_drafting
+from app.agents.a3_review import A3_PROFILE_ID
 from app.config.settings import get_settings
-from app.db.models import AnalysisRun, RunSourceSnapshot
+from app.db.models import (
+    AnalysisRun,
+    Project,
+    RunPolicySnapshot,
+    RunProjectSnapshot,
+    RunSourceSnapshot,
+)
 from app.db.session import SessionLocal
 from app.drafts import pipeline as drafts_pipeline
 from app.evidence import pipeline as evidence_pipeline
 from app.repositories import audit, controls
 from app.review import package as review_package
 from app.runs import evaluation
+from app.runs import phases as run_phases
 from app.runs.constants import STAGE_PROGRESS
 from app.runs.transitions import transition_run
 
@@ -67,6 +75,8 @@ def node_initialize(state: RunState) -> RunState:
         if _is_cancelled(run):
             return {**state, "cancelled": True}
         _set_stage(db, run, "initialize")
+        run_phases.ensure_pending(db, run)
+        run_phases.start(db, run, "prepare_documents")
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="run.operation_state", status="passed",
@@ -93,13 +103,26 @@ def node_validate_source_snapshot(state: RunState) -> RunState:
                 )
             )
         )
+        # Intake-only-Läufe sind gültig: die strukturierte Projektbeschreibung
+        # ist der versionierte Input (eingefroren im RunProjectSnapshot).
+        project_snapshot = db.get(RunProjectSnapshot, run.run_id)
+        has_description = bool(
+            str(((project_snapshot.project_json if project_snapshot else {}) or {})
+                .get("description") or "").strip()
+        )
+        valid = count > 0 or has_description
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="run.source_snapshot",
-            status="passed" if count > 0 else "failed",
-            detail=f"frozen_versions={count}",
+            status="passed" if valid else "failed",
+            detail=f"frozen_versions={count} intake_description="
+                   f"{'present' if has_description else 'absent'}",
         )
         _set_stage(db, run, "validate_source_snapshot")
+        run_phases.finish(
+            db, run, "prepare_documents", "succeeded",
+            detail={"sources_frozen": count, "intake_description": has_description},
+        )
         db.commit()
         return state
     finally:
@@ -115,6 +138,7 @@ def node_extract_facts_and_map_evidence(state: RunState) -> RunState:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
+        run_phases.start(db, run, "detect_facts")
         a1 = fact_extraction.run_a1_fact_extraction(db, run)
         count = evidence_pipeline.run_discovery(db, run)
         # M9C: advisory A1 evidence-candidate mapping (safe; never fails the run).
@@ -122,6 +146,14 @@ def node_extract_facts_and_map_evidence(state: RunState) -> RunState:
         # verify/link stages then process. Deterministic baseline is unaffected.
         mapping = evidence_mapping.run_a1_evidence_mapping(db, run)
         _set_stage(db, run, "extract_facts_and_map_evidence")
+        run_phases.finish(
+            db, run, "detect_facts", "succeeded",
+            detail={
+                "a1_status": a1.status,
+                "facts_created": a1.facts_persisted,
+                "evidence_candidates": count + mapping.candidates_persisted,
+            },
+        )
         db.commit()
         logger.info(
             "A1 facts=%s/%d evidence candidates=%d mapping=%s/+%d run=%s",
@@ -141,6 +173,7 @@ def node_verify_evidence(state: RunState) -> RunState:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
+        run_phases.start(db, run, "formal_checks")
         counts = evidence_pipeline.run_verification(db, run)
         _set_stage(db, run, "verify_evidence")
         db.commit()
@@ -177,6 +210,9 @@ def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
             ),
         )
         _set_stage(db, run, "evaluate_requirements_and_rules")
+        run_phases.finish(
+            db, run, "formal_checks", "succeeded", detail=dict(counts)
+        )
         audit.record(
             db, workspace_id=run.workspace_id, actor_user_id=None,
             action="run.requirements_evaluated", target_type="run",
@@ -188,17 +224,111 @@ def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
         db.close()
 
 
-def node_draft_fields(state: RunState) -> RunState:
-    """A2 is deferred — record the disabled drafting route and continue to the
-    deterministic template stage. No provider/LLM/network call."""
+def node_web_research(state: RunState) -> RunState:
+    """Öffentliche Webrecherche im Lauf (Owner-Entscheid; Freigabepflicht R8):
+    nur wenn das Web-Budget des Laufs > 0 ist, die Webrecherche verfügbar ist,
+    die effektive Datenklasse öffentlich/ohne NDA ist UND freigegebene
+    Suchanfragen vorliegen — sonst ehrlicher Skip. Ausgeführt wird exakt der
+    freigegebene Text (Single-Use im Firewall-Chokepoint), begrenzt durch
+    max_web_calls. Wiederverwendet das BESTEHENDE Research-Vertikal
+    (Search Query Firewall im Service → Executor → Fake/Firecrawl).
+    Ergebnisse bleiben ResearchResult-Kandidaten — nie Evidenz/Anker. Ein
+    Fehler markiert nur die Phase als fehlgeschlagen (Partial Success)."""
+    from app.db.models import SearchQueryApproval
+    from app.market_research.runner import run_market_research
+    from app.market_research.topic import suggest_market_topic
+    from app.research.service import ResearchBlocked
+
     db = SessionLocal()
     try:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
-        drafts_pipeline.record_a2_disabled(db, run)
-        _set_stage(db, run, "draft_fields")
-        db.commit()
+        run_phases.start(db, run, "web_research")
+        settings = get_settings()
+        policy = db.get(RunPolicySnapshot, run.run_id)
+        max_web_calls = policy.max_web_calls if policy is not None else 0
+        feature_available = settings.web_research_enabled and (
+            settings.web_research_fake_provider or bool(settings.firecrawl_api_key)
+        )
+        cls = run.effective_data_classification or {}
+        # Vorprüfung nur für ehrliche Skip-Gründe — die durchsetzende Instanz
+        # bleibt die Search Query Firewall im Research-Service (D0-only).
+        class_ok = cls.get("sensitivity") == "public" and not cls.get("nda_applies")
+        # R8 Freigabepflicht: der Lauf führt NUR menschlich freigegebene
+        # Suchanfragen aus (im Analyse-Dialog erteilt; single-use).
+        approvals = list(
+            db.scalars(
+                select(SearchQueryApproval)
+                .where(
+                    SearchQueryApproval.project_id == run.project_id,
+                    SearchQueryApproval.workspace_id == run.workspace_id,
+                    SearchQueryApproval.status == "approved",
+                    SearchQueryApproval.purpose.like("market_comparison%"),
+                )
+                .order_by(SearchQueryApproval.created_at, SearchQueryApproval.approval_id)
+            )
+        )
+        skip_reason = None
+        if max_web_calls <= 0:
+            skip_reason = "web_research_not_requested"
+        elif not feature_available:
+            skip_reason = "web_research_unavailable"
+        elif not class_ok:
+            skip_reason = "web_research_class_blocked"
+        elif not approvals:
+            skip_reason = "approval_required"
+        if skip_reason is not None:
+            run_phases.finish(
+                db, run, "web_research", "skipped",
+                detail={"reason": skip_reason},
+            )
+            db.commit()
+            return state
+
+        project = db.get(Project, run.project_id)
+        try:
+            outcome = run_market_research(
+                db, project=project, actor_user_id=run.created_by,
+                topic=suggest_market_topic(project),
+                case_id=f"run-{run.run_id}",
+                data_mode=(
+                    "fake_test" if settings.web_research_fake_provider
+                    else "synthetic_eval"
+                ),
+                max_queries=max_web_calls,
+                approvals=approvals,
+            )
+            run_phases.finish(
+                db, run, "web_research", "succeeded",
+                detail={
+                    "approved_queries": len(approvals),
+                    "web_queries": len(outcome.task_ids),
+                    "results_found": outcome.result_count,
+                    "blocked_queries": outcome.blocked_queries,
+                },
+            )
+            db.commit()
+            logger.info(
+                "web research queries=%d results=%d run=%s",
+                len(outcome.task_ids), outcome.result_count, run.run_id,
+            )
+        except ResearchBlocked as blocked:
+            # Firewall hat das letzte Wort — Phase ehrlich übersprungen.
+            run_phases.finish(
+                db, run, "web_research", "skipped",
+                detail={"reason": blocked.code},
+            )
+            db.commit()
+        except Exception:  # Partial Success: der Lauf geht weiter.
+            logger.exception("web research failed; continuing run %s", run.run_id)
+            db.rollback()
+            run = db.get(AnalysisRun, state["run_id"])
+            run_phases.finish(
+                db, run, "web_research", "failed",
+                error_code="web_research_failed",
+            )
+            db.commit()
         return state
     finally:
         db.close()
@@ -206,14 +336,17 @@ def node_draft_fields(state: RunState) -> RunState:
 
 def node_create_template_drafts(state: RunState) -> RunState:
     """Create deterministic PortalFieldDraft templates + initial DraftVersions
-    idempotently from the immutable run inputs."""
+    idempotently from the immutable run inputs. Runs BEFORE the A2 drafting
+    stage so advisory suggestions can reference an existing base version."""
     db = SessionLocal()
     try:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
+        run_phases.start(db, run, "draft_fields")
         count = drafts_pipeline.create_template_drafts(db, run)
         _set_stage(db, run, "create_template_drafts")
+        run_phases.add_detail(db, run, "draft_fields", {"template_drafts": count})
         db.commit()
         logger.info("template drafts created=%d run=%s", count, run.run_id)
         return state
@@ -221,22 +354,106 @@ def node_create_template_drafts(state: RunState) -> RunState:
         db.close()
 
 
-def node_critic_review(state: RunState) -> RunState:
-    """A3 is deferred — record the disabled semantic-review route and run the
-    deterministic review aggregator only. Creates ReviewFindings from persisted
-    M4-M6 artifacts; no provider/LLM/network call and no semantic judgement."""
+def node_draft_fields(state: RunState) -> RunState:
+    """A2-Feldvorschläge im normalen Lauf: je A2-fähigem Feld eine echte
+    AsyncOperation über den gemeinsamen Redraft-Kern. Nur advisory
+    DraftSuggestions (proposed) — nie Auto-Übernahme, nie DraftVersions.
+    Läuft nur, wenn der Modus KI erlaubt (cloud_assisted bzw. local_only mit
+    konsumierter Opt-in-Bestätigung); sonst ehrlicher Skip. Feld-Fehler
+    stoppen weder die übrigen Felder noch den Lauf (Partial Success)."""
     db = SessionLocal()
     try:
         run = db.get(AnalysisRun, state["run_id"])
         if _is_cancelled(run):
             return {**state, "cancelled": True}
-        review_package.apply_findings(db, run)
-        controls.record(
-            db, workspace_id=run.workspace_id, project_id=run.project_id,
-            source_id=None, control_id="CTRL.DATA_POLICY", status="passed",
-            detail="a3_disabled deterministic_review",
+        mode = run.processing_mode
+        ai_enabled = mode == "cloud_assisted" or (
+            mode == "local_only" and field_drafting.local_ai_confirmed(run)
         )
+        if not ai_enabled:
+            reason = f"mode_{mode}"
+            drafts_pipeline.record_a2_skipped(db, run, reason)
+            _set_stage(db, run, "draft_fields")
+            run_phases.finish(
+                db, run, "draft_fields", "succeeded",
+                detail={
+                    "suggestions_created": 0,
+                    "a2_status": "skipped",
+                    "a2_reason": reason,
+                },
+            )
+            db.commit()
+            return state
+        counters = drafts_pipeline.run_a2_field_suggestions(db, run)
+        _set_stage(db, run, "draft_fields")
+        status, error_code = "succeeded", None
+        if counters["suggestions_created"] == 0 and counters["fields_failed"] > 0:
+            status, error_code = "failed", "a2_all_failed"
+        run_phases.finish(
+            db, run, "draft_fields", status,
+            detail={**counters, "a2_status": "ran"}, error_code=error_code,
+        )
+        db.commit()
+        logger.info(
+            "A2 suggestions created=%d failed=%d skipped=%d run=%s",
+            counters["suggestions_created"], counters["fields_failed"],
+            counters["fields_skipped"], run.run_id,
+        )
+        return state
+    finally:
+        db.close()
+
+
+def node_critic_review(state: RunState) -> RunState:
+    """Deterministischer Review-Aggregator (läuft IMMER) + advisory A3-Kritik
+    auf geeigneten Cloud-Läufen. A3-Findings werden separat persistiert
+    (source="agent") und überschreiben A2-Vorschläge nie. Ein A3-Fehler lässt
+    Drafts/Vorschläge intakt und markiert nur die Phase als fehlgeschlagen —
+    der Lauf endet «teilweise abgeschlossen», nie komplett leer."""
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, state["run_id"])
+        if _is_cancelled(run):
+            return {**state, "cancelled": True}
+        run_phases.start(db, run, "quality_review")
+        review_package.apply_findings(db, run)
+
+        phase_status, error_code = "succeeded", None
+        available, reason = critic_review.availability(run)
+        if available:
+            policy = db.get(RunPolicySnapshot, run.run_id)
+            budget_stop = drafts_pipeline.budget_stop_reason(db, run, policy)
+            if budget_stop is not None:
+                available, reason = False, budget_stop
+        if not available:
+            controls.record(
+                db, workspace_id=run.workspace_id, project_id=run.project_id,
+                source_id=None, control_id="CTRL.DATA_POLICY", status="passed",
+                detail=f"a3_skipped {reason}",
+            )
+            a3_detail = {"a3_status": "skipped", "a3_reason": reason,
+                         "agent_findings": 0}
+        else:
+            outcome = critic_review.run_a3_evidence_consistency(db, run)
+            if outcome.status == "succeeded":
+                review_package.apply_agent_findings(
+                    db, run, outcome.findings, profile_id=A3_PROFILE_ID
+                )
+                a3_detail = {"a3_status": "succeeded",
+                             "agent_findings": len(outcome.findings)}
+            elif outcome.status in ("skipped", "blocked"):
+                a3_detail = {"a3_status": "skipped",
+                             "a3_reason": outcome.reason, "agent_findings": 0}
+            else:  # failed / timed_out — Partial Success, Lauf geht weiter.
+                phase_status = "failed"
+                error_code = outcome.reason or "a3_failed"
+                a3_detail = {"a3_status": outcome.status,
+                             "a3_reason": outcome.reason, "agent_findings": 0}
         _set_stage(db, run, "critic_review")
+        run_phases.finish(
+            db, run, "quality_review", phase_status,
+            detail=a3_detail, error_code=error_code,
+        )
         db.commit()
         return state
     finally:
@@ -296,6 +513,11 @@ def node_finalize_run(state: RunState) -> RunState:
         _set_stage(db, run, "finalize_run")
         transition_run(run, "completed")  # guards against terminal states
         run.ended_at = _now()
+        # Run-Wahrheit: der Projekt-Pointer zeigt immer auf den letzten
+        # erfolgreich abgeschlossenen Lauf (nie failed/stopped/cancelled).
+        project = db.get(Project, run.project_id)
+        if project is not None:
+            project.active_run_id = run.run_id
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
             source_id=None, control_id="run.operation_state", status="passed",
@@ -342,6 +564,7 @@ def get_graph():
             "evaluate_requirements_and_rules",
             node_evaluate_requirements_and_rules,
         )
+        builder.add_node("web_research", node_web_research)
         builder.add_node("draft_fields", node_draft_fields)
         builder.add_node("create_template_drafts", node_create_template_drafts)
         builder.add_node("critic_review", node_critic_review)
@@ -355,9 +578,13 @@ def get_graph():
         )
         builder.add_edge("extract_facts_and_map_evidence", "verify_evidence")
         builder.add_edge("verify_evidence", "evaluate_requirements_and_rules")
-        builder.add_edge("evaluate_requirements_and_rules", "draft_fields")
-        builder.add_edge("draft_fields", "create_template_drafts")
-        builder.add_edge("create_template_drafts", "critic_review")
+        # Recherche VOR den Drafts (Kandidaten fliessen in den VC-A2-Kontext);
+        # Templates VOR der A2-Stufe, damit die advisory Vorschläge eine
+        # existierende Basisversion referenzieren.
+        builder.add_edge("evaluate_requirements_and_rules", "web_research")
+        builder.add_edge("web_research", "create_template_drafts")
+        builder.add_edge("create_template_drafts", "draft_fields")
+        builder.add_edge("draft_fields", "critic_review")
         builder.add_edge("critic_review", "aggregate_review")
         builder.add_edge("aggregate_review", "human_review")
         builder.add_edge("human_review", "finalize_run")

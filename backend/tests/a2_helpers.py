@@ -29,18 +29,24 @@ PARTNER_PURPOSE = "partner_research_org_topic"
 FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 VC_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
 REQ_ID = "REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"
-# A suggestion body that preserves the mandatory 4.1-4.5 structure.
+# A suggestion body that preserves the mandatory 4.1–4.6 structure
+# (inkl. IP-Block 4.5.1–4.5.4, Portal-Schema-Minimum).
 GOOD_TEXT = (
     "4.1 Stand der Technik: bestehende Verfahren.\n"
     "4.2 Neuheit: klare Abgrenzung.\n"
     "4.3 Ziele: messbar mit Baseline.\n"
     "4.4 Vorarbeiten: abgeschlossene Vorstudien.\n"
-    "4.5 Partner: geeignete Infrastruktur."
+    "4.5.1 Patentrecherche: Ergebnisse [offen].\n"
+    "4.5.2 Freedom-to-Operate: Analysestand [offen].\n"
+    "4.5.3 IP-Schutzstrategie: geplanter Schutzweg [offen].\n"
+    "4.5.4 Rechts- und Vertragslage: Vereinbarungen [offen].\n"
+    "4.6 Partner: geeignete Infrastruktur."
 )
-# A VC suggestion body that preserves the registry mandatory 3.1/3.2 structure.
+# A VC suggestion body that preserves the registry mandatory 3.1–3.3 structure.
 VC_GOOD_TEXT = (
     "3.1 Wertschöpfung: erwartete Wirkung, mit Belegen oder Platzhalter [Marktzahl fehlt].\n"
-    "3.2 Geschäftsmodell und Markt: Zielkunden und Differenzierung; Wettbewerb [unklar]."
+    "3.2 Geschäftsmodell und Markt: Zielkunden und Differenzierung; Wettbewerb [unklar].\n"
+    "3.3 Energie-/Umwelt-/Sozialwirkung: relevante Wirkungen [offen]."
 )
 
 

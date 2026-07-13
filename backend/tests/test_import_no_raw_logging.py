@@ -28,7 +28,9 @@ from tests.review_helpers import clean_field, mut, setup_completed_run
 MARKER_PROJECT = "PROJECT_SECRET_MARKER_123"
 MARKER_PARTNER = "PARTNER_CONFIDENTIAL_NAME"
 MARKER_BUDGET = "CHF_999999_SECRET_BUDGET"
-MARKERS = (MARKER_PROJECT, MARKER_PARTNER, MARKER_BUDGET)
+# «Bearbeitet übernommen»: auch menschlich editierter Text ist D2.
+MARKER_EDITED = "EDITED_SECRET_MARKER_456"
+MARKERS = (MARKER_PROJECT, MARKER_PARTNER, MARKER_BUDGET, MARKER_EDITED)
 
 ABSTRACT = "INTRO.APP.ABSTRACT"
 EXEC_SUMMARY = "INTRO.APP.EXECUTIVE_SUMMARY"
@@ -161,6 +163,24 @@ def test_import_path_never_logs_marker_content(client, caplog):
     )
     assert res.status_code == 409
     assert not detail_contains(res.text, MARKERS)
+
+    # 2b) «Bearbeitet übernommen» OHNE run_id (Vormerkung vor dem Lauf): der
+    # editierte Text ist ebenfalls D2 und darf in keiner Log-Fläche landen.
+    res = client.post(
+        f"/api/v1/imports/{by_field[EXEC_SUMMARY]['import_candidate_id']}/decision",
+        json={
+            "decision": "accepted",
+            "edited_text": f"Editierte Fassung mit {MARKER_EDITED}.",
+        },
+        headers=mut(csrf),
+    )
+    assert res.status_code == 200, res.text
+    # Positivkontrolle: der editierte Text liegt in der DB (erlaubte Fläche).
+    with SessionLocal() as db:
+        staged = db.get(
+            ImportCandidate, by_field[EXEC_SUMMARY]["import_candidate_id"]
+        )
+        assert staged is not None and MARKER_EDITED in (staged.edited_text or "")
 
     # 3) Doppel-Entscheid (409 already decided).
     res = client.post(

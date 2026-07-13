@@ -5,10 +5,6 @@
 import { getCsrfToken } from "./session"
 
 export type PartnerType = "research_partner" | "implementation_partner" | "other"
-
-// Set by the intake form when the project was created but partner persistence
-// failed; the /partner page shows the hint once and clears the flag (B2).
-export const PARTNER_SAVE_HINT_KEY = "rf_partner_save_hint"
 export type ResearchEligibility =
   | "eligible"
   | "not_eligible"
@@ -30,6 +26,9 @@ export interface PartnerInput {
   research_partner_eligibility_status?: ResearchEligibility | null
   personnel_independence_status?: IndependenceStatus | null
   financial_independence_status?: IndependenceStatus | null
+  /** Kurze Begründung; Pflicht bei explizit unklar/nicht bestätigt
+   *  (Backend-Konsistenzregel «partner_comment_required»). */
+  review_comment?: string | null
 }
 
 export interface PartnerDto extends PartnerInput {
@@ -63,9 +62,18 @@ const MESSAGES: Record<number, string> = {
 }
 
 async function fail(res: Response): Promise<PartnerError> {
+  // Backend-Problem-Details sind deutsche, nutzerlesbare Sätze (z. B. die
+  // Kommentar-Konsistenzregel) — sie gewinnen vor der Status-Sammelmeldung.
+  let detail: string | null = null
+  try {
+    const body = await res.json()
+    if (typeof body?.detail === "string" && body.detail) detail = body.detail
+  } catch {
+    // non-JSON body
+  }
   return new PartnerError(
     res.status,
-    MESSAGES[res.status] ?? "Es ist ein Fehler aufgetreten."
+    detail ?? MESSAGES[res.status] ?? "Es ist ein Fehler aufgetreten."
   )
 }
 

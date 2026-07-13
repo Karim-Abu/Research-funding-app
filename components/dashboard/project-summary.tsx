@@ -12,6 +12,7 @@ interface ProjectSummaryBarProps {
 /** Compact overview row above the project grid. Counts are derived in the frontend. */
 export function ProjectSummaryBar({ projects }: ProjectSummaryBarProps) {
   const summary = summarizeProjects(projects)
+  const blockerAccent = summary.blockerCount > 0 ? "text-destructive" : undefined
 
   const tiles: {
     label: string
@@ -28,9 +29,12 @@ export function ProjectSummaryBar({ projects }: ProjectSummaryBarProps) {
     },
     {
       label: "Blocker",
-      value: summary.blockerCount,
+      // Keine Prüfung durchgeführt ⇒ nie eine 0 behaupten (Regel 7).
+      value: summary.blockerCountKnown ? summary.blockerCount : "Noch nicht geprüft",
       icon: OctagonAlert,
-      accent: summary.blockerCount > 0 ? "text-destructive" : undefined,
+      accent: summary.blockerCountKnown
+        ? blockerAccent
+        : "text-sm text-muted-foreground",
     },
     {
       label: "Nächste Frist",

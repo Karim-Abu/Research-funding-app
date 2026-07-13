@@ -223,9 +223,10 @@ export function LiveRequirements({
         <div className="mx-auto flex max-w-4xl flex-col gap-6">
           {/* Header */}
           <div className="flex flex-col gap-1">
-            <h1 className="text-balance text-2xl font-semibold text-foreground">
+            {/* h2: Seiten-h1 ist «Analyse & Recherche» (app/anforderungen). */}
+            <h2 className="text-balance text-xl font-semibold text-foreground">
               Anforderungen &amp; Fördervoraussetzungen
-            </h1>
+            </h2>
             <p className="text-sm text-muted-foreground">
               Automatisch erkannte Voraussetzungen, Belege und offene Prüfpunkte
               für diesen Antrag.
@@ -486,7 +487,7 @@ function LiveRequirementRow({
 function LiveRowActions({ row }: { row: LiveRow }) {
   const primary = primaryActionFor(row)
   const evidenceHref = row.firstAnchorId
-    ? `/quellen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`
+    ? `/anforderungen?tab=evidenz&anchor=${encodeURIComponent(row.firstAnchorId)}`
     : null
 
   // Secondaries: evidence link + neutral review link, unless the primary

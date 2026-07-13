@@ -105,7 +105,8 @@ def test_planner_produces_three_to_five_public_safe_queries():
     for q in queries:
         assert q.source == "deterministic_planner"
         assert q.public_safe and q.blocked_reason is None
-        assert q.approval_required is False
+        # R8 Freigabepflicht: jede Planner-Query braucht eine menschliche Freigabe.
+        assert q.approval_required is True
 
 
 def test_planner_is_deterministic():
@@ -225,20 +226,32 @@ def test_snippet_creates_no_evidence_anchor(db, web_fake):
 
 
 def test_canary_never_reaches_query_audit_or_report(db, web_fake):
-    # Canary lives ONLY in a confidential-style description field; the planner/runner
-    # must never pull it into a query, audit event, or the report.
-    project = _project(db, _D0, description=f"Vertraulich: {CANARY} darf nie nach aussen.")
+    # R8-Leakage: Rohidee-Satz, Canary, projektspezifischer Technikbegriff,
+    # zusammengesetzter Partnername und Budget (Zahlwörter) leben NUR in der
+    # Beschreibung; Planner/Runner dürfen nichts davon in Query, Task-Text,
+    # Audit-Event oder Report ziehen (der Planner liest strukturell nur den Topic).
+    markers = [CANARY, "QuantumFoam", "Acme-Robotics", "halbe Million Franken"]
+    raw_idea = (
+        f"Rohidee: {CANARY}. Unser QuantumFoam-Aktuator mit Acme-Robotics kostet "
+        "eine halbe Million Franken und darf nie nach aussen."
+    )
+    project = _project(db, _D0, description=raw_idea)
     out = run_market_research(db, project=project, actor_user_id="user-anna",
                               topic=TOPIC, case_id="F1", data_mode="fake_test")
     for q in out.queries:
-        assert CANARY not in q.query_text
+        for m in markers:
+            assert m not in q.query_text
     for t in out.task_ids:
         task = db.get(ResearchTask, t)
-        assert CANARY not in task.query_text
+        for m in markers:
+            assert m not in task.query_text
     audits = db.scalars(
         select(AuditEvent).where(AuditEvent.target_id.in_(out.task_ids))
     )
     for a in audits:
-        assert CANARY not in str(a.detail or {})
+        blob = str(a.detail or {})
+        for m in markers:
+            assert m not in blob
     report = render_report(out, generated_at="2026-07-09")
-    assert CANARY not in report
+    for m in markers:
+        assert m not in report

@@ -19,6 +19,9 @@ export interface ImportCandidateDto {
   /** Deutsches Anzeige-Label — die UI zeigt nie rohe Feld-IDs. */
   label: string
   extracted_text: string
+  /** «Bearbeitet übernommen»: editierter Text; extracted_text bleibt das
+   *  unveränderte Original (Originalausschnitt). */
+  edited_text: string | null
   confidence: ImportConfidence
   source_location: string | null
   decision: ImportDecision
@@ -38,11 +41,19 @@ const STATUS_MESSAGES: Record<number, string> = {
 export class ImportError extends Error {
   readonly status: number
   readonly code: string
-  constructor(status: number, code: string, message: string) {
+  /** Correlation-ID des Backends — nur für «Technische Details» gedacht. */
+  readonly correlationId: string | null
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    correlationId: string | null = null
+  ) {
     super(message)
     this.name = "ImportError"
     this.status = status
     this.code = code
+    this.correlationId = correlationId
   }
 }
 
@@ -58,18 +69,21 @@ function csrfHeaders(): Record<string, string> {
 async function toError(res: Response): Promise<ImportError> {
   let code = "error"
   let detail: string | null = null
+  let correlation: string | null = null
   try {
     const body = await res.json()
     if (body?.code) code = body.code
     // Backend-Problem-Details sind bereits deutsche, nutzerlesbare Sätze.
     if (typeof body?.detail === "string" && body.detail) detail = body.detail
+    if (typeof body?.correlation_id === "string") correlation = body.correlation_id
   } catch {
     // non-JSON body
   }
   return new ImportError(
     res.status,
     code,
-    detail ?? STATUS_MESSAGES[res.status] ?? "Es ist ein Fehler aufgetreten."
+    detail ?? STATUS_MESSAGES[res.status] ?? "Es ist ein Fehler aufgetreten.",
+    correlation ?? res.headers.get("x-correlation-id")
   )
 }
 
@@ -107,7 +121,11 @@ export async function decideImportCandidate(
   candidateId: string,
   payload: {
     decision: "accepted" | "saved_as_source" | "ignored"
+    /** Optional: ohne run_id wird die Übernahme projektbezogen vorgemerkt
+     *  und beim nächsten Analyse-Lauf als Entwurfsbasis konsumiert. */
     run_id?: string
+    /** «Bearbeitet übernommen» (nur bei accepted). */
+    edited_text?: string
     confirm_overwrite?: boolean
   }
 ): Promise<ImportCandidateDto> {

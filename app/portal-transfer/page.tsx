@@ -2,32 +2,22 @@
 
 import * as React from "react"
 import { RefreshCw } from "lucide-react"
+import { useRouter } from "next/navigation"
 import { AppShell } from "@/components/shell/app-shell"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
+import { ActiveRunDetails } from "@/components/status/active-run-details"
 import { useSession } from "@/components/providers/app-providers"
+import { useActiveRun } from "@/components/providers/workflow-run-provider"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
-import { getActiveProjectId, getCurrentRunId, loadIntake } from "@/lib/intake-store"
+import { getCurrentRunId, loadIntake } from "@/lib/intake-store"
 import { getCapabilities } from "@/lib/capabilities"
-import { listProjectRuns } from "@/lib/runs"
 import { charCount, listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { listPortalFields, type PortalFieldInfoDto } from "@/lib/portal-fields"
 import { getReview, type ReviewPackageDto } from "@/lib/review"
 import { getRunFields, ApiError, BRIDGE_UNREACHABLE_MESSAGE } from "@/lib/api"
 import type { PortalFieldDraftDto as MockFieldDto } from "@/lib/backend-contract"
-import type { StepStatus } from "@/lib/types"
-
-const stepStatus: StepStatus[] = [
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "done",
-  "current",
-]
 
 function isConfidential(): boolean {
   const v = loadIntake()?.vertraulichkeit
@@ -57,14 +47,6 @@ function adaptMockField(m: MockFieldDto): PortalFieldDraftDto {
     evidence_links: [],
     open_issues: [],
   }
-}
-
-function emptyState(message: string) {
-  return (
-    <div className="mx-auto max-w-3xl px-6 py-16 text-center">
-      <p className="text-sm text-muted-foreground">{message}</p>
-    </div>
-  )
 }
 
 function LivePortalTransfer({ runId }: { runId: string }) {
@@ -140,35 +122,54 @@ function LivePortalTransfer({ runId }: { runId: string }) {
 }
 
 function LivePortalTransferContainer() {
-  const [runId, setRunId] = React.useState<string | null>(null)
-  const [resolved, setResolved] = React.useState(false)
-  const [noProject, setNoProject] = React.useState(false)
+  const router = useRouter()
+  const { projectId, runId, source, loading } = useActiveRun()
 
-  React.useEffect(() => {
-    const projectId = getActiveProjectId()
-    if (!projectId) {
-      setNoProject(true)
-      setResolved(true)
-      return
-    }
-    listProjectRuns(projectId)
-      .then((runs) => setRunId(runs.find((r) => r.status === "completed")?.run_id ?? null))
-      .catch(() => setRunId(null))
-      .finally(() => setResolved(true))
-  }, [])
-
-  if (!resolved) {
+  if (loading) {
     return (
       <div className="px-6 py-8">
         <Skeleton className="mx-auto h-40 max-w-4xl" />
       </div>
     )
   }
-  if (noProject) return emptyState("Kein aktives Projekt ausgewählt.")
-  if (!runId) return emptyState("Es liegt noch keine abgeschlossene Analyse vor.")
+  if (!projectId) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <p className="text-sm text-muted-foreground">
+          Kein aktives Projekt ausgewählt.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => router.push("/")}
+        >
+          Zur Projektübersicht
+        </Button>
+      </div>
+    )
+  }
+  if (!runId) {
+    return (
+      <div className="mx-auto max-w-3xl px-6 py-16 text-center">
+        <p className="text-sm text-muted-foreground">
+          Es liegt noch keine abgeschlossene Analyse vor.
+        </p>
+        <Button
+          variant="outline"
+          className="mt-4"
+          onClick={() => router.push("/quellen")}
+        >
+          Zu den Quellen — Analyse starten
+        </Button>
+      </div>
+    )
+  }
   return (
     <div className="px-6 py-8">
       <LivePortalTransfer runId={runId} />
+      <div className="mx-auto mt-6 max-w-4xl">
+        <ActiveRunDetails runId={runId} source={source} />
+      </div>
     </div>
   )
 }
@@ -226,8 +227,6 @@ export default function PortalTransferPage() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={8}
-      stepStatus={stepStatus}
     >
       {mode === "live" ? <LivePortalTransferContainer /> : <MockPortalTransfer />}
     </AppShell>

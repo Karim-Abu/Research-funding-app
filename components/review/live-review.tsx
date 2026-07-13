@@ -736,7 +736,7 @@ function BlockerCard({ finding }: { finding: ReviewFindingDto }) {
           </Button>
         )}
         {isEvidence && (
-          <Button variant="ghost" size="xs" render={<a href="/quellen?tab=evidenz" />} nativeButton={false}>
+          <Button variant="ghost" size="xs" render={<a href="/anforderungen?tab=evidenz" />} nativeButton={false}>
             Evidenz prüfen
           </Button>
         )}
@@ -776,7 +776,7 @@ function DedupedHint({ hint }: { hint: DedupedFinding }) {
   // Every hint gets at least one sensible action (M10.2 / E13).
   const action =
     group === "belege"
-      ? { label: "Belege prüfen", href: "/quellen?tab=evidenz" }
+      ? { label: "Belege prüfen", href: "/anforderungen?tab=evidenz" }
       : firstWithField
         ? {
             label: "Im Entwurf öffnen",

@@ -22,6 +22,11 @@ def _project_dict(project: Project) -> dict:
     return {
         "project_id": project.project_id,
         "funding_instrument_profile_id": project.funding_instrument_profile_id,
+        # Strukturierte Projektbeschreibung aus dem Intake: versionierter
+        # Run-Input (A1-Kontext) — eine spätere Änderung macht den Lauf
+        # sichtbar stale, genau wie eine Budget-Änderung.
+        "title": project.title,
+        "description": project.description,
         # Structured budget/duration inputs (Slice 1). Part of the frozen
         # snapshot so a later budget edit makes the run visibly stale.
         "direct_total_project_costs_excluding_overhead": (

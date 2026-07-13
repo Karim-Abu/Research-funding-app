@@ -30,7 +30,7 @@ _PROMPT_SNAPSHOTS: dict[str, str] = {
     "a2_solution_innovation_v2.md": "7fc50d11e5872b6d2ee01266f29fad49234917fe3f2f579904875975f502cf22",
     "a2_value_creation_market_logic_v2.md": "d88399bcb22d8f5624817e87bf4328d4db61f947a04a445b0dd53352762e30cf",
     "a3_evidence_consistency_v1.md": "d93cfa13190fd4fad20e2a5a5a2a987b7461df9e6bc95195c3b4feaac69f4d31",
-    "market_comparison_v1.md": "840c39902d8d62f8efc1c6d0dc0930f959b477da604459138df79bf3884a9f30",
+    "market_comparison_v2.md": "a90bdfc6ac676e181a6b386333bf30c97d91286e2d32abd8bd4ee1441431bf71",
 }
 
 

@@ -11,6 +11,8 @@ export type EvidenceMatchType = "exact_normalized" | "fuzzy" | "semantic" | "man
 export type EvidenceSourceType = "pdf" | "docx" | "txt" | "url"
 export type EvidenceLinkStatus = "active" | "stale" | "removed"
 
+import type { SupportStatus } from "@/lib/evidence-ladder"
+
 export interface EvidenceAnchorDto {
   anchor_id: string
   source_version_id: string
@@ -31,6 +33,8 @@ export interface EvidenceAnchorDto {
   match_score?: number | null
   coverage?: number | null
   source_accessed_at?: string | null
+  // R6-Statusleiter (additiv, backend-abgeleitet). Coverage ≠ Correctness.
+  support_status?: SupportStatus | null
 }
 
 export interface EvidenceLinkDto {
@@ -47,6 +51,8 @@ export interface EvidenceLinkDto {
   created_at: string
   claim_id?: string | null
   claim_text?: string | null
+  // R6-Statusleiter (additiv, backend-abgeleitet). Coverage ≠ Correctness.
+  support_status?: SupportStatus | null
 }
 
 // User-facing labels. human_verified is mapped but NEVER shown in M5 (no

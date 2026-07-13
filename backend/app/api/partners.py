@@ -35,6 +35,32 @@ def _require_partner(db, partner_id, workspace_id):
     return partner
 
 
+# Konsistenzregel (kein Urteil): Wer einen Status EXPLIZIT als unklar oder
+# nicht bestätigt erfasst, muss das kurz begründen. Nicht erfasste Angaben
+# (None) bleiben gültig — die Regeln melden dafür ehrlich «Angabe fehlt».
+_COMMENT_REQUIRING_INDEPENDENCE = ("exception", "needs_input")
+_COMMENT_REQUIRING_ELIGIBILITY = ("not_eligible", "needs_verification")
+
+
+def _require_review_comment_consistency(payload: PartnerCreate) -> None:
+    needs_comment = (
+        payload.personnel_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or payload.financial_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or payload.research_partner_eligibility_status
+        in _COMMENT_REQUIRING_ELIGIBILITY
+        or payload.swiss_value_creation is False
+    )
+    if needs_comment and not (payload.review_comment or "").strip():
+        raise ProblemException(
+            status=422, code="partner_comment_required",
+            title="Unprocessable Entity",
+            detail=(
+                "Bitte begründen Sie die Angabe «unklar/nicht bestätigt» kurz "
+                "im Kommentar zur Einstufung."
+            ),
+        )
+
+
 @router.get("/projects/{project_id}/partners", response_model=list[Partner])
 def list_partners(
     project_id: str,
@@ -60,6 +86,7 @@ def create_partner(
     ),
 ) -> Partner:
     _require_project(db, project_id, context.user.workspace_id)
+    _require_review_comment_consistency(payload)
 
     scope = f"{context.user.workspace_id}:{context.user.id}:POST:/partners"
     fingerprint = idempotency.fingerprint(
@@ -100,6 +127,7 @@ def update_partner(
     db: Session = Depends(get_db),
 ) -> Partner:
     partner = _require_partner(db, partner_id, context.user.workspace_id)
+    _require_review_comment_consistency(payload)
     partners_repo.replace(db, partner, payload)
     audit.record(
         db, workspace_id=context.user.workspace_id, actor_user_id=context.user.id,

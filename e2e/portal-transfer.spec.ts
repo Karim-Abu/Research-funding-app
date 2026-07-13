@@ -137,6 +137,10 @@ test("M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage
     has: page.getByRole("heading", { name: abstract.field_name }),
   })
   await expect(abstractCard.getByText("Offene Angaben")).toBeVisible()
+  // R6 Copy-Readiness: der Template-Abstract trägt die Backend-abgeleitete
+  // Readiness-Pill — nie "einreichbereit".
+  await expect(abstractCard.getByText("Platzhalter offen")).toBeVisible()
+  await expect(page.locator("body")).not.toContainText("einreichbereit")
 
   // Slice 3 (E2-A): copying despite warnings requires a documented reason.
   // Before a reason is chosen, "Trotzdem kopieren" must stay disabled.
@@ -166,6 +170,56 @@ test("M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage
   await expect(
     page.getByText(/müssen weiterhin direkt in\s+Innolink erfasst werden/),
   ).toBeVisible()
+
+  // R6 Kapitel-Kopie: Arbeitskopie-Warnung + Begründung, dann liegt das
+  // zusammengesetzte Kapitel (mit Feldüberschriften) in der Zwischenablage.
+  // (Die Template-Felder tragen Hinweise → der Bestätigungsschritt ist Pflicht.)
+  await page.getByRole("button", { name: "Kapitel kopieren" }).first().click()
+  await expect(page.getByText(/Sie kopieren eine Arbeitskopie/)).toBeVisible()
+  await page.getByText("Feld wird im Portal fertiggestellt").first().click()
+  await page.getByRole("button", { name: "Trotzdem kopieren", exact: true }).click()
+  await expect(page.getByText(/Sie kopieren eine Arbeitskopie/)).toBeHidden()
+  const chapterClipboard = await page.evaluate(() => navigator.clipboard.readText())
+  expect(chapterClipboard).toContain("Einleitung")
+  expect(chapterClipboard).toContain(abstract.field_name)
+
+  await api.delete("/api/session", { headers: { "X-CSRF-Token": csrf, Origin: ORIGIN } })
+})
+
+test("R6 Arbeitsplatz: Ziel-Tabs, Unterabschnitte und Statusleiter im Editor", async ({
+  page,
+}) => {
+  await page.goto("/login")
+  await page.getByLabel("E-Mail").fill(EMAIL)
+  await page.getByLabel("Passwort").fill(PASSWORD)
+  await page.getByRole("button", { name: "Anmelden" }).click()
+  await expect(page).toHaveURL(/\/$/, { timeout: 20_000 })
+
+  const api = page.request
+  const csrf = (await (await api.get("/api/session")).json()).csrf_token as string
+  const mut = () => ({
+    "X-CSRF-Token": csrf, Origin: ORIGIN, "Idempotency-Key": idem(),
+    "Content-Type": "application/json",
+  })
+  const { projectId } = await completeRun(api, mut)
+  await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), projectId)
+
+  // Composite-Feld öffnen: sichtbare Unterabschnitte (4.1 …) + Ziel-Tabs.
+  await page.goto(`/editor?field=${COMPOSITE}`)
+  await expect(page.getByRole("navigation", { name: "Unterabschnitte" })).toBeVisible({
+    timeout: 20_000,
+  })
+  await expect(page.getByRole("button", { name: /^4\.1/ })).toBeVisible()
+  await expect(page.getByRole("button", { name: /^4\.5\.1/ })).toBeVisible()
+  // Im Modus «Prüfen» ist das Kontextpanel immer sichtbar (in den Schreib-
+  // Modi startet es bewusst eingeklappt).
+  await page.getByRole("button", { name: "Prüfen", exact: true }).click()
+  for (const tab of ["Quellen", "Fehlende Angaben", "Schwächen", "Markt & Wettbewerb"]) {
+    await expect(page.getByRole("tab", { name: tab })).toBeVisible()
+  }
+  // Kein technischer Agentenbegriff im Standardpfad.
+  await expect(page.locator("body")).not.toContainText("synthetic_eval")
+  await expect(page.locator("body")).not.toContainText("missing_inputs")
 
   await api.delete("/api/session", { headers: { "X-CSRF-Token": csrf, Origin: ORIGIN } })
 })

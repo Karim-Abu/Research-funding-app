@@ -23,7 +23,14 @@ from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
 from app.config.settings import get_settings
-from app.db.models import Project, ResearchResult, ResearchTask
+from app.db.models import (
+    Project,
+    ResearchResult,
+    ResearchTask,
+    SourceDocument,
+    SourceFragment,
+    SourceVersion,
+)
 from app.db.session import get_db
 from app.evaluation import integrated_draft_real as idr
 from app.integrated_draft.runner import run_integrated_draft
@@ -48,8 +55,11 @@ _PARTNER_PURPOSE = "partner_research_org_topic"
 
 
 def _seed_research_context(actor_user_id: str):
-    """Seed one advisory market/partner ResearchCandidate onto the VC/SOL child
-    projects (mirror of the R5.9 F1-CLI seed — synthetic rows, no queries, no web)."""
+    """Seed advisory research context onto the VC/SOL child projects (mirror of the
+    R5.9 F1-CLI seed — synthetic rows, no queries, no web). R8 (Anforderung 10): in
+    den A2-Kontext fliessen NUR akzeptierte (importierte) Quellen — daher wird eine
+    importierte öffentliche Quelle geseedet; der zusätzliche offene Kandidat beweist,
+    dass Kandidaten weder Kontext noch Beleg werden."""
 
     def _seed(db: Session, field_id: str, project: Project) -> None:
         purpose = {_VC_FIELD: _MARKET_PURPOSE, _SOL_FIELD: _PARTNER_PURPOSE}.get(field_id)
@@ -70,6 +80,39 @@ def _seed_research_context(actor_user_id: str):
             title="Öffentliche Quelle (synthetisch)",
             snippet="Öffentlich zugänglicher Auszug (Snippet ist kein Beleg).",
             provider_rank=1, status="candidate",
+        ))
+        # Akzeptierte (importierte) öffentliche Quelle — der einzige Research-Weg
+        # in den A2-Kontext (Markt-Signalbegriffe für den deterministischen Prefilter).
+        text = (
+            "Der Markt für Anbieter und Wettbewerber wächst; alternative Lösungen "
+            "und Produkte für Kunden sind öffentlich beschrieben."
+        )
+        source_id = "src-" + uuid.uuid4().hex[:8]
+        version_id = "sv-" + uuid.uuid4().hex[:8]
+        dc = {
+            "sensitivity": "public", "origin": "public_source",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "validated_public", "nda_applies": False,
+        }
+        db.add(SourceDocument(
+            source_id=source_id, project_id=project.project_id,
+            workspace_id=project.workspace_id, name="Marktbericht (öffentlich)",
+            type="url", status="processed", data_classification=dc,
+            current_source_version_id=version_id, created_by=actor_user_id,
+        ))
+        db.add(SourceVersion(
+            source_version_id=version_id, source_document_id=source_id,
+            version_number=1, original_content_hash="h", normalized_content_hash="h2",
+            normalized_text=text, parser_version="parser-1",
+            normalizer_version="normalizer-1", chunker_version="chunker-1",
+            processing_status="processed", data_classification=dc,
+            storage_ref="b" * 32, original_filename="market.html",
+            byte_size=len(text), mime_type="text/html",
+        ))
+        db.add(SourceFragment(
+            fragment_id="frag-" + uuid.uuid4().hex[:8], source_version_id=version_id,
+            ordinal=0, original_text=text, normalized_text=text, start_offset=0,
+            end_offset=len(text), content_hash="fh",
         ))
         db.flush()
 

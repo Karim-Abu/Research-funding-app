@@ -91,7 +91,10 @@ def test_aggregator_is_idempotent(client):
         db.close()
 
 
-def test_graph_recorded_review_stages_and_a3_disabled(client):
+def test_graph_recorded_review_stages_and_a3_skip_reason(client):
+    """Seit der A2/A3-Graph-Anbindung ist A3 nicht mehr pauschal disabled:
+    ein deterministischer Lauf überspringt A3 mit ehrlichem Modus-Grund
+    (Control-Detail «a3_skipped …») — kein Provider-Call."""
     _csrf, pid, run_id = setup_completed_run(client)
     db = SessionLocal()
     try:
@@ -102,10 +105,11 @@ def test_graph_recorded_review_stages_and_a3_disabled(client):
             select(ControlResult).where(
                 ControlResult.project_id == pid,
                 ControlResult.control_id == "CTRL.DATA_POLICY",
-                ControlResult.detail.like("a3_disabled%"),
+                ControlResult.detail.like("a3_skipped%"),
             )
         )
         assert a3 is not None and a3.status == "passed"
+        assert "processing_mode_deterministic_only" in a3.detail
     finally:
         db.close()
 

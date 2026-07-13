@@ -4,9 +4,26 @@
 // dieselbe Blocker-Zahl auf Dashboard, Anforderungen, Qualitätsprüfung und
 // Export. Farbinformation immer mit Textlabel.
 
-import { OctagonAlert, CheckCircle2, Clock } from "lucide-react"
+import { OctagonAlert, CheckCircle2, Clock, CircleDashed } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useReviewStatus, STALE_LABEL } from "@/lib/status"
+
+/** Ehrlicher Leerzustand: keine Prüfung durchgeführt ⇒ nie «0 Blocker»,
+ *  sondern «Noch nicht geprüft» (Workflow-Regel 7). */
+export function NotYetReviewedBadge({ className }: { className?: string }) {
+  return (
+    <span
+      data-testid="not-yet-reviewed"
+      className={cn(
+        "inline-flex items-center gap-1.5 rounded-full border border-border bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground",
+        className
+      )}
+    >
+      <CircleDashed className="size-3.5" aria-hidden />
+      Noch nicht geprüft
+    </span>
+  )
+}
 
 export function CanonicalStatusBadge({ runId }: { runId: string }) {
   const { status } = useReviewStatus(runId)

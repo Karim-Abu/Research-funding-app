@@ -293,4 +293,42 @@ describe("PortalTransfer", () => {
       screen.getByText(/können dort von anderen lokalen Anwendungen gelesen werden/)
     ).toBeInTheDocument()
   })
+
+  // R6 Copy-Readiness-Matrix (Frontend): der Backend-Wert wird gerendert und
+  // nie als "einreichbereit" bezeichnet.
+  it.each([
+    ["copy_ready", "Bereit zum Kopieren"],
+    ["draft", "Arbeitskopie"],
+    ["placeholders_open", "Platzhalter offen"],
+    ["not_reviewed", "Prüfung nicht aktuell"],
+    ["blocker", "Blocker"],
+  ] as const)(
+    "rendert Backend-copy_readiness %s als '%s'",
+    (readiness, label) => {
+      const fields = [
+        field("INTRO.APP.ABSTRACT", "Abstract", "Sauberer Text.", {
+          copy_readiness: readiness,
+        }),
+      ]
+      render(<PortalTransfer fields={fields} review={reviewPkg()} />)
+      expect(screen.getAllByText(label).length).toBeGreaterThan(0)
+      expect(document.body.textContent).not.toMatch(/einreichbereit/i)
+    }
+  )
+
+  it("Backend-copy_readiness hat Vorrang vor der Warnungs-Heuristik", () => {
+    // Feld-Freigabe im Backend (copy_ready) obwohl der Lauf nicht approved
+    // ist: die Karte zeigt "Bereit zum Kopieren" und KEINE Review-Warnung.
+    const fields = [
+      field("INTRO.APP.ABSTRACT", "Abstract", "Sauberer Text.", {
+        copy_readiness: "copy_ready",
+      }),
+    ]
+    render(
+      <PortalTransfer fields={fields} review={reviewPkg({ approval_status: "open" })} />
+    )
+    expect(screen.getByText("Bereit zum Kopieren")).toBeInTheDocument()
+    expect(screen.queryByText("Prüfung nicht aktuell")).toBeNull()
+    expect(screen.getByRole("button", { name: "Text kopieren" })).toBeInTheDocument()
+  })
 })

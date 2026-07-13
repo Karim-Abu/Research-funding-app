@@ -89,7 +89,16 @@ describe("active Antrag context (M10.2)", () => {
           items: [project("project-a", "Verbundwerkstoffe (Demo)")],
           next_cursor: null,
         })
-      )
+      ),
+      // WorkflowRunProvider (zentrale Run-Auswahl) lädt Projekt, Runs und
+      // Partner des aktiven Antrags.
+      http.get("/api/projects/project-a", () =>
+        HttpResponse.json(project("project-a", "Verbundwerkstoffe (Demo)"))
+      ),
+      http.get("/api/projects/project-a/runs", () =>
+        HttpResponse.json({ items: [], next_cursor: null })
+      ),
+      http.get("/api/projects/project-a/partners", () => HttpResponse.json([]))
     )
   })
 
@@ -137,8 +146,10 @@ describe("active Antrag context (M10.2)", () => {
     // Project-scoped items render disabled with the selection hint.
     expect(screen.queryByRole("link", { name: "Quellen" })).toBeNull()
     expect(screen.getAllByText("Zuerst Antrag auswählen").length).toBeGreaterThan(0)
-    // Intake stays reachable to create a new Antrag.
-    expect(screen.getByRole("link", { name: "Intake" })).toBeInTheDocument()
+    // «Projekt anlegen» stays reachable to create a new Antrag.
+    expect(
+      screen.getAllByRole("link", { name: "Projekt anlegen" }).length
+    ).toBeGreaterThan(0)
   })
 
   it("starts expanded on desktop and collapses to the icon rail", async () => {

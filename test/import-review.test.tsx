@@ -30,18 +30,22 @@ vi.mock("@/lib/projects", () => ({
   })),
 }))
 
-const listProjectRuns = vi.fn(async () => [
-  { run_id: "run-1", project_id: "p-1", status: "completed" },
-])
-vi.mock("@/lib/runs", () => ({
-  listProjectRuns: (...args: unknown[]) => listProjectRuns(...args),
-  createRun: vi.fn(),
-  getRun: vi.fn(),
+// Zentrale Run-Auswahl (Ladder): der Test steuert den aktiven Run direkt.
+let activeRunId: string | null = "run-1"
+vi.mock("@/components/providers/workflow-run-provider", () => ({
+  useActiveRun: () => ({
+    runId: activeRunId,
+    source: activeRunId ? "project_active" : null,
+    loading: false,
+    reload: vi.fn(),
+  }),
 }))
 
+const getSource = vi.fn()
+const uploadFiles = vi.fn()
 vi.mock("@/lib/sources", () => ({
-  uploadFiles: vi.fn(),
-  getSource: vi.fn(),
+  uploadFiles: (...args: unknown[]) => uploadFiles(...args),
+  getSource: (...args: unknown[]) => getSource(...args),
 }))
 
 const getImportCandidates = vi.fn<() => Promise<ImportCandidateDto[]>>()
@@ -71,6 +75,7 @@ function candidate(
     field_id: "INTRO.APP.ABSTRACT",
     label: "Abstract (wird in Aramis publiziert)",
     extracted_text: "Das Projekt entwickelt eine adaptive Lastprognose.",
+    edited_text: null,
     confidence: "found",
     source_location: "Seite 1",
     decision: "pending",
@@ -92,15 +97,20 @@ const FIXTURE: ImportCandidateDto[] = [
 ]
 
 beforeEach(() => {
+  activeRunId = "run-1"
   getImportCandidates.mockResolvedValue(FIXTURE)
   decideImportCandidate.mockImplementation(
-    async (_id: string, payload: { decision: string }) =>
-      candidate({ decision: payload.decision as ImportCandidateDto["decision"] })
+    async (_id: string, payload: { decision: string; edited_text?: string }) =>
+      candidate({
+        decision: payload.decision as ImportCandidateDto["decision"],
+        edited_text: payload.edited_text ?? null,
+      })
   )
 })
 
 afterEach(() => {
   vi.clearAllMocks()
+  window.history.pushState({}, "", "/import")
 })
 
 async function renderReview() {
@@ -201,19 +211,109 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     )
   })
 
-  it("ohne abgeschlossene Analyse ist Übernehmen gesperrt und der Start angeboten", async () => {
-    listProjectRuns.mockResolvedValueOnce([])
+  it("Übernehmen funktioniert OHNE Analyse-Lauf (Vormerkung, kein run_id)", async () => {
+    // Fachliche Korrektur: kein «Zuerst Analyse starten»-Gate mehr.
+    activeRunId = null
     await renderReview()
-    expect(screen.getByTestId("import-start-run")).toBeInTheDocument()
-    const row = screen.getAllByTestId("import-candidate")[0]
+    expect(screen.queryByTestId("import-start-run")).not.toBeInTheDocument()
     expect(
-      within(row).getByRole("button", { name: "Übernehmen" })
-    ).toBeDisabled()
+      screen.getByText(/fliessen beim nächsten Analyse-Lauf als/)
+    ).toBeInTheDocument()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    const accept = within(row).getByRole("button", { name: "Übernehmen" })
+    expect(accept).toBeEnabled()
+    fireEvent.click(accept)
+    await waitFor(() =>
+      expect(decideImportCandidate).toHaveBeenCalledWith("c-abstract", {
+        decision: "accepted",
+      })
+    )
+    expect(await screen.findByText("Übernommen")).toBeInTheDocument()
+  })
+
+  it("Bearbeiten & übernehmen sendet edited_text und zeigt «Bearbeitet übernommen»", async () => {
+    activeRunId = null
+    await renderReview()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Bearbeiten & übernehmen" })
+    )
+    const textarea = await screen.findByLabelText(
+      "Text für die Übernahme bearbeiten"
+    )
+    // Vorbefüllt mit dem Originaltext; dann editieren.
+    expect((textarea as HTMLTextAreaElement).value).toContain(
+      "adaptive Lastprognose"
+    )
+    fireEvent.change(textarea, {
+      target: { value: "Redigierte Fassung des Abstracts." },
+    })
+    fireEvent.click(screen.getByTestId("import-accept-edited"))
+    await waitFor(() =>
+      expect(decideImportCandidate).toHaveBeenCalledWith("c-abstract", {
+        decision: "accepted",
+        edited_text: "Redigierte Fassung des Abstracts.",
+      })
+    )
+    expect(await screen.findByText("Bearbeitet übernommen")).toBeInTheDocument()
+  })
+
+  it("Upload-Fehler: Datei bleibt für «Erneut versuchen» erhalten, Details zeigen die Correlation-ID", async () => {
+    getImportCandidates.mockResolvedValueOnce([])
+    class FakeSourceError extends Error {
+      readonly status = 413
+      readonly code = "too_many_files"
+      readonly correlationId = "corr-import-9"
+    }
+    uploadFiles
+      .mockRejectedValueOnce(new FakeSourceError("Zu viele Dateien in einem Vorgang."))
+      .mockResolvedValueOnce([
+        { source_id: "s-2", name: "a.pdf", status: "processed" },
+      ])
+    createImportCandidates.mockResolvedValueOnce(FIXTURE)
+
+    render(<ImportReview />)
+    const input = await screen.findByTestId("import-file-input")
+    const file = new File(["x"], "a.pdf", { type: "application/pdf" })
+    fireEvent.change(input, { target: { files: [file] } })
+
+    // Ursachen-spezifische Meldung + Technische Details (Correlation-ID).
+    expect(
+      await screen.findByText("Zu viele Dateien in einem Vorgang.")
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Technische Details" }))
+    expect(await screen.findByText("corr-import-9")).toBeInTheDocument()
+
+    // Retry nutzt DIESELBE Datei erneut — kein erneutes Auswählen nötig.
+    fireEvent.click(screen.getByRole("button", { name: "Erneut versuchen" }))
+    await waitFor(() => expect(uploadFiles).toHaveBeenCalledTimes(2))
+    expect(uploadFiles.mock.calls[1][1]).toEqual([file])
   })
 
   it("führt nach den Entscheidungen zur Fix Queue («Nächste Aufgaben»)", async () => {
     await renderReview()
     fireEvent.click(screen.getByTestId("import-to-fix-queue"))
     expect(push).toHaveBeenCalledWith("/review")
+  })
+
+  it("übernimmt eine im Intake hochgeladene Quelle (?source=…) ohne zweiten Upload", async () => {
+    // Keine vorhandenen Kandidaten → der Adopt-Pfad greift.
+    getImportCandidates.mockResolvedValueOnce([])
+    getSource.mockResolvedValueOnce({
+      source_id: "src-9",
+      project_id: "p-1",
+      name: "innolink_sample.pdf",
+      type: "pdf",
+      status: "processed",
+    })
+    createImportCandidates.mockResolvedValueOnce(FIXTURE)
+    window.history.pushState({}, "", "/import?source=src-9")
+
+    await renderReview()
+
+    expect(getSource).toHaveBeenCalledWith("src-9")
+    expect(createImportCandidates).toHaveBeenCalledTimes(1)
+    expect(createImportCandidates).toHaveBeenCalledWith("p-1", "src-9")
+    expect(screen.getAllByTestId("import-candidate")).toHaveLength(2)
   })
 })

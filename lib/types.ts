@@ -16,20 +16,8 @@ export interface Project {
   statusLabel?: string
 }
 
-// Workflow stepper -------------------------------------------------------
-
-export type StepStatus = "done" | "current" | "upcoming"
-
-export interface WorkflowStep {
-  /** 1-based step number */
-  step: number
-  label: string
-  /** Shorter version used in the full stepper strip when the label would truncate. */
-  shortLabel?: string
-  subLabel: string
-  /** Route the step links to (8 steps map onto 6 screens). */
-  href: string
-}
+// Workflow stepper: Katalog, Schrittstatus und Ableitung leben in
+// lib/workflow.ts (6-Schritte-Modell) — hier keine Stepper-Typen mehr.
 
 // Machine status vs human confirmation ----------------------------------
 
@@ -162,10 +150,8 @@ export interface DashboardProject {
   profileLabel: string
   deadline: string
   progressPercent: number
-  /** 1-based current step number (1–8). */
+  /** 1-based current step number (1–6, lib/workflow.ts). */
   currentStep: number
-  /** Optional backend-provided display label for the current step. */
-  currentStepLabel?: string | null
   lastEditedLabel: string
   nextAction: NextAction
   warningBadge?: WarningBadge
@@ -191,20 +177,16 @@ export interface DashboardProject {
 
 
 // Intake form -------------------------------------------------------
-
-export interface IntakePartner {
-  id: string
-  name: string
-  type: "Forschungspartner" | "Umsetzungspartner"
-}
+// Partner und Budget werden NICHT mehr im Intake erfasst (Schritt 2
+// «Partner & Budget» ist der einzige Erfassungsort — keine Doppelerfassung).
 
 export interface IntakeFormData {
   titel: string
   projektidee: string
   innovationsfeld: string
-  budgetrahmen: string
+  /** "" = noch nicht klassifiziert (nur Legacy-Einträge; das Formular
+   *  startet mit dem restriktiven Default "confidential"). */
   vertraulichkeit: DataClass | ""
-  partner: IntakePartner[]
 }
 
 export interface AnalyseSettings {
@@ -214,9 +196,10 @@ export interface AnalyseSettings {
   localSourcesOnly: boolean
   costLimit: number
   model: "auto" | "claude" | "openai"
-  maxTextLength?: number
-  maxSources?: number
-  maxWebPages?: number
+  /** Run-Budget: max. KI-Aufrufe pro Durchlauf (Erweiterte Einstellungen). */
+  maxLlmCalls?: number
+  /** Run-Budget: max. öffentliche Suchanfragen, wirkt nur bei web=true. */
+  maxWebCalls?: number
   /**
    * Cloud-KI für diesen Durchlauf bewusst freigegeben (nur public/synthetic).
    * Mandatory user acknowledgement before a cloud_assisted run (Milestone 9D.2).

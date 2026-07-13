@@ -389,7 +389,7 @@ class PublicCompetenceResearchResult(BaseModel):
 
 MarketCategory = Literal[
     "competitor", "alternative_solution", "substitute", "incumbent_process",
-    "reference_solution", "unknown",
+    "reference_solution", "market_size_claim", "customer_problem", "unknown",
 ]
 MarketRelation = Literal["similar", "complementary", "competing", "reference", "unclear"]
 

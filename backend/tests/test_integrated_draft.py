@@ -79,9 +79,11 @@ def _base_project(db, *, title="F1 Integrated Draft (synthetisch)", description=
 
 
 def _make_seed_ctx(seeded_ids: list[str]):
-    """A seed_context that seeds a VC market candidate + SOL partner candidate onto the
-    child projects and records their result ids into ``seeded_ids``."""
-    from app.db.models import ResearchTask
+    """A seed_context that seeds — per VC/SOL child project — one open research
+    CANDIDATE (records its id into ``seeded_ids``; R8: darf nie Kontext/Beleg werden)
+    plus one IMPORTED public source (R8/Anforderung 10: der einzige Research-Weg in
+    den A2-Kontext)."""
+    from app.db.models import ResearchTask, SourceDocument, SourceFragment, SourceVersion
 
     def _seed(db, field_id, project):
         purpose = {VC_FIELD: MARKET_PURPOSE, SOL_FIELD: PARTNER_PURPOSE}.get(field_id)
@@ -99,6 +101,36 @@ def _make_seed_ctx(seeded_ids: list[str]):
             result_id=rid, research_task_id=task_id, workspace_id=project.workspace_id,
             source_url="https://research.example.org/r/1", title="Öffentliche Quelle",
             snippet="Auszug (kein Beleg).", provider_rank=1, status="candidate",
+        ))
+        text = (
+            "Der Markt für Anbieter und Wettbewerber wächst; alternative Lösungen "
+            "und Produkte für Kunden sind öffentlich beschrieben."
+        )
+        source_id = "src-" + uuid.uuid4().hex[:8]
+        version_id = "sv-" + uuid.uuid4().hex[:8]
+        dc = {
+            "sensitivity": "public", "origin": "public_source",
+            "processing_mode": "deterministic_only",
+            "web_research_mode": "validated_public", "nda_applies": False,
+        }
+        db.add(SourceDocument(
+            source_id=source_id, project_id=project.project_id,
+            workspace_id=project.workspace_id, name="Marktbericht (öffentlich)",
+            type="url", status="processed", data_classification=dc,
+            current_source_version_id=version_id, created_by="user-anna",
+        ))
+        db.add(SourceVersion(
+            source_version_id=version_id, source_document_id=source_id, version_number=1,
+            original_content_hash="h", normalized_content_hash="h2", normalized_text=text,
+            parser_version="parser-1", normalizer_version="normalizer-1",
+            chunker_version="chunker-1", processing_status="processed",
+            data_classification=dc, storage_ref="b" * 32,
+            original_filename="market.html", byte_size=len(text), mime_type="text/html",
+        ))
+        db.add(SourceFragment(
+            fragment_id="frag-" + uuid.uuid4().hex[:8], source_version_id=version_id,
+            ordinal=0, original_text=text, normalized_text=text, start_offset=0,
+            end_offset=len(text), content_hash="fh",
         ))
         db.flush()
         seeded_ids.append(rid)
@@ -216,7 +248,10 @@ def test_research_context_used_and_never_evidence(db, fake_provider):
     pkg = _run(db, project, seed_context=_make_seed_ctx(seeded_ids))
     assert pkg.research_summary["market"]["used"] is True
     assert pkg.research_summary["partner"]["used"] is True
-    assert pkg.research_summary["market"]["candidates"] >= 1
+    # R8 (Anforderung 10): NUR die akzeptierte (importierte) Quelle ist Kontext —
+    # offene Kandidaten fliessen nicht mehr ein.
+    assert pkg.research_summary["market"]["imported_sources"] >= 1
+    assert pkg.research_summary["market"]["candidates"] == 0
     # No seeded ResearchResult id ever appears in any used_anchor_ids.
     seeded = set(seeded_ids)
     assert len(seeded) == 2

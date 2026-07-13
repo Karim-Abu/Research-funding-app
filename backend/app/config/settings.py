@@ -112,6 +112,13 @@ class Settings(BaseSettings):
     # Variable gilt als dokumentierte Owner-Freigabe für den Evaluationslauf.
     ai_eval_mode: Literal["off", "real"] = "off"
 
+    # R6 Rubric v0: deterministische Reviewer-Heuristiken (severity_class
+    # reviewer_risk, NIE Blocker). Ganze Rubric per Flag abschaltbar; einzelne
+    # Heuristiken über die kommaseparierte Code-Liste (z. B. "kpi_chain,
+    # cross_section_numbers") deaktivierbar — Rollback je Flag (Roadmap R6).
+    rubric_v0_enabled: bool = True
+    rubric_v0_disabled_codes: str = ""
+
     # Milestone 9I-A: public web research. Keys are env-only, never defaulted/logged.
     # web_research_enabled gates the whole feature; a missing Firecrawl key + no fake
     # simply reports the feature unavailable (no crash). The web fake provider has its

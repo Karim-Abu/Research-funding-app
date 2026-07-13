@@ -257,6 +257,9 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
   expect(suggestion.character_limit).toBe(15000)
   expect(suggestion.suggested_text).toContain("3.1")
 
+  // Annahme-Schlüssel ist die Operation der Suggestion selbst (view.operation_id)
+  // — seit A2 im normalen Lauf läuft, kann der Redraft eine bestehende
+  // Suggestion wiederverwenden, die an ihrer ursprünglichen Operation hängt.
   const acceptRes = await page.request.patch(
     `/api/runs/${runId}/fields/${VC}`,
     {
@@ -264,7 +267,7 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
       data: {
         base_version_id: base,
         text: suggestion.suggested_text,
-        source_operation_id: redraftOp,
+        source_operation_id: suggestion.operation_id,
       },
     }
   )
@@ -404,6 +407,8 @@ test("Flow A: cloud confirmation enables A2 → accept → agent draft + recheck
   expect(suggestion.suggested_text).toBeTruthy()
 
   // Explicit accept → a new DraftVersion created_by=agent + recheck_required.
+  // Annahme-Schlüssel = Operation der Suggestion (kann bei Reuse aus dem
+  // normalen Lauf stammen), wie im echten UI-Client.
   const acceptRes = await page.request.patch(
     `/api/runs/${runId}/fields/${SOL}`,
     {
@@ -411,7 +416,7 @@ test("Flow A: cloud confirmation enables A2 → accept → agent draft + recheck
       data: {
         base_version_id: base,
         text: suggestion.suggested_text,
-        source_operation_id: redraftOp,
+        source_operation_id: suggestion.operation_id,
       },
     }
   )

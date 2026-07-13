@@ -1,10 +1,11 @@
-"""R5.7 — A2 Value Creation + Solution mit advisory Research-Kontext (fake provider only).
+"""R5.7/R8 — A2 Value Creation + Solution mit advisory Research-Kontext (fake provider only).
 
-Research context (imported D0/public sources + non-imported ResearchResult candidates) is
-advisory only: it flows into the A2 context_text, is field-scoped by ResearchTask.purpose
-(VC ← market_comparison, SOL ← partner_research_org_topic), and NEVER becomes an evidence
-anchor. A candidate/source id can never appear in used_anchor_ids; missing market/SOTA/
-baseline evidence must surface as missing_inputs. Non-VC/SOL fields get no research block.
+R8 (Anforderung 10): NUR vom Menschen akzeptierte (importierte) D0/public-Quellen werden
+A2-Kontext; nicht importierte ResearchResult-Kandidaten und verworfene Ergebnisse nie.
+Research context is advisory only: it flows into the A2 context_text and NEVER becomes an
+evidence anchor. A candidate/source id can never appear in used_anchor_ids; missing
+market/SOTA/baseline evidence must surface as missing_inputs. Non-VC/SOL fields get no
+research block.
 """
 from __future__ import annotations
 
@@ -77,29 +78,39 @@ def _sol_bundle(**kw):
     return bundle(field_id=SOL_FIELD_ID, **kw)
 
 
-# --- purpose-scoped gating (context assembly) --------------------------------
+# --- R8: nur akzeptierte (importierte) Quellen werden Kontext -----------------
 
 
-def test_vc_context_is_market_scoped(db):
+def test_candidates_never_enter_context_until_imported(db):
+    """R8 (Anforderung 10): nicht importierte ResearchResult-Kandidaten fliessen
+    NICHT mehr in den A2-Kontext — für kein Profil."""
     run, _draft, _base = _vc_draft(db)
-    market = add_research_candidate(db, run, purpose=MARKET_PURPOSE,
-                                    title="Marktkandidat Alpha")
-    add_research_candidate(db, run, purpose=PARTNER_PURPOSE, title="Partnerkandidat Beta")
-    rc = retrieve_advisory_research_context(db, run, VC_PROFILE)
-    titles = " ".join(c["title"] for c in rc["candidates"])
-    assert "Marktkandidat Alpha" in titles
-    assert "Partnerkandidat Beta" not in titles  # partner candidate filtered out for VC
-    assert market  # sanity
-
-
-def test_sol_context_is_partner_scoped(db):
-    run, _draft, _base = _sol_draft(db)
     add_research_candidate(db, run, purpose=MARKET_PURPOSE, title="Marktkandidat Alpha")
     add_research_candidate(db, run, purpose=PARTNER_PURPOSE, title="Partnerkandidat Beta")
-    rc = retrieve_advisory_research_context(db, run, SOL_PROFILE)
-    titles = " ".join(c["title"] for c in rc["candidates"])
-    assert "Partnerkandidat Beta" in titles
-    assert "Marktkandidat Alpha" not in titles
+    assert retrieve_advisory_research_context(db, run, VC_PROFILE) == {}
+    assert retrieve_advisory_research_context(db, run, SOL_PROFILE) == {}
+    ctx = assemble_a2_context(db, run, field_id=VC_FIELD_ID, profile_id=VC_PROFILE)
+    assert "Marktkandidat Alpha" not in ctx.context_text
+    assert "RESEARCH CONTEXT" not in ctx.context_text
+
+
+def test_imported_source_enters_context_candidates_and_discarded_never(db):
+    run, _draft, _base = _vc_draft(db)
+    add_imported_public_source(db, run, name="Akzeptierter Marktbericht",
+                               text="Markt und Wettbewerber wachsen stark.")
+    add_research_candidate(db, run, purpose=MARKET_PURPOSE, title="Offener Kandidat")
+    discarded = add_research_candidate(db, run, purpose=MARKET_PURPOSE,
+                                       title="Verworfener Kandidat")
+    from app.db.models import ResearchResult
+    db.get(ResearchResult, discarded).status = "rejected"
+    db.flush()
+    rc = retrieve_advisory_research_context(db, run, VC_PROFILE)
+    names = " ".join(s["source_name"] for s in rc["imported_sources"])
+    assert "Akzeptierter Marktbericht" in names
+    assert "candidates" not in rc
+    ctx = assemble_a2_context(db, run, field_id=VC_FIELD_ID, profile_id=VC_PROFILE)
+    assert "Offener Kandidat" not in ctx.context_text
+    assert "Verworfener Kandidat" not in ctx.context_text
 
 
 def test_non_vc_sol_field_gets_no_research_block(db):

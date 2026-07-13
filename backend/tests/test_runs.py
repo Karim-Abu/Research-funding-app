@@ -117,9 +117,32 @@ def test_create_run_returns_202_async_accepted(client):
     assert op["status"] == "succeeded"
 
 
-def test_no_valid_source_rejected(client):
+def test_intake_only_project_can_start_run(client):
+    """Die strukturierte Projektbeschreibung aus dem Intake ist ein gültiger
+    versionierter Input — ein Projekt ohne Datei/Quelle startet einen Lauf."""
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
-    project_id = create_project(client, csrf)  # no sources
+    project_id = create_project(client, csrf)  # keine Quellen, aber Beschreibung
+    res = _create_run(client, project_id, csrf)
+    assert res.status_code == 202, res.text
+    run = client.get(f"/api/v1/runs/{res.json()['resource_id']}").json()
+    assert run["status"] == "completed"
+
+
+def test_no_description_and_no_source_rejected(client):
+    """Fail-closed bleibt: ohne Beschreibung UND ohne verarbeitete Quelle gibt
+    es weiterhin 422 no_valid_sources (via API unerreichbar, da description
+    Pflichtfeld ist — hier direkt in der DB geleert)."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = create_project(client, csrf)
+    db = SessionLocal()
+    try:
+        from app.db.models import Project
+
+        project = db.get(Project, project_id)
+        project.description = "   "
+        db.commit()
+    finally:
+        db.close()
     res = _create_run(client, project_id, csrf)
     assert res.status_code == 422
     assert res.json()["code"] == "no_valid_sources"
@@ -266,6 +289,34 @@ def test_usage_record_zero(client):
         assert usage.provider is None and usage.cost_chf == 0
     finally:
         db.close()
+
+
+# --- active run pointer -----------------------------------------------------
+
+
+def test_completed_run_sets_project_active_run_id(client):
+    csrf, project_id, _ = _setup(client)
+    run_id = _create_run(client, project_id, csrf).json()["resource_id"]
+    project = client.get(f"/api/v1/projects/{project_id}").json()
+    assert project["active_run_id"] == run_id
+
+
+def test_second_completed_run_moves_active_run_id(client):
+    csrf, project_id, _ = _setup(client)
+    first = _create_run(client, project_id, csrf).json()["resource_id"]
+    second = _create_run(client, project_id, csrf).json()["resource_id"]
+    assert second != first
+    project = client.get(f"/api/v1/projects/{project_id}").json()
+    assert project["active_run_id"] == second
+
+
+def test_failed_run_leaves_active_run_id_unchanged(client):
+    csrf, project_id, _ = _setup(client)
+    run_id = _create_run(client, project_id, csrf).json()["resource_id"]
+    # A later failed run must never claim the pointer.
+    _insert_run(project_id, "ws-demo", status="failed", op_status="failed")
+    project = client.get(f"/api/v1/projects/{project_id}").json()
+    assert project["active_run_id"] == run_id
 
 
 # --- source deletion guard / security ------------------------------------

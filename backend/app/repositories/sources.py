@@ -4,7 +4,7 @@ from __future__ import annotations
 import uuid
 
 from sqlalchemy import delete, select
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, object_session
 
 from app.contracts.source import SourceDocument as SourceDocumentSchema
 from app.db.models import SourceDocument, SourceFragment, SourceVersion
@@ -122,6 +122,19 @@ def physically_delete(db: Session, document: SourceDocument) -> list[str]:
     return storage_refs
 
 
+def _current_error_code(document: SourceDocument) -> str | None:
+    """Ursachen-Code der aktuellen Version bei failed/needs_manual_input."""
+    if document.status not in ("failed", "needs_manual_input"):
+        return None
+    if not document.current_source_version_id:
+        return None
+    session = object_session(document)
+    if session is None:
+        return None
+    version = session.get(SourceVersion, document.current_source_version_id)
+    return version.last_error_code if version is not None else None
+
+
 def to_contract(document: SourceDocument) -> SourceDocumentSchema:
     return SourceDocumentSchema(
         source_id=document.source_id,
@@ -133,4 +146,5 @@ def to_contract(document: SourceDocument) -> SourceDocumentSchema:
         current_source_version_id=document.current_source_version_id,
         created_at=document.created_at,
         error_message=document.error_message,
+        error_code=_current_error_code(document),
     )

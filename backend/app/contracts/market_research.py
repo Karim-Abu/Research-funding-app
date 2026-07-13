@@ -33,12 +33,28 @@ class QueryCandidateDto(BaseModel):
     public_safe: bool
     approval_required: bool
     blocked_reason: str | None = None
+    # R8 Freigabepflicht: pending Freigabe je Query; der Nutzer entscheidet über die
+    # bestehenden /search-query-approvals/{id}/approve|reject-Endpoints.
+    approval_id: str | None = None
+
+
+class MarketQueryPreviewInput(BaseModel):
+    """Bearbeitete Query erneut prüfen (R8): Firewall + neue pending Freigabe."""
+
+    query_text: str
+    purpose: str | None = None
 
 
 class MarketResearchPlanResponse(BaseModel):
     topic: MarketTopicDto
     queries: list[QueryCandidateDto]
     provider_mode: ProviderMode
+
+
+class MarketResearchRunRequest(MarketTopicDto):
+    """Run-Payload (R8): nur freigegebene Queries werden ausgeführt."""
+
+    approval_ids: list[str] = []
 
 
 class MarketCandidateDto(BaseModel):

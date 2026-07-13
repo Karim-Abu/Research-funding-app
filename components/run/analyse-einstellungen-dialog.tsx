@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Lock } from "lucide-react"
+import { CheckCircle2, Loader2, Lock } from "lucide-react"
 import {
   Dialog,
   DialogContent,
@@ -20,8 +20,14 @@ import {
   AccordionTrigger,
 } from "@/components/ui/accordion"
 import { Separator } from "@/components/ui/separator"
+import {
+  QueryApprovalList,
+  approvedIds,
+  toApprovalQueries,
+  type ApprovalQuery,
+} from "@/components/research/query-approval-list"
+import { planMarketResearch } from "@/lib/market-research"
 import { LLMToggle, WebSearchToggle } from "./service-toggles"
-import { UsageEstimateBanner } from "./usage-estimate-banner"
 import {
   isCloudAllowed,
   isWebAllowed,
@@ -39,7 +45,9 @@ interface AnalyseEinstellungenDialogProps {
   variant?: "full" | "compact"
   serviceAvailability?: ServiceAvailability
   hasActiveRun?: boolean
-  estimateState?: "ready" | "loading" | "unavailable"
+  // R8 Query-Freigabe: nur mit Projekt kann der Dialog die geplanten Suchanfragen
+  // laden und freigeben lassen (öffentliche Projekte, Web-Toggle an).
+  projectId?: string
   onStart?: (settings: AnalyseSettings) => void
   onCancel?: () => void
 }
@@ -59,7 +67,7 @@ export function AnalyseEinstellungenDialog({
   variant = "full",
   serviceAvailability = { ki: true, web: true },
   hasActiveRun = false,
-  estimateState = "ready",
+  projectId,
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
@@ -72,28 +80,70 @@ export function AnalyseEinstellungenDialog({
 
   const [ki, setKi] = React.useState(!isLocalOnlyClass)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
-  const [localSourcesOnly, setLocalSourcesOnly] = React.useState(false)
   const [costLimit, setCostLimit] = React.useState("2.00")
+  // Erweiterte Einstellungen (nur lead_admin) — echte, gesendete Limits.
+  const [maxLlmCalls, setMaxLlmCalls] = React.useState("25")
+  const [maxWebCalls, setMaxWebCalls] = React.useState("5")
   // KI requires an explicit one-run acknowledgement (cloud: public/synthetic;
   // lokal: D1/D2 mit Warnung).
   const [cloudConfirmed, setCloudConfirmed] = React.useState(false)
 
-  const webDisabled = localSourcesOnly || !isWebAllowed(dataClass)
+  const webDisabled = !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
   const cloudOptIn = ki && !isLocalOnlyClass
   const localOptIn = ki && localOptInClass
   // Block the start until the user confirms AI processing for this run.
   const cloudConfirmationMissing = (cloudOptIn || localOptIn) && !cloudConfirmed
 
+  // R8 Query-Freigabe: geplante Suchanfragen laden, sobald die Webrecherche für ein
+  // öffentliches Projekt aktiviert wird. Ohne Freigaben wird die Recherche-Phase im
+  // Lauf ehrlich übersprungen — der Start bleibt möglich.
+  const canApproveQueries =
+    effectiveWeb && dataClass === "public" && Boolean(projectId)
+  const [webQueries, setWebQueries] = React.useState<ApprovalQuery[] | null>(null)
+  const [webQueriesLoading, setWebQueriesLoading] = React.useState(false)
+  const [webQueriesError, setWebQueriesError] = React.useState<string | null>(null)
+  const [webQueriesReload, setWebQueriesReload] = React.useState(0)
+
+  React.useEffect(() => {
+    if (!open || !canApproveQueries || !projectId) {
+      setWebQueries(null)
+      setWebQueriesError(null)
+      return
+    }
+    let cancelled = false
+    setWebQueries(null)
+    setWebQueriesError(null)
+    setWebQueriesLoading(true)
+    planMarketResearch(projectId)
+      .then((plan) => {
+        if (!cancelled) setWebQueries(toApprovalQueries(plan.queries))
+      })
+      .catch(() => {
+        if (!cancelled)
+          setWebQueriesError(
+            "Die Suchanfragen konnten nicht geladen werden. Ohne Freigabe wird die Webrecherche übersprungen."
+          )
+      })
+      .finally(() => {
+        if (!cancelled) setWebQueriesLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [open, canApproveQueries, projectId, webQueriesReload])
+
   function handleStart() {
     onStart?.({
       ki: cloudOptIn || localOptIn,
       web: effectiveWeb,
-      localSourcesOnly,
+      localSourcesOnly: false,
       costLimit: Number.parseFloat(costLimit) || 0,
       // Beta: Modell-Routing ist eine Backend-/Config-Entscheidung —
       // die Drafter/Critic-Trennung bleibt cross-provider.
       model: "auto",
+      maxLlmCalls: Number.parseInt(maxLlmCalls, 10) || 25,
+      maxWebCalls: Number.parseInt(maxWebCalls, 10) || 5,
       cloudConfirmed: (cloudOptIn || localOptIn) && cloudConfirmed,
     })
   }
@@ -107,24 +157,36 @@ export function AnalyseEinstellungenDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="flex max-h-[90dvh] max-w-[560px] flex-col overflow-hidden">
         <DialogHeader className="shrink-0">
-          <DialogTitle>Analyse-Einstellungen</DialogTitle>
+          <DialogTitle>Analyse starten</DialogTitle>
           <DialogDescription>
-            Konfigurieren Sie diesen Durchlauf, bevor Sie ihn starten.
+            Prüfen Sie kurz die Einstellungen für diesen Durchlauf.
           </DialogDescription>
         </DialogHeader>
 
         {hasActiveRun ? (
           <ActiveRunBody onClose={handleCancel} />
         ) : variant === "compact" ? (
-          <CompactBody
-            available={serviceAvailability.ki}
-            estimateState={estimateState}
-            onSwitchFull={() => {
-              /* In a real app this would switch variant; demo only. */
-            }}
-          />
+          <CompactBody available={serviceAvailability.ki} />
         ) : (
           <div className="flex flex-col gap-5 overflow-y-auto py-1 pr-1">
+            {/* Immer Teil des Durchlaufs: die Analyse der Projektunterlagen. */}
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex flex-col gap-1">
+                <span className="text-sm font-medium text-foreground">
+                  Projektunterlagen analysieren
+                </span>
+                <p className="text-xs text-muted-foreground">
+                  Ihre Unterlagen und Angaben werden geprüft; daraus entstehen
+                  formale Prüfergebnisse und Textvorschläge zur menschlichen
+                  Prüfung.
+                </p>
+              </div>
+              <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                <CheckCircle2 className="size-4 text-status-fulfilled" />
+                aktiviert
+              </span>
+            </div>
+
             {/* Local-only class banner */}
             {isLocalOnlyClass && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
@@ -155,8 +217,7 @@ export function AnalyseEinstellungenDialog({
                   Cloud-KI kann ausgewählte Inhalte an den konfigurierten
                   KI-Dienst übermitteln. Diese Beta erlaubt Cloud-KI nur für
                   öffentliche oder synthetische Inhalte. Interne, vertrauliche
-                  oder NDA-Inhalte werden blockiert. Webrecherche bleibt
-                  deaktiviert.
+                  oder NDA-Inhalte werden blockiert.
                 </p>
                 <label className="flex items-start gap-2">
                   <Checkbox
@@ -225,27 +286,56 @@ export function AnalyseEinstellungenDialog({
               disabled={webDisabled}
             />
 
-            <label className="flex items-start gap-2">
-              <Checkbox
-                checked={localSourcesOnly}
-                onCheckedChange={(c) => {
-                  const v = c === true
-                  setLocalSourcesOnly(v)
-                  if (v) setWeb(false)
-                }}
-                disabled={isLocalOnlyClass}
-                className="mt-0.5"
-              />
-              <span className="flex flex-col gap-0.5">
-                <span className="text-sm font-medium text-foreground">
-                  Nur vorbereitete / hochgeladene Quellen verwenden
-                </span>
-                <span className="text-xs text-muted-foreground">
-                  Es werden ausschließlich Ihre hochgeladenen Unterlagen
-                  verwendet.
-                </span>
-              </span>
-            </label>
+            {/* R8 — jede ausgehende Suchanfrage wird gesehen und freigegeben. */}
+            {canApproveQueries && projectId && (
+              <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3">
+                <p className="text-sm font-medium text-foreground">
+                  Suchanfragen für die Webrecherche
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Diese abstrahierten Suchanfragen würden an die öffentliche
+                  Websuche gesendet. Geben Sie frei, was gesendet werden darf —
+                  Sie können jede Anfrage auch bearbeiten oder ablehnen.
+                </p>
+                {webQueriesLoading && (
+                  <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                    <Loader2 className="size-3.5 animate-spin" /> Suchanfragen
+                    werden vorbereitet …
+                  </p>
+                )}
+                {webQueriesError && (
+                  <div className="flex flex-col gap-1.5">
+                    <p role="alert" className="text-xs text-destructive">
+                      {webQueriesError}
+                    </p>
+                    <Button
+                      type="button"
+                      size="xs"
+                      variant="outline"
+                      className="self-start"
+                      onClick={() => setWebQueriesReload((t) => t + 1)}
+                    >
+                      Erneut laden
+                    </Button>
+                  </div>
+                )}
+                {webQueries && (
+                  <>
+                    <QueryApprovalList
+                      projectId={projectId}
+                      queries={webQueries}
+                      onChange={setWebQueries}
+                    />
+                    {approvedIds(webQueries).length === 0 && (
+                      <p className="text-xs text-muted-foreground">
+                        Die Webrecherche wird übersprungen, bis mindestens eine
+                        Suchanfrage freigegeben ist.
+                      </p>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
 
             <Separator />
 
@@ -287,7 +377,14 @@ export function AnalyseEinstellungenDialog({
               </div>
             </div>
 
-            <UsageEstimateBanner state={estimateState} />
+            {/* Ehrliche Erwartung statt erfundener Schätzung: es gibt keine
+                belastbaren Dauer-/Kostenprognosen; der Fortschritt ist während
+                der Analyse je Phase sichtbar. */}
+            <p className="text-xs text-muted-foreground">
+              Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt ist
+              während der Analyse Schritt für Schritt sichtbar. Die Kosten sind
+              durch das Limit oben begrenzt.
+            </p>
 
             {/* Tier 2 — only for lead_admin */}
             {role === "lead_admin" && (
@@ -300,26 +397,48 @@ export function AnalyseEinstellungenDialog({
                     <div className="flex flex-col gap-4 pt-1">
                       {/* Beta: keine Provider-Auswahl — Routing macht das System. */}
                       <p className="text-sm text-muted-foreground">
-                        Modellwahl: automatisch durch System
+                        Modellwahl: automatisch durch das System
                       </p>
-                      <NumberField
-                        label="Max. Textumfang"
-                        helper="begrenzt die Länge der KI-Antworten"
-                        defaultValue="1500"
-                      />
-                      <NumberField
-                        label="Max. Quellen"
-                        defaultValue="20"
-                      />
-                      <NumberField
-                        label="Max. Webseiten"
-                        helper="Nur freigegebene Webseiten werden durchsucht."
-                        defaultValue="10"
-                        disabled={!effectiveWeb}
-                      />
-                      <p className="text-xs text-muted-foreground">
-                        Vorgaben des Admins: max. CHF 5 pro Durchlauf (Dummy)
-                      </p>
+                      <div className="flex flex-col gap-1.5">
+                        <label
+                          htmlFor="max-llm-calls"
+                          className="text-sm font-medium text-foreground"
+                        >
+                          Max. KI-Aufrufe pro Durchlauf
+                        </label>
+                        <Input
+                          id="max-llm-calls"
+                          type="number"
+                          value={maxLlmCalls}
+                          onChange={(e) => setMaxLlmCalls(e.target.value)}
+                          className="w-32"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          Begrenzt die Zahl der KI-Aufrufe; beim Erreichen werden
+                          weitere Vorschläge übersprungen.
+                        </p>
+                      </div>
+                      <div className="flex flex-col gap-1.5">
+                        <label
+                          htmlFor="max-web-calls"
+                          className="text-sm font-medium text-foreground"
+                        >
+                          Max. Suchanfragen (Webrecherche)
+                        </label>
+                        <Input
+                          id="max-web-calls"
+                          type="number"
+                          value={maxWebCalls}
+                          onChange={(e) => setMaxWebCalls(e.target.value)}
+                          disabled={!effectiveWeb}
+                          className="w-32"
+                        />
+                        <p className="text-xs text-muted-foreground">
+                          {effectiveWeb
+                            ? "Begrenzt die Zahl der öffentlichen Suchanfragen."
+                            : "Verfügbar, sobald die öffentliche Webrecherche aktiviert ist."}
+                        </p>
+                      </div>
                     </div>
                   </AccordionContent>
                 </AccordionItem>
@@ -343,31 +462,6 @@ export function AnalyseEinstellungenDialog({
   )
 }
 
-function NumberField({
-  label,
-  helper,
-  defaultValue,
-  disabled,
-}: {
-  label: string
-  helper?: string
-  defaultValue?: string
-  disabled?: boolean
-}) {
-  return (
-    <div className="flex flex-col gap-1.5">
-      <label className="text-sm font-medium text-foreground">{label}</label>
-      <Input
-        type="number"
-        defaultValue={defaultValue}
-        disabled={disabled}
-        className="w-32"
-      />
-      {helper && <p className="text-xs text-muted-foreground">{helper}</p>}
-    </div>
-  )
-}
-
 function ActiveRunBody({ onClose }: { onClose: () => void }) {
   return (
     <div className="flex flex-col gap-4">
@@ -382,15 +476,7 @@ function ActiveRunBody({ onClose }: { onClose: () => void }) {
   )
 }
 
-function CompactBody({
-  available,
-  estimateState,
-  onSwitchFull,
-}: {
-  available: boolean
-  estimateState: "ready" | "loading" | "unavailable"
-  onSwitchFull: () => void
-}) {
+function CompactBody({ available }: { available: boolean }) {
   return (
     <div className="flex flex-col gap-4">
       <span className="flex items-center gap-1.5 text-sm">
@@ -401,20 +487,9 @@ function CompactBody({
           {available ? "KI-Unterstützung verfügbar" : "Dienst aktuell nicht verfügbar"}
         </span>
       </span>
-      <div className="rounded-md border border-border bg-muted/40 p-3">
-        <span className="text-sm font-medium text-foreground">
-          ~CHF 0.45 von CHF 2.00 (Dummy)
-        </span>
-        <p className="text-xs text-muted-foreground">Verbleibendes Budget</p>
-      </div>
-      <UsageEstimateBanner state={estimateState} />
-      <button
-        type="button"
-        onClick={onSwitchFull}
-        className="self-start text-sm font-medium text-primary underline-offset-2 hover:underline"
-      >
-        Einstellungen ändern
-      </button>
+      <p className="text-sm text-muted-foreground">
+        Der automatische Kostenstopp schützt Ihr Limit für diesen Durchlauf.
+      </p>
     </div>
   )
 }

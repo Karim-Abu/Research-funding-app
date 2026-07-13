@@ -13,6 +13,19 @@ from pydantic import BaseModel, ConfigDict
 DisplayMode = Literal["draft", "checklist", "upload", "external_only"]
 
 
+class PortalFieldSubsection(BaseModel):
+    """Registrierte Pflicht-Unterfrage eines Composite-Editors (additiv, R6).
+
+    ``marker`` ist die sichtbare Portal-Gliederung ("3.1", "4.5.1"); ``label``
+    die Registry-Frage. Reine Registry-Daten — kein Draft-Inhalt.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    marker: str
+    label: str
+
+
 class PortalFieldInfo(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -32,3 +45,6 @@ class PortalFieldInfo(BaseModel):
     display_mode: DisplayMode
     # True only for the supported M6 deterministic-draft fields.
     draft_available: bool
+    # Sichtbare Unterabschnitte eines Composite-Editors (leer für einfache
+    # Felder). Additiv — bestehende Clients ignorieren das Feld.
+    subsections: list[PortalFieldSubsection] = []

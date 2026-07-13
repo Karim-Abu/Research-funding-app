@@ -297,6 +297,42 @@ def test_import_creates_source_with_fragments_and_no_anchor(client, db, web_enab
     assert rr.status == "imported" and rr.source_document_id == doc["source_id"]
 
 
+def test_discard_persists_rejected_status(client, db, web_enabled):
+    """R8 (Anforderung 9): «Verwerfen» ist persistiert — candidate → rejected; ein
+    bereits verworfenes/importiertes Ergebnis kann nicht erneut verworfen werden."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_research_project(client, csrf)
+    _run_task(client, csrf, project_id)
+    result_id = _first_candidate(client, project_id)
+
+    res = client.post(f"/api/v1/research-results/{result_id}/discard",
+                      headers=unsafe_headers(csrf))
+    assert res.status_code == 200, res.text
+    assert res.json()["status"] == "rejected"
+    db.expire_all()
+    rr = db.scalar(select(ResearchResult).where(ResearchResult.result_id == result_id))
+    assert rr.status == "rejected"
+    # Persistiert über die Liste sichtbar (Reload zeigt denselben Stand).
+    rows = client.get(f"/api/v1/projects/{project_id}/research-results").json()
+    assert next(r for r in rows if r["result_id"] == result_id)["status"] == "rejected"
+    # Kein zweites Verwerfen, kein Verwerfen nach Import.
+    again = client.post(f"/api/v1/research-results/{result_id}/discard",
+                        headers=unsafe_headers(csrf))
+    assert again.status_code == 409
+    assert again.json()["code"] == "result_not_discardable"
+
+
+def test_discard_workspace_isolation(client, web_enabled):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_research_project(client, csrf)
+    _run_task(client, csrf, project_id)
+    result_id = _first_candidate(client, project_id)
+    out_csrf = login(client, OUTSIDER_EMAIL, OUTSIDER_PASSWORD)
+    res = client.post(f"/api/v1/research-results/{result_id}/discard",
+                      headers=unsafe_headers(out_csrf))
+    assert res.status_code == 404
+
+
 def test_import_runs_advisory_a1_synthesis(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)

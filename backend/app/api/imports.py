@@ -149,6 +149,7 @@ def decide_import_candidate(
             db, candidate=candidate, decision=payload.decision, run=run,
             confirm_overwrite=payload.confirm_overwrite,
             actor_user_id=context.user.id,
+            edited_text=payload.edited_text,
         )
     except ProblemException:
         # Konflikt-Markierung (decision="conflict") muss persistiert werden,

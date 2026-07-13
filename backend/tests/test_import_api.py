@@ -12,7 +12,13 @@ from sqlalchemy import select
 from app.db.models import AnalysisRun, AuditEvent, ImportCandidate, ReviewApproval
 from app.db.session import SessionLocal
 from app.security.redaction import detail_contains
-from tests.conftest import VALID_CLASSIFICATION
+from tests.conftest import (
+    ANNA_EMAIL,
+    ANNA_PASSWORD,
+    VALID_CLASSIFICATION,
+    create_project,
+    login,
+)
 from tests.review_helpers import (
     ABSTRACT,
     approve,
@@ -61,6 +67,35 @@ def _setup_with_candidates(client):
     return csrf, project_id, run_id, source_id, {
         c["field_id"]: c for c in res.json()
     }
+
+
+def _setup_without_run(client):
+    """Projekt + Kandidaten OHNE Analyse-Lauf — der fachliche Normalfall des
+    Antragsimports: erst prüfen und übernehmen, dann analysieren."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = create_project(client, csrf, "Import ohne Analyse")
+    source_id = _upload_pdf(client, csrf, project_id)
+    res = _create_candidates(client, csrf, project_id, source_id)
+    assert res.status_code == 201, res.text
+    return csrf, project_id, {c["field_id"]: c for c in res.json()}
+
+
+def _start_run(client, csrf, project_id: str) -> str:
+    run = client.post(
+        f"/api/v1/projects/{project_id}/runs",
+        json={
+            "settings": {
+                "processing_mode": "deterministic_only",
+                "max_cost_chf": 0,
+                "max_llm_calls": 0,
+                "max_web_calls": 0,
+            }
+        },
+        headers=mut(csrf),
+    ).json()
+    run_id = run["resource_id"]
+    assert client.get(f"/api/v1/runs/{run_id}").json()["status"] == "completed"
+    return run_id
 
 
 class TestCreateCandidates:
@@ -129,12 +164,32 @@ class TestDecisions:
         assert res.status_code == 409
         assert res.json()["code"] == "import_already_decided"
 
-    def test_accept_requires_run(self, client):
-        csrf, _, _, _, by_field = _setup_with_candidates(client)
+    def test_accept_without_run_stages_the_decision(self, client):
+        # Fachliche Korrektur: «zuerst Analyse starten» ist KEINE Voraussetzung
+        # mehr. Ohne run_id wird die Übernahme vorgemerkt (kein Draft-Write,
+        # accepted_draft_version_id bleibt leer bis zum Konsum im Lauf).
+        csrf, _, by_field = _setup_without_run(client)
         res = _decide(client, csrf, by_field[ABSTRACT]["import_candidate_id"],
                       decision="accepted")
-        assert res.status_code == 409
-        assert res.json()["code"] == "run_required"
+        assert res.status_code == 200, res.text
+        body = res.json()
+        assert body["decision"] == "accepted"
+        assert body["decided_at"] is not None
+        assert body["accepted_draft_version_id"] is None
+
+    def test_edited_text_requires_accept_decision(self, client):
+        csrf, _, by_field = _setup_without_run(client)
+        res = _decide(client, csrf, by_field[ABSTRACT]["import_candidate_id"],
+                      decision="ignored", edited_text="Editiert")
+        assert res.status_code == 422
+        assert res.json()["code"] == "edited_text_not_allowed"
+
+    def test_accept_with_blank_edited_text_is_rejected(self, client):
+        csrf, _, by_field = _setup_without_run(client)
+        res = _decide(client, csrf, by_field[ABSTRACT]["import_candidate_id"],
+                      decision="accepted", edited_text="   ")
+        assert res.status_code == 422
+        assert res.json()["code"] == "import_candidate_empty"
 
     def test_accept_of_empty_candidate_is_rejected(self, client):
         csrf, _, run_id, _, by_field = _setup_with_candidates(client)
@@ -170,7 +225,10 @@ class TestAccept:
 
         draft = client.get(f"/api/v1/runs/{run_id}/fields/{ABSTRACT}").json()
         assert draft["current_version"]["text"] == candidate["extracted_text"]
-        assert draft["current_version"]["created_by"] == "user"
+        # Herkunft «import»: die UI zeigt daraus «Aus PDF übernommen – Prüfung
+        # nötig» — importierte Texte werden nie als final markiert.
+        assert draft["current_version"]["created_by"] == "import"
+        assert draft["status"] == "needs_review"
 
         # Stale-Verhalten kommt aus dem bestehenden Draft-Mechanismus:
         # Approval wird stale, Re-Check wird verlangt (nichts nachgebaut).
@@ -202,6 +260,91 @@ class TestAccept:
         assert res.status_code == 200, res.text
         draft = client.get(f"/api/v1/runs/{run_id}/fields/{ABSTRACT}").json()
         assert draft["current_version"]["text"] == candidate["extracted_text"]
+
+
+class TestStagedAccept:
+    """Übernahme VOR dem ersten Analyse-Lauf: der spätere Lauf konsumiert die
+    akzeptierten Kandidaten als Entwurfsbasis (create_initial_draft)."""
+
+    def test_staged_accept_seeds_next_run_draft_baseline(self, client):
+        csrf, project_id, by_field = _setup_without_run(client)
+        candidate = by_field[ABSTRACT]
+        assert _decide(client, csrf, candidate["import_candidate_id"],
+                       decision="accepted").status_code == 200
+
+        run_id = _start_run(client, csrf, project_id)
+        draft = client.get(f"/api/v1/runs/{run_id}/fields/{ABSTRACT}").json()
+        assert draft["current_version"]["text"] == candidate["extracted_text"]
+        assert draft["current_version"]["created_by"] == "import"
+        assert draft["status"] == "needs_review"  # nie automatisch final
+
+        # Konsum-Markierung: die Vormerkung zeigt auf die erzeugte Version.
+        listed = client.get(f"/api/v1/projects/{project_id}/imports").json()
+        consumed = next(c for c in listed if c["field_id"] == ABSTRACT)
+        assert (
+            consumed["accepted_draft_version_id"]
+            == draft["current_version"]["draft_version_id"]
+        )
+
+        # Zweiter Lauf: carry-over statt Doppel-Konsum — Text bleibt erhalten.
+        run2 = _start_run(client, csrf, project_id)
+        draft2 = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+        assert draft2["current_version"]["text"] == candidate["extracted_text"]
+        assert draft2["current_version"]["created_by"] == "carried_over"
+
+    def test_staged_accept_with_edited_text_keeps_original_excerpt(self, client):
+        csrf, project_id, by_field = _setup_without_run(client)
+        candidate = by_field[ABSTRACT]
+        edited = "Bearbeitete Fassung des Abstracts für die Übernahme."
+        res = _decide(client, csrf, candidate["import_candidate_id"],
+                      decision="accepted", edited_text=edited)
+        assert res.status_code == 200, res.text
+        body = res.json()
+        # «Bearbeitet übernommen»: edited_text gesetzt, Original unverändert.
+        assert body["edited_text"] == edited
+        assert body["extracted_text"] == candidate["extracted_text"]
+
+        run_id = _start_run(client, csrf, project_id)
+        draft = client.get(f"/api/v1/runs/{run_id}/fields/{ABSTRACT}").json()
+        assert draft["current_version"]["text"] == edited
+        assert draft["current_version"]["created_by"] == "import"
+
+    def test_staged_accept_never_overwrites_user_carry_over(self, client):
+        # Nutzerarbeit hat Vorrang: existiert ein carry-over-fähiger User-Text
+        # aus einem früheren Lauf, wird die Vormerkung NICHT konsumiert.
+        csrf, project_id, run_id, _, by_field = _setup_with_candidates(client)
+        clean_field(
+            client, csrf, run_id, ABSTRACT,
+            "Vom Menschen formulierter Abstract ohne offene Angaben.",
+        )
+        candidate = by_field[ABSTRACT]
+        assert _decide(client, csrf, candidate["import_candidate_id"],
+                       decision="accepted").status_code == 200
+
+        run2 = _start_run(client, csrf, project_id)
+        draft2 = client.get(f"/api/v1/runs/{run2}/fields/{ABSTRACT}").json()
+        assert (
+            draft2["current_version"]["text"]
+            == "Vom Menschen formulierter Abstract ohne offene Angaben."
+        )
+        assert draft2["current_version"]["created_by"] == "carried_over"
+        listed = client.get(f"/api/v1/projects/{project_id}/imports").json()
+        staged = next(c for c in listed if c["field_id"] == ABSTRACT)
+        assert staged["accepted_draft_version_id"] is None  # nicht konsumiert
+
+    def test_accepted_draft_contains_no_portal_noise(self, client):
+        # Portal-Hilfetexte/Chrome sind kein Antragsinhalt: der übernommene
+        # Draft darf keine «Please note»/«Open Editor»/Zeichenzähler enthalten.
+        csrf, project_id, by_field = _setup_without_run(client)
+        assert _decide(client, csrf, by_field[ABSTRACT]["import_candidate_id"],
+                       decision="accepted").status_code == 200
+        run_id = _start_run(client, csrf, project_id)
+        text = client.get(
+            f"/api/v1/runs/{run_id}/fields/{ABSTRACT}"
+        ).json()["current_version"]["text"].lower()
+        for noise in ("please note", "open editor", "characters:",
+                      "innosuisse innolink"):
+            assert noise not in text, f"Portal-Rauschen im Draft: {noise}"
 
 
 class TestAuditHygiene:

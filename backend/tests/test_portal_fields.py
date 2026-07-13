@@ -105,6 +105,25 @@ def test_m6_fields_are_draft_and_available(client):
     assert unsupported_draft  # the 10 deferred draft_text fields stay visible
 
 
+def test_composite_editor_subsections_exposed(client):
+    """R6: Composite-Editoren tragen ihre Registry-Unterabschnitte (3.1–3.3,
+    4.1–4.6 inkl. 4.5.1–4.5.4); einfache Felder haben eine leere Liste."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    run_id = _run_with_source(client, csrf)
+    items = {i["field_id"]: i for i in _portal_fields(client, run_id)}
+
+    vc = [s["marker"] for s in items["VC.BUSINESS_TARGETS_MODEL.EDITOR"]["subsections"]]
+    assert vc == ["3.1", "3.2", "3.3"]
+    sol = [s["marker"] for s in items["SOL.INNOVATION_SOLUTION.EDITOR"]["subsections"]]
+    assert sol == [
+        "4.1", "4.2", "4.3", "4.4", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.6",
+    ]
+    # Jede Unterfrage trägt die Registry-Frage als Label (nie leer).
+    for sub in items["SOL.INNOVATION_SOLUTION.EDITOR"]["subsections"]:
+        assert sub["label"].strip()
+    assert items["INTRO.APP.ABSTRACT"]["subsections"] == []
+
+
 def test_sum_section_included(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     run_id = _run_with_source(client, csrf)

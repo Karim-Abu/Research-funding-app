@@ -26,6 +26,7 @@ from app.db.models import (
     Project,
     ResearchResult,
     ResearchTask,
+    SearchQueryApproval,
 )
 from app.repositories import controls
 from app.research import recording
@@ -67,6 +68,7 @@ def _firewall_query(
     approval_id: str | None,
     actor_user_id: str,
     task_id: str,
+    approval: SearchQueryApproval | None = None,
 ) -> tuple[str, DataClass, str | None]:
     """Enforce the Search Query Firewall at the single web-research chokepoint.
 
@@ -76,6 +78,11 @@ def _firewall_query(
     SERVICE (not just the API) so an agent using the service cannot bypass it. Takes the
     query/purpose/approval as explicit args so both the public ``ResearchTaskCreate`` flow
     and the internal market-research flow share this single chokepoint (RESEARCH.1a).
+
+    ``approval`` (R8, Markt-Query-Freigabe): a SERVER-loaded, human-approved
+    ``SearchQueryApproval``. Only ``approval.sanitized_query`` is executed — there is no
+    client query to re-hash. D0-only by design (the market vertical never runs for
+    confidential classes); scope and single-use are enforced here in the chokepoint.
     """
     data_class = derive_data_class(project.data_classification)
     qhash = raw_query_hash(query_preview)
@@ -100,6 +107,28 @@ def _firewall_query(
             "Öffentliche Recherche ist für diese Datenklasse gesperrt.",
             status=403, reason="class_blocked",
         )
+
+    # Server-seitige Markt-Query-Freigabe (R8): exakt der freigegebene Text wird
+    # ausgeführt; Scope + Single-Use fail-closed. D0-only — vertrauliche Klassen
+    # erreichen den Markt-Vertikal weiterhin nie über diesen Pfad.
+    if approval is not None:
+        if (
+            approval.project_id != project.project_id
+            or approval.workspace_id != project.workspace_id
+            or data_class != DataClass.D0_PUBLIC
+        ):
+            raise _blocked(
+                "approval_required",
+                "Für diese Suchanfrage liegt keine gültige Freigabe vor.",
+                status=422, reason="approval_required",
+            )
+        try:
+            query = approval_service.consume_approved(
+                db, approval=approval, research_task_id=task_id
+            )
+        except ApprovalError as exc:
+            raise ResearchBlocked(exc.code, exc.detail, status=exc.status) from exc
+        return normalize_query(query), data_class, approval.approval_id
 
     def _consume() -> str:
         if not approval_id:
@@ -234,12 +263,15 @@ def create_market_research_task(
     task_id: str | None = None,
     operation_id: str | None = None,
     idempotency_key: str | None = None,
+    approval: SearchQueryApproval | None = None,
 ) -> tuple[ResearchTask, AsyncOperation]:
     """Create an internal market-research ResearchTask through the SAME Search Query
     Firewall chokepoint as the public flow (RESEARCH.1a). No public ``ResearchTaskCreate``
     contract is used; ``purpose`` is the internal ``market_comparison`` String. D0-only:
     a confidential/NDA/unknown class raises ``ResearchBlocked`` (approval_required /
-    class_blocked) just like the public path.
+    class_blocked) just like the public path. ``approval`` (R8): the human-approved
+    query record — the chokepoint consumes it single-use and executes exactly its
+    ``sanitized_query``.
     """
     actual_task_id = task_id or str(uuid.uuid4())
     actual_operation_id = operation_id or str(uuid.uuid4())
@@ -248,6 +280,7 @@ def create_market_research_task(
         db, project=project, query_preview=query_preview,
         purpose=MARKET_RESEARCH_PURPOSE, approval_id=None,
         actor_user_id=actor_user_id, task_id=actual_task_id,
+        approval=approval,
     )
 
     task = ResearchTask(
@@ -412,6 +445,28 @@ def get_result(db: Session, result_id: str, workspace_id: str) -> ResearchResult
             ResearchResult.workspace_id == workspace_id,
         )
     )
+
+
+def discard_result(
+    db: Session, *, result: ResearchResult, actor_user_id: str
+) -> ResearchResult:
+    """R8 (Anforderung 9): ein Research-Ergebnis explizit verwerfen — persistiert
+    ``candidate`` → ``rejected``. Verworfene Ergebnisse werden nie A2-Kontext und
+    tauchen nach einem Reload nicht wieder als Kandidat auf. Audit metadata-only."""
+    if result.status != "candidate":
+        raise ResearchBlocked(
+            "result_not_discardable",
+            "Nur offene Ergebnis-Kandidaten können verworfen werden.",
+            status=409,
+        )
+    result.status = "rejected"
+    recording.record_audit(
+        db, workspace_id=result.workspace_id, actor_user_id=actor_user_id,
+        action="research_result.discarded",
+        research_task_id=result.research_task_id,
+        detail={"result_id": result.result_id},
+    )
+    return result
 
 
 # --- contract mapping -------------------------------------------------------

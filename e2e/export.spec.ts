@@ -161,7 +161,9 @@ test("M8 export: draft (ENTWURF) flow and approved flow", async ({ page }) => {
   // --- UI smoke: live Export Center ----------------------------------------
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), draftRun.projectId)
   await page.goto("/export")
-  await expect(page.getByRole("heading", { name: "Export" })).toBeVisible({ timeout: 20_000 })
+  await expect(
+    page.getByRole("heading", { name: "Innolink-Übernahme" })
+  ).toBeVisible({ timeout: 20_000 })
   await expect(page.getByText("Word-Arbeitsdokument")).toBeVisible()
   await expect(page.getByText(/Diese Plattform reicht nichts automatisch ein/)).toBeVisible()
 })

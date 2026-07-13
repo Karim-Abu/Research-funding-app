@@ -47,13 +47,19 @@ _FAKE_TEXTS: dict[str, str] = {
         "4.2 Neuheit: klare Abgrenzung gegenüber dem Stand der Technik.\n"
         "4.3 Ziele: messbare Ziele mit Baseline und Zielwert, wo belegbar.\n"
         "4.4 Vorarbeiten: abgeschlossene Vorstudien getrennt von geplanter Arbeit.\n"
-        "4.5 Partner: geeignete Kompetenzen und Infrastruktur der Partner."
+        "4.5.1 Patentrecherche: Ergebnisse als [Platzhalter], keine erfundenen Treffer.\n"
+        "4.5.2 Freedom-to-Operate: Analysestand als [Platzhalter] ohne Rechtsaussage.\n"
+        "4.5.3 IP-Schutzstrategie: geplanter Schutzweg als [Platzhalter].\n"
+        "4.5.4 Rechts- und Vertragslage: bestehende Vereinbarungen als [Platzhalter].\n"
+        "4.6 Partner: geeignete Kompetenzen und Infrastruktur der Partner."
     ),
     "VC.BUSINESS_TARGETS_MODEL.EDITOR": (
         "3.1 Wertschöpfung: erwartete wirtschaftliche und gesellschaftliche Wirkung, "
         "mit Belegen oder – wo Marktdaten fehlen – als Platzhalter markiert.\n"
         "3.2 Geschäftsmodell und Markt: Zielkunden, Markteintritt und Differenzierung; "
-        "fehlende Markt-, Wettbewerbs- oder Umsatzzahlen bleiben explizite Platzhalter."
+        "fehlende Markt-, Wettbewerbs- oder Umsatzzahlen bleiben explizite Platzhalter.\n"
+        "3.3 Energie-/Umwelt-/Sozialwirkung: relevante Wirkungen als [Platzhalter], "
+        "ohne erfundene Wirkungszahlen."
     ),
     "INTRO.APP.ABSTRACT": (
         "Öffentliche Kurzfassung des Vorhabens und seines Innovationsziels, allgemein "

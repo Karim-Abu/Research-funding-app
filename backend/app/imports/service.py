@@ -150,11 +150,17 @@ def decide_candidate(
     run: AnalysisRun | None,
     confirm_overwrite: bool,
     actor_user_id: str,
+    edited_text: str | None = None,
 ) -> ImportCandidate:
     if candidate.decision in _TERMINAL_DECISIONS:
         raise _problem(
             409, "import_already_decided", "Conflict",
             "Dieser Kandidat wurde bereits entschieden.",
+        )
+    if edited_text is not None and decision != "accepted":
+        raise _problem(
+            422, "edited_text_not_allowed", "Unprocessable Entity",
+            "Ein bearbeiteter Text ist nur beim Übernehmen möglich.",
         )
 
     if decision in ("saved_as_source", "ignored"):
@@ -171,17 +177,34 @@ def decide_candidate(
         return candidate
 
     # --- decision == "accepted" — Übernahme in den Entwurf (HITL) -----------
-    if not candidate.extracted_text.strip():
+    # «Bearbeitet übernommen»: der editierte Text zählt; extracted_text bleibt
+    # als Originalausschnitt unverändert erhalten.
+    effective_text = edited_text if edited_text is not None else candidate.extracted_text
+    if not effective_text.strip():
         raise _problem(
             422, "import_candidate_empty", "Unprocessable Entity",
             "Dieser Kandidat enthält keinen Text — es gibt nichts zu übernehmen.",
         )
     if run is None:
-        raise _problem(
-            409, "run_required", "Conflict",
-            "Zum Übernehmen wird eine Analyse benötigt. Bitte zuerst die "
-            "Analyse starten.",
+        # Übernahme VOR dem ersten Analyse-Lauf: die Entscheidung wird
+        # projektbezogen vorgemerkt (accepted_draft_version_id bleibt leer)
+        # und beim nächsten Lauf in create_initial_draft als Entwurfsbasis
+        # konsumiert. Kein Draft-Write ohne Run — Drafts sind run-gebunden.
+        candidate.edited_text = edited_text
+        _mark_decided(candidate, "accepted", actor_user_id)
+        audit.record(
+            db, workspace_id=candidate.workspace_id, actor_user_id=actor_user_id,
+            action="import.candidate_decided", target_type="import_candidate",
+            target_id=candidate.import_candidate_id,
+            detail={
+                "decision": "accepted",
+                "field_id": candidate.field_id,
+                "staged": True,
+                "edited": edited_text is not None,
+            },
         )
+        db.flush()
+        return candidate
     draft = drafts_repo.get_draft(db, run.run_id, candidate.field_id)
     if draft is None:
         raise _problem(
@@ -208,10 +231,12 @@ def decide_candidate(
     drafts_repo.apply_update(
         db, run, draft,
         base_version_id=draft.current_version_id,
-        text=candidate.extracted_text,
+        text=effective_text,
         source_operation_id=None,
         actor_user_id=actor_user_id,
+        origin="import",
     )
+    candidate.edited_text = edited_text
     _mark_decided(candidate, "accepted", actor_user_id)
     candidate.accepted_draft_version_id = draft.current_version_id
     audit.record(
@@ -223,6 +248,7 @@ def decide_candidate(
             "field_id": candidate.field_id,
             "draft_version_id": draft.current_version_id,
             "overwrite_confirmed": confirm_overwrite,
+            "edited": edited_text is not None,
         },
     )
     db.flush()
@@ -236,6 +262,7 @@ def to_contract(candidate: ImportCandidate) -> ImportCandidateSchema:
         field_id=candidate.field_id,
         label=EXPORT_FIELD_LABELS.get(candidate.field_id, candidate.field_id),
         extracted_text=candidate.extracted_text,
+        edited_text=candidate.edited_text,
         confidence=candidate.confidence,
         source_location=candidate.source_location,
         decision=candidate.decision,

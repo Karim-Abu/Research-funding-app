@@ -52,12 +52,19 @@ def test_template_deterministic_placeholdered_within_limit():
 
 
 def test_composite_editors_use_exact_registered_questions():
+    # Portal-Schema-Minimum: SOL 4.1–4.4, IP-Block 4.5.1–4.5.4, Partner 4.6;
+    # VC 3.1–3.3 (Impact als Editor-Hauptfrage).
     sol = build_template(reg.portal_fields["SOL.INNOVATION_SOLUTION.EDITOR"], reg)
     assert "4.1 Describe the state of the art that you intend to advance" in sol
-    assert "4.5 Please describe how the selected partners are suited" in sol
+    assert "4.5.1 Describe the results of the patent research" in sol
+    assert "4.5.2 Describe the freedom-to-operate analysis" in sol
+    assert "4.5.3 Describe the IP protection strategy" in sol
+    assert "4.5.4 Describe the legal and contractual situation" in sol
+    assert "4.6 Please describe how the selected partners are suited" in sol
     vc = build_template(reg.portal_fields["VC.BUSINESS_TARGETS_MODEL.EDITOR"], reg)
     assert "3.1 Describe the business targets and the business model" in vc
     assert "3.2 Describe potential customers" in vc
+    assert "3.3 Does the planned project have particular relevance to energy" in vc
 
 
 def test_english_name_is_placeholder_only_not_translated():

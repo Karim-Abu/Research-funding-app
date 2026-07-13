@@ -333,6 +333,13 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     )
 
 
+def proposed_suggestion_view(db, run, suggestion) -> dict:
+    """Read-only View einer bestehenden proposed Suggestion für den
+    Suggestion-Read-Endpoint — identisch zum Redraft-Operation-Result
+    (Reused-Pfad: Placeholder-Heuristik für die warnings)."""
+    return _suggestion_view(db, run, suggestion)
+
+
 def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
                      warnings: list | None = None) -> dict:
     """Operation-Result-View + typisiertes AIProposal (R5.2, additiv).

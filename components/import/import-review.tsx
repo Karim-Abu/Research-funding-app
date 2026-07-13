@@ -1,17 +1,20 @@
 "use client"
 
 // R3.3 — Import-Review: Upload eines begonnenen Innolink-Antrags (PDF/TXT),
-// erkannte Felder prüfen und je Kandidat explizit entscheiden. Kein
-// Auto-Accept — auch nicht bei hoher Konfidenz; «Unsicher» ist visuell
-// markiert und nie vorausgewählt. Flag: innolinkImport (lib/flags.ts).
+// erkannte Felder prüfen und je Kandidat explizit entscheiden — übernehmen,
+// bearbeitet übernehmen oder ignorieren, auch VOR dem ersten Analyse-Lauf
+// (ohne Run wird die Übernahme vorgemerkt und beim nächsten Lauf als
+// Entwurfsbasis konsumiert). Kein Auto-Accept — auch nicht bei hoher
+// Konfidenz; «Unsicher» ist visuell markiert und nie vorausgewählt.
+// Flag: innolinkImport (lib/flags.ts).
 
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import {
-  AlertTriangle,
   CheckCircle2,
   ChevronDown,
   ChevronRight,
+  Circle,
   FileUp,
   Info,
   Loader2,
@@ -23,6 +26,13 @@ import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Textarea } from "@/components/ui/textarea"
+import {
+  toUploadErrorInfo,
+  UploadErrorNotice,
+  type UploadErrorInfo,
+} from "@/components/quellen/upload-error-notice"
+import { useActiveRun } from "@/components/providers/workflow-run-provider"
 import { getActiveProjectId } from "@/lib/intake-store"
 import {
   createImportCandidates,
@@ -32,22 +42,12 @@ import {
   type ImportCandidateDto,
 } from "@/lib/imports"
 import { getProject } from "@/lib/projects"
-import { createRun, getRun, listProjectRuns, type RunSettings } from "@/lib/runs"
 import { getSource, uploadFiles, type SourceDocumentDto } from "@/lib/sources"
 import type { DataClassification } from "@/lib/data-classification"
 import { cn } from "@/lib/utils"
 
 const POLL_MS = 1500
 const MAX_POLLS = 80 // ~2 Minuten, danach ehrliche Fehlermeldung
-
-// Deterministische Analyse (keine LLM-/Web-Kosten) — genügt, um die
-// Feld-Entwürfe anzulegen, in die übernommen wird.
-const RUN_SETTINGS: RunSettings = {
-  processing_mode: "deterministic_only",
-  max_cost_chf: 0,
-  max_llm_calls: 0,
-  max_web_calls: 0,
-}
 
 const DECISION_LABELS: Record<string, string> = {
   accepted: "Übernommen",
@@ -56,14 +56,34 @@ const DECISION_LABELS: Record<string, string> = {
   conflict: "Konflikt — Bestätigung nötig",
 }
 
+/** Anzeige-Label der Entscheidung; «Bearbeitet übernommen» bei edited_text. */
+function decisionLabel(candidate: ImportCandidateDto): string {
+  if (candidate.decision === "accepted" && candidate.edited_text) {
+    return "Bearbeitet übernommen"
+  }
+  return DECISION_LABELS[candidate.decision] ?? candidate.decision
+}
+
 type Phase = "loading" | "no-project" | "upload" | "processing" | "review"
+
+// Sichtbare Verarbeitungsphasen: Prozent nur für den echten Byte-Upload,
+// Parsing/Import sind phasenbasiert (kein erfundener Fortschritt).
+type ProcessingStep = "uploading" | "extracting" | "checking"
 
 interface ConflictState {
   candidate: ImportCandidateDto
+  editedText?: string
+}
+
+interface EditState {
+  candidate: ImportCandidateDto
+  text: string
 }
 
 export function ImportReview() {
   const router = useRouter()
+  // Zentrale Run-Auswahl (Ladder) — dieselbe Run-ID wie auf allen Screens.
+  const { runId: activeRunId } = useActiveRun()
   const [phase, setPhase] = React.useState<Phase>("loading")
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [classification, setClassification] =
@@ -71,14 +91,20 @@ export function ImportReview() {
   const [candidates, setCandidates] = React.useState<ImportCandidateDto[]>([])
   const [sourceName, setSourceName] = React.useState<string | null>(null)
   const [runId, setRunId] = React.useState<string | null>(null)
-  const [runStarting, setRunStarting] = React.useState(false)
   const [busyId, setBusyId] = React.useState<string | null>(null)
   const [expandedId, setExpandedId] = React.useState<string | null>(null)
   const [conflict, setConflict] = React.useState<ConflictState | null>(null)
-  const [error, setError] = React.useState<string | null>(null)
+  const [editing, setEditing] = React.useState<EditState | null>(null)
+  const [error, setError] = React.useState<UploadErrorInfo | null>(null)
   const [uploadBusy, setUploadBusy] = React.useState(false)
+  // Bei Fehler bleibt die gewählte Datei erhalten («Erneut versuchen»).
+  const [pendingFile, setPendingFile] = React.useState<File | null>(null)
+  const [step, setStep] = React.useState<ProcessingStep>("extracting")
+  const [percent, setPercent] = React.useState(0)
+  const [hadUpload, setHadUpload] = React.useState(false)
 
-  // -- Initial: aktives Projekt, vorhandene Kandidaten, vorhandener Run -----
+  // -- Initial: aktives Projekt, vorhandene Kandidaten, ggf. eine im Intake
+  //    bereits hochgeladene Quelle (?source=…) direkt weiterverarbeiten -----
   React.useEffect(() => {
     let active = true
     const pid = getActiveProjectId()
@@ -89,24 +115,44 @@ export function ImportReview() {
     setProjectId(pid)
     void (async () => {
       try {
-        const [project, existing, runs] = await Promise.all([
+        const [project, existing] = await Promise.all([
           getProject(pid),
           getImportCandidates(pid).catch(() => []),
-          listProjectRuns(pid).catch(() => []),
         ])
         if (!active) return
         setClassification(project.data_classification)
-        const completed = runs.find((r) => r.status === "completed")
-        if (completed) setRunId(completed.run_id)
         if (existing.length > 0) {
           setCandidates(existing)
           setPhase("review")
-        } else {
-          setPhase("upload")
+          return
         }
+        // Vom Intake übergebene, bereits hochgeladene Quelle übernehmen —
+        // kein zweiter Upload nötig (die ID steht nur in der URL).
+        const adoptId = new URLSearchParams(window.location.search).get(
+          "source"
+        )
+        if (adoptId) {
+          setHadUpload(false)
+          setStep("extracting")
+          setPhase("processing")
+          try {
+            const doc = await getSource(adoptId)
+            if (!active) return
+            await processSource(pid, doc)
+          } catch {
+            if (!active) return
+            setPhase("upload")
+            setError({
+              message:
+                "Die hochgeladene Datei konnte nicht übernommen werden. Bitte laden Sie sie hier erneut hoch.",
+            })
+          }
+          return
+        }
+        setPhase("upload")
       } catch {
         if (!active) return
-        setError("Das Projekt konnte nicht geladen werden.")
+        setError({ message: "Das Projekt konnte nicht geladen werden." })
         setPhase("upload")
       }
     })()
@@ -115,36 +161,65 @@ export function ImportReview() {
     }
   }, [])
 
+  // Aktiver Run aus der zentralen Auswahl — wenn vorhanden, schreibt
+  // «Übernehmen» direkt in dessen Feld-Entwürfe (heutige Semantik).
+  React.useEffect(() => {
+    if (activeRunId) setRunId(activeRunId)
+  }, [activeRunId])
+
+  // -- Verarbeitung abwarten → Felder erkennen (frischer Upload UND vom
+  //    Intake übergebene Quelle nutzen denselben Pfad) -----------------------
+  async function processSource(pid: string, doc: SourceDocumentDto) {
+    setSourceName(doc.name)
+    setStep("extracting")
+    const processed = await waitForProcessing(doc)
+    if (processed.status !== "processed") {
+      // Fail-closed aus der Ingestion: Scan/verschlüsselt/kaputt — mit
+      // Ursache aus dem Backend (error_code), sofern vorhanden.
+      setPhase("upload")
+      if (processed.status === "needs_manual_input") {
+        setError({
+          message:
+            processed.error_code === "SOURCE_PDF_ENCRYPTED"
+              ? "Das PDF ist passwortgeschützt — es lässt sich kein Text extrahieren. Die Datei bleibt als Quelle gespeichert; bitte entfernen Sie den Passwortschutz oder übertragen Sie die Inhalte manuell."
+              : "Aus dieser Datei lässt sich kein Text extrahieren (z. B. Scan ohne Textlayer). Die Datei bleibt als Quelle gespeichert — bitte Inhalte manuell übertragen.",
+          code: processed.error_code ?? undefined,
+        })
+      } else {
+        setError({
+          message:
+            "Die Datei konnte nicht verarbeitet werden. Die Datei bleibt als Quelle gespeichert — bitte Inhalte manuell übertragen.",
+          code: processed.error_code ?? undefined,
+        })
+      }
+      return
+    }
+    setStep("checking")
+    const created = await createImportCandidates(pid, doc.source_id)
+    setCandidates(created)
+    setPhase("review")
+  }
+
   // -- Upload → Verarbeitung abwarten → Felder erkennen ---------------------
   async function handleFile(file: File) {
     if (!projectId || !classification) return
     setError(null)
     setUploadBusy(true)
+    setPendingFile(file)
+    setHadUpload(true)
+    setStep("uploading")
+    setPercent(0)
     setPhase("processing")
     setSourceName(file.name)
     try {
-      const [doc] = await uploadFiles(projectId, [file], classification)
-      const processed = await waitForProcessing(doc)
-      if (processed.status !== "processed") {
-        // Fail-closed aus der Ingestion: Scan/verschlüsselt/kaputt.
-        setPhase("upload")
-        setError(
-          processed.status === "needs_manual_input"
-            ? "Aus dieser Datei lässt sich kein Text extrahieren (z. B. Scan oder verschlüsseltes PDF). Die Datei bleibt als Quelle gespeichert — bitte Inhalte manuell übertragen."
-            : "Die Datei konnte nicht verarbeitet werden. Die Datei bleibt als Quelle gespeichert — bitte Inhalte manuell übertragen."
-        )
-        return
-      }
-      const created = await createImportCandidates(projectId, doc.source_id)
-      setCandidates(created)
-      setPhase("review")
+      const [doc] = await uploadFiles(projectId, [file], classification, {
+        onProgress: setPercent,
+      })
+      await processSource(projectId, doc)
+      setPendingFile(null)
     } catch (err) {
       setPhase("upload")
-      setError(
-        err instanceof Error && err.message
-          ? err.message
-          : "Der Upload ist fehlgeschlagen."
-      )
+      setError(toUploadErrorInfo(err, "Der Upload ist fehlgeschlagen."))
     } finally {
       setUploadBusy(false)
     }
@@ -168,49 +243,24 @@ export function ImportReview() {
     return current
   }
 
-  // -- Analyse starten (nötig für «Übernehmen»: Entwürfe sind run-gebunden) --
-  async function handleStartRun() {
-    if (!projectId) return
-    setError(null)
-    setRunStarting(true)
-    try {
-      const accepted = await createRun(projectId, RUN_SETTINGS)
-      for (let i = 0; i < MAX_POLLS; i++) {
-        const run = await getRun(accepted.resource_id)
-        if (run.status === "completed") {
-          setRunId(run.run_id)
-          return
-        }
-        if (["failed", "cancelled", "stopped"].includes(run.status)) {
-          setError("Die Analyse konnte nicht abgeschlossen werden.")
-          return
-        }
-        await new Promise((r) => setTimeout(r, POLL_MS))
-      }
-      setError("Die Analyse dauert länger als erwartet. Bitte später erneut versuchen.")
-    } catch (err) {
-      setError(
-        err instanceof Error && err.message
-          ? err.message
-          : "Die Analyse konnte nicht gestartet werden."
-      )
-    } finally {
-      setRunStarting(false)
-    }
-  }
-
   // -- Entscheidungen --------------------------------------------------------
   async function decide(
     candidate: ImportCandidateDto,
     decision: "accepted" | "saved_as_source" | "ignored",
-    confirmOverwrite = false
+    confirmOverwrite = false,
+    editedText?: string
   ) {
     setError(null)
     setBusyId(candidate.import_candidate_id)
     try {
       const updated = await decideImportCandidate(candidate.import_candidate_id, {
         decision,
+        // Mit aktivem Run schreibt «Übernehmen» direkt in den Run-Draft;
+        // ohne Run wird die Übernahme vorgemerkt (Konsum beim nächsten Lauf).
         ...(decision === "accepted" && runId ? { run_id: runId } : {}),
+        ...(decision === "accepted" && editedText !== undefined
+          ? { edited_text: editedText }
+          : {}),
         ...(confirmOverwrite ? { confirm_overwrite: true } : {}),
       })
       setCandidates((prev) =>
@@ -228,12 +278,13 @@ export function ImportReview() {
               : c
           )
         )
-        setConflict({ candidate })
+        setConflict({ candidate, editedText })
       } else {
         setError(
-          err instanceof Error && err.message
-            ? err.message
-            : "Die Entscheidung konnte nicht gespeichert werden."
+          toUploadErrorInfo(
+            err,
+            "Die Entscheidung konnte nicht gespeichert werden."
+          )
         )
       }
     } finally {
@@ -264,12 +315,13 @@ export function ImportReview() {
         <Alert className="mt-6 flex items-start gap-3 border-border bg-accent/40 text-sm">
           <Info className="mt-0.5 size-4 shrink-0 text-primary" />
           <span>
-            Es ist kein Antrag ausgewählt. Bitte legen Sie zuerst im Intake einen
-            Antrag an und wählen Sie dort «Bestehenden Innolink-Antrag hochladen».
+            Es ist kein Projekt ausgewählt. Bitte legen Sie zuerst unter
+            «Projekt anlegen» ein Projekt an und laden Sie dort Ihren
+            Innolink-Antrag (PDF) hoch.
           </span>
         </Alert>
         <Button className="mt-4" onClick={() => router.push("/intake")}>
-          Zum Intake
+          Projekt anlegen
         </Button>
       </div>
     )
@@ -288,13 +340,20 @@ export function ImportReview() {
       </div>
 
       {error && (
-        <Alert
-          role="alert"
-          className="mb-6 flex items-start gap-3 border-destructive/30 bg-destructive/5 text-sm"
-        >
-          <AlertTriangle className="mt-0.5 size-4 shrink-0 text-destructive" />
-          <span>{error}</span>
-        </Alert>
+        <div className="mb-6">
+          <UploadErrorNotice
+            error={error}
+            onRetry={
+              phase === "upload" && pendingFile
+                ? () => {
+                    const file = pendingFile
+                    if (file) void handleFile(file)
+                  }
+                : undefined
+            }
+            retryDisabled={uploadBusy}
+          />
+        </div>
       )}
 
       {phase === "upload" && (
@@ -335,13 +394,44 @@ export function ImportReview() {
       )}
 
       {phase === "processing" && (
-        <Card className="flex items-center gap-3 p-6 text-sm text-foreground">
-          <Loader2 className="size-4 animate-spin text-primary" />
-          <span>
-            {sourceName
-              ? `«${sourceName}» wird verarbeitet und den Feldern zugeordnet …`
-              : "Die Datei wird verarbeitet …"}
-          </span>
+        <Card
+          className="flex flex-col gap-3 p-6 text-sm"
+          aria-live="polite"
+          data-testid="import-progress"
+        >
+          <p className="font-medium text-foreground">
+            {sourceName ? `«${sourceName}» wird übernommen` : "Die Datei wird übernommen"}
+          </p>
+          <div className="flex flex-col gap-1.5">
+            {hadUpload && (
+              <PhaseLine
+                state={step === "uploading" ? "active" : "done"}
+                label={
+                  step === "uploading"
+                    ? `Upload läuft … ${percent} %`
+                    : "Hochgeladen"
+                }
+              />
+            )}
+            <PhaseLine
+              state={step === "uploading" ? "todo" : "done"}
+              label="Gespeichert"
+            />
+            <PhaseLine
+              state={
+                step === "extracting"
+                  ? "active"
+                  : step === "checking"
+                    ? "done"
+                    : "todo"
+              }
+              label="Text wird extrahiert"
+            />
+            <PhaseLine
+              state={step === "checking" ? "active" : "todo"}
+              label="Import wird geprüft"
+            />
+          </div>
         </Card>
       )}
 
@@ -356,22 +446,12 @@ export function ImportReview() {
           </Alert>
 
           {!runId && (
-            <Alert className="flex items-start justify-between gap-3 border-border bg-accent/40 text-sm">
-              <span className="flex items-start gap-3">
-                <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-                <span>
-                  Zum Übernehmen in die Feld-Entwürfe wird einmal eine Analyse
-                  benötigt.
-                </span>
+            <Alert className="flex items-start gap-3 border-border bg-accent/40 text-sm">
+              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
+              <span>
+                Übernommene Inhalte fliessen beim nächsten Analyse-Lauf als
+                Entwurfsbasis in die Feld-Entwürfe ein.
               </span>
-              <Button
-                size="sm"
-                onClick={() => void handleStartRun()}
-                disabled={runStarting}
-                data-testid="import-start-run"
-              >
-                {runStarting ? "Analyse läuft …" : "Analyse starten"}
-              </Button>
             </Alert>
           )}
 
@@ -389,8 +469,13 @@ export function ImportReview() {
                   )
                 }
                 busy={busyId === candidate.import_candidate_id}
-                canAccept={Boolean(runId)}
                 onDecide={(decision) => void decide(candidate, decision)}
+                onEdit={() =>
+                  setEditing({
+                    candidate,
+                    text: candidate.extracted_text,
+                  })
+                }
               />
             ))}
           </div>
@@ -412,6 +497,58 @@ export function ImportReview() {
         </div>
       )}
 
+      {/* Bearbeiten & übernehmen: Original bleibt als Auszug erhalten */}
+      <Dialog open={editing !== null} onOpenChange={(o) => !o && setEditing(null)}>
+        <DialogContent className="flex max-h-[85dvh] flex-col overflow-hidden sm:max-w-xl">
+          <DialogHeader>
+            <DialogTitle>Bearbeiten &amp; übernehmen</DialogTitle>
+            <DialogDescription>
+              Passen Sie den erkannten Text für «{editing?.candidate.label}» an,
+              bevor Sie ihn übernehmen. Der Originalauszug bleibt zum Vergleich
+              erhalten.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto">
+            <Textarea
+              aria-label="Text für die Übernahme bearbeiten"
+              value={editing?.text ?? ""}
+              onChange={(event) =>
+                setEditing((prev) =>
+                  prev ? { ...prev, text: event.target.value } : prev
+                )
+              }
+              rows={12}
+            />
+            <p className="text-xs text-muted-foreground">
+              {editing?.text.length ?? 0} Zeichen
+            </p>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditing(null)}>
+              Abbrechen
+            </Button>
+            <Button
+              data-testid="import-accept-edited"
+              disabled={!editing || !editing.text.trim()}
+              title={
+                editing && !editing.text.trim()
+                  ? "Der Text darf nicht leer sein."
+                  : undefined
+              }
+              onClick={() => {
+                const current = editing
+                setEditing(null)
+                if (current) {
+                  void decide(current.candidate, "accepted", false, current.text)
+                }
+              }}
+            >
+              Bearbeitet übernehmen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
       {/* Konflikt: bestehender bearbeiteter Entwurf — explizite Bestätigung */}
       <Dialog open={conflict !== null} onOpenChange={(o) => !o && setConflict(null)}>
         <DialogContent>
@@ -431,9 +568,16 @@ export function ImportReview() {
             <Button
               data-testid="import-confirm-overwrite"
               onClick={() => {
-                const candidate = conflict?.candidate
+                const current = conflict
                 setConflict(null)
-                if (candidate) void decide(candidate, "accepted", true)
+                if (current) {
+                  void decide(
+                    current.candidate,
+                    "accepted",
+                    true,
+                    current.editedText
+                  )
+                }
               }}
             >
               Entwurf ersetzen
@@ -445,20 +589,45 @@ export function ImportReview() {
   )
 }
 
+/** Eine sichtbare Verarbeitungsphase (erledigt / aktiv / ausstehend). */
+function PhaseLine({
+  state,
+  label,
+}: Readonly<{
+  state: "done" | "active" | "todo"
+  label: string
+}>) {
+  return (
+    <span
+      className={cn(
+        "inline-flex items-center gap-2 text-sm",
+        state === "todo" ? "text-muted-foreground" : "text-foreground"
+      )}
+    >
+      {state === "done" && <CheckCircle2 className="size-4 text-green-600" />}
+      {state === "active" && (
+        <Loader2 className="size-4 animate-spin text-primary" />
+      )}
+      {state === "todo" && <Circle className="size-4 text-muted-foreground/50" />}
+      {label}
+    </span>
+  )
+}
+
 function CandidateRow({
   candidate,
   expanded,
   onToggle,
   busy,
-  canAccept,
   onDecide,
+  onEdit,
 }: Readonly<{
   candidate: ImportCandidateDto
   expanded: boolean
   onToggle: () => void
   busy: boolean
-  canAccept: boolean
   onDecide: (decision: "accepted" | "saved_as_source" | "ignored") => void
+  onEdit: () => void
 }>) {
   const uncertain = candidate.confidence === "uncertain"
   const openForDecision =
@@ -509,7 +678,7 @@ function CandidateRow({
               {candidate.decision === "accepted" && (
                 <CheckCircle2 className="size-3.5 text-green-600" />
               )}
-              {DECISION_LABELS[candidate.decision]}
+              {decisionLabel(candidate)}
             </span>
           )}
         </div>
@@ -518,17 +687,24 @@ function CandidateRow({
           <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
             <Button
               size="sm"
-              disabled={busy || empty || !canAccept}
+              disabled={busy || empty}
               title={
-                empty
-                  ? "Dieser Kandidat enthält keinen Text."
-                  : !canAccept
-                    ? "Zuerst Analyse starten."
-                    : undefined
+                empty ? "Dieser Kandidat enthält keinen Text." : undefined
               }
               onClick={() => onDecide("accepted")}
             >
               Übernehmen
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              disabled={busy || empty}
+              title={
+                empty ? "Dieser Kandidat enthält keinen Text." : undefined
+              }
+              onClick={onEdit}
+            >
+              Bearbeiten &amp; übernehmen
             </Button>
             <Button
               size="sm"

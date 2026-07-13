@@ -1,0 +1,26 @@
+# Spike "pii_gateway" — eigenständige Umgebung, KEIN Import in backend/app oder lib/.
+#
+# Tier A (deterministisch) braucht NICHTS ausser der Python-Stdlib und läuft mit
+# dem Backend-venv. Die folgenden Pakete sind NUR für Tier B (ML-Benchmark) und
+# werden bewusst in einen ISOLIERTEN Spike-venv installiert (spike/pii_gateway/.venv),
+# damit backend/.venv (produktiver Abhängigkeitsbaum) unberührt bleibt.
+#
+# Dependency-Fakten (vor der Installation genannt, Freigabe erforderlich):
+#   presidio-analyzer   MIT   ~0.2 MB Wheel   PII-Analyse-Framework
+#   presidio-anonymizer MIT   ~0.1 MB Wheel   Ersetzungs-/Operator-Layer
+#   spacy               MIT   ~6 MB Wheel     NLP; zieht numpy/thinc/… nach (~50–120 MB)
+#   de_core_news_md     MIT   ~44 MB Download  deutsches spaCy-NER-Modell
+#                                             (Alternative: de_core_news_sm ~15 MB)
+# Inferenz läuft vollständig LOKAL, kein Netzzugriff. Risiko: mittelgrosser
+# Abhängigkeitsbaum; Python-3.13-Wheel-Verfügbarkeit für spaCy vor dem Install
+# prüfen (sonst Spike-venv mit Python 3.12 anlegen).
+#
+# Installation (isoliert, nach Freigabe):
+#   python -m venv spike/pii_gateway/.venv
+#   spike/pii_gateway/.venv/Scripts/pip install presidio-analyzer presidio-anonymizer spacy
+#   spike/pii_gateway/.venv/Scripts/python -m spacy download de_core_news_md
+
+presidio-analyzer
+presidio-anonymizer
+spacy
+# Modell separat: python -m spacy download de_core_news_md

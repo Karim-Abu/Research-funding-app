@@ -92,9 +92,14 @@ def main() -> int:
     db = SessionLocal()
     try:
         project = _seed_project(db)
+        # allow_unapproved_smoke: dieser manuell aktivierte Smoke-/Demo-Pfad
+        # (RUN_REAL_FIRECRAWL=true, nie CI, nur öffentliches synthetisches Projekt)
+        # ist die einzige Stelle ausserhalb des Fake-/CI-Pfads, die den freigabelosen
+        # Auto-Pfad nutzen darf (R8-Freigabepflicht in app-Pfaden strukturell).
         outcome = run_market_research(
             db, project=project, actor_user_id=ACTOR, topic=F1_TOPIC,
             case_id=CASE_ID, data_mode=data_mode, max_results=3,
+            allow_unapproved_smoke=True,
         )
     finally:
         db.close()

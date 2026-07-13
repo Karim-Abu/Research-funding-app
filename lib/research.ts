@@ -166,3 +166,19 @@ export async function importResearchResult(
   if (!res.ok) throw await toError(res)
   return (await res.json()) as SourceDocumentDto
 }
+
+// R8: Ergebnis-Kandidat persistent verwerfen (candidate → rejected) — verworfene
+// Ergebnisse werden nie KI-Kontext und bleiben nach Reload verworfen.
+export async function discardResearchResult(
+  resultId: string
+): Promise<ResearchResultDto> {
+  const res = await fetch(
+    `/api/research-results/${encodeURIComponent(resultId)}/discard`,
+    {
+      method: "POST",
+      headers: { ...csrfHeaders() },
+    }
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as ResearchResultDto
+}

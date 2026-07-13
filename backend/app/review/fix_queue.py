@@ -65,6 +65,14 @@ _FAMILY_TITLES: dict[str, str] = {
     "reliability:drift": "Feldtext weicht vom geprüften Stand ab",
     "a3": "Evidenz-Konsistenz-Hinweis",
     "comment": "Kommentar aus der menschlichen Prüfung",
+    # R6 Rubric v0 — Gutachter-Risiken (reviewer_risk, nie Blocker).
+    "rubric:kpi_chain": "KPI ohne Baseline oder Messmethode",
+    "rubric:sota_differentiation": "Innovationsclaim ohne Abgrenzung zum Stand der Technik",
+    "rubric:methodology_how": "Methodik beschreibt das WIE nicht",
+    "rubric:market_claim_unsourced": "Marktzahl ohne Quelle",
+    "rubric:partner_fit": "Partner ohne Kompetenz-/Rollenbegründung",
+    "rubric:risk_scope": "Risikoabschnitt nur technisch",
+    "rubric:cross_section_numbers": "Kennzahlen zwischen Kapiteln widersprüchlich",
 }
 
 _SEVERITY_RANK = {"blocker": 0, "warning": 1, "info": 2}

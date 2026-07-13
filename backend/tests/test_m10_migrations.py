@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "b2c4e6a8d0f1"  # usage cost status (EVAL.1).
+_HEAD = "e6b3d5f7a9c1"  # run phases (persistierter Phasenstatus je Lauf).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -121,15 +121,27 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 
 
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
+    """Roundtrip der Head-Migration (e6b3d5f7a9c1, run_phases): Down entfernt
+    NUR die neue Tabelle; alle früheren Revisionen (review_comment,
+    edited_text, EVAL.1-Spalten, R3.2-Tabelle, R2.2-Spalten) und bestehende
+    Zeilen bleiben unangetastet erhalten."""
     db = tmp_path / "roundtrip.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
+    assert "run_phases" in _tables(db)
+    assert {
+        "run_phase_id", "run_id", "phase_key", "status", "error_code",
+        "detail", "started_at", "ended_at", "created_at", "updated_at",
+    } <= _columns(db, "run_phases")
     assert "import_candidates" in _tables(db)
+    assert "edited_text" in _columns(db, "import_candidates")
+    assert "review_comment" in _columns(db, "partners")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
-    # Row preservation across the roundtrip: eine bestehende usage_records-Zeile
-    # muss Downgrade + Upgrade der Head-Migration überleben; cost_status wird
-    # nach dem Re-Upgrade per server_default auf 'unknown_price' backfilled.
+    # Row preservation across the roundtrip: bestehende Zeilen (usage_records,
+    # ImportCandidate mit edited_text, Partner mit review_comment) müssen den
+    # Downgrade + Upgrade der Head-Migration unverändert überleben; die
+    # run_phases-Zeile selbst verschwindet mit dem Downgrade der Tabelle.
     con = sqlite3.connect(db)
     try:
         con.execute(
@@ -138,13 +150,37 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
             " VALUES ('usg-eval1', 'ws-m10', 11, 22, 0.0, 'not_applicable',"
             " '2026-01-01T00:00:00+00:00')"
         )
+        con.execute(
+            "INSERT INTO import_candidates (import_candidate_id, workspace_id,"
+            " project_id, source_id, source_version_id, field_id,"
+            " extracted_text, edited_text, confidence, decision, created_at)"
+            " VALUES ('cand-rt', 'ws-m10', 'p-rt', 's-rt', 'sv-rt',"
+            " 'INTRO.APP.ABSTRACT', 'Original', 'Bearbeitet', 'found',"
+            " 'accepted', '2026-01-01T00:00:00+00:00')"
+        )
+        con.execute(
+            "INSERT INTO partners (partner_id, project_id, workspace_id, name,"
+            " partner_type, review_comment, created_by, created_at, updated_at)"
+            " VALUES ('prt-rt', 'p-rt', 'ws-m10', 'Industrie AG',"
+            " 'implementation_partner', 'Begründung', 'u-rt',"
+            " '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
+        )
+        con.execute(
+            "INSERT INTO run_phases (run_phase_id, run_id, phase_key, status,"
+            " detail, created_at, updated_at)"
+            " VALUES ('rp-rt', 'run-rt', 'prepare_documents', 'succeeded',"
+            " '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
+        )
         con.commit()
     finally:
         con.close()
-    # Down one (entfernt NUR die EVAL.1-Spalten), dann wieder hoch. Die R3.2-
-    # Tabelle und die R2.2-Spalten (frühere Revisionen) überleben den -1-Schritt.
+    # Down one (entfernt NUR die run_phases-Tabelle), dann wieder hoch. Alle
+    # früheren Revisionen überleben den -1-Schritt unangetastet.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert not (_USAGE_COST_COLUMNS & _columns(db, "usage_records"))
+    assert "run_phases" not in _tables(db)
+    assert "review_comment" in _columns(db, "partners")
+    assert "edited_text" in _columns(db, "import_candidates")
+    assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
@@ -152,28 +188,56 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert "cash_contribution" in _project_columns(db)
     assert "duration_months" in _project_columns(db)
     assert "run_quality_summaries" in _tables(db)
+    con = sqlite3.connect(db)
+    try:
+        kept = con.execute(
+            "SELECT name, partner_type FROM partners"
+            " WHERE partner_id='prt-rt'"
+        ).fetchone()
+    finally:
+        con.close()
+    assert kept == ("Industrie AG", "implementation_partner"), (
+        "partner row lost on downgrade"
+    )
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
+    assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
     assert {
         "import_candidate_id", "workspace_id", "project_id", "source_id",
-        "source_version_id", "field_id", "extracted_text", "confidence",
-        "source_location", "decision", "decided_by", "decided_at",
+        "source_version_id", "field_id", "extracted_text", "edited_text",
+        "confidence", "source_location", "decision", "decided_by", "decided_at",
         "accepted_draft_version_id", "created_at",
     } <= _columns(db, "import_candidates")
+    assert "review_comment" in _columns(db, "partners")
     con = sqlite3.connect(db)
     try:
-        row = con.execute(
+        usage = con.execute(
             "SELECT input_tokens, output_tokens, cost_status, price_version"
             " FROM usage_records WHERE usage_record_id='usg-eval1'"
         ).fetchone()
+        cand = con.execute(
+            "SELECT extracted_text, edited_text, decision FROM import_candidates"
+            " WHERE import_candidate_id='cand-rt'"
+        ).fetchone()
+        partner = con.execute(
+            "SELECT name, review_comment FROM partners WHERE partner_id='prt-rt'"
+        ).fetchone()
+        phase_rows = con.execute("SELECT COUNT(*) FROM run_phases").fetchone()
     finally:
         con.close()
-    # Tokens unverändert; cost_status ist nach dem Re-Add der Spalte der
-    # fail-closed server_default (die ursprüngliche Einstufung ist weg — genau
-    # deshalb ist 'unknown_price' der sichere Backfill), price_version NULL.
-    assert row == (11, 22, "unknown_price", None), "row lost or mutated in roundtrip"
+    # Frühere Revisionen werden vom -1-Roundtrip nicht mehr berührt: usage-,
+    # Kandidaten- und Partner-Zeile bleiben exakt erhalten (inkl. edited_text
+    # und review_comment). Die run_phases-Tabelle ist nach dem Re-Add leer.
+    assert usage == (11, 22, "not_applicable", None), "usage row mutated in roundtrip"
+    assert cand == ("Original", "Bearbeitet", "accepted"), (
+        "candidate row mutated in roundtrip"
+    )
+    assert partner == ("Industrie AG", "Begründung"), (
+        "partner row mutated in roundtrip"
+    )
+    assert phase_rows == (0,), "run_phases must be empty after re-upgrade"
     assert {
         "direct_total_project_costs_excluding_overhead",
         "implementation_own_contribution",

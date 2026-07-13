@@ -72,23 +72,45 @@ def test_plan_suggests_topic_from_innovation_field_and_returns_queries(client, w
     assert body["topic"]["application_domain"] == "ICT"
     assert body["topic"]["technology_area"] == "Industrial AI"
     assert 3 <= len(body["queries"]) <= 5
+    # R8 Freigabepflicht: jede public_safe Query bringt eine pending Freigabe mit.
+    assert all(q["approval_id"] for q in body["queries"] if q["public_safe"])
     assert body["provider_mode"] == "fake"
 
 
-def test_plan_no_db_writes(client, web_fake):
+def test_plan_creates_no_research_tasks_only_pending_approvals(client, web_fake):
+    # R8: der Plan-Endpoint legt pending Freigaben an (kein reiner Preview mehr),
+    # aber weiterhin keine ResearchTasks und keinen Provider-Call.
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
-    from app.db.models import ResearchTask
+    from app.db.models import ResearchTask, SearchQueryApproval
     from app.db.session import SessionLocal
 
     client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
                 headers=unsafe_headers(csrf))
     db = SessionLocal()
     try:
-        count = db.query(ResearchTask).filter(ResearchTask.project_id == pid).count()
+        tasks = db.query(ResearchTask).filter(ResearchTask.project_id == pid).count()
+        approvals = (
+            db.query(SearchQueryApproval)
+            .filter(SearchQueryApproval.project_id == pid)
+            .all()
+        )
     finally:
         db.close()
-    assert count == 0
+    assert tasks == 0
+    assert approvals and all(a.status == "pending" for a in approvals)
+
+
+def _plan_and_approve_all(client, csrf, pid) -> list[str]:
+    res = client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
+                      headers=unsafe_headers(csrf))
+    assert res.status_code == 200, res.text
+    approval_ids = [q["approval_id"] for q in res.json()["queries"] if q["approval_id"]]
+    for approval_id in approval_ids:
+        ok = client.post(f"/api/v1/search-query-approvals/{approval_id}/approve",
+                         headers=unsafe_headers(csrf))
+        assert ok.status_code == 200, ok.text
+    return approval_ids
 
 
 def test_plan_applies_topic_override(client, web_fake):
@@ -130,13 +152,16 @@ def _topic_payload(**over) -> dict:
 
 
 def test_run_d0_persists_and_returns_candidates(client, web_fake):
+    # R8 Freigabepflicht: der Lauf braucht freigegebene Queries (plan → approve → run).
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
+    approval_ids = _plan_and_approve_all(client, csrf, pid)
     res = client.post(f"/api/v1/projects/{pid}/market-research/run",
-                       json=_topic_payload(), headers=_headers(csrf))
+                       json=_topic_payload(approval_ids=approval_ids),
+                       headers=_headers(csrf))
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["result_count"] == 15  # 5 queries × 3 fake results
+    assert body["result_count"] == 15  # 5 freigegebene Queries × 3 fake results
     assert len(body["candidates"]) == 15
     assert all(c["human_review_required"] is True for c in body["candidates"])
     assert all(c["confidence"] in ("low", "medium") for c in body["candidates"])
@@ -174,11 +199,13 @@ def test_run_unavailable_when_web_research_disabled(client):
 def test_run_idempotency_key_reuse_returns_same_response(client, web_fake):
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
+    approval_ids = _plan_and_approve_all(client, csrf, pid)
     headers = _headers(csrf)
+    payload = _topic_payload(approval_ids=approval_ids)
     first = client.post(f"/api/v1/projects/{pid}/market-research/run",
-                         json=_topic_payload(), headers=headers)
+                         json=payload, headers=headers)
     assert first.status_code == 200, first.text
     second = client.post(f"/api/v1/projects/{pid}/market-research/run",
-                          json=_topic_payload(), headers=headers)
+                          json=payload, headers=headers)
     assert second.status_code == 200, second.text
     assert second.json() == first.json()

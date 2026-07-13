@@ -1,0 +1,7 @@
+# Isolierter Spike-venv (Tier B). Nie committen.
+.venv/
+__pycache__/
+*.pyc
+
+# eval_report.json bleibt bewusst getrackt (maschinenlesbares Deliverable).
+# Die Reverse-Mapping-Tabelle wird ohnehin nie in eine Datei geschrieben.

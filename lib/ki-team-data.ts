@@ -1,8 +1,7 @@
 // Statischer Rollenkatalog für die Transparenzseite "KI-Team".
 // Single Source of Truth für Phasenband, Rollenkarten und Detail-Drawer.
 // Bewusst statisch: keine Live-Daten, keine API-Aufrufe, keine Modellnamen.
-import { workflowSteps } from "./mock-data"
-import type { WorkflowStep } from "./types"
+import { WORKFLOW_STEPS, type WorkflowStepDef } from "./workflow"
 
 // ---------------------------------------------------------------------------
 // Modus
@@ -249,8 +248,8 @@ export const kiTeamRoles: KiTeamRole[] = [
 
 // ---------------------------------------------------------------------------
 // Phasenzuordnung — referenziert die echten Workflow-Schritte (kein zweites
-// Prozessmodell). step entspricht workflowSteps[].step aus lib/mock-data.ts.
-// Rollen dürfen in mehreren Phasen erscheinen.
+// Prozessmodell). step entspricht WORKFLOW_STEPS[].step aus lib/workflow.ts
+// (6-Schritte-Modell). Rollen dürfen in mehreren Phasen erscheinen.
 // ---------------------------------------------------------------------------
 
 export interface PhaseAssignment {
@@ -259,18 +258,18 @@ export interface PhaseAssignment {
 }
 
 export const phaseAssignments: PhaseAssignment[] = [
-  { step: 1, roleIds: ["ablaufsteuerung", "sie"] },
+  // Projekt & Unterlagen: Intake/Quellen inkl. geschützter Webrecherche.
+  { step: 1, roleIds: ["ablaufsteuerung", "recherche-schutz", "markt-recherche", "sie"] },
   { step: 2, roleIds: ["regel-budgetpruefer", "sie"] },
-  { step: 3, roleIds: ["recherche-schutz", "markt-recherche", "sie"] },
-  { step: 4, roleIds: ["fakten-leser", "regel-budgetpruefer"] },
-  { step: 5, roleIds: ["beleg-zuordner", "sie"] },
-  { step: 6, roleIds: ["text-vorschlager", "sie"] },
-  { step: 7, roleIds: ["zuverlaessigkeits-pruefer", "pruef-zusammenfasser", "sie"] },
-  { step: 8, roleIds: ["regel-budgetpruefer", "sie"] },
+  // Analyse & Recherche: Anforderungen + Evidenz (Fakten, Belege).
+  { step: 3, roleIds: ["fakten-leser", "regel-budgetpruefer", "beleg-zuordner", "sie"] },
+  { step: 4, roleIds: ["text-vorschlager", "sie"] },
+  { step: 5, roleIds: ["zuverlaessigkeits-pruefer", "pruef-zusammenfasser", "sie"] },
+  { step: 6, roleIds: ["regel-budgetpruefer", "sie"] },
 ]
 
 export interface KiTeamPhase {
-  step: WorkflowStep
+  step: WorkflowStepDef
   roles: KiTeamRole[]
   /** Ob Nutzer:innen in dieser Phase prüfen (Mensch-Marker). */
   hatMenschlichePruefung: boolean
@@ -280,7 +279,7 @@ const rolesById = new Map(kiTeamRoles.map((r) => [r.id, r]))
 
 export function getKiTeamPhases(): KiTeamPhase[] {
   return phaseAssignments.map((assignment) => {
-    const step = workflowSteps.find((s) => s.step === assignment.step)
+    const step = WORKFLOW_STEPS.find((s) => s.step === assignment.step)
     if (!step) {
       throw new Error(`Unbekannter Workflow-Schritt: ${assignment.step}`)
     }

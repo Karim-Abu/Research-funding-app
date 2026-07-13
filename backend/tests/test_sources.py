@@ -24,6 +24,7 @@ from tests.fixtures import (
     EXECUTABLE_BYTES,
     TXT_BYTES,
     make_docx,
+    make_encrypted_pdf,
     make_image_only_pdf,
     make_text_pdf,
 )
@@ -175,6 +176,7 @@ def test_corrupted_pdf_becomes_failed(client):
     got = client.get(f"/api/v1/sources/{source_id}").json()
     assert got["status"] == "failed"
     assert got["error_message"]
+    assert got["error_code"] == "SOURCE_PARSE_FAILED"
 
 
 def test_image_only_pdf_needs_manual_input(client):
@@ -184,7 +186,25 @@ def test_image_only_pdf_needs_manual_input(client):
     )
     assert res.status_code == 202
     source_id = res.json()[0]["source_id"]
-    assert client.get(f"/api/v1/sources/{source_id}").json()["status"] == "needs_manual_input"
+    got = client.get(f"/api/v1/sources/{source_id}").json()
+    assert got["status"] == "needs_manual_input"
+    # Ursachen-Code (additiv): Scan/Bild-PDF ohne Text-Layer.
+    assert got["error_code"] == "SOURCE_NO_TEXT_LAYER"
+
+
+def test_encrypted_pdf_needs_manual_input_with_cause(client):
+    csrf, project_id = _project(client)
+    res = _upload(
+        client, project_id, csrf, "locked.pdf", make_encrypted_pdf(), "application/pdf"
+    )
+    assert res.status_code == 202
+    source_id = res.json()[0]["source_id"]
+    got = client.get(f"/api/v1/sources/{source_id}").json()
+    assert got["status"] == "needs_manual_input"
+    assert got["error_code"] == "SOURCE_PDF_ENCRYPTED"
+    # Verarbeitete Quellen tragen nie einen Ursachen-Code.
+    ok = _create_text(client, project_id, csrf).json()
+    assert ok["status"] == "processed" and ok["error_code"] is None
 
 
 def _confidential_project(client, csrf) -> str:

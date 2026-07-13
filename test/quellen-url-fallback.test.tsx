@@ -53,7 +53,29 @@ describe("Quellen page URL fallback (live mode)", () => {
       http.get("/api/projects/p1/sources", () => HttpResponse.json([])),
       http.get("/api/projects/p1/runs", () =>
         HttpResponse.json({ items: [] })
-      )
+      ),
+      // WorkflowRunProvider (zentrale Run-Auswahl) lädt Projekt und Partner.
+      http.get("/api/projects/p1", () =>
+        HttpResponse.json({
+          project_id: "p1",
+          workspace_id: "ws-demo",
+          title: "Projekt",
+          description: "",
+          funding_instrument_profile_id: "innosuisse",
+          data_classification: {
+            sensitivity: "public",
+            origin: "synthetic",
+            processing_mode: "deterministic_only",
+            web_research_mode: "off",
+            nda_applies: false,
+          },
+          status: "draft",
+          created_at: "2026-06-24T10:00:00.000Z",
+          updated_at: "2026-06-24T10:00:00.000Z",
+          active_run_id: null,
+        })
+      ),
+      http.get("/api/projects/p1/partners", () => HttpResponse.json([]))
     )
   })
   afterEach(() => setBackendMode("mock"))

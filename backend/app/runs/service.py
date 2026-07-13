@@ -82,6 +82,12 @@ def prepare_run(
     Caller owns idempotency records, commit, and execution/background dispatch.
     """
 
+    # Intake-only-Läufe sind zulässig, wenn eine strukturierte
+    # Projektbeschreibung existiert — sie ist der versionierte Input
+    # (eingefroren im RunProjectSnapshot). Ohne Beschreibung UND ohne
+    # verarbeitete Quelle bleibt der Lauf fail-closed (422 no_valid_sources).
+    allow_intake_only = bool((project.description or "").strip())
+
     versions: list[SourceVersion] | None = None
     effective_classification = project.data_classification
     if settings.run_classification_source_merge_enabled:
@@ -90,6 +96,7 @@ def prepare_run(
             project_id=project.project_id,
             workspace_id=project.workspace_id,
             requested_version_ids=payload.settings.source_version_ids,
+            allow_empty=allow_intake_only,
         )
         effective_classification = _effective_run_classification(
             project.data_classification, versions
@@ -122,6 +129,7 @@ def prepare_run(
             project_id=project.project_id,
             workspace_id=project.workspace_id,
             requested_version_ids=payload.settings.source_version_ids,
+            allow_empty=allow_intake_only,
         )
 
     actual_run_id = run_id or str(uuid.uuid4())

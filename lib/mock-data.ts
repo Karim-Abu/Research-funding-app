@@ -1,5 +1,5 @@
 // Dummy-Daten für den Prototyp. Keine echten Daten, keine Backend-Aufrufe.
-import type { DashboardProject, Project, User, WorkflowStep } from "./types"
+import type { DashboardProject, Project, User } from "./types"
 
 export const currentUser: User = {
   name: "Anna Keller",
@@ -22,22 +22,8 @@ export const projects: Project[] = [
 
 export const activeProjectId = "p1"
 
-// 8 Schritte, die auf 7 Screens abgebildet werden.
-// Schritt 3 UND 5 -> "Quellen & Evidenz". Freigabe ist Teil der Qualitätsprüfung
-// (kein eigener Abschluss-Screen), daher kein separater "Abschluss"-Schritt.
-// NB: Das Backend-workflow_summary zählt eigenständig (ohne Partner-Schritt) —
-// Übersetzung via BACKEND_STEP_TO_UI_STEP in lib/projects.ts.
-export const workflowSteps: WorkflowStep[] = [
-  { step: 1, label: "Intake", subLabel: "Projekt & Daten", href: "/intake" },
-  { step: 2, label: "Partner & Budget", shortLabel: "Partner", subLabel: "Konsortium & Budget", href: "/partner" },
-  { step: 3, label: "Quellen", subLabel: "Unterlagen", href: "/quellen" },
-  { step: 4, label: "Anforderungen", shortLabel: "Anford.", subLabel: "Fördervoraussetzungen", href: "/anforderungen" },
-  { step: 5, label: "Evidenz", subLabel: "Belege", href: "/quellen?tab=evidenz" },
-  // Der Entwurf wird feldweise im Portal-Editor vorbereitet (/editor).
-  { step: 6, label: "Entwurf", shortLabel: "Entwurf", subLabel: "Antragstext", href: "/editor" },
-  { step: 7, label: "Qualitätsprüfung", shortLabel: "Prüfung", subLabel: "Freigabe & Qualität", href: "/review" },
-  { step: 8, label: "Export", subLabel: "Abgabe", href: "/export" },
-]
+// Der Workflow-Katalog (6 Schritte) lebt in lib/workflow.ts — hier bewusst
+// keine zweite Schrittliste mehr.
 
 // Dashboard project cards — 4 demo entries covering distinct states.
 // Realistic, neutral project names — no test/E2E markers.

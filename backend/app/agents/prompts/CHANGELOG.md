@@ -33,7 +33,7 @@ stille Prompt-Änderungen.
 | A2.solution_innovation | a2_solution_innovation_v2 | A2 — Solution & Innovation Drafting (SOL.INNOVATION_SOLUTION.EDITOR) | 2026-07-09 | R5.7: advisory Research-Kontext (Partner-Kandidaten + D0/public-Quellen) als untrusted/kein-Beleg, PartnerCandidates sind Vorschläge (keine finalen Entscheidungen/Track-Records), SOTA/Baseline/Validierung/FTO/TRL nie als Fakt → Placeholder/missing_input; bindender Output-Format-Block. Ersetzt a2_solution_innovation_v1 |
 | A2.value_creation_market_logic | a2_value_creation_market_logic_v2 | A2 — Value Creation & Market Logic Drafting (VC.BUSINESS_TARGETS_MODEL.EDITOR) | 2026-07-09 | R5.7: advisory Research-Kontext (Markt-Kandidaten + D0/public-Quellen) als untrusted/kein-Beleg, Marktzahlen sind Kandidaten (nie Fakt) → Placeholder/missing_input; bindender Output-Format-Block. Ersetzt a2_value_creation_market_logic_v1 |
 | A3.evidence_consistency | a3_evidence_consistency_v1 | A3 — Evidence & Consistency Review (advisory ReviewFindings) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
-| MC.market_comparison | market_comparison_v1 | Markt-/Wettbewerbsvergleich, nur aus importierten Quellen (beta-intern) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
+| MC.market_comparison | market_comparison_v2 | Markt-/Wettbewerbsvergleich, nur aus importierten Quellen (beta-intern) | 2026-07-12 | R8: neue Item-Kategorien market_size_claim und customer_problem (Marktgrössen-Kandidaten/Kundenprobleme nur mit exaktem Zitat, nie als Fakt); Zitat-Verifikation unverändert. Ersetzt market_comparison_v1 (2026-07-08, initiale Snapshot-Erfassung R5.3) |
 
 ## Bekannte Risiken
 

@@ -1,25 +1,38 @@
 "use client"
 
+// Partner & Budget (Demo-Workflow): Partner anlegen, BEARBEITEN und entfernen
+// mit den MVP-Pflichtfeldern; Detailfragen (Unabhängigkeit) progressiv
+// eingeblendet. Qualitative Angaben werden nie automatisch bewertet — die
+// Liste markiert sie nur mit «Menschliche Prüfung erforderlich».
+
 import * as React from "react"
-import { Trash2, Plus, RefreshCw } from "lucide-react"
+import { Trash2, Plus, Pencil, RefreshCw, Save, X } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import { Textarea } from "@/components/ui/textarea"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
 import { getActiveProjectId } from "@/lib/intake-store"
 import {
   listPartners,
   createPartner,
+  updatePartner,
   deletePartner,
-  PARTNER_SAVE_HINT_KEY,
   type IndependenceStatus,
   type PartnerDto,
+  type PartnerInput,
   type PartnerType,
+  type ResearchEligibility,
 } from "@/lib/partners"
 import { BudgetForm } from "@/components/partner/budget-form"
-import type { StepStatus } from "@/lib/types"
 
 const PARTNER_TYPE_LABELS: Record<PartnerType, string> = {
   research_partner: "Forschungspartner",
@@ -33,27 +46,24 @@ const INDEPENDENCE_LABELS: Record<IndependenceStatus, string> = {
   needs_input: "Angabe nötig",
 }
 
-// Partner & Budget ist Workflow-Schritt 2 (nach Intake).
-const partnerStepStatus: StepStatus[] = [
-  "done",
-  "current",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-  "upcoming",
-]
+// Deutsche Anzeige der Beitragsberechtigung — nie rohe Enum-Werte in der UI.
+const ELIGIBILITY_LABELS: Record<ResearchEligibility, string> = {
+  eligible: "beitragsberechtigt",
+  not_eligible: "nicht beitragsberechtigt",
+  needs_verification: "zu prüfen",
+}
 
 interface FormState {
   name: string
   partner_type: PartnerType
   project_role: string
   country: string
+  contribution: string
   swiss_value_creation: "" | "true" | "false"
   research_partner_eligibility_status: string
   personnel_independence_status: string
   financial_independence_status: string
+  review_comment: string
 }
 
 const EMPTY_FORM: FormState = {
@@ -61,10 +71,12 @@ const EMPTY_FORM: FormState = {
   partner_type: "research_partner",
   project_role: "",
   country: "",
+  contribution: "",
   swiss_value_creation: "",
   research_partner_eligibility_status: "",
   personnel_independence_status: "",
   financial_independence_status: "",
+  review_comment: "",
 }
 
 function tri(value: "" | "true" | "false"): boolean | null {
@@ -77,9 +89,86 @@ function nullable(value: string): string | null {
   return value === "" ? null : value
 }
 
+/** Explizit unklar/nicht bestätigt → kurze Begründung ist Pflicht
+ *  (spiegelt die Backend-Konsistenzregel; nie ein automatisches Urteil). */
+function needsComment(form: FormState): boolean {
+  const unclear = ["exception", "needs_input"]
+  return (
+    unclear.includes(form.personnel_independence_status) ||
+    unclear.includes(form.financial_independence_status) ||
+    ["not_eligible", "needs_verification"].includes(
+      form.research_partner_eligibility_status
+    ) ||
+    form.swiss_value_creation === "false"
+  )
+}
+
+/** MVP-Pflichtfelder — deutsche Feldnamen für den Disabled-Hinweis. */
+function missingFields(form: FormState): string[] {
+  const missing: string[] = []
+  if (!form.name.trim()) missing.push("Name")
+  if (!form.country.trim()) missing.push("Land")
+  if (!form.project_role.trim()) missing.push("Rolle im Projekt")
+  if (!form.contribution.trim()) missing.push("Kompetenz & Beitrag")
+  if (needsComment(form) && !form.review_comment.trim()) {
+    missing.push("Kommentar zur Einstufung")
+  }
+  return missing
+}
+
+/** Qualitative Angabe offen/unklar → HITL-Markierung in der Liste. */
+function needsHumanReview(p: PartnerDto): boolean {
+  const unclear: (string | null | undefined)[] = ["exception", "needs_input"]
+  return (
+    unclear.includes(p.personnel_independence_status) ||
+    unclear.includes(p.financial_independence_status) ||
+    p.research_partner_eligibility_status === "needs_verification" ||
+    p.research_partner_eligibility_status === "not_eligible" ||
+    p.swiss_value_creation === false
+  )
+}
+
+function formFromPartner(p: PartnerDto): FormState {
+  let swiss: FormState["swiss_value_creation"] = ""
+  if (p.swiss_value_creation === true) swiss = "true"
+  if (p.swiss_value_creation === false) swiss = "false"
+  return {
+    name: p.name,
+    partner_type: p.partner_type,
+    project_role: p.project_role ?? "",
+    country: p.country ?? "",
+    contribution: p.contribution ?? "",
+    swiss_value_creation: swiss,
+    research_partner_eligibility_status:
+      p.research_partner_eligibility_status ?? "",
+    personnel_independence_status: p.personnel_independence_status ?? "",
+    financial_independence_status: p.financial_independence_status ?? "",
+    review_comment: p.review_comment ?? "",
+  }
+}
+
+function toInput(form: FormState): PartnerInput {
+  return {
+    name: form.name.trim(),
+    partner_type: form.partner_type,
+    project_role: nullable(form.project_role.trim()),
+    country: nullable(form.country.trim()),
+    contribution: nullable(form.contribution.trim()),
+    swiss_value_creation: tri(form.swiss_value_creation),
+    research_partner_eligibility_status:
+      (nullable(form.research_partner_eligibility_status) as never) ?? null,
+    personnel_independence_status:
+      (nullable(form.personnel_independence_status) as never) ?? null,
+    financial_independence_status:
+      (nullable(form.financial_independence_status) as never) ?? null,
+    review_comment: nullable(form.review_comment.trim()),
+  }
+}
+
 export function PartnerManager() {
   const [partners, setPartners] = React.useState<PartnerDto[]>([])
   const [form, setForm] = React.useState<FormState>(EMPTY_FORM)
+  const [editingId, setEditingId] = React.useState<string | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [projectId, setProjectId] = React.useState<string | null>(null)
@@ -88,21 +177,6 @@ export function PartnerManager() {
   React.useEffect(() => {
     setProjectId(getActiveProjectId())
     setProjectResolved(true)
-  }, [])
-
-  // B2: one-time hint set by the intake form when partner persistence failed.
-  const [intakeHint, setIntakeHint] = React.useState<string | null>(null)
-  React.useEffect(() => {
-    try {
-      if (window.sessionStorage.getItem(PARTNER_SAVE_HINT_KEY)) {
-        window.sessionStorage.removeItem(PARTNER_SAVE_HINT_KEY)
-        setIntakeHint(
-          "Projekt angelegt, Partner konnten nicht gespeichert werden — bitte im Schritt Partner & Budget ergänzen."
-        )
-      }
-    } catch {
-      // storage blocked — no hint
-    }
   }, [])
 
   const refresh = React.useCallback(async () => {
@@ -118,32 +192,46 @@ export function PartnerManager() {
     void refresh()
   }, [refresh])
 
+  const missing = missingFields(form)
+  const commentRequired = needsComment(form)
+  const editing = editingId !== null
+  // Beim Bearbeiten mit gesetzten Detailangaben startet der Abschnitt offen.
+  const independenceOpen =
+    form.personnel_independence_status !== "" ||
+    form.financial_independence_status !== ""
+
+  const startEdit = (p: PartnerDto) => {
+    setEditingId(p.partner_id)
+    setForm(formFromPartner(p))
+    setError(null)
+  }
+
+  const cancelEdit = () => {
+    setEditingId(null)
+    setForm(EMPTY_FORM)
+    setError(null)
+  }
+
   const onSubmit = async (event: React.FormEvent) => {
     event.preventDefault()
-    if (!projectId || !form.name.trim()) {
-      setError("Name und aktives Projekt sind erforderlich.")
-      return
-    }
+    if (!projectId || missing.length > 0) return
     setBusy(true)
     setError(null)
     try {
-      await createPartner(projectId, {
-        name: form.name.trim(),
-        partner_type: form.partner_type,
-        project_role: nullable(form.project_role.trim()),
-        country: nullable(form.country),
-        swiss_value_creation: tri(form.swiss_value_creation),
-        research_partner_eligibility_status:
-          (nullable(form.research_partner_eligibility_status) as never) ?? null,
-        personnel_independence_status:
-          (nullable(form.personnel_independence_status) as never) ?? null,
-        financial_independence_status:
-          (nullable(form.financial_independence_status) as never) ?? null,
-      })
+      if (editingId) {
+        await updatePartner(editingId, toInput(form))
+      } else {
+        await createPartner(projectId, toInput(form))
+      }
+      setEditingId(null)
       setForm(EMPTY_FORM)
       await refresh()
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Partner konnte nicht angelegt werden.")
+      setError(
+        e instanceof Error
+          ? e.message
+          : "Der Partner konnte nicht gespeichert werden."
+      )
     } finally {
       setBusy(false)
     }
@@ -152,6 +240,7 @@ export function PartnerManager() {
   const onDelete = async (partnerId: string) => {
     try {
       await deletePartner(partnerId)
+      if (partnerId === editingId) cancelEdit()
       await refresh()
     } catch (e) {
       setError(e instanceof Error ? e.message : "Partner konnte nicht gelöscht werden.")
@@ -166,8 +255,6 @@ export function PartnerManager() {
       user={currentUser}
       projects={projects}
       activeProjectId={activeProjectId}
-      currentStep={2}
-      stepStatus={[...partnerStepStatus]}
     >
       <div className="mx-auto max-w-4xl px-6 py-10">
         <header className="mb-6">
@@ -178,21 +265,24 @@ export function PartnerManager() {
           </p>
         </header>
 
-        {intakeHint && (
-          <div
-            role="alert"
-            className="mb-4 rounded-md border border-amber-300 bg-amber-50 px-4 py-2 text-sm text-amber-900"
-          >
-            {intakeHint}
-          </div>
-        )}
-
         {error && (
           <div
             role="alert"
-            className="mb-4 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
+            className="mb-4 flex flex-wrap items-center justify-between gap-2 rounded-md border border-destructive/40 bg-destructive/10 px-4 py-2 text-sm text-destructive"
           >
-            {error}
+            <span>{error}</span>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setError(null)
+                void refresh()
+              }}
+            >
+              <RefreshCw data-icon="inline-start" />
+              Erneut versuchen
+            </Button>
           </div>
         )}
 
@@ -200,6 +290,11 @@ export function PartnerManager() {
           onSubmit={onSubmit}
           className="mb-8 grid grid-cols-1 gap-4 rounded-lg border border-border bg-card p-4 sm:grid-cols-2"
         >
+          {editing && (
+            <p className="text-sm font-medium text-foreground sm:col-span-2">
+              Partner bearbeiten: {form.name || "…"}
+            </p>
+          )}
           <div className="sm:col-span-2">
             <Label htmlFor="p-name">Name</Label>
             <Input
@@ -240,37 +335,15 @@ export function PartnerManager() {
               placeholder="z. B. Entwicklung des Prototyps"
             />
           </div>
-          <div>
-            <Label htmlFor="p-pers">Personelle Unabhängigkeit</Label>
-            <select
-              id="p-pers"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={form.personnel_independence_status}
-              onChange={(e) =>
-                set({ personnel_independence_status: e.target.value })
-              }
-            >
-              <option value="">unbekannt</option>
-              <option value="confirmed">bestätigt</option>
-              <option value="exception">Ausnahme beantragt</option>
-              <option value="needs_input">Angabe nötig</option>
-            </select>
-          </div>
-          <div>
-            <Label htmlFor="p-fin">Finanzielle Unabhängigkeit</Label>
-            <select
-              id="p-fin"
-              className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
-              value={form.financial_independence_status}
-              onChange={(e) =>
-                set({ financial_independence_status: e.target.value })
-              }
-            >
-              <option value="">unbekannt</option>
-              <option value="confirmed">bestätigt</option>
-              <option value="exception">Ausnahme beantragt</option>
-              <option value="needs_input">Angabe nötig</option>
-            </select>
+          <div className="sm:col-span-2">
+            <Label htmlFor="p-contribution">Kompetenz &amp; Beitrag (kurz)</Label>
+            <Textarea
+              id="p-contribution"
+              rows={2}
+              value={form.contribution}
+              onChange={(e) => set({ contribution: e.target.value })}
+              placeholder="z. B. Langjährige Erfahrung in Leistungselektronik; baut den Prototyp."
+            />
           </div>
           {form.partner_type === "implementation_partner" && (
             <div>
@@ -284,8 +357,8 @@ export function PartnerManager() {
                 }
               >
                 <option value="">unbekannt</option>
-                <option value="true">ja</option>
-                <option value="false">nein</option>
+                <option value="true">bestätigt</option>
+                <option value="false">nicht bestätigt</option>
               </select>
             </div>
           )}
@@ -307,11 +380,92 @@ export function PartnerManager() {
               </select>
             </div>
           )}
+
+          {/* Detailfragen progressiv: eingeklappt, bis sie gebraucht werden. */}
           <div className="sm:col-span-2">
-            <Button type="submit" disabled={busy}>
-              <Plus data-icon="inline-start" />
-              Partner hinzufügen
+            <Accordion
+              key={editingId ?? "add"}
+              defaultValue={independenceOpen ? ["independence"] : []}
+            >
+              <AccordionItem value="independence" className="border-b-0">
+                <AccordionTrigger>Unabhängigkeit (Detailangaben)</AccordionTrigger>
+                <AccordionContent>
+                  <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+                    <div>
+                      <Label htmlFor="p-pers">Personelle Unabhängigkeit</Label>
+                      <select
+                        id="p-pers"
+                        className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.personnel_independence_status}
+                        onChange={(e) =>
+                          set({ personnel_independence_status: e.target.value })
+                        }
+                      >
+                        <option value="">unbekannt</option>
+                        <option value="confirmed">bestätigt</option>
+                        <option value="exception">Ausnahme beantragt</option>
+                        <option value="needs_input">Angabe nötig</option>
+                      </select>
+                    </div>
+                    <div>
+                      <Label htmlFor="p-fin">Finanzielle Unabhängigkeit</Label>
+                      <select
+                        id="p-fin"
+                        className="mt-1 w-full rounded-md border border-input bg-background px-3 py-2 text-sm"
+                        value={form.financial_independence_status}
+                        onChange={(e) =>
+                          set({ financial_independence_status: e.target.value })
+                        }
+                      >
+                        <option value="">unbekannt</option>
+                        <option value="confirmed">bestätigt</option>
+                        <option value="exception">Ausnahme beantragt</option>
+                        <option value="needs_input">Angabe nötig</option>
+                      </select>
+                    </div>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
+          </div>
+
+          {commentRequired && (
+            <div className="sm:col-span-2">
+              <Label htmlFor="p-comment">Kommentar zur Einstufung</Label>
+              <Textarea
+                id="p-comment"
+                rows={2}
+                value={form.review_comment}
+                onChange={(e) => set({ review_comment: e.target.value })}
+                placeholder="Kurze Begründung, warum die Angabe unklar oder nicht bestätigt ist."
+              />
+              <p className="mt-1 text-xs text-muted-foreground">
+                Pflicht bei «unklar/nicht bestätigt» — die Einschätzung bleibt
+                eine menschliche Prüfung, die App bewertet nichts automatisch.
+              </p>
+            </div>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3 sm:col-span-2">
+            <Button type="submit" disabled={busy || missing.length > 0}>
+              {editing ? (
+                <Save data-icon="inline-start" />
+              ) : (
+                <Plus data-icon="inline-start" />
+              )}
+              {editing ? "Änderungen speichern" : "Partner hinzufügen"}
             </Button>
+            {editing && (
+              <Button type="button" variant="outline" onClick={cancelEdit}>
+                <X data-icon="inline-start" />
+                Abbrechen
+              </Button>
+            )}
+            {missing.length > 0 && (
+              <p className="text-xs text-muted-foreground">
+                Noch offen: {missing.join(", ")}.
+              </p>
+            )}
           </div>
         </form>
 
@@ -336,6 +490,9 @@ export function PartnerManager() {
                   {p.project_role && (
                     <p className="text-xs text-muted-foreground">{p.project_role}</p>
                   )}
+                  {p.contribution && (
+                    <p className="text-xs text-muted-foreground">{p.contribution}</p>
+                  )}
                   <div className="mt-1 flex flex-wrap gap-2">
                     <Badge variant="secondary">
                       {PARTNER_TYPE_LABELS[p.partner_type]}
@@ -343,9 +500,15 @@ export function PartnerManager() {
                     {p.country && <Badge variant="outline">{p.country}</Badge>}
                     {p.research_partner_eligibility_status && (
                       <Badge variant="outline">
-                        {p.research_partner_eligibility_status}
+                        {ELIGIBILITY_LABELS[p.research_partner_eligibility_status]}
                       </Badge>
                     )}
+                    {p.swiss_value_creation !== null &&
+                      p.swiss_value_creation !== undefined && (
+                        <Badge variant="outline">
+                          {`CH-Wertschöpfung: ${p.swiss_value_creation ? "bestätigt" : "nicht bestätigt"}`}
+                        </Badge>
+                      )}
                     {p.personnel_independence_status && (
                       <Badge variant="outline">
                         {`Personell: ${INDEPENDENCE_LABELS[p.personnel_independence_status]}`}
@@ -356,17 +519,41 @@ export function PartnerManager() {
                         {`Finanziell: ${INDEPENDENCE_LABELS[p.financial_independence_status]}`}
                       </Badge>
                     )}
+                    {needsHumanReview(p) && (
+                      <Badge
+                        variant="outline"
+                        className="border-status-partial/60 text-status-partial"
+                      >
+                        Menschliche Prüfung erforderlich
+                      </Badge>
+                    )}
                   </div>
+                  {p.review_comment && (
+                    <p className="mt-1 text-xs text-muted-foreground">
+                      Kommentar: {p.review_comment}
+                    </p>
+                  )}
                 </div>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  aria-label={`Partner ${p.name} löschen`}
-                  onClick={() => void onDelete(p.partner_id)}
-                >
-                  <Trash2 data-icon="inline-start" />
-                  Löschen
-                </Button>
+                <div className="flex shrink-0 items-center gap-1">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Partner ${p.name} bearbeiten`}
+                    onClick={() => startEdit(p)}
+                  >
+                    <Pencil data-icon="inline-start" />
+                    Bearbeiten
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    aria-label={`Partner ${p.name} löschen`}
+                    onClick={() => void onDelete(p.partner_id)}
+                  >
+                    <Trash2 data-icon="inline-start" />
+                    Löschen
+                  </Button>
+                </div>
               </li>
             ))}
           </ul>

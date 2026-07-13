@@ -184,6 +184,97 @@ describe("PortalTransfer copy governance (Slice 3)", () => {
     )
   })
 
+  it("Kapitel-Kopie: ein metadata-only Event je Feld, kein Rohtext im Payload (R6)", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+    const bodies: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(COPY_URL, async ({ request, params }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(copyEventResponse(String(params.field)), {
+          status: 201,
+        })
+      })
+    )
+    const fields = [
+      field("INTRO.APP.ABSTRACT", "Kurzfassung Text.", { field_name: "Abstract" }),
+      field("INTRO.APP.EXECUTIVE_SUMMARY", "Zusammenfassung Text.", {
+        field_name: "Executive Summary",
+      }),
+      field("VC.BUSINESS_TARGETS_MODEL.EDITOR", "VC Text.", {
+        field_name: "Value Creation",
+      }),
+    ]
+    render(
+      <PortalTransfer fields={fields} review={reviewPkg()} runId="r1" copyEventsEnabled />
+    )
+    // Kapitel "Einleitung" enthält zwei Felder → genau zwei Events.
+    fireEvent.click(
+      screen.getAllByRole("button", { name: "Kapitel kopieren" })[0]
+    )
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    for (const body of bodies) {
+      // Metadata only: keine Rohtexte, keine unerwarteten Felder im Audit-Payload.
+      expect(Object.keys(body).sort()).toEqual([
+        "client_warnings",
+        "draft_version_id",
+      ])
+      expect(JSON.stringify(body)).not.toContain("Kurzfassung")
+      expect(JSON.stringify(body)).not.toContain("Zusammenfassung")
+    }
+    // Zwischenablage erhält die zusammengesetzte Arbeitskopie mit Überschriften.
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+    const copied = writeText.mock.calls[0][0] as string
+    expect(copied).toContain("Einleitung")
+    expect(copied).toContain("Abstract\nKurzfassung Text.")
+    expect(copied).toContain("Executive Summary\nZusammenfassung Text.")
+    expect(copied).not.toContain("VC Text.")
+    expect(copied).not.toMatch(/einreichbereit/i)
+  })
+
+  it("Gesamt-Kopie mit Hinweisen verlangt eine Begründung und kopiert dann alle Felder", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+    const bodies: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(COPY_URL, async ({ request, params }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(copyEventResponse(String(params.field)), {
+          status: 201,
+        })
+      })
+    )
+    const fields = [
+      field("INTRO.APP.ABSTRACT", "Sauber."),
+      field("VC.BUSINESS_TARGETS_MODEL.EDITOR", "Offen [[Angabe ergänzen: X]]", {
+        open_issue_count: 1,
+        field_name: "Value Creation",
+      }),
+    ]
+    render(
+      <PortalTransfer fields={fields} review={reviewPkg()} runId="r1" copyEventsEnabled />
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gesamten Textentwurf kopieren" })
+    )
+    // Arbeitskopie-Warnung + Begründungspflicht, noch kein Event.
+    expect(await screen.findByText(/Arbeitskopie/)).toBeInTheDocument()
+    expect(bodies).toHaveLength(0)
+    fireEvent.click(
+      screen.getAllByLabelText("Feld wird im Portal fertiggestellt", {
+        exact: false,
+      })[0]
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Trotzdem kopieren" }))
+
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    const warned = bodies.find(
+      (b) => Array.isArray(b.client_warnings) && b.client_warnings.length > 0
+    )
+    expect(warned).toMatchObject({ override_reason_code: "portal_finalization" })
+    await waitFor(() => expect(writeText).toHaveBeenCalledTimes(1))
+  })
+
   it("does not call the server when copy logging is disabled (today's behavior)", async () => {
     const writeText = vi.fn().mockResolvedValue(undefined)
     setClipboard({ writeText })

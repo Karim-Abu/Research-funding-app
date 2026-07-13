@@ -1,16 +1,19 @@
-"""Market Research API (RESEARCH.1b) — minimal UI wiring for the RESEARCH.1a MVP.
+"""Market Research API (RESEARCH.1b; Freigabepflicht R8).
 
-Two synchronous endpoints, no polling, no background task:
+Synchronous endpoints, no polling, no background task:
 
-- ``POST /projects/{id}/market-research/plan`` — pure preview. No DB writes, no
-  provider call: suggests a MarketTopic from the project's public ``innovation_field``
-  and/or applies the caller's edits, then plans public-safe query candidates.
-- ``POST /projects/{id}/market-research/run`` — executes the confirmed topic via the
-  EXISTING research vertical (Search Query Firewall → ResearchExecutor →
-  Fake/Firecrawl), reusing ``run_market_research`` from RESEARCH.1a as-is. A
-  confidential/NDA/unknown project surfaces the same firewall refusal as the public
-  research flow (``ResearchBlocked`` → ProblemException); no new sanitize/approval UI
-  is offered here.
+- ``POST /projects/{id}/market-research/plan`` — preview + Freigabe-Anbahnung: plant
+  public-safe Query-Kandidaten und legt für ein D0-Projekt je Query eine ``pending``
+  ``SearchQueryApproval`` an (R8: jede ausgehende Query wird gesehen und freigegeben;
+  Entscheid über die bestehenden ``/search-query-approvals/{id}/approve|reject``).
+- ``POST /projects/{id}/market-research/queries/preview`` — bearbeitete Query erneut
+  durch die Firewall (inkl. Projekt-Lexikon auch für D0) + neue pending Freigabe; die
+  alte Freigabe wird vom Client abgelehnt (und ist durch die Hash-Bindung ohnehin
+  unbrauchbar).
+- ``POST /projects/{id}/market-research/run`` — führt NUR freigegebene Queries über den
+  EXISTING research vertical aus (Search Query Firewall → ResearchExecutor →
+  Fake/Firecrawl); ohne Freigaben → 422 ``approval_required``. A confidential/NDA/unknown
+  project surfaces the same firewall refusal as the public research flow.
 """
 from __future__ import annotations
 
@@ -21,21 +24,26 @@ from app.api.errors import ProblemException
 from app.config.settings import Settings
 from app.contracts.market_research import (
     MarketCandidateDto,
+    MarketQueryPreviewInput,
     MarketResearchPlanResponse,
+    MarketResearchRunRequest,
     MarketResearchRunResponse,
     MarketTopicDto,
     MarketTopicInput,
     ProviderMode,
     QueryCandidateDto,
 )
+from app.db.models import SearchQueryApproval
 from app.db.session import get_db
 from app.market_research.candidates import MarketCandidate
 from app.market_research.planner import MarketTopic, QueryCandidate, plan_market_queries
-from app.market_research.runner import run_market_research
+from app.market_research.runner import market_approval_purpose, run_market_research
 from app.market_research.topic import suggest_market_topic
 from app.repositories import idempotency
 from app.repositories import projects as projects_repo
 from app.research import service
+from app.security import approval_service
+from app.security.data_class import DataClass, derive_data_class, is_external_blocked
 from app.security.deps import AuthContext, require_unsafe_guards, settings_dep
 
 router = APIRouter(tags=["Market Research"])
@@ -69,11 +77,28 @@ def _require_web_research_enabled(settings: Settings) -> None:
         )
 
 
-def _query_dto(q: QueryCandidate) -> QueryCandidateDto:
+def _query_dto(q: QueryCandidate, *, approval_id: str | None = None) -> QueryCandidateDto:
     return QueryCandidateDto(
         query_text=q.query_text, purpose=q.purpose, public_safe=q.public_safe,
         approval_required=q.approval_required, blocked_reason=q.blocked_reason,
+        approval_id=approval_id,
     )
+
+
+def _require_d0(project) -> None:
+    """Markt-Vertikal ist D0-only (R8): D3/UNKNOWN → 403, D1/D2 → 422 wie bisher."""
+    data_class = derive_data_class(project.data_classification)
+    if is_external_blocked(data_class):
+        raise ProblemException(
+            status=403, code="web_research_class_blocked", title="Search query refused",
+            detail="Öffentliche Recherche ist für diese Datenklasse gesperrt.",
+        )
+    if data_class != DataClass.D0_PUBLIC:
+        raise ProblemException(
+            status=422, code="approval_required", title="Search query refused",
+            detail="Für vertrauliche Projekte ist eine geprüfte, bereinigte "
+                   "Suchanfrage erforderlich.",
+        )
 
 
 def _candidate_dto(c: MarketCandidate) -> MarketCandidateDto:
@@ -112,6 +137,24 @@ def plan_market_research(
     project = _require_project(db, project_id, context.user.workspace_id)
     topic = _resolve_topic(project, payload)
     queries = plan_market_queries(topic, data_mode="live_project")
+
+    # R8 Freigabepflicht: für ein D0-Projekt erhält jede public_safe Query eine
+    # pending Freigabe (Entscheid via /search-query-approvals/{id}/approve|reject).
+    # Nicht-D0-Projekte sehen weiterhin nur die Vorschau — ohne Freigabe kein Lauf.
+    approval_ids: dict[int, str | None] = {}
+    if derive_data_class(project.data_classification) == DataClass.D0_PUBLIC:
+        for i, q in enumerate(queries):
+            if not q.public_safe:
+                continue
+            outcome = approval_service.run_preview(
+                db, project=project, actor_user_id=context.user.id,
+                raw_query=q.query_text, intended_tool="firecrawl",
+                purpose=market_approval_purpose(q.purpose), force_approval=True,
+            )
+            if outcome.approval is not None:
+                approval_ids[i] = outcome.approval.approval_id
+        db.commit()
+
     return MarketResearchPlanResponse(
         topic=MarketTopicDto(
             application_domain=topic.application_domain,
@@ -119,8 +162,45 @@ def plan_market_research(
             target_customers=topic.target_customers,
             region=topic.region,
         ),
-        queries=[_query_dto(q) for q in queries],
+        queries=[
+            _query_dto(q, approval_id=approval_ids.get(i))
+            for i, q in enumerate(queries)
+        ],
         provider_mode=_provider_mode(settings),
+    )
+
+
+@router.post(
+    "/projects/{project_id}/market-research/queries/preview",
+    response_model=QueryCandidateDto,
+)
+def preview_market_query(
+    project_id: str,
+    payload: MarketQueryPreviewInput,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> QueryCandidateDto:
+    """Bearbeitete Markt-Query erneut prüfen (R8): Firewall (inkl. Projekt-Lexikon
+    auch für D0) + neue pending Freigabe. Die Antwort zeigt IMMER den bereinigten
+    Text — nur dieser würde ausgeführt."""
+    project = _require_project(db, project_id, context.user.workspace_id)
+    _require_d0(project)
+    outcome = approval_service.run_preview(
+        db, project=project, actor_user_id=context.user.id,
+        raw_query=payload.query_text, intended_tool="firecrawl",
+        purpose=market_approval_purpose(payload.purpose), force_approval=True,
+        apply_project_lexicon=True,
+    )
+    db.commit()
+    result = outcome.result
+    blocked = result.decision == "block"
+    return QueryCandidateDto(
+        query_text=result.sanitized_query,
+        purpose=payload.purpose or "market_signal",
+        public_safe=not blocked,
+        approval_required=True,
+        blocked_reason=(result.reasons[0] if blocked and result.reasons else None),
+        approval_id=outcome.approval.approval_id if outcome.approval else None,
     )
 
 
@@ -130,7 +210,7 @@ def plan_market_research(
 )
 def run_market_research_endpoint(
     project_id: str,
-    payload: MarketTopicDto,
+    payload: MarketResearchRunRequest,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
     settings: Settings = Depends(settings_dep),
@@ -140,6 +220,7 @@ def run_market_research_endpoint(
 ) -> MarketResearchRunResponse:
     project = _require_project(db, project_id, context.user.workspace_id)
     _require_web_research_enabled(settings)
+    _require_d0(project)
 
     fingerprint = idempotency.fingerprint(
         "POST", f"/projects/{project_id}/market-research/run", payload.model_dump_json()
@@ -154,6 +235,22 @@ def run_market_research_endpoint(
             )
         return MarketResearchRunResponse(**existing.response_body)
 
+    # R8 Freigabepflicht: nur freigegebene Queries werden ausgeführt (workspace-,
+    # projekt- und zweck-gebunden; Single-Use im Firewall-Chokepoint).
+    approvals = [
+        a for approval_id in dict.fromkeys(payload.approval_ids)
+        if (a := approval_service.get_scoped(db, approval_id, context.user.workspace_id))
+        is not None
+        and a.project_id == project_id
+        and (a.purpose or "").startswith("market_comparison")
+    ]
+    if not approvals:
+        raise ProblemException(
+            status=422, code="approval_required", title="Search query refused",
+            detail="Suchanfragen benötigen eine menschliche Freigabe, bevor die "
+                   "Recherche starten kann.",
+        )
+
     topic = MarketTopic(
         application_domain=payload.application_domain,
         technology_area=payload.technology_area,
@@ -164,6 +261,7 @@ def run_market_research_endpoint(
         outcome = run_market_research(
             db, project=project, actor_user_id=context.user.id, topic=topic,
             case_id=project_id, data_mode="live_project", max_results=3,
+            approvals=approvals,
         )
     except service.ResearchBlocked as exc:
         db.commit()  # persist the firewall control/audit records

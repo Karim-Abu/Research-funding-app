@@ -111,8 +111,11 @@ describe("projects overview", () => {
     expect(screen.getAllByRole("button", { name: "Weiterarbeiten" })).toHaveLength(2)
     expect(screen.getAllByText("Innosuisse · Innovationsprojekt")).toHaveLength(2)
     expect(screen.getByText(/Bearbeitungsstand:\s*72\s*%/)).toBeInTheDocument()
-    // Backend step 5 (Entwurf) → UI step 6 (Partner & Budget inserted at 2).
-    expect(screen.getByText(/Schritt 6 von 8:\s*Entwurf/)).toBeInTheDocument()
+    // Backend step 5 (Entwurf) → UI step 4 «Antragsentwurf» im
+    // 6-Schritte-Katalog (lib/workflow.ts); Backend-Label wird ignoriert.
+    expect(
+      screen.getByText(/Schritt 4 von 6:\s*Antragsentwurf/)
+    ).toBeInTheDocument()
   })
 
   it("filters, searches and shows the warning badge (M10.2)", async () => {

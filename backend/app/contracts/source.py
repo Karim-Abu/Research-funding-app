@@ -24,6 +24,10 @@ class SourceDocument(BaseModel):
     current_source_version_id: str | None = None
     created_at: datetime | None = None
     error_message: str | None = None
+    # Maschinenlesbare Ursache bei failed/needs_manual_input (additiv), z. B.
+    # SOURCE_PDF_ENCRYPTED | SOURCE_NO_TEXT_LAYER | SOURCE_PARSE_FAILED —
+    # erlaubt der UI ursachenspezifische Handlungshinweise ohne Textvergleich.
+    error_code: str | None = None
 
 
 class TextSourceCreate(BaseModel):

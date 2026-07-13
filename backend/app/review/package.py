@@ -127,6 +127,11 @@ def apply_findings(db: Session, run: AnalysisRun) -> None:
     registry = get_registry()
     profile_id = registry.profile_id or REVIEW_PROFILE_VERSION
     specs = compute_finding_specs(db, run)
+    # R6 Rubric v0: qualitative Heuristiken (reviewer_risk, nie Blocker) laufen
+    # in derselben idempotenten Upsert-Pipeline wie die deterministischen Checks.
+    from app.review.rubric import compute_rubric_specs
+
+    specs = [*specs, *compute_rubric_specs(db, run)]
 
     existing = {
         f.finding_code: f

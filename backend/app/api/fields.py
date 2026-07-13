@@ -5,10 +5,21 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, Respon
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException, correlation_id
+from app.agents import field_drafting
 from app.contracts.copy_event import CopyEvent, CopyEventCreate
-from app.contracts.draft import DraftPatch, EvidenceLinkCreate, PortalFieldDraft, RedraftRequest
+from app.contracts.draft import (
+    DraftPatch,
+    EvidenceLinkCreate,
+    FieldSuggestionRead,
+    PortalFieldDraft,
+    RedraftRequest,
+)
 from app.contracts.evidence import EvidenceLink
-from app.contracts.portal_field import DisplayMode, PortalFieldInfo
+from app.contracts.portal_field import (
+    DisplayMode,
+    PortalFieldInfo,
+    PortalFieldSubsection,
+)
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun, DraftVersion
 from app.db.session import get_db
@@ -19,9 +30,11 @@ from app.fields import service as fields_service
 from app.registry import get_registry
 from app.repositories import audit
 from app.repositories import copy_events as copy_events_repo
+from app.repositories import draft_suggestions as suggestions_repo
 from app.repositories import drafts as drafts_repo
 from app.repositories import evidence as evidence_repo
 from app.repositories import runs as runs_repo
+from app.review.copy_readiness import copy_readiness_for_run
 from app.review.invalidation import invalidate_approvals
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
@@ -52,6 +65,23 @@ _REQUIRED: dict[str, bool] = {
     "optional": False,
     "not_applicable": False,
 }
+
+
+def _subsections(registry, field) -> list[PortalFieldSubsection]:
+    """Registrierte Pflicht-Unterfragen eines Composite-Editors als sichtbare
+    Gliederung (R6): MANDATORY_3_1 → Marker "3.1" + Registry-Frage."""
+    if field.field_kind != "composite_editor":
+        return []
+    out: list[PortalFieldSubsection] = []
+    for question in registry.mandatory_questions(field.field_id):
+        suffix = question.field_id.rsplit("MANDATORY_", 1)[-1]
+        out.append(
+            PortalFieldSubsection(
+                marker=suffix.replace("_", "."),
+                label=question.label_or_question,
+            )
+        )
+    return out
 
 
 def _require_run(db: Session, run_id: str, workspace_id: str) -> AnalysisRun:
@@ -97,11 +127,16 @@ def list_fields(
     db: Session = Depends(get_db),
 ) -> list[PortalFieldDraft]:
     run = _require_run(db, run_id, context.user.workspace_id)
+    readiness = copy_readiness_for_run(db, run)
     out: list[PortalFieldDraft] = []
     for field in get_registry().m6_draft_fields():
         draft = drafts_repo.get_draft(db, run.run_id, field.field_id)
         if draft is not None:
-            out.append(drafts_repo.to_contract(db, draft))
+            out.append(
+                drafts_repo.to_contract(
+                    db, draft, copy_readiness=readiness.get(field.field_id)
+                )
+            )
     return out
 
 
@@ -117,9 +152,8 @@ def list_portal_fields(
     validated registry, in canonical registry order.
     """
     _require_run(db, run_id, context.user.workspace_id)
-    fields = sorted(
-        get_registry().portal_fields.values(), key=lambda f: f.registry_index
-    )
+    registry = get_registry()
+    fields = sorted(registry.portal_fields.values(), key=lambda f: f.registry_index)
     return [
         PortalFieldInfo(
             field_id=field.field_id,
@@ -132,6 +166,7 @@ def list_portal_fields(
             field_kind=field.field_kind,
             display_mode=_DISPLAY_MODE.get(field.support_mode, "checklist"),
             draft_available=field.is_m6_draft_field,
+            subsections=_subsections(registry, field),
         )
         for field in fields
     ]
@@ -146,7 +181,10 @@ def get_field(
 ) -> PortalFieldDraft:
     run = _require_run(db, run_id, context.user.workspace_id)
     draft = _require_draft(db, run, field_id)
-    return drafts_repo.to_contract(db, draft)
+    readiness = copy_readiness_for_run(db, run)
+    return drafts_repo.to_contract(
+        db, draft, copy_readiness=readiness.get(field_id)
+    )
 
 
 @router.patch("/runs/{run_id}/fields/{field_id}", response_model=PortalFieldDraft)
@@ -169,7 +207,38 @@ def update_field(
         actor_user_id=context.user.id,
     )
     db.commit()
-    return drafts_repo.to_contract(db, draft)
+    readiness = copy_readiness_for_run(db, run)
+    return drafts_repo.to_contract(
+        db, draft, copy_readiness=readiness.get(field_id)
+    )
+
+
+@router.get(
+    "/runs/{run_id}/fields/{field_id}/suggestion",
+    response_model=FieldSuggestionRead,
+)
+def get_field_suggestion(
+    run_id: str,
+    field_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> FieldSuggestionRead:
+    """Read-only: die offene (proposed) A2-Suggestion zur AKTUELLEN
+    Basisversion des Felds — z. B. aus dem normalen Analyse-Lauf erzeugt.
+    Kein Provider-Call, keine Mutation; die Annahme bleibt der explizite
+    updateField-Schritt (nie Auto-Übernahme)."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    draft = _require_draft(db, run, field_id)
+    if draft.current_version_id is None:
+        return FieldSuggestionRead(suggestion=None)
+    suggestion = suggestions_repo.get_proposed_for(
+        db, run.run_id, draft.draft_id, draft.current_version_id
+    )
+    if suggestion is None:
+        return FieldSuggestionRead(suggestion=None)
+    return FieldSuggestionRead(
+        suggestion=field_drafting.proposed_suggestion_view(db, run, suggestion)
+    )
 
 
 @router.post(
@@ -327,7 +396,10 @@ def create_evidence_link(
         actor_user_id=context.user.id,
     )
     db.commit()
-    return evidence_repo.to_link_contract(link)
+    statuses = evidence_repo.link_support_statuses(db, run.run_id, [link])
+    return evidence_repo.to_link_contract(
+        link, support_status=statuses.get(link.evidence_link_id)
+    )
 
 
 @router.delete(

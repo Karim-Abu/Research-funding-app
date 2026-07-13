@@ -17,15 +17,26 @@ import {
   updateItemStatus,
   ITEM_CATEGORY_LABELS,
   ITEM_RELATION_LABELS,
+  ITEM_STATUS_LABELS,
   CONFIDENCE_LABELS,
   CONFIDENCE_STYLE,
+  SUMMARY_SECTIONS,
   type ItemStatus,
   type MarketComparisonDto,
+  type MarketComparisonItemDto,
 } from "@/lib/market-comparison"
 
 type State = "loading" | "idle" | "generating" | "ready" | "error"
 
-export function MarketComparisonSection({ projectId }: { projectId: string }) {
+export function MarketComparisonSection({
+  projectId,
+  sourceNames,
+}: {
+  projectId: string
+  // Anzeigenamen der Projektquellen (source_id → Name) für den Abschnitt
+  // «Verwendete Quellen» — es werden nie rohe IDs angezeigt.
+  sourceNames?: Record<string, string>
+}) {
   const [state, setState] = React.useState<State>("loading")
   const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -133,74 +144,41 @@ export function MarketComparisonSection({ projectId }: { projectId: string }) {
 
       {comparison && comparison.items.length > 0 && (
         <div className="overflow-x-auto" data-testid="market-comparison-table">
-          <table className="w-full border-collapse text-left text-xs">
-            <thead>
-              <tr className="border-b border-border text-muted-foreground">
-                <th className="py-2 pr-3 font-medium">Lösung / Anbieter</th>
-                <th className="py-2 pr-3 font-medium">Kategorie</th>
-                <th className="py-2 pr-3 font-medium">Kurzbeschreibung</th>
-                <th className="py-2 pr-3 font-medium">Relevanz</th>
-                <th className="py-2 pr-3 font-medium">Differenzierungshinweis</th>
-                <th className="py-2 pr-3 font-medium">Quelle</th>
-                <th className="py-2 pr-3 font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody>
-              {comparison.items.map((item) => (
-                <tr key={item.item_id} className="border-b border-border/60 align-top">
-                  <td className="py-2 pr-3 font-medium text-foreground">{item.name}</td>
-                  <td className="py-2 pr-3 text-muted-foreground">
-                    {ITEM_CATEGORY_LABELS[item.category]}
-                  </td>
-                  <td className="py-2 pr-3 text-muted-foreground">
-                    {item.description ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3 text-muted-foreground">
-                    {ITEM_RELATION_LABELS[item.relation_to_project]}
-                  </td>
-                  <td className="py-2 pr-3 text-muted-foreground">
-                    {item.differentiation_relevance ?? "—"}
-                  </td>
-                  <td className="py-2 pr-3">
-                    {item.evidence_quotes.length > 0 ? (
-                      <blockquote className="border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
-                        „{item.evidence_quotes[0].quote}“
-                      </blockquote>
-                    ) : (
-                      <span className="text-[11px] text-muted-foreground">
-                        Kein belegtes Zitat
-                      </span>
-                    )}
-                  </td>
-                  <td className="py-2 pr-3">
-                    <Badge
-                      variant="secondary"
-                      className={CONFIDENCE_STYLE[item.confidence_label]}
-                    >
-                      {CONFIDENCE_LABELS[item.confidence_label]}
-                    </Badge>
-                    <div className="mt-1 flex gap-1">
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground"
-                        onClick={() => setItemStatus(item.item_id, "accepted")}
-                      >
-                        Übernehmen
-                      </button>
-                      <span className="text-[11px] text-muted-foreground">·</span>
-                      <button
-                        type="button"
-                        className="text-[11px] text-muted-foreground hover:text-foreground"
-                        onClick={() => setItemStatus(item.item_id, "needs_human_review")}
-                      >
-                        Prüfen
-                      </button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
+          {SUMMARY_SECTIONS.map((section) => {
+            const items = comparison.items.filter((i) =>
+              section.categories.includes(i.category)
+            )
+            if (items.length === 0) return null
+            return (
+              <div key={section.title} className="mb-4 last:mb-0">
+                <p className="mb-1 text-xs font-medium text-foreground">
+                  {section.title}
+                </p>
+                <table className="w-full border-collapse text-left text-xs">
+                  <thead>
+                    <tr className="border-b border-border text-muted-foreground">
+                      <th className="py-2 pr-3 font-medium">Eintrag</th>
+                      <th className="py-2 pr-3 font-medium">Kategorie</th>
+                      <th className="py-2 pr-3 font-medium">Kurzbeschreibung</th>
+                      <th className="py-2 pr-3 font-medium">Relevanz</th>
+                      <th className="py-2 pr-3 font-medium">Differenzierungshinweis</th>
+                      <th className="py-2 pr-3 font-medium">Quelle</th>
+                      <th className="py-2 pr-3 font-medium">Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {items.map((item) => (
+                      <ItemRow
+                        key={item.item_id}
+                        item={item}
+                        onSetStatus={setItemStatus}
+                      />
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )
+          })}
         </div>
       )}
 
@@ -212,7 +190,7 @@ export function MarketComparisonSection({ projectId }: { projectId: string }) {
 
       {comparison && comparison.research_gaps.length > 0 && (
         <div className="mt-4" data-testid="market-research-gaps">
-          <p className="text-xs font-medium text-foreground">Offene Marktfragen</p>
+          <p className="text-xs font-medium text-foreground">Offene Evidenzlücken</p>
           <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
             {comparison.research_gaps.map((gap, i) => (
               <li key={i}>{gap}</li>
@@ -220,6 +198,90 @@ export function MarketComparisonSection({ projectId }: { projectId: string }) {
           </ul>
         </div>
       )}
+
+      {comparison && comparison.items.some((i) => i.source_document_ids.length > 0) && (
+        <div className="mt-4" data-testid="market-used-sources">
+          <p className="text-xs font-medium text-foreground">Verwendete Quellen</p>
+          <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+            {usedSourceNames(comparison, sourceNames).map((name, i) => (
+              <li key={i}>{name}</li>
+            ))}
+          </ul>
+        </div>
+      )}
     </section>
+  )
+}
+
+function usedSourceNames(
+  comparison: MarketComparisonDto,
+  sourceNames?: Record<string, string>
+): string[] {
+  const ids = new Set<string>()
+  for (const item of comparison.items) {
+    for (const id of item.source_document_ids) ids.add(id)
+  }
+  // Nie rohe IDs anzeigen: unbekannte Quellen erscheinen als generischer Eintrag.
+  const names = new Set<string>()
+  for (const id of ids) {
+    names.add(sourceNames?.[id] ?? "Importierte öffentliche Quelle")
+  }
+  return [...names].sort((a, b) => a.localeCompare(b, "de"))
+}
+
+function ItemRow({
+  item,
+  onSetStatus,
+}: {
+  item: MarketComparisonItemDto
+  onSetStatus: (itemId: string, status: ItemStatus) => void
+}) {
+  return (
+    <tr className="border-b border-border/60 align-top">
+      <td className="py-2 pr-3 font-medium text-foreground">{item.name}</td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        {ITEM_CATEGORY_LABELS[item.category]}
+      </td>
+      <td className="py-2 pr-3 text-muted-foreground">{item.description ?? "—"}</td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        {ITEM_RELATION_LABELS[item.relation_to_project]}
+      </td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        {item.differentiation_relevance ?? "—"}
+      </td>
+      <td className="py-2 pr-3">
+        {item.evidence_quotes.length > 0 ? (
+          <blockquote className="border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
+            „{item.evidence_quotes[0].quote}“
+          </blockquote>
+        ) : (
+          <span className="text-[11px] text-muted-foreground">Kein belegtes Zitat</span>
+        )}
+      </td>
+      <td className="py-2 pr-3">
+        <Badge variant="secondary" className={CONFIDENCE_STYLE[item.confidence_label]}>
+          {item.status === "accepted"
+            ? ITEM_STATUS_LABELS.accepted
+            : CONFIDENCE_LABELS[item.confidence_label]}
+        </Badge>
+        <div className="mt-1 flex gap-1">
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => onSetStatus(item.item_id, "accepted")}
+          >
+            Übernehmen
+          </button>
+          <span className="text-[11px] text-muted-foreground">·</span>
+          <button
+            type="button"
+            className="text-[11px] text-muted-foreground hover:text-foreground"
+            onClick={() => onSetStatus(item.item_id, "needs_human_review")}
+          >
+            Prüfen
+          </button>
+        </div>
+      </td>
+    </tr>
   )
 }

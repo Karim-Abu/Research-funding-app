@@ -134,6 +134,13 @@ def process_source_version(source_version_id: str) -> None:
 
             if result.needs_manual_input:
                 version.processing_status = "needs_manual_input"
+                # Ursache maschinenlesbar festhalten (Parser-Warnings), damit
+                # die UI passwortgeschützt vs. Scan ohne Text unterscheiden kann.
+                version.last_error_code = (
+                    "SOURCE_PDF_ENCRYPTED"
+                    if "encrypted_pdf" in result.warnings
+                    else "SOURCE_NO_TEXT_LAYER"
+                )
                 version.processing_finished_at = _now()
                 if doc:
                     doc.status = "needs_manual_input"

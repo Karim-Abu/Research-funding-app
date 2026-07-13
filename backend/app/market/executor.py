@@ -60,7 +60,11 @@ def _finish_operation(db, operation_id, status, code=None, detail=None) -> None:
 
 
 def _fake_bundle(candidates) -> str:
-    """Deterministic dev/test fake: one source-backed item quoting the first candidate."""
+    """Deterministic dev/test fake: source-backed items quoting the first candidate.
+
+    R8: liefert zusätzlich die neuen Kategorien ``market_size_claim`` /
+    ``customer_problem``, wenn das Fragment entsprechende Signale trägt — damit der
+    deterministische CI-Pfad alle fünf Zusammenfassungs-Abschnitte zeigen kann."""
     import json
 
     if not candidates:
@@ -72,11 +76,12 @@ def _fake_bundle(candidates) -> str:
     cut = min(160, len(text))
     space = text.rfind(" ", 0, cut)
     quote = text[: space if space > 40 else cut].strip()
-    bundle = {
-        "items": [{
-            "name": "Öffentlich genannte Lösung",
-            "category": "alternative_solution",
-            "description": "In einer öffentlichen Quelle erwähnte Lösung (zu prüfen).",
+
+    def _item(name: str, category: str, description: str) -> dict:
+        return {
+            "name": name,
+            "category": category,
+            "description": description,
             "target_customer_segment": None,
             "offering_summary": None,
             "strengths": None,
@@ -86,7 +91,25 @@ def _fake_bundle(candidates) -> str:
             "source_fragment_id": c.fragment_id,
             "source_document_id": c.source_document_id,
             "quote": quote,
-        }],
+        }
+
+    items = [_item(
+        "Öffentlich genannte Lösung", "alternative_solution",
+        "In einer öffentlichen Quelle erwähnte Lösung (zu prüfen).",
+    )]
+    low = text.lower()
+    if "markt" in low or "market" in low:
+        items.append(_item(
+            "Marktgrössen-Hinweis", "market_size_claim",
+            "Marktbezogene Aussage aus einer öffentlichen Quelle (zu prüfen).",
+        ))
+    if any(t in low for t in ("problem", "herausforderung", "bedarf", "pain", "need")):
+        items.append(_item(
+            "Kundenproblem-Hinweis", "customer_problem",
+            "In einer öffentlichen Quelle beschriebenes Kundenproblem (zu prüfen).",
+        ))
+    bundle = {
+        "items": items,
         "research_gaps": ["Marktgröße und Wettbewerbsumfeld sind nicht vollständig belegt."],
         "warnings": ["Vorschläge sind Hinweise aus öffentlichen Quellen, keine bestätigten Fakten."],
     }

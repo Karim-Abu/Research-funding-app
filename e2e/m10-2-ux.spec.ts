@@ -92,13 +92,16 @@ test("M10.2: orientation, links and readiness across the core screens", async ({
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), projectId)
 
   // --- Evidence → source navigation -----------------------------------------
-  await page.goto("/quellen?tab=evidenz")
+  await page.goto("/anforderungen?tab=evidenz")
   const sourceButton = page
     .getByRole("button", { name: /Quelle „Quelle“ anzeigen/ })
     .first()
   await expect(sourceButton).toBeVisible({ timeout: 20_000 })
-  // The explainer separates "found in source" from fachliche Freigabe.
-  await expect(page.getByText(/keine inhaltliche Freigabe/)).toBeVisible()
+  // The explainer separates "found in source" from fachliche Freigabe
+  // (R6-Statusleiter: Coverage ≠ Correctness, Bewertung bleibt beim Menschen).
+  await expect(
+    page.getByText(/abschliessende Bewertung bleibt bei Ihnen/)
+  ).toBeVisible()
   await sourceButton.click()
   await expect(page.getByRole("heading", { name: "Quelldetails" })).toBeVisible()
   await page.getByRole("button", { name: "Schließen" }).click()

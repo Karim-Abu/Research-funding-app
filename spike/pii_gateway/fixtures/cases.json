@@ -1,0 +1,292 @@
+{
+  "_comment": "Synthetische DE/CH-Fixtures für den PII-Detektor-Spike. Nur erfundene Daten. Spans sind [start, end) in Zeichen (Python-Slice). Fälle mit id-Präfix 'secret-' enthalten bewusst KEINE PII, sondern Geschäftsgeheimnisse/Methodik/Strategie/Budgetlogik (Requirement 7).",
+  "entity_types": [
+    "PERSON",
+    "EMAIL",
+    "PHONE",
+    "ADDRESS",
+    "DOB",
+    "IBAN",
+    "USERNAME"
+  ],
+  "cases": [
+    {
+      "id": "formatted-contact",
+      "text": "Kontakt: Anna Meier, E-Mail anna.meier@example.ch, Tel. +41 79 123 45 67.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 9,
+          "end": 19,
+          "value": "Anna Meier"
+        },
+        {
+          "type": "EMAIL",
+          "start": 28,
+          "end": 49,
+          "value": "anna.meier@example.ch"
+        },
+        {
+          "type": "PHONE",
+          "start": 56,
+          "end": 72,
+          "value": "+41 79 123 45 67"
+        }
+      ]
+    },
+    {
+      "id": "iban-username",
+      "text": "Bitte überweisen Sie auf CH93 0076 2011 6238 5295 7. Benutzername im Portal: @a_meier.",
+      "entities": [
+        {
+          "type": "IBAN",
+          "start": 25,
+          "end": 51,
+          "value": "CH93 0076 2011 6238 5295 7"
+        },
+        {
+          "type": "USERNAME",
+          "start": 77,
+          "end": 85,
+          "value": "@a_meier"
+        }
+      ]
+    },
+    {
+      "id": "dob-address",
+      "text": "Die Patientin, geboren am 14.03.1987, wohnt an der Bahnhofstrasse 12, 4051 Basel.",
+      "entities": [
+        {
+          "type": "DOB",
+          "start": 26,
+          "end": 36,
+          "value": "14.03.1987"
+        },
+        {
+          "type": "ADDRESS",
+          "start": 51,
+          "end": 80,
+          "value": "Bahnhofstrasse 12, 4051 Basel"
+        }
+      ]
+    },
+    {
+      "id": "freeform-name-address",
+      "text": "Im letzten Meeting hat Tobias Frei vorgeschlagen, den Prototyp bei einem Pilotkunden zu testen; die Lieferung geht an die Kornhausgasse 2, 4051 Basel.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 23,
+          "end": 34,
+          "value": "Tobias Frei"
+        },
+        {
+          "type": "ADDRESS",
+          "start": 122,
+          "end": 149,
+          "value": "Kornhausgasse 2, 4051 Basel"
+        }
+      ]
+    },
+    {
+      "id": "dob-words-email",
+      "text": "Herr Claude Rothen (geb. 3. Februar 1975) erreichen Sie unter c.rothen@labor-example.ch.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 5,
+          "end": 18,
+          "value": "Claude Rothen"
+        },
+        {
+          "type": "DOB",
+          "start": 25,
+          "end": 40,
+          "value": "3. Februar 1975"
+        },
+        {
+          "type": "EMAIL",
+          "start": 62,
+          "end": 87,
+          "value": "c.rothen@labor-example.ch"
+        }
+      ]
+    },
+    {
+      "id": "phone-local-username-field",
+      "text": "Rückruf erbeten unter 061 279 17 17. Benutzername: p.moriggl.",
+      "entities": [
+        {
+          "type": "PHONE",
+          "start": 22,
+          "end": 35,
+          "value": "061 279 17 17"
+        },
+        {
+          "type": "USERNAME",
+          "start": 51,
+          "end": 60,
+          "value": "p.moriggl"
+        }
+      ]
+    },
+    {
+      "id": "multi-person-iban",
+      "text": "Die Rechnung von Marco Oberli und Pascal Moriggl wird auf DE89370400440532013000 beglichen.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 17,
+          "end": 29,
+          "value": "Marco Oberli"
+        },
+        {
+          "type": "PERSON",
+          "start": 34,
+          "end": 48,
+          "value": "Pascal Moriggl"
+        },
+        {
+          "type": "IBAN",
+          "start": 58,
+          "end": 80,
+          "value": "DE89370400440532013000"
+        }
+      ]
+    },
+    {
+      "id": "iso-date-mixed",
+      "text": "Termin bestätigt für Sarah Koch, Vertrag vom 1990-11-22, Kontakt sarah.koch@example.org oder +41-61-555-88-99.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 21,
+          "end": 31,
+          "value": "Sarah Koch"
+        },
+        {
+          "type": "DOB",
+          "start": 45,
+          "end": 55,
+          "value": "1990-11-22"
+        },
+        {
+          "type": "EMAIL",
+          "start": 65,
+          "end": 87,
+          "value": "sarah.koch@example.org"
+        },
+        {
+          "type": "PHONE",
+          "start": 93,
+          "end": 109,
+          "value": "+41-61-555-88-99"
+        }
+      ]
+    },
+    {
+      "id": "secret-idea",
+      "text": "Unsere Kernidee ist ein dezentrales Zugriffs- und Kontrollmanagement für Gesundheitsdaten auf einem öffentlichen Distributed Ledger, das bestehende APIs ergänzt.",
+      "entities": []
+    },
+    {
+      "id": "secret-methodology",
+      "text": "Die proprietäre Methodik kombiniert ein morphologisches Bewertungsraster mit Lasttests, um die optimale Konfiguration aus Validatoren, Smart Contracts und Konsensparametern zu bestimmen.",
+      "entities": []
+    },
+    {
+      "id": "secret-partner-strategy",
+      "text": "Strategisch gewinnen wir zuerst ein Referenzlabor, danach die bestehende Kundenbasis, und erst im dritten Schritt den unerschlossenen Markt — dieser Fahrplan ist vertraulich.",
+      "entities": []
+    },
+    {
+      "id": "secret-budget-logic",
+      "text": "Die Kalkulation setzt einen Umsatz von fünfzig Rappen pro Datensatz und Jahr an, davon dreissig Prozent Marge; die genaue Herleitung bleibt intern.",
+      "entities": []
+    },
+    {
+      "id": "address-nozip",
+      "text": "Abholung an der Pfeffingerstrasse 19 durch Benutzer @lab_user42.",
+      "entities": [
+        {
+          "type": "ADDRESS",
+          "start": 16,
+          "end": 36,
+          "value": "Pfeffingerstrasse 19"
+        },
+        {
+          "type": "USERNAME",
+          "start": 52,
+          "end": 63,
+          "value": "@lab_user42"
+        }
+      ]
+    },
+    {
+      "id": "names-only",
+      "text": "Anwesend waren Beat Dobmann sowie Anna Meier als Protokollführerin.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 15,
+          "end": 27,
+          "value": "Beat Dobmann"
+        },
+        {
+          "type": "PERSON",
+          "start": 34,
+          "end": 44,
+          "value": "Anna Meier"
+        }
+      ]
+    },
+    {
+      "id": "hard-person-foreign",
+      "text": "Die Studie wurde von Ravi Subramaniam geleitet; Kontakt ravi.s@example.net.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 21,
+          "end": 37,
+          "value": "Ravi Subramaniam"
+        },
+        {
+          "type": "EMAIL",
+          "start": 56,
+          "end": 74,
+          "value": "ravi.s@example.net"
+        }
+      ]
+    },
+    {
+      "id": "hard-person-foreign-2",
+      "text": "Als Gutachterin fungierte Amara Okonkwo, erreichbar unter +41 44 000 11 22.",
+      "entities": [
+        {
+          "type": "PERSON",
+          "start": 26,
+          "end": 39,
+          "value": "Amara Okonkwo"
+        },
+        {
+          "type": "PHONE",
+          "start": 58,
+          "end": 74,
+          "value": "+41 44 000 11 22"
+        }
+      ]
+    },
+    {
+      "id": "hard-address-french",
+      "text": "Der Versand erfolgt an die Rue du Marché 8, 1204 Genève.",
+      "entities": [
+        {
+          "type": "ADDRESS",
+          "start": 27,
+          "end": 55,
+          "value": "Rue du Marché 8, 1204 Genève"
+        }
+      ]
+    }
+  ]
+}

@@ -179,6 +179,23 @@ async function toError(res: Response): Promise<RedraftError> {
   return new RedraftError(res.status, code, message, reasonCode)
 }
 
+/** Offene (proposed) Suggestion zur aktuellen Basisversion — z. B. aus dem
+ *  normalen Analyse-Lauf erzeugt. Read-only; null, wenn keine vorliegt. */
+export async function getRunFieldSuggestion(
+  runId: string,
+  fieldId: string
+): Promise<A2Suggestion | null> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestion`
+  )
+  if (!res.ok) throw await toError(res)
+  const body = (await res.json()) as { suggestion: Record<string, unknown> | null }
+  if (!body.suggestion) return null
+  const base = body.suggestion as unknown as A2Suggestion
+  const proposal = parseAIProposal(body.suggestion.ai_proposal)
+  return { ...base, ai_proposal: proposal ?? undefined }
+}
+
 /** Request a suggestion and resolve once the async operation produces it. */
 export async function createRedraft(
   runId: string,

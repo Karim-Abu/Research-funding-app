@@ -13,7 +13,7 @@ from pydantic import BaseModel
 ComparisonStatus = Literal["draft", "ready_for_review", "stale", "failed"]
 ItemCategory = Literal[
     "competitor", "alternative_solution", "substitute", "incumbent_process",
-    "reference_solution", "unknown",
+    "reference_solution", "market_size_claim", "customer_problem", "unknown",
 ]
 ItemRelation = Literal["similar", "complementary", "competing", "reference", "unclear"]
 ConfidenceLabel = Literal["source_backed", "needs_review", "insufficient_evidence"]

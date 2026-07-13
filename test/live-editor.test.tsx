@@ -58,6 +58,10 @@ function mock(opts: { patch?: () => Response; review?: () => Response } = {}) {
     http.get("/api/runs/r1/fields", () => HttpResponse.json([draft()])),
     http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
     http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
+    // Kein offener Lauf-Vorschlag im Standardfall.
+    http.get("/api/runs/r1/fields/:field/suggestion", () =>
+      HttpResponse.json({ suggestion: null })
+    ),
     http.get("/api/runs/r1/review", () =>
       opts.review ? opts.review() : HttpResponse.json(reviewPkg())
     ),
@@ -102,6 +106,9 @@ describe("LiveEditor", () => {
       http.get("/api/runs/r1/fields", () => HttpResponse.json([draft(), second])),
       http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
       http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/fields/:field/suggestion", () =>
+        HttpResponse.json({ suggestion: null })
+      ),
       http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg()))
     )
     render(<LiveEditor runId="r1" initialFieldId="SOL.INNOVATION_SOLUTION.EDITOR" />)
@@ -142,6 +149,9 @@ describe("LiveEditor", () => {
       http.get("/api/runs/r1/fields", () => HttpResponse.json([carried])),
       http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
       http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
+      http.get("/api/runs/r1/fields/:field/suggestion", () =>
+        HttpResponse.json({ suggestion: null })
+      ),
       http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg()))
     )
     render(<LiveEditor runId="r1" />)
@@ -192,7 +202,7 @@ describe("LiveEditor", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    fireEvent.click(await screen.findByRole("tab", { name: "Anforderungen" }))
+    fireEvent.click(await screen.findByRole("tab", { name: "Fehlende Angaben" }))
     await waitFor(() =>
       expect(
         screen.getByText("Umsetzungspartner mit Schweiz-Bezug")
@@ -222,9 +232,12 @@ describe("LiveEditor", () => {
         ),
     })
     render(<LiveEditor runId="r1" />)
+    // Findings öffnen standardmässig „Schwächen“ (Warum + nächste Aktion) …
     await waitFor(() =>
       expect(screen.getByText("Bitte konkretisieren.")).toBeInTheDocument()
     )
+    // … der Kommentarfluss lebt im nachgeordneten Kommentare-Tab.
+    fireEvent.click(screen.getByRole("tab", { name: "Kommentare" }))
     const comment = screen.getByLabelText("Kommentar zum Abschnitt")
     fireEvent.change(comment, { target: { value: "Neuer Kommentar." } })
     fireEvent.click(screen.getByRole("button", { name: "Kommentar hinzufügen" }))
@@ -252,11 +265,85 @@ describe("LiveEditor", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
+    // Freigabe lebt im Kommentare-Tab (Default ist jetzt „Schwächen“).
+    fireEvent.click(await screen.findByRole("tab", { name: "Kommentare" }))
     const approve = await screen.findByRole("button", { name: "Abschnitt freigeben" })
     fireEvent.click(approve)
     await waitFor(() =>
       expect(screen.getByText("Abschnitt freigegeben.")).toBeInTheDocument()
     )
+  })
+
+  it("zeigt den im Analyse-Lauf erzeugten Vorschlag zur Prüfung an und übernimmt ihn nur explizit", async () => {
+    let patched: Record<string, unknown> | null = null
+    mock()
+    server.use(
+      http.get("/api/runs/r1/fields/INTRO.APP.ABSTRACT/suggestion", () =>
+        HttpResponse.json({
+          suggestion: {
+            suggestion_id: "sg-run-1",
+            operation_id: "op-run-1",
+            field_id: "INTRO.APP.ABSTRACT",
+            base_version_id: "v1",
+            suggested_text: "Vorschlagstext aus dem Analyse-Lauf.",
+            rationale: "An Belege angepasst.",
+            evidence: [],
+            open_issue_ids: [],
+            placeholders: [],
+            character_count: 36,
+            character_limit: 300,
+            warnings: [],
+            ai_proposal: {
+              suggestion_text: "Vorschlagstext aus dem Analyse-Lauf.",
+              used_anchor_ids: [],
+              missing_inputs: [],
+              profile_id: "A2.introduction_public_summary",
+              prompt_version: "v2",
+              context_hash: "h",
+              model_ref: "m",
+              created_at: new Date().toISOString(),
+              data_mode: "fake_test",
+              provider: "fake",
+              model: "m",
+              human_review_required: true,
+            },
+          },
+        })
+      ),
+      http.patch(
+        "/api/runs/r1/fields/INTRO.APP.ABSTRACT",
+        async ({ request }) => {
+          patched = (await request.json()) as Record<string, unknown>
+          return HttpResponse.json(
+            draft({
+              current_version: {
+                draft_version_id: "v2",
+                text: "Vorschlagstext aus dem Analyse-Lauf.",
+                character_count: 36,
+                created_by: "agent",
+                created_at: new Date().toISOString(),
+                content_hash: "h2",
+              },
+            })
+          )
+        }
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    // Hinweis erscheint, ohne dass der Text verändert wurde (nie Auto-Apply).
+    expect(await screen.findByTestId("run-suggestion-hint")).toHaveTextContent(
+      "Vorschlag aus der Analyse — Prüfung nötig."
+    )
+    expect(
+      screen.getByDisplayValue(/Abstract über Förderfähigkeit/)
+    ).toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole("button", { name: "Vorschlag anzeigen" }))
+    fireEvent.click(await screen.findByRole("button", { name: "Übernehmen" }))
+    await waitFor(() => expect(patched).not.toBeNull())
+    // Annahme läuft über den unveränderten updateField-Pfad.
+    expect(patched!.source_operation_id).toBe("op-run-1")
+    expect(patched!.text).toBe("Vorschlagstext aus dem Analyse-Lauf.")
   })
 
   it("saves a new version and shows the recheck notice", async () => {

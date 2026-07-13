@@ -8,6 +8,9 @@
 export type DraftFieldStatus =
   | "ready"
   | "needs_review"
+  | "in_progress"
+  | "ai_suggestion"
+  | "no_draft"
   | "no_evidence"
   | "blocked"
   | "open"
@@ -15,6 +18,9 @@ export type DraftFieldStatus =
 export const DRAFT_STATUS_LABELS: Record<DraftFieldStatus, string> = {
   ready: "Bereit",
   needs_review: "Prüfung nötig",
+  in_progress: "In Bearbeitung",
+  ai_suggestion: "KI-Vorschlag",
+  no_draft: "Kein Entwurf",
   no_evidence: "Beleg fehlt",
   blocked: "Blockiert",
   open: "Offen",
@@ -23,6 +29,10 @@ export const DRAFT_STATUS_LABELS: Record<DraftFieldStatus, string> = {
 export const DRAFT_STATUS_STYLE: Record<DraftFieldStatus, string> = {
   ready: "bg-status-fulfilled/12 text-status-fulfilled",
   needs_review: "bg-status-partial/12 text-status-partial",
+  in_progress: "bg-muted text-foreground",
+  // KI-Akzentfarbe wie beim bestehenden "KI-Vorschlag (temporär)"-Chip.
+  ai_suggestion: "bg-primary/10 text-primary",
+  no_draft: "bg-muted text-muted-foreground",
   no_evidence: "bg-status-partial/12 text-status-partial",
   blocked: "bg-destructive/10 text-destructive",
   open: "bg-muted text-muted-foreground",

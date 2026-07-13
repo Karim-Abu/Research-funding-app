@@ -62,14 +62,75 @@ describe("MarketComparisonSection", () => {
     expect(
       screen.getByText(/Acme ist eine alternative Lösung/)
     ).toBeInTheDocument()
-    expect(screen.getByText("Quelle erwähnt")).toBeInTheDocument()
+    // R8: verifiziertes Zitat = «Textstelle gefunden» (nie als Fakt dargestellt).
+    expect(screen.getByText("Textstelle gefunden")).toBeInTheDocument()
     expect(screen.getByTestId("market-research-gaps")).toHaveTextContent(
       "Marktgröße ist nicht belegt."
     )
+    expect(screen.getByText("Offene Evidenzlücken")).toBeInTheDocument()
     // No provider/model/confidence leakage, no automatic "use in draft" action.
     expect(
       screen.queryByText(/anthropic|haiku|firecrawl|confidence|Konfidenz|Für Antrag verwenden/i)
     ).toBeNull()
+  })
+
+  it("groups items into the five summary sections and lists used source names", async () => {
+    const items = [
+      comparison().items[0],
+      {
+        ...comparison().items[0],
+        item_id: "i2",
+        name: "Marktwachstum Bericht",
+        category: "market_size_claim",
+        source_document_ids: ["s2"],
+      },
+      {
+        ...comparison().items[0],
+        item_id: "i3",
+        name: "Manuelle Prüfung dauert lange",
+        category: "customer_problem",
+        source_document_ids: ["s1"],
+      },
+    ]
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ items, item_count: 3 }))
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        sourceNames={{ s1: "Marktbericht (öffentlich)", s2: "Branchenstudie" }}
+      />
+    )
+    await waitFor(() =>
+      expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
+    )
+    expect(screen.getByText("Marktgrössen-Kandidaten")).toBeInTheDocument()
+    expect(screen.getByText("Wettbewerber und Alternativen")).toBeInTheDocument()
+    expect(screen.getByText("Kundenprobleme")).toBeInTheDocument()
+    const used = screen.getByTestId("market-used-sources")
+    expect(used).toHaveTextContent("Verwendete Quellen")
+    expect(used).toHaveTextContent("Marktbericht (öffentlich)")
+    expect(used).toHaveTextContent("Branchenstudie")
+    // Nie rohe IDs in der Standard-UI.
+    expect(used).not.toHaveTextContent("s1")
+  })
+
+  it("shows «Inhaltlich geprüft» after human acceptance instead of the quote status", async () => {
+    const accepted = comparison({
+      items: [{ ...comparison().items[0], status: "accepted" }],
+    })
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(accepted)
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    await waitFor(() =>
+      expect(screen.getByText("Inhaltlich geprüft")).toBeInTheDocument()
+    )
+    expect(screen.queryByText("Textstelle gefunden")).toBeNull()
   })
 
   it("shows an empty state when no comparison exists", async () => {

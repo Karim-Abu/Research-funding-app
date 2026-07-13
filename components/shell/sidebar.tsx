@@ -20,14 +20,15 @@ import {
   CheckSquare,
   Download,
   Users,
-  Wallet,
   Bot,
   PanelLeftClose,
   PanelLeftOpen,
-  Sparkles,
+  FlaskConical,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { flags } from "@/lib/flags"
+import { WORKFLOW_STEPS } from "@/lib/workflow"
 import {
   Tooltip,
   TooltipContent,
@@ -45,33 +46,60 @@ interface DisabledLink {
   icon?: LucideIcon
 }
 
-// "Aktueller Antrag" — the guided workflow for the active application.
-// Note: Quellen and Evidenz share the /quellen route (tabbed); Entwurf maps to
-// the editor. "Übersicht" points at the projects overview until a dedicated
-// per-application overview route exists (frontend fallback, no API change).
+// "Aktueller Antrag" — abgeleitet aus dem EINEN Workflow-Katalog
+// (lib/workflow.ts), damit Sidebar und Stepper nie divergieren. Icons sind
+// reine Darstellung und bleiben lokal. "Übersicht" zeigt auf die
+// Projektübersicht, bis eine eigene Antrags-Übersichtsroute existiert.
+const STEP_ICONS: Record<string, LucideIcon> = {
+  "/intake": ClipboardList,
+  "/import": FileSearch,
+  "/quellen": Database,
+  "/partner": Users,
+  "/anforderungen": ListChecks,
+  "/editor": PenLine,
+  "/review": CheckSquare,
+  "/export": Download,
+}
+
+// Schritt 1 («Projekt & Unterlagen») ist der einzige gruppierte Schritt:
+// seine Routen erscheinen mit ihrem eigenen (einzigen) Routennamen.
+// Schritte 2–6 haben genau eine Route — Routenname = Schrittname.
+const STEP1_ROUTE_LABELS: Record<string, string> = {
+  "/intake": "Projekt anlegen",
+  "/import": "Antrag importieren",
+  "/quellen": "Quellen",
+}
+
 const currentApplication: NavLink[] = [
   { label: "Übersicht", href: "/", icon: LayoutDashboard },
-  { label: "Intake", href: "/intake", icon: ClipboardList },
-  { label: "Partner & Budget", href: "/partner", icon: Users },
-  { label: "Quellen", href: "/quellen", icon: Database },
-  { label: "Anforderungen", href: "/anforderungen", icon: ListChecks },
-  { label: "Evidenz", href: "/quellen?tab=evidenz", icon: FileSearch },
-  { label: "Entwurf", href: "/editor", icon: PenLine },
-  // DEMO.1: Demo-Ansicht des integrierten KI-Antragsentwurfs (8 Felder).
-  { label: "KI-Antragsentwurf", href: "/antragsentwurf", icon: Sparkles },
-  { label: "Qualitätsprüfung", href: "/review", icon: CheckSquare },
-  // Innolink-Übernahme (/portal-transfer) zieht später unter "Export" — die
-  // Route bleibt vorerst erhalten, der Sidebar-Eintrag folgt im nächsten Schritt.
-  { label: "Export", href: "/export", icon: Download },
-  { label: "Kosten & Laufzeit (Demo)", href: "/kosten", icon: Wallet },
-  // Transparenzseite: zeigt die KI-/Regel-/Mensch-Rollen der App.
+  ...WORKFLOW_STEPS.flatMap((s): NavLink[] =>
+    s.step === 1
+      ? s.routes.map((href) => ({
+          label: STEP1_ROUTE_LABELS[href] ?? s.label,
+          href,
+          icon: STEP_ICONS[href] ?? ClipboardList,
+        }))
+      : [{ label: s.label, href: s.href, icon: STEP_ICONS[s.href] ?? ClipboardList }]
+  ),
+]
+
+// Transparenzseite (KI-/Regel-/Mensch-Rollen) + Evaluations-Hub. Die
+// technischen Demo-/Evaluationsansichten (Provider-Tabellen, synthetische
+// Läufe) sind bewusst NICHT Teil des Nutzer-Workflows. Der Zugang «Evaluation &
+// Technik» ist im Standardmodus ausgeblendet (Demo-Golden-Path) und nur mit
+// NEXT_PUBLIC_EVAL_VIEWS=on sichtbar; die Routen bleiben direkt erreichbar.
+const moreItems: NavLink[] = [
   { label: "KI-Team", href: "/ki-team", icon: Bot },
+  ...(flags.evalViews
+    ? [{ label: "Evaluation & Technik", href: "/admin", icon: FlaskConical }]
+    : []),
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
 const collapsedItems: NavLink[] = [
   { label: "Projekte", href: "/", icon: FolderKanban },
   ...currentApplication.filter((i) => i.label !== "Übersicht"),
+  ...moreItems,
 ]
 
 interface SidebarProps {
@@ -90,7 +118,12 @@ function pathActive(pathname: string, href: string): boolean {
 }
 
 // Links that work without a selected Antrag (overview + creating a new one).
-const PROJECT_INDEPENDENT = new Set(["Übersicht", "Intake", "KI-Team"])
+const PROJECT_INDEPENDENT = new Set([
+  "Übersicht",
+  "Projekt anlegen",
+  "KI-Team",
+  "Evaluation & Technik",
+])
 
 export function Sidebar({
   collapsed,
@@ -158,7 +191,7 @@ export function Sidebar({
             <GroupLabel>Innosuisse</GroupLabel>
             <ExpandedLink
               item={{
-                label: "Create Innovation Project",
+                label: "Projekt anlegen",
                 href: "/intake",
                 icon: FilePlus2,
               }}
@@ -230,6 +263,15 @@ export function Sidebar({
                 />
               )
             )}
+
+            <SectionLabel>Weitere</SectionLabel>
+            {moreItems.map((item) => (
+              <ExpandedLink
+                key={item.label}
+                item={item}
+                active={pathActive(pathname, item.href)}
+              />
+            ))}
           </>
         )}
       </nav>

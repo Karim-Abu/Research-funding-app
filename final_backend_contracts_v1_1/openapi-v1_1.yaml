@@ -3249,6 +3249,21 @@ components:
         created_at:
           type: string
           format: date-time
+        support_status:
+          description: R6 Evidence-Statusleiter (additiv, abgeleitet). Coverage,
+            nicht Correctness — location_found ist keine fachliche Verifikation.
+          type:
+          - string
+          - 'null'
+          enum:
+          - not_required
+          - evidence_missing
+          - location_found
+          - supports_partially
+          - supports_strongly
+          - conflict_or_uncertain
+          - human_review_required
+          - null
       additionalProperties: false
     ServiceTestResult:
       type: object
@@ -3622,6 +3637,21 @@ components:
           - string
           - 'null'
           format: date-time
+        support_status:
+          description: R6 Evidence-Statusleiter (additiv, abgeleitet). Coverage,
+            nicht Correctness — location_found ist keine fachliche Verifikation.
+          type:
+          - string
+          - 'null'
+          enum:
+          - not_required
+          - evidence_missing
+          - location_found
+          - supports_partially
+          - supports_strongly
+          - conflict_or_uncertain
+          - human_review_required
+          - null
       additionalProperties: false
     PortalFieldDraft:
       type: object
@@ -3665,6 +3695,19 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpenIssue'
+        copy_readiness:
+          description: R6 Copy-Readiness (additiv, backend-abgeleitet). Führt
+            die Kopieransicht, sperrt nie; nie als "einreichbereit" rendern.
+          type:
+          - string
+          - 'null'
+          enum:
+          - blocker
+          - placeholders_open
+          - not_reviewed
+          - draft
+          - copy_ready
+          - null
     DraftVersion:
       type: object
       required:

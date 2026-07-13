@@ -88,8 +88,10 @@ def plan_market_queries(
 ) -> list[QueryCandidate]:
     """Deterministically plan 3–5 public-safe market-research queries (D0-only).
 
-    ``data_mode`` is descriptive (``synthetic_eval`` | ``fake_test``); the MVP is D0-only
-    so ``approval_required`` is always False (the firewall still enforces the class).
+    ``data_mode`` is descriptive (``synthetic_eval`` | ``fake_test``). R8: JEDE
+    planner-generierte Query braucht eine explizite menschliche Freigabe, bevor sie
+    ausgeführt werden darf — ``approval_required`` ist daher immer True (die Firewall
+    erzwingt zusätzlich weiterhin die Datenklasse).
     """
     candidates: list[QueryCandidate] = []
     for purpose, query in _templates(topic).items():
@@ -103,7 +105,7 @@ def plan_market_queries(
                 purpose=purpose,
                 source="deterministic_planner",
                 data_mode=data_mode,
-                approval_required=False,
+                approval_required=True,
                 public_safe=reason is None,
                 blocked_reason=reason,
             )

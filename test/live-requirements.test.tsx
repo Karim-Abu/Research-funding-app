@@ -45,7 +45,7 @@ describe("LiveRequirements actions (M10.2)", () => {
     const evidenceLink = await screen.findByRole("button", { name: "Beleg ansehen" })
     expect(evidenceLink).toHaveAttribute(
       "href",
-      "/quellen?tab=evidenz&anchor=an42"
+      "/anforderungen?tab=evidenz&anchor=an42"
     )
     // Partner requirement → primary CTA routes to the intake partner section.
     expect(

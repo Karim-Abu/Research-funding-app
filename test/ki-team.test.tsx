@@ -30,7 +30,8 @@ describe("KI-Team Rollenkatalog", () => {
 
   it("ordnet alle Phasen echten Workflow-Schritten zu", () => {
     const phases = getKiTeamPhases()
-    expect(phases).toHaveLength(8)
+    // 6-Schritte-Katalog (lib/workflow.ts) — eine Phase pro Schritt.
+    expect(phases).toHaveLength(6)
     // Jede Rolle erscheint in mindestens einer Phase.
     const usedIds = new Set(phases.flatMap((p) => p.roles.map((r) => r.id)))
     expect(usedIds.size).toBe(10)

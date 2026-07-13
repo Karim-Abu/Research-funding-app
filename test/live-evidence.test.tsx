@@ -62,15 +62,22 @@ function mock(anchors: unknown[], assessments: unknown[]) {
 }
 
 describe("LiveEvidence", () => {
-  it("links the source name and explains 'Fundstelle bestätigt' (M10.2)", async () => {
+  it("zeigt location_found neutral und erklärt Coverage ≠ Correctness (R6)", async () => {
     mock([anchor()], [assessment([link()])])
     const onOpenSource = vi.fn()
     render(<LiveEvidence runId="r1" onOpenSource={onOpenSource} />)
+    // exact_verified ohne Reliability-Urteil → Leiterstufe location_found.
     await waitFor(() =>
-      expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+      expect(
+        screen.getByText("Textstelle gefunden – fachliche Prüfung offen")
+      ).toBeInTheDocument()
     )
-    // Explainer: found in the source ≠ inhaltliche Freigabe.
-    expect(screen.getByText(/keine inhaltliche Freigabe/)).toBeInTheDocument()
+    // Kein grünes "belegt": Erklärung der Leiter ist sichtbar.
+    expect(
+      screen.getByText(/heisst nur: Der Text ist in der Quelle auffindbar/)
+    ).toBeInTheDocument()
+    // "Fundstelle bestätigt" erscheint NICHT mehr als Beleg-Badge …
+    expect(screen.queryByText("Fundstelle bestätigt")).not.toBeInTheDocument()
     // The source name is a real, labelled button that opens the source detail.
     const sourceButton = screen.getByRole("button", {
       name: /Quelle „Quelle.txt“ anzeigen/,
@@ -79,11 +86,38 @@ describe("LiveEvidence", () => {
     expect(onOpenSource).toHaveBeenCalledWith("s1")
   })
 
+  it("zeigt den Textabgleich nur als Zusatzinfo in den Details", async () => {
+    mock([anchor()], [assessment([link()])])
+    render(<LiveEvidence runId="r1" />)
+    await waitFor(() =>
+      expect(
+        screen.getByText("Textstelle gefunden – fachliche Prüfung offen")
+      ).toBeInTheDocument()
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Details anzeigen" }))
+    // … sondern nur eingeklappt als technischer Textabgleich.
+    expect(screen.getByText("Textabgleich")).toBeInTheDocument()
+    expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+  })
+
+  it("rendert ein Backend-support_status ohne Fallback (supports_strongly)", async () => {
+    mock(
+      [anchor({ support_status: "supports_strongly" })],
+      [assessment([link()])]
+    )
+    render(<LiveEvidence runId="r1" />)
+    await waitFor(() =>
+      expect(screen.getByText("Stark gestützt")).toBeInTheDocument()
+    )
+  })
+
   it("expands and highlights the deep-linked anchor (M10.2)", async () => {
     mock([anchor()], [assessment([link()])])
     render(<LiveEvidence runId="r1" focusAnchorId="an1" />)
     await waitFor(() =>
-      expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+      expect(
+        screen.getByText("Textstelle gefunden – fachliche Prüfung offen")
+      ).toBeInTheDocument()
     )
     // The card auto-expanded: the collapse control shows "ausblenden".
     expect(
@@ -99,11 +133,13 @@ describe("LiveEvidence", () => {
         screen.getByText("Müller prüft die Förderfähigkeit für größere Vorhaben.")
       ).toBeInTheDocument()
     )
-    expect(screen.getByText("Fundstelle bestätigt")).toBeInTheDocument()
+    expect(
+      screen.getByText("Textstelle gefunden – fachliche Prüfung offen")
+    ).toBeInTheDocument()
     expect(screen.getByText(/Förderfähigkeit prüfen/)).toBeInTheDocument()
     // No human-check / "Geprüft von" controls in M5.
     expect(screen.queryByText(/Geprüft von/)).not.toBeInTheDocument()
-    expect(screen.queryByText(/Menschlich geprüft/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Menschlich geprüft\b/)).not.toBeInTheDocument()
     expect(screen.queryByText(/Als geprüft markieren/)).not.toBeInTheDocument()
   })
 
@@ -117,10 +153,10 @@ describe("LiveEvidence", () => {
     )
     render(<LiveEvidence runId="r1" />)
     await waitFor(() => expect(screen.getByText("Offen.")).toBeInTheDocument())
-    expect(screen.getByText("Prüfen")).toBeInTheDocument()
-    expect(screen.getByText("Nicht bestätigt")).toBeInTheDocument()
-    // Verified-coverage indicator counts only exact_verified (here: 0).
-    expect(screen.getByText(/0 bestätigte Fundstelle/)).toBeInTheDocument()
+    expect(screen.getByText("Menschliche Prüfung erforderlich")).toBeInTheDocument()
+    expect(screen.getByText("Widersprüchlich/unklar")).toBeInTheDocument()
+    // Coverage-Zähler zählt weiterhin nur exact_verified (hier: 0).
+    expect(screen.getByText(/0 gefundene Textstelle/)).toBeInTheDocument()
   })
 
   it("shows a calm empty state when there is no evidence", async () => {

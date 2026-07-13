@@ -5,13 +5,22 @@ from fastapi import APIRouter, Depends, Header, Response
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
+from app.contracts.budget_precheck import (
+    BudgetPrecheck,
+    BudgetPrecheckCheck,
+    BudgetPrecheckFigures,
+)
 from app.contracts.processing import ProcessingConfirmation, ProcessingConfirmationCreate
 from app.contracts.project import Project, ProjectCreate, ProjectList, ProjectPatch
 from app.db.session import get_db
+from app.registry import get_registry
 from app.repositories import audit, controls, idempotency, projects
 from app.repositories import processing_confirmations as confirmations_repo
+from app.rules.engine import evaluate_rule
+from app.rules.inputs import inputs_from_snapshot
 from app.runs import cloud_policy
 from app.runs.policy import POLICY_VERSION
+from app.runs.project_snapshot import current_inputs
 from app.security.data_class import DataClass, derive_data_class
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
@@ -198,6 +207,107 @@ def get_project(
             detail="Project not found.",
         )
     return projects.to_contract(db, project)
+
+
+# --- Budget-Vorprüfung (read-only, run-unabhängig) ---------------------------
+# Genau die zwei deterministischen Budget-Kernregeln; Schwellen kommen NUR aus
+# der Registry (rule.condition), die Rechnung NUR aus den bestehenden Handlern.
+_PRECHECK_RULE_IDS = (
+    "INNO.BUDGET.IMPLEMENTATION_SHARE_40_60",
+    "INNO.BUDGET.CASH_MIN5",
+)
+
+# Handler-mapping_key → Vorprüfungs-Status (eigenes Vokabular, kein
+# Requirement-Status): Ausnahme-Branches bleiben menschliche Prüfung.
+_MAPPING_TO_PRECHECK_STATUS = {
+    "in_range": "fulfilled",
+    "at_or_above_min": "fulfilled",
+    "out_of_range_with_claimed_exception": "review",
+    "below_with_claimed_exception": "review",
+    "out_of_range_without_exception": "blocker",
+    "below_without_exception": "blocker",
+    "missing": "missing",
+}
+
+
+@router.get(
+    "/projects/{project_id}/budget/precheck", response_model=BudgetPrecheck
+)
+def budget_precheck(
+    project_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> BudgetPrecheck:
+    """Reine Leseableitung über Live-Daten — persistiert nichts (kein
+    RuleResult/OpenIssue/Audit) und ersetzt keinen Analyse-Lauf."""
+    project = projects.get_scoped(db, project_id, context.user.workspace_id)
+    if project is None:
+        raise ProblemException(
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
+            detail="Project not found.",
+        )
+    registry = get_registry()
+    # current_inputs liefert exakt die Dicts, die auch der Run-Snapshot
+    # einfriert — damit ist die Parität zum späteren Lauf strukturell gegeben.
+    project_dict, partner_dicts = current_inputs(db, project)
+    inputs = inputs_from_snapshot(
+        profile_id=project.funding_instrument_profile_id,
+        partner_dicts=partner_dicts,
+        project_dict=project_dict,
+    )
+
+    denominator = inputs.direct_total_project_costs_excluding_overhead
+
+    def _share(numerator: float | None) -> float | None:
+        # Fehlender Wert oder 0-Nenner → «Angabe fehlt», nie ein Falschurteil.
+        if numerator is None or not denominator:
+            return None
+        return round(numerator / denominator * 100, 2)
+
+    figures = BudgetPrecheckFigures(
+        direct_costs_chf=denominator,
+        own_contribution_chf=inputs.implementation_own_contribution,
+        cash_contribution_chf=inputs.cash_contribution,
+        requested_funding_chf=inputs.total_requested_funding,
+        implementation_contribution_chf=inputs.implementation_numerator,
+        implementation_share_percent=_share(inputs.implementation_numerator),
+        cash_share_percent=_share(inputs.cash_contribution),
+        funding_share_percent=_share(inputs.total_requested_funding),
+        exception_claimed=inputs.budget_exception_basis is not None,
+    )
+
+    checks: list[BudgetPrecheckCheck] = []
+    for rule_id in _PRECHECK_RULE_IDS:
+        rule = registry.rules[rule_id]
+        outcome = evaluate_rule(
+            rule, inputs, rule_version=registry.rule_registry_version
+        )
+        requirement = (
+            registry.requirements.get(rule.requirement_id)
+            if rule.requirement_id
+            else None
+        )
+        checks.append(
+            BudgetPrecheckCheck(
+                rule_id=rule.rule_id,
+                requirement_id=rule.requirement_id,
+                title=requirement.title if requirement else rule.title,
+                status=_MAPPING_TO_PRECHECK_STATUS.get(
+                    outcome.mapping_key, "missing"
+                ),
+                reason=outcome.reason,
+                observed=outcome.observed,
+                condition=rule.condition,
+                severity=rule.severity,
+                source_ref=rule.source_ref,
+                source_version=rule.source_version,
+                last_checked=rule.last_checked,
+                rule_version=outcome.rule_version,
+            )
+        )
+    return BudgetPrecheck(figures=figures, checks=checks)
 
 
 @router.patch("/projects/{project_id}", response_model=Project)

@@ -2,12 +2,18 @@
 // sessionStorage des Browsers. Bewusst minimal — kein globaler State,
 // keine Persistenz über die Browser-Session hinaus, keine Personendaten
 // über das Intake hinaus.
+//
+// Quelle der Wahrheit: Nach der Projektanlage ist der SERVER die Wahrheit
+// (POST /projects, status "draft"). Dieser Store hält für nicht-public
+// klassifizierte Projekte NUR die Vertraulichkeitsstufe (R4.4) — nie die
+// Projektidee, nie Titel, nie Budgetwerte. Keine neuen Inhalts-Keys anlegen.
 
 import type { IntakeFormData } from "./types"
 
 const INTAKE_KEY = "rf_current_intake"
 const RUN_ID_KEY = "rf_current_run_id"
 const ACTIVE_PROJECT_KEY = "rf_active_project_id"
+const SELECTED_RUN_KEY = "rf_selected_run_id"
 
 /**
  * Alias, den die Bridge serverseitig auf den letzten Durchlauf des Projekts
@@ -34,19 +40,20 @@ function redactIntake(data: IntakeFormData): IntakeFormData {
     titel: "",
     projektidee: "",
     innovationsfeld: "",
-    budgetrahmen: "",
     vertraulichkeit: data.vertraulichkeit,
-    partner: [],
   }
 }
 
 function hasIntakeContent(data: IntakeFormData): boolean {
+  // budgetrahmen/partner sind keine Formularfelder mehr, können aber in
+  // Alt-Einträgen im Storage liegen — weiterhin als Inhalt werten (Scrub).
+  const legacy = data as unknown as Record<string, unknown>
   return Boolean(
     data.titel ||
       data.projektidee ||
       data.innovationsfeld ||
-      data.budgetrahmen ||
-      data.partner?.length
+      legacy.budgetrahmen ||
+      (Array.isArray(legacy.partner) && legacy.partner.length > 0)
   )
 }
 
@@ -104,13 +111,25 @@ export function redactIntakeInSession(): void {
   if (data) storage()?.setItem(INTAKE_KEY, JSON.stringify(redactIntake(data)))
 }
 
+/** Mock-only: Run-ID der Mock-Bridge. Live-Screens nutzen die zentrale
+ *  Run-Auswahl (lib/active-run.ts) — hier nichts Neues anschliessen. */
 export function setCurrentRunId(runId: string): void {
   storage()?.setItem(RUN_ID_KEY, runId)
 }
 
-/** Gespeicherte Run-ID oder der Bridge-Alias "current". */
+/** Mock-only: gespeicherte Run-ID oder der Bridge-Alias "current". */
 export function getCurrentRunId(): string {
   return storage()?.getItem(RUN_ID_KEY) ?? CURRENT_RUN_ID_FALLBACK
+}
+
+/** Explizit vom Nutzer gewählter Analyse-Lauf — Stufe 2 der Run-Auswahl-
+ *  Ladder (lib/active-run.ts). Nur die ID, keine Inhalte (R4.4). */
+export function setSelectedRunId(runId: string): void {
+  storage()?.setItem(SELECTED_RUN_KEY, runId)
+}
+
+export function getSelectedRunId(): string | null {
+  return storage()?.getItem(SELECTED_RUN_KEY) ?? null
 }
 
 /** Aktives Projekt (real angelegtes Projekt aus dem Intake). */

@@ -61,10 +61,11 @@ def finding_code_family(finding_code: str) -> str:
 
     ``draft_placeholder:INTRO.APP.ABSTRACT`` → ``draft_placeholder``;
     ``reliability:quantified:<claim>`` → ``reliability:quantified``;
+    ``rubric:kpi_chain:<field>`` → ``rubric:kpi_chain``;
     ``comment:<uuid>`` → ``comment``.
     """
     parts = finding_code.split(":")
-    if parts[0] == "reliability" and len(parts) > 1:
+    if parts[0] in ("reliability", "rubric") and len(parts) > 1:
         return ":".join(parts[:2])
     return parts[0]
 
@@ -119,6 +120,10 @@ def classify_severity_class(
         return "eligibility_blocker"
     if family.startswith("reliability:"):
         return "evidence_risk"
+    # R6 Rubric v0: qualitative Reviewer-Heuristiken sind IMMER reviewer_risk —
+    # nie ein Blocker, nie ein automatischer Förderentscheid.
+    if family.startswith("rubric:"):
+        return "reviewer_risk"
     return _FAMILY_CLASS.get(family, "style_risk")
 
 

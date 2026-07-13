@@ -95,9 +95,9 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   })
   // The evidence panel is a tab in the context panel. Since M10.3 the panel
   // starts collapsed while writing — switch to "Prüfen" (forces it open),
-  // then open "Belege" to see the linkage section.
+  // then open "Quellen" (R6-Zieltab, vormals "Belege") for the linkage section.
   await page.getByRole("button", { name: "Prüfen" }).click()
-  await page.getByRole("tab", { name: "Belege" }).first().click()
+  await page.getByRole("tab", { name: "Quellen" }).first().click()
   await expect(page.getByText(/Verkn/).first()).toBeVisible({ timeout: 20_000 })
   await page.reload()
   // Reload re-selects the first field (user-edited in the demo seed).

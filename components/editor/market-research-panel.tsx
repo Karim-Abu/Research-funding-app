@@ -1,11 +1,12 @@
 "use client"
 
-// Market Research (RESEARCH.1b) — minimal UI over the existing RESEARCH.1a backend
-// (deterministic query planner → Search Query Firewall → ResearchExecutor →
-// Fake/Firecrawl). Flow: idle (empty state) → review (editable topic + query preview,
-// from /market-research/plan) → running → results (MarketCandidate cards). Candidates
-// are never facts/evidence — every card carries a human-review notice, and "Als Quelle
-// speichern" reuses the existing research-result import path 1:1.
+// Market Research (RESEARCH.1b; Freigabepflicht R8) — minimal UI over the existing
+// RESEARCH.1a backend (deterministic query planner → Search Query Firewall →
+// ResearchExecutor → Fake/Firecrawl). Flow: idle (empty state) → review (editable topic
+// + Query-FREIGABE je Suchanfrage, from /market-research/plan) → running → results
+// (MarketCandidate cards). Nur freigegebene Queries werden ausgeführt; «Verwerfen» ist
+// persistiert. Candidates are never facts/evidence — every card carries a human-review
+// notice, and "Als Quelle speichern" reuses the existing research-result import path 1:1.
 
 import * as React from "react"
 import { ChevronDown, Loader2, ShieldAlert, Sparkles } from "lucide-react"
@@ -14,30 +15,32 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { importResearchResult, ResearchError } from "@/lib/research"
+import {
+  QueryApprovalList,
+  approvedIds,
+  toApprovalQueries,
+  type ApprovalQuery,
+} from "@/components/research/query-approval-list"
+import {
+  discardResearchResult,
+  importResearchResult,
+  ResearchError,
+} from "@/lib/research"
 import {
   MarketResearchError,
   planMarketResearch,
+  queryPurposeLabel,
   runMarketResearch,
   type MarketCandidateDto,
   type MarketTopicDto,
   type ProviderMode,
-  type QueryCandidateDto,
 } from "@/lib/market-research"
 
 type FlowState = "idle" | "review" | "running" | "results"
 
-const PURPOSE_LABELS: Record<string, string> = {
-  market_size: "Marktgrösse",
-  competitors_alternatives: "Wettbewerb",
-  customer_pain: "Kundenproblem",
-  go_to_market_channels: "Go-to-Market",
-  pricing_willingness_to_pay: "Pricing",
-}
-
 const PROVIDER_LABELS: Record<ProviderMode, string> = {
   fake: "Test-Modus (Fake)",
-  firecrawl_live: "Firecrawl (live)",
+  firecrawl_live: "Live-Websuche",
   unavailable: "nicht verfügbar",
 }
 
@@ -49,8 +52,23 @@ const CONFIDENCE_LABELS: Record<string, string> = {
 const SAFETY_COPY =
   "Research-Ergebnisse sind Quellenkandidaten, keine bestätigten Fakten. Marktangaben müssen vor Übernahme geprüft werden."
 
-function purposeLabel(purpose: string): string {
-  return PURPOSE_LABELS[purpose] ?? purpose
+// Anforderung 13: Provider-Ausfall führt zu einem geführten Ausweg, nie in eine
+// Sackgasse — Quellen lassen sich immer manuell hinzufügen (URL oder Datei).
+function FallbackCard() {
+  return (
+    <div
+      data-testid="market-research-fallback"
+      className="rounded-md border border-border bg-muted/40 p-2.5 text-[11px] text-muted-foreground"
+    >
+      <p>
+        Die Webrecherche ist derzeit nicht möglich. Sie können passende Quellen
+        jederzeit manuell hinzufügen (URL oder Datei) — unter «Quellen».
+      </p>
+      <a href="/quellen" className="mt-1 inline-block font-medium text-primary hover:underline">
+        Quelle manuell hinzufügen
+      </a>
+    </div>
+  )
 }
 
 function hostOf(url: string): string {
@@ -84,24 +102,6 @@ function TopicField({
         className="h-7 text-xs"
       />
     </div>
-  )
-}
-
-function QueryPreviewRow({ query }: { query: QueryCandidateDto }) {
-  return (
-    <li className="rounded-md border border-border bg-background p-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="min-w-0">
-          <p className="text-[11px] font-medium text-foreground">
-            {purposeLabel(query.purpose)}
-          </p>
-          <p className="truncate text-xs text-muted-foreground">{query.query_text}</p>
-        </div>
-        <Badge variant={query.public_safe ? "secondary" : "destructive"} className="shrink-0">
-          {query.public_safe ? "public-safe" : "needs review"}
-        </Badge>
-      </div>
-    </li>
   )
 }
 
@@ -154,7 +154,7 @@ function CandidateCard({
         )}
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-1.5">
-        <Badge variant="outline">{purposeLabel(candidate.purpose)}</Badge>
+        <Badge variant="outline">{queryPurposeLabel(candidate.purpose)}</Badge>
         <Badge variant="outline">{CONFIDENCE_LABELS[candidate.confidence]}</Badge>
         <Badge variant="secondary" className="flex items-center gap-1">
           <Sparkles className="size-3" />
@@ -175,7 +175,7 @@ function CandidateCard({
           onClick={onIgnore}
           className="text-[11px] text-muted-foreground hover:underline"
         >
-          Ignorieren
+          Verwerfen
         </button>
       </div>
       {detailsOpen && (
@@ -210,7 +210,7 @@ export function MarketResearchPanel({
     target_customers: "",
     region: "",
   })
-  const [queries, setQueries] = React.useState<QueryCandidateDto[]>([])
+  const [queries, setQueries] = React.useState<ApprovalQuery[]>([])
   const [providerMode, setProviderMode] = React.useState<ProviderMode>("unavailable")
   const [candidates, setCandidates] = React.useState<MarketCandidateDto[]>([])
   const [ignored, setIgnored] = React.useState<Record<string, boolean>>({})
@@ -225,7 +225,7 @@ export function MarketResearchPanel({
       try {
         const plan = await planMarketResearch(projectId, override)
         setTopic(plan.topic)
-        setQueries(plan.queries)
+        setQueries(toApprovalQueries(plan.queries))
         setProviderMode(plan.provider_mode)
         setState("review")
       } catch (err) {
@@ -251,7 +251,8 @@ export function MarketResearchPanel({
     setState("running")
     setError(null)
     try {
-      const outcome = await runMarketResearch(projectId, topic)
+      // R8 Freigabepflicht: nur freigegebene Suchanfragen werden ausgeführt.
+      const outcome = await runMarketResearch(projectId, topic, approvedIds(queries))
       setCandidates(outcome.candidates)
       setIgnored({})
       setImported({})
@@ -262,7 +263,7 @@ export function MarketResearchPanel({
       )
       setState("review")
     }
-  }, [projectId, topic])
+  }, [projectId, topic, queries])
 
   const cancel = React.useCallback(() => {
     setState("idle")
@@ -287,8 +288,19 @@ export function MarketResearchPanel({
     [onImported]
   )
 
-  const allQueriesBlocked = queries.length > 0 && queries.every((q) => !q.public_safe)
-  const canRun = providerMode !== "unavailable" && !allQueriesBlocked
+  // R8 (Anforderung 9): «Verwerfen» ist persistiert (candidate → rejected) — das
+  // Ergebnis taucht nach einem Reload nicht wieder als offener Kandidat auf.
+  const discardOne = React.useCallback(async (resultId: string) => {
+    setIgnored((m) => ({ ...m, [resultId]: true }))
+    try {
+      await discardResearchResult(resultId)
+    } catch {
+      // bereits importiert/verworfen — die Karte bleibt ausgeblendet
+    }
+  }, [])
+
+  const approvedCount = approvedIds(queries).length
+  const canRun = providerMode !== "unavailable" && approvedCount > 0
   const visibleCandidates = candidates.filter((c) => !ignored[c.result_id])
 
   return (
@@ -362,23 +374,29 @@ export function MarketResearchPanel({
               )}
             </Button>
           </div>
-          <ul data-testid="market-research-query-preview" className="flex flex-col gap-1.5">
-            {queries.map((q) => (
-              <QueryPreviewRow key={`${q.purpose}-${q.query_text}`} query={q} />
-            ))}
-          </ul>
+          <div data-testid="market-research-query-preview">
+            <QueryApprovalList
+              projectId={projectId}
+              queries={queries}
+              onChange={setQueries}
+            />
+          </div>
           {!canRun && (
             <p className="flex items-start gap-1.5 text-[11px] text-muted-foreground">
               <ShieldAlert className="mt-0.5 size-3.5 shrink-0" />
               {providerMode === "unavailable"
                 ? "Recherche ist in dieser Umgebung nicht verfügbar."
-                : "Alle Suchanfragen wurden als nicht sicher eingestuft."}
+                : "Geben Sie mindestens eine Suchanfrage frei, um die Recherche zu starten."}
             </p>
           )}
+          {providerMode === "unavailable" && <FallbackCard />}
           {error && (
-            <p role="alert" className="text-xs text-status-incomplete">
-              {error}
-            </p>
+            <>
+              <p role="alert" className="text-xs text-status-incomplete">
+                {error}
+              </p>
+              <FallbackCard />
+            </>
           )}
           <div className="flex gap-2">
             <Button type="button" size="sm" onClick={runResearch} disabled={!canRun}>
@@ -395,7 +413,8 @@ export function MarketResearchPanel({
         <div data-testid="market-research-running" className="flex items-center gap-2 text-xs text-muted-foreground">
           <Loader2 className="size-4 animate-spin" />
           <span>
-            Recherche läuft … {queries.length} Suchanfragen · {PROVIDER_LABELS[providerMode]}
+            Recherche läuft … {approvedCount} freigegebene Suchanfragen ·{" "}
+            {PROVIDER_LABELS[providerMode]}
           </span>
         </div>
       )}
@@ -415,7 +434,7 @@ export function MarketResearchPanel({
                   importing={!!importing[c.result_id]}
                   isImported={!!imported[c.result_id]}
                   onImport={() => importOne(c.result_id)}
-                  onIgnore={() => setIgnored((m) => ({ ...m, [c.result_id]: true }))}
+                  onIgnore={() => void discardOne(c.result_id)}
                 />
               ))}
             </ul>

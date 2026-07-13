@@ -1,9 +1,10 @@
 import { test, expect } from "@playwright/test"
 
-// Slice 1 end-to-end: Intake persists partners → Partner & Budget captures the
-// structured budget → the deterministic budget rules evaluate with real inputs
-// (no more automatic needs_input). Run + requirements read via the BFF API
-// context (deterministic); intake + budget form are driven through the real UI.
+// Slice 1 end-to-end: Partner & Budget ist der EINZIGE Erfassungsort für
+// Partner (keine Doppelerfassung im Intake mehr) → the deterministic budget
+// rules evaluate with real inputs (no more automatic needs_input). Run +
+// requirements read via the BFF API context (deterministic); intake, partner
+// and budget form are driven through the real UI.
 // Local run: pnpm exec playwright test e2e/partner-budget.spec.ts
 // (requires uvicorn :8000 + APP_BACKEND_MODE=live pnpm dev :3000).
 const EMAIL = process.env.E2E_EMAIL ?? "anna.keller@example.test"
@@ -29,22 +30,77 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
   await page.getByRole("button", { name: "Anmelden" }).click()
   await expect(page).toHaveURL(/\/$/, { timeout: 20_000 })
 
-  // 2. Intake with two named partners → project + persisted partners (B1).
+  // 2. Vereinfachter Intake: keine Partner-Eingaben mehr erreichbar.
   await page.goto("/intake")
-  await page.getByText("Öffentlich", { exact: true }).click()
-  await page.getByLabel(/Antragstitel/).fill("E2E Partner & Budget")
+  await page.getByLabel(/Projekttitel/).fill("E2E Partner & Budget")
   await page.getByRole("textbox", { name: /Projektidee/ }).fill("Slice-1-Testprojekt mit Partnern und Budget.")
-  await page.getByRole("button", { name: "Partner hinzufügen" }).click()
-  await page.getByLabel("Partnername").fill("ETH Zürich")
-  await page.getByRole("button", { name: "Partner hinzufügen" }).click()
-  await page.getByLabel("Partnername").nth(1).fill("Empa")
-  await page.getByRole("button", { name: "Antrag anlegen" }).click()
+  await expect(
+    page.getByRole("button", { name: "Partner hinzufügen" })
+  ).toHaveCount(0)
+  await expect(
+    page.getByText("Partner und Budget ergänzen Sie im nächsten Schritt.")
+  ).toBeVisible()
+  // Öffentliche Demo-Daten über den kompakten «Ändern»-Dialog.
+  await page.getByRole("button", { name: "Ändern" }).click()
+  const dialog = page.getByRole("dialog")
+  await dialog.getByText("Öffentlich", { exact: true }).click()
+  await dialog.getByRole("button", { name: "Fertig" }).click()
+  await expect(dialog).toBeHidden()
+  await page.getByRole("button", { name: "Projekt erstellen und weiter" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 
-  // 3. Partner & Budget step lists the intake partners and takes the budget.
+  // 3. Partner & Budget ist der Erfassungsort: Partner anlegen + Budget.
   await page.goto("/partner")
+  const addPartner = page.getByRole("button", { name: "Partner hinzufügen" })
+
+  // MVP-Pflichtfelder: der Submit erklärt, was noch fehlt.
+  await expect(addPartner).toBeDisabled()
+  await expect(page.getByText(/Noch offen:/)).toBeVisible()
+
+  async function fillPartner(name: string, role: string) {
+    await page.getByLabel("Name").fill(name)
+    await page.getByLabel("Land").fill("CH")
+    await page.getByLabel("Rolle im Projekt").fill(role)
+    await page.getByLabel("Kompetenz & Beitrag (kurz)").fill(
+      "Einschlägige Kompetenz für den Demo-Workflow."
+    )
+  }
+
+  await fillPartner("ETH Zürich", "Grundlagenforschung")
+  await addPartner.click()
   await expect(page.getByText("ETH Zürich").first()).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText("Empa").first()).toBeVisible()
+  await fillPartner("Empa", "Materialtests")
+  await addPartner.click()
+  await expect(page.getByText("Empa").first()).toBeVisible({ timeout: 20_000 })
+
+  // Partner BEARBEITEN: Rolle ändern, Änderung sichtbar.
+  await page.getByRole("button", { name: "Partner Empa bearbeiten" }).click()
+  await page.getByLabel("Rolle im Projekt").fill("Materialtests und Validierung")
+  await page.getByRole("button", { name: "Änderungen speichern" }).click()
+  await expect(
+    page.getByText("Materialtests und Validierung").first()
+  ).toBeVisible({ timeout: 20_000 })
+
+  // «Angabe nötig» erzwingt einen Kommentar (kein erfundenes Urteil) und
+  // markiert den Partner mit «Menschliche Prüfung erforderlich».
+  await fillPartner("Startup GmbH", "Pilotierung")
+  await page
+    .getByRole("button", { name: "Unabhängigkeit (Detailangaben)" })
+    .click()
+  await page
+    .getByLabel("Personelle Unabhängigkeit")
+    .selectOption("needs_input")
+  await expect(addPartner).toBeDisabled()
+  await expect(
+    page.getByText("Noch offen: Kommentar zur Einstufung.")
+  ).toBeVisible()
+  await page
+    .getByLabel("Kommentar zur Einstufung")
+    .fill("Beteiligungsverhältnisse werden noch geklärt.")
+  await addPartner.click()
+  await expect(
+    page.getByText("Menschliche Prüfung erforderlich").first()
+  ).toBeVisible({ timeout: 20_000 })
 
   await page
     .getByLabel("Direkte Projektkosten (ohne Overhead)")
@@ -56,6 +112,15 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
   await expect(page.getByText("Budgetangaben gespeichert.")).toBeVisible({
     timeout: 20_000,
   })
+
+  // 3b. Formale Vorprüfung erscheint SOFORT (ohne Analyse-Lauf), gerechnet
+  // vom Backend-Rule-Kern: 50 % Umsetzungsanteil + 5 % Barbeitrag → Erfüllt.
+  const precheck = page.getByTestId("budget-precheck")
+  await expect(precheck.getByText("Erfüllt", { exact: true })).toHaveCount(2, {
+    timeout: 20_000,
+  })
+  await expect(precheck.getByTestId("precheck-contribution")).toContainText("50")
+  await expect(precheck.getByTestId("precheck-cash")).toContainText("5 %")
 
   // 4. Source + run via the API context (deterministic).
   const session = await page.request.get("/api/session")

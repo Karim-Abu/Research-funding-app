@@ -18,9 +18,7 @@ function seedIntake(vertraulichkeit: unknown): void {
     titel: "T",
     projektidee: "Idee",
     innovationsfeld: "",
-    budgetrahmen: "",
     vertraulichkeit,
-    partner: [],
   }
   sessionStorage.setItem(INTAKE_KEY, JSON.stringify(data))
 }
@@ -82,8 +80,16 @@ function fullIntake(vertraulichkeit: DataClass | ""): IntakeFormData {
     titel: TITLE,
     projektidee: IDEA,
     innovationsfeld: "Digitalisierung & KI",
-    budgetrahmen: BUDGET,
     vertraulichkeit,
+  }
+}
+
+/** Vor der Intake-Vereinfachung gespeicherte Einträge enthielten zusätzlich
+ *  Budget und Partner — der Store muss sie weiterhin bereinigen. */
+function legacyIntake(vertraulichkeit: DataClass | ""): Record<string, unknown> {
+  return {
+    ...fullIntake(vertraulichkeit),
+    budgetrahmen: BUDGET,
     partner: [{ id: "p-1", name: PARTNER, type: "Umsetzungspartner" }],
   }
 }
@@ -112,8 +118,6 @@ describe("R4.4 — kein Raw Content im Browser-Storage für nicht-public", () =>
       const dump = allStorageText()
       expect(dump).not.toContain(IDEA)
       expect(dump).not.toContain(TITLE)
-      expect(dump).not.toContain(BUDGET)
-      expect(dump).not.toContain(PARTNER)
       // Die Stufe selbst ist nicht-sensitives Metadatum und bleibt lesbar.
       expect(loadIntake()?.vertraulichkeit).toBe(dc)
     })
@@ -123,7 +127,7 @@ describe("R4.4 — kein Raw Content im Browser-Storage für nicht-public", () =>
     saveIntake(fullIntake(""))
     const dump = allStorageText()
     expect(dump).not.toContain(IDEA)
-    expect(dump).not.toContain(PARTNER)
+    expect(dump).not.toContain(TITLE)
   })
 
   it("public: Roundtrip bleibt unverändert (bestehende D0-UX)", () => {
@@ -132,14 +136,16 @@ describe("R4.4 — kein Raw Content im Browser-Storage für nicht-public", () =>
   })
 
   it("Alt-Eintrag mit Inhalt wird beim Laden eines nicht-public Intakes bereinigt", () => {
-    // Given: ein VOR R4.4 gespeicherter Eintrag mit Roh-Content
-    sessionStorage.setItem(INTAKE_KEY, JSON.stringify(fullIntake("confidential")))
+    // Given: ein VOR R4.4/der Intake-Vereinfachung gespeicherter Eintrag mit
+    // Roh-Content inkl. Legacy-Feldern (Budget, Partner)
+    sessionStorage.setItem(INTAKE_KEY, JSON.stringify(legacyIntake("confidential")))
     // When: der Store gelesen wird
     const loaded = loadIntake()
     // Then: Rückgabe UND Storage sind bereinigt, die Stufe bleibt
     expect(loaded?.projektidee).toBe("")
     expect(loaded?.vertraulichkeit).toBe("confidential")
     expect(allStorageText()).not.toContain(IDEA)
+    expect(allStorageText()).not.toContain(BUDGET)
     expect(allStorageText()).not.toContain(PARTNER)
   })
 
@@ -157,6 +163,6 @@ describe("R4.4 — kein Raw Content im Browser-Storage für nicht-public", () =>
     expect(after?.vertraulichkeit).toBe("public")
     expect(after?.projektidee).toBe("")
     expect(allStorageText()).not.toContain(IDEA)
-    expect(allStorageText()).not.toContain(PARTNER)
+    expect(allStorageText()).not.toContain(TITLE)
   })
 })

@@ -11,6 +11,8 @@ export type ItemCategory =
   | "substitute"
   | "incumbent_process"
   | "reference_solution"
+  | "market_size_claim"
+  | "customer_problem"
   | "unknown"
 export type ItemRelation =
   | "similar"
@@ -85,8 +87,29 @@ export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
   substitute: "Substitut",
   incumbent_process: "Bestehender Prozess",
   reference_solution: "Referenzlösung",
+  market_size_claim: "Marktgrössen-Kandidat",
+  customer_problem: "Kundenproblem",
   unknown: "Unklar",
 }
+
+// R8 (Anforderung 11): die fünf Abschnitte der strukturierten Zusammenfassung.
+// «Offene Evidenzlücken» und «Verwendete Quellen» kommen aus research_gaps bzw.
+// source_document_ids; die Item-Abschnitte gruppieren nach Kategorie.
+export const SUMMARY_SECTIONS: { title: string; categories: ItemCategory[] }[] = [
+  { title: "Marktgrössen-Kandidaten", categories: ["market_size_claim"] },
+  {
+    title: "Wettbewerber und Alternativen",
+    categories: [
+      "competitor",
+      "alternative_solution",
+      "substitute",
+      "incumbent_process",
+      "reference_solution",
+      "unknown",
+    ],
+  },
+  { title: "Kundenprobleme", categories: ["customer_problem"] },
+]
 
 export const ITEM_RELATION_LABELS: Record<ItemRelation, string> = {
   similar: "ähnlich",
@@ -96,9 +119,12 @@ export const ITEM_RELATION_LABELS: Record<ItemRelation, string> = {
   unclear: "unklar",
 }
 
+// R8 (Anforderungen 8+12): «Textstelle gefunden» = deterministisch verifiziertes
+// Zitat (kein Fakt); «inhaltlich geprüft» entsteht erst durch die menschliche
+// Übernahme (ITEM_STATUS_LABELS.accepted). Kein Claim ohne Quelle als Tatsache.
 export const CONFIDENCE_LABELS: Record<ConfidenceLabel, string> = {
-  source_backed: "Quelle erwähnt",
-  needs_review: "Unklar — prüfen",
+  source_backed: "Textstelle gefunden",
+  needs_review: "Prüfung nötig",
   insufficient_evidence: "Nicht ausreichend belegt",
 }
 
@@ -110,7 +136,7 @@ export const CONFIDENCE_STYLE: Record<ConfidenceLabel, string> = {
 
 export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
   proposed: "Vorgeschlagen",
-  accepted: "Übernommen",
+  accepted: "Inhaltlich geprüft",
   rejected: "Abgelehnt",
   needs_human_review: "Prüfung nötig",
 }

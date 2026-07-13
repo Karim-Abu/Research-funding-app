@@ -42,6 +42,7 @@ from app.repositories import audit, controls
 from app.repositories import drafts as drafts_repo
 from app.repositories import requirements as requirements_repo
 from app.review import package as review_package
+from app.review.copy_readiness import copy_readiness_for_run
 from app.runs import project_snapshot
 
 _NOT_FOUND = "Resource not found"
@@ -108,10 +109,15 @@ def read_review_package(db: Session, run: AnalysisRun) -> ReviewPackage:
         db, run.run_id, stale=_is_stale(db, run)
     )
     fields = []
+    readiness = copy_readiness_for_run(db, run)
     for field in get_registry().m6_draft_fields():
         draft = drafts_repo.get_draft(db, run.run_id, field.field_id)
         if draft is not None:
-            fields.append(drafts_repo.to_contract(db, draft))
+            fields.append(
+                drafts_repo.to_contract(
+                    db, draft, copy_readiness=readiness.get(field.field_id)
+                )
+            )
 
     findings = [
         _finding_to_contract(f)

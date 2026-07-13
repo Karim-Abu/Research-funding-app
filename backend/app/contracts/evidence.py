@@ -9,6 +9,17 @@ from pydantic import BaseModel, ConfigDict
 VerificationStatus = Literal[
     "unverified", "exact_verified", "human_verified", "rejected"
 ]
+# R6 Evidence-Statusleiter (additiv): Coverage ≠ Correctness. Abgeleitet in
+# app/review/evidence_status.py — nie persistiert, nie vom Client gesetzt.
+SupportStatus = Literal[
+    "not_required",
+    "evidence_missing",
+    "location_found",
+    "supports_partially",
+    "supports_strongly",
+    "conflict_or_uncertain",
+    "human_review_required",
+]
 MatchType = Literal["exact_normalized", "fuzzy", "semantic", "manual"]
 SourceType = Literal["pdf", "docx", "txt", "url"]
 LinkTargetType = Literal[
@@ -43,6 +54,7 @@ class EvidenceAnchor(BaseModel):
     match_score: float | None = None
     coverage: float | None = None
     source_accessed_at: datetime | None = None
+    support_status: SupportStatus | None = None
 
 
 class EvidenceLink(BaseModel):
@@ -56,3 +68,4 @@ class EvidenceLink(BaseModel):
     created_at: datetime
     claim_id: str | None = None
     claim_text: str | None = None
+    support_status: SupportStatus | None = None
