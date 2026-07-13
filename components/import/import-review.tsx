@@ -51,9 +51,16 @@ const MAX_POLLS = 80 // ~2 Minuten, danach ehrliche Fehlermeldung
 
 const DECISION_LABELS: Record<string, string> = {
   accepted: "Übernommen",
-  saved_as_source: "Als Quelle gespeichert",
+  saved_as_source: "Nur als Hintergrund verknüpft",
   ignored: "Ignoriert",
   conflict: "Konflikt — Bestätigung nötig",
+}
+
+const MAPPING_STATUS_LABELS: Record<string, string> = {
+  content_detected: "Inhalt erkannt",
+  empty: "Leer",
+  legacy_migrated: "Altstruktur migriert",
+  uncertain: "Unsicher",
 }
 
 /** Anzeige-Label der Entscheidung; «Bearbeitet übernommen» bei edited_text. */
@@ -509,6 +516,28 @@ export function ImportReview() {
             </DialogDescription>
           </DialogHeader>
           <div className="grid min-h-0 flex-1 content-start gap-1.5 overflow-y-auto">
+            {(editing?.candidate.section_metadata ?? [])
+              .filter((section) => section.requires_manual_assignment)
+              .map((section) => (
+                <Alert
+                  key={section.target_sections.join("-")}
+                  className="mb-2 border-orange-300 text-sm dark:border-orange-800"
+                >
+                  <div className="grid gap-2">
+                    <p>
+                      Zielabschnitt {section.target_sections.join(" / ")}: Die
+                      Altangabe ist mehrdeutig und muss von Ihnen fachlich
+                      eingeordnet werden. Daraus wird keine FTO- oder
+                      IP-Schlussfolgerung abgeleitet.
+                    </p>
+                    {section.candidate_text && (
+                      <pre className="max-h-32 overflow-auto whitespace-pre-wrap text-xs">
+                        {section.candidate_text}
+                      </pre>
+                    )}
+                  </div>
+                </Alert>
+              ))}
             <Textarea
               aria-label="Text für die Übernahme bearbeiten"
               value={editing?.text ?? ""}
@@ -633,6 +662,16 @@ function CandidateRow({
   const openForDecision =
     candidate.decision === "pending" || candidate.decision === "conflict"
   const empty = !candidate.extracted_text.trim()
+  const sections = candidate.section_metadata ?? []
+  const requiresManualAssignment = sections.some(
+    (section) => section.requires_manual_assignment
+  )
+  const status =
+    candidate.mapping_status ??
+    (empty ? "empty" : uncertain ? "uncertain" : "content_detected")
+  const targetSections = Array.from(
+    new Set(sections.flatMap((section) => section.target_sections))
+  )
 
   return (
     <Card
@@ -648,24 +687,27 @@ function CandidateRow({
             <span className="text-sm font-medium text-foreground">
               {candidate.label}
             </span>
-            {uncertain ? (
-              <Badge
-                variant="outline"
-                className="border-orange-400 text-orange-700 dark:text-orange-300"
-              >
-                Unsicher — Prüfung nötig
-              </Badge>
-            ) : (
-              <Badge variant="outline" className="text-muted-foreground">
-                Erkannt
-              </Badge>
-            )}
+            <Badge
+              variant="outline"
+              className={cn(
+                status === "uncertain" || uncertain
+                  ? "border-orange-400 text-orange-700 dark:text-orange-300"
+                  : "text-muted-foreground"
+              )}
+            >
+              {MAPPING_STATUS_LABELS[status] ?? status}
+            </Badge>
             {candidate.source_location && (
               <span className="text-xs text-muted-foreground">
-                Fundstelle: {candidate.source_location}
+                Fundseite: {candidate.source_location}
               </span>
             )}
           </div>
+          {targetSections.length > 0 && (
+            <p className="text-xs text-muted-foreground">
+              Zielabschnitt: {targetSections.join(", ")}
+            </p>
+          )}
           {candidate.decision !== "pending" && (
             <span
               className={cn(
@@ -684,44 +726,57 @@ function CandidateRow({
         </div>
 
         {openForDecision && (
-          <div className="flex shrink-0 flex-wrap items-center justify-end gap-2">
-            <Button
-              size="sm"
-              disabled={busy || empty}
-              title={
-                empty ? "Dieser Kandidat enthält keinen Text." : undefined
-              }
-              onClick={() => onDecide("accepted")}
-            >
-              Übernehmen
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy || empty}
-              title={
-                empty ? "Dieser Kandidat enthält keinen Text." : undefined
-              }
-              onClick={onEdit}
-            >
-              Bearbeiten &amp; übernehmen
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              disabled={busy}
-              onClick={() => onDecide("saved_as_source")}
-            >
-              Als Quelle speichern
-            </Button>
-            <Button
-              size="sm"
-              variant="ghost"
-              disabled={busy}
-              onClick={() => onDecide("ignored")}
-            >
-              Ignorieren
-            </Button>
+          <div className="flex max-w-xl shrink-0 flex-col items-end gap-1.5">
+            <div className="flex flex-wrap items-center justify-end gap-2">
+              <Button
+                size="sm"
+                disabled={busy || empty || requiresManualAssignment}
+                title={
+                  empty
+                    ? "Dieser Kandidat enthält keinen Text."
+                    : requiresManualAssignment
+                      ? "Die mehrdeutige Altangabe muss zuerst bearbeitet und fachlich zugeordnet werden."
+                      : undefined
+                }
+                onClick={() => onDecide("accepted")}
+              >
+                Übernehmen
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy || (empty && !requiresManualAssignment)}
+                title={
+                  empty && !requiresManualAssignment
+                    ? "Dieser Kandidat enthält keinen Text."
+                    : undefined
+                }
+                onClick={onEdit}
+              >
+                Bearbeiten &amp; übernehmen
+              </Button>
+              <Button
+                size="sm"
+                variant="outline"
+                disabled={busy}
+                onClick={() => onDecide("saved_as_source")}
+              >
+                Nur als Hintergrund verknüpfen
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                disabled={busy}
+                onClick={() => onDecide("ignored")}
+              >
+                Ignorieren
+              </Button>
+            </div>
+            <p className="max-w-md text-right text-[11px] text-muted-foreground">
+              Das PDF ist bereits als Quelle gespeichert. Diese Aktion markiert
+              nur den Ausschnitt als relevanten Hintergrund und übernimmt keinen
+              Text.
+            </p>
           </div>
         )}
       </div>
@@ -737,11 +792,66 @@ function CandidateRow({
         ) : (
           <ChevronRight className="size-3.5" />
         )}
-        Textauszug {empty ? "(leer)" : ""}
+        Abschnittsdetails {empty ? "(leer)" : ""}
       </button>
       {expanded && (
-        <div className="border-t border-border bg-accent/20 px-4 py-3">
-          {empty ? (
+        <div className="grid gap-3 border-t border-border bg-accent/20 px-4 py-3">
+          {sections.length > 0 ? (
+            sections.map((section, index) => (
+              <div
+                key={`${section.target_sections.join("-")}-${index}`}
+                className="grid gap-2 rounded-md border border-border bg-background/70 p-3"
+                data-testid="import-section-metadata"
+              >
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="font-medium text-foreground">
+                    Zielabschnitt: {section.target_sections.join(" / ")}
+                  </span>
+                  <Badge
+                    variant="outline"
+                    className={cn(
+                      section.status === "uncertain" &&
+                        "border-orange-400 text-orange-700 dark:text-orange-300"
+                    )}
+                  >
+                    {MAPPING_STATUS_LABELS[section.status] ?? section.status}
+                  </Badge>
+                  {section.source_location && (
+                    <span className="text-muted-foreground">
+                      Fundseite: {section.source_location}
+                    </span>
+                  )}
+                </div>
+                {section.review_note && (
+                  <p className="text-xs text-orange-700 dark:text-orange-300">
+                    {section.review_note}
+                  </p>
+                )}
+                {section.candidate_text ? (
+                  <div className="grid gap-1">
+                    <span className="text-xs font-medium">Erkannter Inhalt</span>
+                    <pre className="max-h-48 overflow-auto whitespace-pre-wrap text-xs text-foreground">
+                      {section.candidate_text}
+                    </pre>
+                  </div>
+                ) : (
+                  <p className="text-xs text-muted-foreground">
+                    Für diesen Abschnitt wurde kein übernehmbarer Inhalt gefunden.
+                  </p>
+                )}
+                <details className="text-xs text-muted-foreground">
+                  <summary className="cursor-pointer">Originalausschnitt</summary>
+                  {section.original_excerpt ? (
+                    <pre className="mt-2 max-h-48 overflow-auto whitespace-pre-wrap text-foreground">
+                      {section.original_excerpt}
+                    </pre>
+                  ) : (
+                    <p className="mt-2">Kein Originalausschnitt vorhanden.</p>
+                  )}
+                </details>
+              </div>
+            ))
+          ) : empty ? (
             <p className="text-xs text-muted-foreground">
               Für dieses Feld wurde kein Inhalt gefunden — es bleibt zur
               manuellen Bearbeitung offen.
@@ -751,6 +861,15 @@ function CandidateRow({
               {candidate.extracted_text}
             </pre>
           )}
+          <details className="text-xs text-muted-foreground">
+            <summary className="cursor-pointer">Technische Details</summary>
+            <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
+              <dt>Feld-ID</dt>
+              <dd className="break-all">{candidate.field_id}</dd>
+              <dt>Mapping-Version</dt>
+              <dd>{candidate.mapping_version}</dd>
+            </dl>
+          </details>
         </div>
       )}
     </Card>

@@ -204,4 +204,51 @@ describe("projects overview", () => {
     expect(window.sessionStorage.getItem("rf_active_project_id")).toBe("project-a")
     await waitFor(() => expect(push).toHaveBeenCalledWith("/editor"))
   })
+
+  it("opening the kebab menu does not trigger card navigation", async () => {
+    render(
+      <AppProviders mode="live">
+        <DashboardPage />
+      </AppProviders>
+    )
+    await screen.findByText(/kreislauffaehiger Verbundwerkstoffe/)
+
+    fireEvent.click(screen.getAllByRole("button", { name: "Aktionen" })[0])
+    // stopPropagation am Trigger verhindert die Karten-Navigation.
+    expect(push).not.toHaveBeenCalled()
+  })
+
+  it("removes a card via the kebab menu and archives the project", async () => {
+    let patchBody: Record<string, unknown> | null = null
+    server.use(
+      http.patch("/api/projects/project-a", async ({ request }) => {
+        patchBody = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(
+          project({ project_id: "project-a", status: "archived" }),
+          { status: 200 }
+        )
+      })
+    )
+    render(
+      <AppProviders mode="live">
+        <DashboardPage />
+      </AppProviders>
+    )
+    await screen.findByText(/kreislauffaehiger Verbundwerkstoffe/)
+
+    // Kebab → destruktiver Menüpunkt → Bestätigen.
+    fireEvent.click(screen.getAllByRole("button", { name: "Aktionen" })[0])
+    fireEvent.click(await screen.findByText("Aus Übersicht entfernen"))
+    fireEvent.click(await screen.findByRole("button", { name: "Entfernen" }))
+
+    // Karte verschwindet, Archivierung wird per PATCH persistiert.
+    await waitFor(() =>
+      expect(
+        screen.queryByText(/kreislauffaehiger Verbundwerkstoffe/)
+      ).toBeNull()
+    )
+    expect(patchBody).toEqual({ status: "archived" })
+    // Die zweite Karte bleibt sichtbar.
+    expect(screen.getByText(/Zustandsueberwachung/)).toBeInTheDocument()
+  })
 })

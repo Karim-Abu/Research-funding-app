@@ -4,10 +4,32 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 ImportConfidence = Literal["found", "uncertain"]
 ImportDecision = Literal["pending", "conflict", "accepted", "saved_as_source", "ignored"]
+ImportMappingStatus = Literal[
+    "content_detected", "empty", "legacy_migrated", "uncertain"
+]
+
+
+class ImportSectionMetadata(BaseModel):
+    """Nachvollziehbare Abschnittszuordnung innerhalb eines Importkandidaten.
+
+    ``candidate_text`` und ``original_excerpt`` können D2 enthalten und dürfen
+    deshalb nie in Logs oder Audit-Details kopiert werden.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_sections: list[str]
+    source_location: str | None = None
+    status: ImportMappingStatus
+    candidate_text: str
+    original_excerpt: str
+    migration_version: str | None = None
+    requires_manual_assignment: bool = False
+    review_note: str | None = None
 
 
 class ImportCandidate(BaseModel):
@@ -27,6 +49,9 @@ class ImportCandidate(BaseModel):
     edited_text: str | None = None
     confidence: ImportConfidence
     source_location: str | None = None
+    mapping_version: str = "legacy-anchor-v1"
+    mapping_status: ImportMappingStatus = "uncertain"
+    section_metadata: list[ImportSectionMetadata] = Field(default_factory=list)
     decision: ImportDecision
     decided_at: datetime | None = None
     accepted_draft_version_id: str | None = None

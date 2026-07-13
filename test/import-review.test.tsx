@@ -69,7 +69,7 @@ import { ImportError } from "@/lib/imports"
 function candidate(
   overrides: Partial<ImportCandidateDto> = {}
 ): ImportCandidateDto {
-  return {
+  const value: ImportCandidateDto = {
     import_candidate_id: "c-abstract",
     source_id: "s-1",
     field_id: "INTRO.APP.ABSTRACT",
@@ -78,11 +78,30 @@ function candidate(
     edited_text: null,
     confidence: "found",
     source_location: "Seite 1",
+    mapping_version: "innolink-narrative-v2",
+    mapping_status: "content_detected",
+    section_metadata: [],
     decision: "pending",
     decided_at: null,
     accepted_draft_version_id: null,
     ...overrides,
   }
+  value.mapping_status =
+    overrides.mapping_status ??
+    (!value.extracted_text ? "empty" : value.confidence === "uncertain" ? "uncertain" : "content_detected")
+  value.section_metadata = overrides.section_metadata ?? [
+    {
+      target_sections: [value.label],
+      source_location: value.source_location,
+      status: value.mapping_status,
+      candidate_text: value.extracted_text,
+      original_excerpt: `Abstract\n${value.extracted_text}`.trim(),
+      migration_version: null,
+      requires_manual_assignment: false,
+      review_note: null,
+    },
+  ]
+  return value
 }
 
 const FIXTURE: ImportCandidateDto[] = [
@@ -128,10 +147,10 @@ describe("ImportReview — Darstellung", () => {
     expect(
       within(rows[0]).getByText("Abstract (wird in Aramis publiziert)")
     ).toBeInTheDocument()
-    expect(within(rows[0]).getByText(/Fundstelle: Seite 1/)).toBeInTheDocument()
+    expect(within(rows[0]).getByText(/Fundseite: Seite 1/)).toBeInTheDocument()
     // Unsicher ist visuell markiert …
     expect(
-      within(rows[1]).getByText("Unsicher — Prüfung nötig")
+      within(rows[1]).getByText("Leer")
     ).toBeInTheDocument()
     // … und nichts ist vorentschieden.
     expect(screen.queryByText("Übernommen")).not.toBeInTheDocument()
@@ -150,6 +169,54 @@ describe("ImportReview — Darstellung", () => {
       within(uncertainRow).getByRole("button", { name: "Übernehmen" })
     ).toBeDisabled()
   })
+
+  it("zeigt Zielabschnitt, Originalausschnitt und technische Daten getrennt", async () => {
+    await renderReview()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    expect(within(row).getByText(/Zielabschnitt:/)).toBeInTheDocument()
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Abschnittsdetails" })
+    )
+    expect(within(row).getByText("Originalausschnitt")).toBeInTheDocument()
+    expect(within(row).getByText("Technische Details")).toBeInTheDocument()
+    expect(within(row).getByText("innolink-narrative-v2")).toBeInTheDocument()
+  })
+
+  it("verlangt für die gemeinsame 4.5.2/4.5.3-Altzuordnung Bearbeitung", async () => {
+    getImportCandidates.mockResolvedValueOnce([
+      candidate({
+        import_candidate_id: "c-sol",
+        field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+        label: "Innovation & Lösung",
+        extracted_text: "4.1\nSynthetische Antwort.",
+        confidence: "uncertain",
+        mapping_status: "legacy_migrated",
+        section_metadata: [
+          {
+            target_sections: ["4.5.2", "4.5.3"],
+            source_location: "Seite 3",
+            status: "uncertain",
+            candidate_text: "Nein",
+            original_excerpt: "Alte Lizenzfrage\nNein",
+            migration_version: "innolink-intro-ip-to-solution-v1",
+            requires_manual_assignment: true,
+            review_note: "Fachlich zuordnen.",
+          },
+        ],
+      }),
+    ])
+    await renderReview()
+    const row = screen.getByTestId("import-candidate")
+    expect(within(row).getByText("Altstruktur migriert")).toBeInTheDocument()
+    expect(within(row).getByText(/4.5.2, 4.5.3/)).toBeInTheDocument()
+    expect(within(row).getByRole("button", { name: "Übernehmen" })).toBeDisabled()
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Bearbeiten & übernehmen" })
+    )
+    expect(
+      await screen.findByText(/keine FTO- oder IP-Schlussfolgerung/)
+    ).toBeInTheDocument()
+  })
 })
 
 describe("ImportReview — Entscheidungsaktionen", () => {
@@ -166,11 +233,11 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     expect(await screen.findByText("Übernommen")).toBeInTheDocument()
   })
 
-  it("Als Quelle speichern und Ignorieren senden die jeweilige Entscheidung", async () => {
+  it("Hintergrund verknüpfen und Ignorieren senden die bestehende Entscheidung", async () => {
     await renderReview()
     const row = screen.getAllByTestId("import-candidate")[0]
     fireEvent.click(
-      within(row).getByRole("button", { name: "Als Quelle speichern" })
+      within(row).getByRole("button", { name: "Nur als Hintergrund verknüpfen" })
     )
     await waitFor(() =>
       expect(decideImportCandidate).toHaveBeenCalledWith("c-abstract", {

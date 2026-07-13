@@ -13,7 +13,12 @@ import {
   activeProjectId,
 } from "@/lib/mock-data"
 import { useSession } from "@/components/providers/app-providers"
-import { listProjects, toDashboardCard, withCanonicalStatus } from "@/lib/projects"
+import {
+  archiveProject,
+  listProjects,
+  toDashboardCard,
+  withCanonicalStatus,
+} from "@/lib/projects"
 import { getReviewStatus } from "@/lib/status"
 import { Button } from "@/components/ui/button"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -51,13 +56,19 @@ export default function DashboardPage() {
   const { mode, user } = useSession()
   const [pageState, setPageState] = React.useState<PageState>("loading")
   const [liveCards, setLiveCards] = React.useState<DashboardProject[]>([])
+  // Optimistisch entfernte (archivierte) Karten — wirkt in Live- und Mock-Modus.
+  const [removedIds, setRemovedIds] = React.useState<Set<string>>(new Set())
+  const [removeError, setRemoveError] = React.useState(false)
 
   const loadLive = React.useCallback(() => {
     let active = true
     setPageState("loading")
     listProjects()
       .then(async (items) => {
-        const cards = items.map(toDashboardCard)
+        // Archivierte Projekte erscheinen nicht in der Übersicht.
+        const cards = items
+          .filter((p) => p.status !== "archived")
+          .map(toDashboardCard)
         // R1.3 — kanonischer Status je Projekt (eine Quelle, lib/status.ts):
         // die Dashboard-Blockerzahl kommt aus dem Status-View des letzten Runs,
         // nicht mehr aus der «run_stopped»-Heuristik.
@@ -93,7 +104,9 @@ export default function DashboardPage() {
     return loadLive()
   }, [mode, loadLive])
 
-  const cards = mode === "live" ? liveCards : dashboardProjects
+  const cards = (mode === "live" ? liveCards : dashboardProjects).filter(
+    (c) => !removedIds.has(c.id)
+  )
 
   // Orientation controls — user-created projects are first-class; filters and
   // search replace any count-based assumptions about the project list.
@@ -105,6 +118,22 @@ export default function DashboardPage() {
   function handleAction(projectId: string, action: NextAction | "view_progress") {
     setActiveProjectId(projectId)
     router.push(ACTION_ROUTES[action])
+  }
+
+  // Karte entfernen = Projekt archivieren (umkehrbar, Daten bleiben erhalten).
+  // Optimistisch ausblenden; im Live-Modus persistieren, bei Fehler zurücknehmen.
+  function handleRemove(projectId: string) {
+    setRemoveError(false)
+    setRemovedIds((prev) => new Set(prev).add(projectId))
+    if (mode !== "live") return
+    archiveProject(projectId).catch(() => {
+      setRemovedIds((prev) => {
+        const next = new Set(prev)
+        next.delete(projectId)
+        return next
+      })
+      setRemoveError(true)
+    })
   }
 
   return (
@@ -129,6 +158,13 @@ export default function DashboardPage() {
             Neuer Antrag
           </Button>
         </div>
+
+        {/* Fehler beim Entfernen — nicht-technisch, verschwindet beim nächsten Versuch */}
+        {removeError && (
+          <div className="mb-6 rounded-md border border-destructive/20 bg-destructive/10 px-4 py-3 text-sm text-destructive">
+            Projekt konnte nicht entfernt werden. Bitte versuchen Sie es erneut.
+          </div>
+        )}
 
         {/* Compact overview — only when projects are loaded */}
         {pageState === "default" && cards.length > 0 && (
@@ -187,7 +223,8 @@ export default function DashboardPage() {
             onRetry={mode === "live" ? loadLive : () => setPageState("default")}
           />
         )}
-        {pageState === "empty" && <EmptyState />}
+        {(pageState === "empty" ||
+          (pageState === "default" && cards.length === 0)) && <EmptyState />}
         {pageState === "default" && visibleCards.length === 0 && cards.length > 0 && (
           <div className="flex flex-col items-center gap-3 rounded-lg border border-dashed border-border bg-muted/30 px-6 py-12 text-center">
             <p className="text-sm text-muted-foreground">
@@ -211,6 +248,7 @@ export default function DashboardPage() {
                 key={project.id}
                 project={project}
                 onAction={handleAction}
+                onRemove={handleRemove}
               />
             ))}
           </div>

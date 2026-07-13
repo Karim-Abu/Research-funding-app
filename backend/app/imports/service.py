@@ -15,6 +15,7 @@ Grundsätze:
 from __future__ import annotations
 
 import uuid
+from dataclasses import asdict
 from datetime import datetime, timezone
 
 from sqlalchemy import select
@@ -30,7 +31,7 @@ from app.db.models import (
     SourceVersion,
 )
 from app.exports.generators.common import EXPORT_FIELD_LABELS
-from app.imports.mapping import map_document
+from app.imports.mapping import MAPPING_VERSION, map_document
 from app.ingestion.parsers import ParserError
 from app.repositories import audit
 from app.repositories import drafts as drafts_repo
@@ -82,7 +83,22 @@ def create_candidates(
         )
     )
     if existing:
-        return existing
+        if all(row.mapping_version == MAPPING_VERSION for row in existing):
+            return existing
+        if any(row.decision in _TERMINAL_DECISIONS for row in existing):
+            raise _problem(
+                409,
+                "import_mapping_outdated_decided",
+                "Conflict",
+                "Für diese Dateiversion wurden bereits Importentscheidungen "
+                "getroffen. Bitte die Datei erneut hochladen und bereits "
+                "übernommene Entwürfe manuell prüfen.",
+            )
+        # Offene Kandidaten der alten Anchor-Logik dürfen sicher ersetzt
+        # werden: keine menschliche Endentscheidung und kein Draft-Verweis.
+        for row in existing:
+            db.delete(row)
+        db.flush()
 
     data = get_storage().open(version.storage_ref)
     try:
@@ -114,6 +130,9 @@ def create_candidates(
                 extracted_text=mapped.extracted_text,
                 confidence=mapped.confidence,
                 source_location=mapped.source_location,
+                mapping_version=mapped.mapping_version,
+                mapping_status=mapped.mapping_status,
+                section_metadata=[asdict(section) for section in mapped.sections],
                 decision="pending",
             )
         )
@@ -127,6 +146,10 @@ def create_candidates(
             "candidate_count": len(candidates),
             "uncertain_count": sum(
                 1 for c in candidates if c.confidence == "uncertain"
+            ),
+            "mapping_version": MAPPING_VERSION,
+            "legacy_migrated_count": sum(
+                1 for c in candidates if c.mapping_status == "legacy_migrated"
             ),
             "warnings": list(result.warnings),
         },
@@ -161,6 +184,22 @@ def decide_candidate(
         raise _problem(
             422, "edited_text_not_allowed", "Unprocessable Entity",
             "Ein bearbeiteter Text ist nur beim Übernehmen möglich.",
+        )
+
+    if (
+        decision == "accepted"
+        and edited_text is None
+        and any(
+            bool(section.get("requires_manual_assignment"))
+            for section in (candidate.section_metadata or [])
+        )
+    ):
+        raise _problem(
+            422,
+            "import_manual_assignment_required",
+            "Unprocessable Entity",
+            "Dieser Kandidat enthält eine mehrdeutige Altzuordnung. Bitte den "
+            "Text unter «Bearbeiten & übernehmen» fachlich einordnen.",
         )
 
     if decision in ("saved_as_source", "ignored"):
@@ -265,6 +304,9 @@ def to_contract(candidate: ImportCandidate) -> ImportCandidateSchema:
         edited_text=candidate.edited_text,
         confidence=candidate.confidence,
         source_location=candidate.source_location,
+        mapping_version=candidate.mapping_version,
+        mapping_status=candidate.mapping_status,
+        section_metadata=candidate.section_metadata or [],
         decision=candidate.decision,
         decided_at=candidate.decided_at,
         accepted_draft_version_id=candidate.accepted_draft_version_id,

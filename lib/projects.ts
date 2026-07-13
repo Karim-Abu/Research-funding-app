@@ -161,6 +161,24 @@ export async function patchProject(
   return (await res.json()) as ProjectDto
 }
 
+/** Archiviert ein Projekt (status="archived"). Das Projekt wird danach aus der
+ *  Übersicht ausgeblendet, bleibt aber in der Datenbank (umkehrbar). Nutzt den
+ *  bestehenden PATCH-Endpunkt; kein Idempotency-Key (wie andere Mutationen ohne
+ *  Erzeugung). Im Mock-Modus ein No-Op — die Übersicht entfernt die Karte lokal. */
+export async function archiveProject(projectId: string): Promise<void> {
+  if (!isLive("projects")) return
+  const csrf = getCsrfToken()
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+    },
+    body: JSON.stringify({ status: "archived" }),
+  })
+  if (!res.ok) throw new Error("project_archive_failed")
+}
+
 // --- Budget-Vorprüfung (read-only, run-unabhängig) ---------------------------
 // Rechnung und Schwellen kommen ausschliesslich aus dem Backend-Rule-Kern;
 // das Frontend zeigt nur an. Status-Vokabular ist EIGENSTÄNDIG (kein

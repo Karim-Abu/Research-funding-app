@@ -36,6 +36,8 @@ class ProjectPatch(BaseModel):
     total_requested_funding: float | None = Field(default=None, ge=0)
     budget_exception_basis: str | None = None
     duration_months: int | None = Field(default=None, ge=1)
+    # Status transitions (e.g. archivieren) — same enum as the Project contract.
+    status: Literal["draft", "active", "archived"] | None = None
 
 
 class WorkflowSummary(BaseModel):

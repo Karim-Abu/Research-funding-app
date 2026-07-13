@@ -5,12 +5,29 @@
 import { getCsrfToken } from "./session"
 
 export type ImportConfidence = "found" | "uncertain"
+export type ImportMappingStatus =
+  | "content_detected"
+  | "empty"
+  | "legacy_migrated"
+  | "uncertain"
 export type ImportDecision =
   | "pending"
   | "conflict"
   | "accepted"
   | "saved_as_source"
   | "ignored"
+
+export interface ImportSectionMetadataDto {
+  target_sections: string[]
+  source_location: string | null
+  status: ImportMappingStatus
+  candidate_text: string
+  /** Unveränderter Quellbereich; kann vertraulichen Antragstext enthalten. */
+  original_excerpt: string
+  migration_version: string | null
+  requires_manual_assignment: boolean
+  review_note: string | null
+}
 
 export interface ImportCandidateDto {
   import_candidate_id: string
@@ -24,6 +41,9 @@ export interface ImportCandidateDto {
   edited_text: string | null
   confidence: ImportConfidence
   source_location: string | null
+  mapping_version: string
+  mapping_status: ImportMappingStatus
+  section_metadata: ImportSectionMetadataDto[]
   decision: ImportDecision
   decided_at: string | null
   accepted_draft_version_id: string | null

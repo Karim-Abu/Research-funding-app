@@ -69,6 +69,7 @@ _PATCHABLE_FIELDS = (
     "total_requested_funding",
     "budget_exception_basis",
     "duration_months",
+    "status",
 )
 
 

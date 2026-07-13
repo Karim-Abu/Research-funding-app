@@ -330,6 +330,17 @@ class ImportCandidate(Base):
     confidence: Mapped[str] = mapped_column(String, nullable=False)
     # Menschlich lesbare Fundstelle, z. B. "Seite 3"; None bei Textquellen.
     source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Version + nachvollziehbare Abschnittszuordnung des deterministischen
+    # Mappings. section_metadata kann D2-Rohstellen enthalten: nie loggen.
+    mapping_version: Mapped[str] = mapped_column(
+        String, nullable=False, default="innolink-narrative-v2"
+    )
+    mapping_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="content_detected"
+    )
+    section_metadata: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     decided_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id"), nullable=True

@@ -23,7 +23,7 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
 }
-_HEAD = "e6b3d5f7a9c1"  # run phases (persistierter Phasenstatus je Lauf).
+_HEAD = "1d4f8a2c6b90"  # versionierte Metadaten des Innolink-Imports.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -121,8 +121,8 @@ def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
 
 
 def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
-    """Roundtrip der Head-Migration (e6b3d5f7a9c1, run_phases): Down entfernt
-    NUR die neue Tabelle; alle früheren Revisionen (review_comment,
+    """Roundtrip der Head-Migration (Import-Mapping-Metadaten): Down entfernt
+    NUR die drei neuen Spalten; alle früheren Revisionen (review_comment,
     edited_text, EVAL.1-Spalten, R3.2-Tabelle, R2.2-Spalten) und bestehende
     Zeilen bleiben unangetastet erhalten."""
     db = tmp_path / "roundtrip.db"
@@ -134,6 +134,9 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     } <= _columns(db, "run_phases")
     assert "import_candidates" in _tables(db)
     assert "edited_text" in _columns(db, "import_candidates")
+    assert {"mapping_version", "mapping_status", "section_metadata"} <= _columns(
+        db, "import_candidates"
+    )
     assert "review_comment" in _columns(db, "partners")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
@@ -141,7 +144,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     # Row preservation across the roundtrip: bestehende Zeilen (usage_records,
     # ImportCandidate mit edited_text, Partner mit review_comment) müssen den
     # Downgrade + Upgrade der Head-Migration unverändert überleben; die
-    # run_phases-Zeile selbst verschwindet mit dem Downgrade der Tabelle.
+    # run_phases-Zeile bleibt erhalten; nur die neuen Importspalten verschwinden.
     con = sqlite3.connect(db)
     try:
         con.execute(
@@ -174,10 +177,13 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one (entfernt NUR die run_phases-Tabelle), dann wieder hoch. Alle
+    # Down one (entfernt NUR die Mapping-Metadaten), dann wieder hoch. Alle
     # früheren Revisionen überleben den -1-Schritt unangetastet.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "run_phases" not in _tables(db)
+    assert "run_phases" in _tables(db)
+    assert not {
+        "mapping_version", "mapping_status", "section_metadata"
+    }.intersection(_columns(db, "import_candidates"))
     assert "review_comment" in _columns(db, "partners")
     assert "edited_text" in _columns(db, "import_candidates")
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
@@ -208,7 +214,8 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "import_candidate_id", "workspace_id", "project_id", "source_id",
         "source_version_id", "field_id", "extracted_text", "edited_text",
         "confidence", "source_location", "decision", "decided_by", "decided_at",
-        "accepted_draft_version_id", "created_at",
+        "accepted_draft_version_id", "created_at", "mapping_version",
+        "mapping_status", "section_metadata",
     } <= _columns(db, "import_candidates")
     assert "review_comment" in _columns(db, "partners")
     con = sqlite3.connect(db)
@@ -218,7 +225,8 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
             " FROM usage_records WHERE usage_record_id='usg-eval1'"
         ).fetchone()
         cand = con.execute(
-            "SELECT extracted_text, edited_text, decision FROM import_candidates"
+            "SELECT extracted_text, edited_text, decision, mapping_version,"
+            " mapping_status, section_metadata FROM import_candidates"
             " WHERE import_candidate_id='cand-rt'"
         ).fetchone()
         partner = con.execute(
@@ -229,15 +237,18 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.close()
     # Frühere Revisionen werden vom -1-Roundtrip nicht mehr berührt: usage-,
     # Kandidaten- und Partner-Zeile bleiben exakt erhalten (inkl. edited_text
-    # und review_comment). Die run_phases-Tabelle ist nach dem Re-Add leer.
+    # und review_comment). Die Import-Metadaten werden sicher zurückgefüllt.
     assert usage == (11, 22, "not_applicable", None), "usage row mutated in roundtrip"
-    assert cand == ("Original", "Bearbeitet", "accepted"), (
+    assert cand == (
+        "Original", "Bearbeitet", "accepted", "legacy-anchor-v1",
+        "content_detected", "[]",
+    ), (
         "candidate row mutated in roundtrip"
     )
+    assert phase_rows == (1,), "run phase row lost in mapping-metadata roundtrip"
     assert partner == ("Industrie AG", "Begründung"), (
         "partner row mutated in roundtrip"
     )
-    assert phase_rows == (0,), "run_phases must be empty after re-upgrade"
     assert {
         "direct_total_project_costs_excluding_overhead",
         "implementation_own_contribution",

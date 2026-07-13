@@ -36,6 +36,61 @@ def make_text_pdf(text: str = "Hello PDF Source") -> bytes:
     return _build_pdf(stream)
 
 
+def make_text_pages_pdf(pages: list[list[str]]) -> bytes:
+    """Build a deterministic multi-page text PDF without external fixtures."""
+
+    def esc(text: str) -> bytes:
+        raw = text.encode("cp1252", errors="replace")
+        return raw.replace(b"\\", rb"\\").replace(b"(", rb"\(").replace(b")", rb"\)")
+
+    objects: dict[int, bytes] = {
+        3: (
+            b"<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica "
+            b"/Encoding /WinAnsiEncoding >>"
+        )
+    }
+    page_ids: list[int] = []
+    next_id = 4
+    for lines in pages:
+        body = b"\n".join(b"(" + esc(line) + b") Tj T*" for line in lines)
+        content = b"BT\n/F1 10 Tf\n72 760 Td\n12 TL\n" + body + b"\nET"
+        content_id, page_id = next_id, next_id + 1
+        next_id += 2
+        objects[content_id] = (
+            b"<< /Length " + str(len(content)).encode() + b" >>\nstream\n"
+            + content + b"\nendstream"
+        )
+        objects[page_id] = (
+            b"<< /Type /Page /Parent 2 0 R /MediaBox [0 0 612 792] "
+            b"/Resources << /Font << /F1 3 0 R >> >> /Contents "
+            + f"{content_id} 0 R >>".encode()
+        )
+        page_ids.append(page_id)
+
+    kids = b" ".join(f"{page_id} 0 R".encode() for page_id in page_ids)
+    objects[1] = b"<< /Type /Catalog /Pages 2 0 R >>"
+    objects[2] = (
+        b"<< /Type /Pages /Kids [" + kids + b"] /Count "
+        + str(len(page_ids)).encode() + b" >>"
+    )
+
+    out = bytearray(b"%PDF-1.4\n")
+    offsets: dict[int, int] = {}
+    for object_id in sorted(objects):
+        offsets[object_id] = len(out)
+        out += f"{object_id} 0 obj\n".encode() + objects[object_id] + b"\nendobj\n"
+    xref_pos = len(out)
+    size = max(objects) + 1
+    out += f"xref\n0 {size}\n".encode() + b"0000000000 65535 f \n"
+    for object_id in range(1, size):
+        out += f"{offsets[object_id]:010d} 00000 n \n".encode()
+    out += (
+        b"trailer\n<< /Size " + str(size).encode() + b" /Root 1 0 R >>\n"
+        b"startxref\n" + str(xref_pos).encode() + b"\n%%EOF"
+    )
+    return bytes(out)
+
+
 def make_image_only_pdf() -> bytes:
     # A graphics-only content stream (filled rectangle) with no text operators.
     return _build_pdf(b"0 0 1 rg 72 72 200 200 re f")

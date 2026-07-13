@@ -3,7 +3,12 @@ import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { setBackendMode } from "@/lib/app-mode"
 import { login } from "@/lib/session"
-import { createProjectFromIntake, listProjects, toDashboardCard } from "@/lib/projects"
+import {
+  archiveProject,
+  createProjectFromIntake,
+  listProjects,
+  toDashboardCard,
+} from "@/lib/projects"
 import type { IntakeFormData } from "@/lib/types"
 
 const intake: IntakeFormData = {
@@ -135,6 +140,42 @@ describe("projects client (live mode)", () => {
     expect(card.nextAction).toBe("continue_draft")
     expect(card.isDemo).toBe(true)
     expect(card.warningBadge).toBeUndefined()
+  })
+
+  it("archives a project via PATCH (status archived) with CSRF", async () => {
+    server.use(
+      http.post("/api/session", () =>
+        HttpResponse.json({
+          user: {
+            user_id: "u1",
+            name: "Anna",
+            email: "anna.keller@example.test",
+            effective_role: "lead_admin",
+          },
+          csrf_token: "tok",
+        })
+      )
+    )
+    await login("anna.keller@example.test", "pw")
+
+    let headers: Headers | null = null
+    let body: Record<string, unknown> = {}
+    server.use(
+      http.patch("/api/projects/p1", async ({ request }) => {
+        headers = request.headers
+        body = (await request.json()) as Record<string, unknown>
+        return HttpResponse.json(projectFromBody(body), { status: 200 })
+      })
+    )
+
+    await archiveProject("p1")
+    expect(body).toEqual({ status: "archived" })
+    expect(headers!.get("x-csrf-token")).toBe("tok")
+  })
+
+  it("archiveProject is a no-op in mock mode (no network call)", async () => {
+    setBackendMode("mock")
+    await expect(archiveProject("p1")).resolves.toBeUndefined()
   })
 
   it("preserves mock mode by returning no live project data", async () => {

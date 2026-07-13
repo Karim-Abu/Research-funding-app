@@ -53,6 +53,23 @@ def test_create_list_get_update(client):
     assert patched.json()["title"] == "Alpha v2"
 
 
+def test_patch_status_archives(client):
+    # «Aus Übersicht entfernen» = status auf archived setzen (umkehrbar).
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _create(client, csrf, project_payload("Archivierbar")).json()["project_id"]
+
+    patched = client.patch(
+        f"/api/v1/projects/{pid}",
+        json={"status": "archived"},
+        headers=unsafe_headers(csrf),
+    )
+    assert patched.status_code == 200, patched.text
+    assert patched.json()["status"] == "archived"
+
+    # Persistiert über den GET.
+    assert client.get(f"/api/v1/projects/{pid}").json()["status"] == "archived"
+
+
 def test_create_requires_csrf(client):
     login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = client.post(
