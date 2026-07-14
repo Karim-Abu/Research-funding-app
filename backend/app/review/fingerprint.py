@@ -127,6 +127,56 @@ def classify_severity_class(
     return _FAMILY_CLASS.get(family, "style_risk")
 
 
+# Teil A — die neun Prüfbereiche der Qualitätsprüfung, in fester UI-Reihenfolge.
+CHECK_AREAS = (
+    "pflichtfelder",
+    "zeichenlimits",
+    "platzhalter",
+    "voraussetzungen",
+    "budget",
+    "evidenz_coverage",
+    "evidenz_suffizienz",
+    "konsistenz",
+    "export",
+)
+
+# Deterministische Familien → Prüfbereich (Ergänzung zu den Regeln in
+# ``area_for_finding``; open_issue_blocker hängt von der severity_class ab).
+_FAMILY_AREA: dict[str, str] = {
+    "draft_empty": "pflichtfelder",
+    "draft_over_limit": "zeichenlimits",
+    "draft_placeholder": "platzhalter",
+    "requirement_needs_input": "voraussetzungen",
+    "stale_assessment": "voraussetzungen",
+    "stale_evidence_link": "evidenz_coverage",
+    "unverified_linked_evidence": "evidenz_coverage",
+    "missing_evidence_link": "evidenz_coverage",
+    "a3": "konsistenz",
+}
+
+
+def area_for_finding(family: str, severity_class: str) -> str | None:
+    """Prüfbereich eines Findings (Familie + severity_class); ``None`` wenn
+    keiner zuordenbar ist (z. B. menschliche Kommentare)."""
+    if family == "open_issue_blocker":
+        if severity_class == "budget_blocker":
+            return "budget"
+        if severity_class == "export_blocker":
+            return "export"
+        return "voraussetzungen"
+    if family == "reliability:drift":
+        return "konsistenz"
+    if family == "reliability:stale":
+        # Run-level-Staleness ist kein Bereichs-Finding: die Evidenz-Bereiche
+        # werden bei Staleness fail-closed als not_run (reason="stale") geführt.
+        return None
+    if family.startswith("reliability:"):
+        return "evidenz_suffizienz"
+    if family.startswith("rubric:"):
+        return "konsistenz"
+    return _FAMILY_AREA.get(family)
+
+
 def compute_display_group_key(
     severity_class: str,
     rule_or_message_template: str,

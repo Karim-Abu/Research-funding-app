@@ -1,11 +1,14 @@
 """Fix Queue — Gruppierungs-Read-View über offenen Findings (R2.4).
 
 Gruppiert die offenen ``ReviewFinding``-Rows eines Runs nach dem
-``display_group_key`` (severity_class + Meldungsfamilie — NIE der Claim-Text,
-R2.1) und priorisiert die Gruppen deterministisch:
+``display_group_key`` (severity_class + Meldungsfamilie + Feld — NIE der
+Claim-Text, R2.1): max. EINE gruppierte Aufgabe pro Feld × Familie ×
+Severity (B2). Gruppen werden deterministisch priorisiert:
 
 1 export_blocker · 2 eligibility_blocker · 3 budget_blocker ·
-4 reviewer_risk · 5 evidence_risk · 6 style_risk.
+4 reviewer_risk · 5 evidence_risk · 6 style_risk,
+
+innerhalb gleicher Klasse nach fachlichem Familienrang (Teil D).
 
 Read-only: verändert keine Findings, keine Zähllogik des ReviewPackage.
 Rows ohne persistierte ``severity_class`` (Altbestand, Human-Kommentare)
@@ -26,6 +29,7 @@ from app.contracts.review import (
 from app.db.models import AnalysisRun, ReviewFinding
 from app.registry import get_registry
 from app.review.fingerprint import (
+    area_for_finding,
     classify_severity_class,
     compute_display_group_key,
     finding_code_family,
@@ -40,6 +44,26 @@ _CLASS_PRIORITY = {
     "reviewer_risk": 4,
     "evidence_risk": 5,
     "style_risk": 6,
+}
+
+# Teil D — fachlicher Familienrang innerhalb derselben Severity-Klasse:
+# KPI-Kette → SOTA/Neuheit → Marktzahlen ohne Quelle/widersprüchlich →
+# Partner-Fit → Risiken/Arbeitsumfang; bei Evidenz-Risiken Widerspruch vor
+# unbelegt vor quantifiziert vor Marktaussage. Unbekannte Familien: Rang 9.
+_FAMILY_PRIORITY = {
+    "rubric:kpi_chain": 1,
+    "rubric:sota_differentiation": 2,
+    "rubric:market_claim_unsourced": 3,
+    "rubric:cross_section_numbers": 4,
+    "rubric:partner_fit": 5,
+    "rubric:risk_scope": 6,
+    "reliability:conflict": 1,
+    "reliability:false_consensus": 2,
+    "reliability:unsupported": 3,
+    "reliability:quantified": 4,
+    "reliability:market": 5,
+    "reliability:proposed_fact": 6,
+    "reliability:weak": 7,
 }
 
 # UI-Labels je Meldungsfamilie (Anzeige-Label, keine Regelaussage — Regel-/
@@ -90,6 +114,9 @@ def _row_severity_class(row: ReviewFinding, registry) -> str:
 
 
 def _group_title(family: str, rows: list[ReviewFinding]) -> str:
+    """Familien-Titel der Gruppe. Die feldbewusste Beschriftung («Business
+    Targets: …») übernimmt das Frontend über den zentralen fieldLabel-Helper —
+    Registry-Rohlabels (z. B. «Open Editor …») erscheinen nie im UI."""
     if family in _FAMILY_TITLES:
         return _FAMILY_TITLES[family]
     descriptions = {r.description for r in rows}
@@ -112,12 +139,31 @@ def build_fix_queue(db: Session, run: AnalysisRun) -> FixQueueView:
         )
     )
 
+    # B5 — dieselbe Eskalation wie das Approval-Gate (ein Choke-Point, keine
+    # Parallellogik): claimgebundene Findings, die wegen Feld-Freigabe
+    # blockierend wirken, zählen auch hier als Blocker-Aufgabe. Lazy Import
+    # wie in review.package (kein Zyklus).
+    from app.reliability import approval as reliability_approval
+
+    escalated_claim_ids = {
+        reason.split(":", 1)[1]
+        for reason in reliability_approval.reliability_blocker_reasons(db, run)
+        if reason.startswith("reliability_blocker:")
+    }
+
+    def effective_severity(row: ReviewFinding) -> str:
+        if row.severity != "blocker" and row.target_id in escalated_claim_ids:
+            return "blocker"
+        return row.severity
+
     grouped: dict[str, list[ReviewFinding]] = {}
     keys: dict[str, tuple[str, str]] = {}  # group_key -> (severity_class, family)
     for row in rows:
         family = finding_code_family(row.finding_code)
         severity_class = _row_severity_class(row, registry)
-        key = compute_display_group_key(severity_class, family)
+        # B2 — max. eine gruppierte Aufgabe pro Feld × Familie × Severity
+        # (Severity ist je Familie konstant, daher implizit im Schlüssel).
+        key = compute_display_group_key(severity_class, family, field_group=row.field_id)
         grouped.setdefault(key, []).append(row)
         keys[key] = (severity_class, family)
 
@@ -131,7 +177,7 @@ def build_fix_queue(db: Session, run: AnalysisRun) -> FixQueueView:
             if m.recommended_next_action
         )
         severity = min(
-            (m.severity for m in members),
+            (effective_severity(m) for m in members),
             key=lambda s: _SEVERITY_RANK.get(s, 9),
         )
         groups.append(
@@ -156,12 +202,14 @@ def build_fix_queue(db: Session, run: AnalysisRun) -> FixQueueView:
                     actions.most_common(1)[0][0] if actions else None
                 ),
                 target_field_id=fields[0] if len(fields) == 1 else None,
+                area=area_for_finding(family, severity_class),  # type: ignore[arg-type]
             )
         )
 
     groups.sort(
         key=lambda g: (
             _CLASS_PRIORITY.get(g.severity_class, 9),
+            _FAMILY_PRIORITY.get(keys[g.group_key][1], 9),
             -g.count,
             g.group_key,
         )
@@ -171,4 +219,7 @@ def build_fix_queue(db: Session, run: AnalysisRun) -> FixQueueView:
         grouped_findings=groups,
         next_actions=groups,
         total_open_findings=len(rows),
+        # B7 — «Blockierende Aufgaben» vs. «Unterliegende Evidenzhinweise».
+        blocking_task_count=sum(1 for g in groups if g.severity == "blocker"),
+        evidence_note_count=sum(1 for r in rows if r.target_type == "draft_claim"),
     )

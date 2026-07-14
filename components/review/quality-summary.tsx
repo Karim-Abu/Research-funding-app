@@ -131,7 +131,9 @@ export function QualitySummary({ runId }: { runId: string }) {
         <>
           <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="quality-metrics">
             <Metric label="Aussagen" value={summary.claim_count} />
-            <Metric label="Belegt" value={summary.supported_claims} />
+            {/* «Gestützt» = Suffizienzprüfung bestanden — nicht bloss «ein
+                Zitat existiert» (Verifikation ≠ inhaltliche Stützung). */}
+            <Metric label="Gestützt" value={summary.supported_claims} />
             <Metric label="Zu prüfen" value={summary.review_required_count} />
             <Metric label="Nicht belegt" value={summary.unsupported_claims} />
           </dl>

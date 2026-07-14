@@ -1,6 +1,8 @@
 """Unsupported-claim gate + reliability-finding persistence (Milestone 9K, STEP 5).
 
-Maps (claim strength × lineage × sufficiency) onto advisory/blocker findings, persisted as
+Maps (claim × lineage × sufficiency) onto findings — nur ein Quellen-Widerspruch
+(``reliability:conflict``) ist ein Blocker, alle übrigen Familien sind Reviewer-Risiken
+(warning); pro Claim wird höchstens die primäre Ursache persistiert — as
 ``ReviewFinding`` rows reusing ``source="agent"`` + ``profile_id="M9K.reliability_assurance"``
 (binding correction 1 — no new source enum, no migration). Findings target the DraftClaim
 (``target_type="draft_claim"``, ``target_id=claim_id``). No draft mutation, no claim deletion,
@@ -52,27 +54,29 @@ def _claim_spec(code: str, severity: str, description: str, claim) -> Reliabilit
     )
 
 
-def _sev_for_strength(strong: bool) -> str:
-    return "blocker" if strong else "warning"
-
-
 def gate_claim(claim: ExtractedClaim, lineage: LineageResult) -> list[ReliabilityFindingSpec]:
-    """Findings for one claim. Only claims that require evidence are gated."""
+    """Findings for one claim. Only claims that require evidence are gated.
+
+    Blockerdisziplin (B5): nur ``reliability:conflict`` — ein Widerspruch zur
+    verknüpften Quelle — ist ein Blocker. Unbelegte/schwach belegte Aussagen
+    sind Reviewer-Risiken (warning), unabhängig von der Formulierungsstärke.
+    Die Eskalation für freigegebene Felder passiert scope-gebunden in
+    ``approval.reliability_blocker_reasons``, nie in der persistierten Severity.
+    """
     if not claim.requires_evidence:
         return []
     specs: list[ReliabilityFindingSpec] = []
-    strong = claim.strength == "strong"
     ls, ss = lineage.lineage_status, lineage.sufficiency_status
 
     if ls == "conflicting_evidence":
         specs.append(_claim_spec(
-            f"reliability:conflict:{claim.claim_id}", _sev_for_strength(strong),
+            f"reliability:conflict:{claim.claim_id}", "blocker",
             "Konfliktende Belege: die verknüpfte Quelle scheint dieser Aussage unter den "
             "definierten Kriterien zu widersprechen. Menschliche Prüfung nötig.", claim,
         ))
     elif ls == "no_evidence":
         specs.append(_claim_spec(
-            f"reliability:unsupported:{claim.claim_id}", _sev_for_strength(strong),
+            f"reliability:unsupported:{claim.claim_id}", "warning",
             "Nicht belegte Aussage: für diese Aussage wurde keine verknüpfte Quelle "
             "gefunden (Beleg-Suffizienzprüfung). Bitte belegen oder abschwächen.", claim,
         ))
@@ -87,7 +91,7 @@ def gate_claim(claim: ExtractedClaim, lineage: LineageResult) -> list[Reliabilit
     # Quantified claim without a matching number in the evidence.
     if is_quantified(claim) and ss == suff.INSUFFICIENT and not lineage.supported:
         specs.append(_claim_spec(
-            f"reliability:quantified:{claim.claim_id}", _sev_for_strength(strong),
+            f"reliability:quantified:{claim.claim_id}", "warning",
             "Quantifizierte Aussage ohne passende Zahl im Beleg (Beleg-Suffizienzprüfung).",
             claim,
         ))
@@ -102,11 +106,43 @@ def gate_claim(claim: ExtractedClaim, lineage: LineageResult) -> list[Reliabilit
     # Proposed-only A1 fact stated as certain.
     if lineage.proposed_fact_as_certain and not lineage.supported:
         specs.append(_claim_spec(
-            f"reliability:proposed_fact:{claim.claim_id}", _sev_for_strength(strong),
+            f"reliability:proposed_fact:{claim.claim_id}", "warning",
             "Vorgeschlagene (nicht bestätigte) A1-Angabe wird als sichere Aussage "
             "verwendet. Bitte bestätigen oder als offen kennzeichnen.", claim,
         ))
     return specs
+
+
+# B6 — genau EINE primäre Ursache pro Claim in der Haupt-UI. Die verdrängten
+# Ursachen bleiben claimgenau über DraftClaim/ClaimLineage (Detailansicht)
+# nachvollziehbar; beim nächsten Pass resolved apply_reliability_findings
+# nicht mehr emittierte Alt-Findings automatisch.
+_PRIMARY_FAMILY_PRIORITY = (
+    "reliability:conflict",
+    "reliability:false_consensus",
+    "reliability:unsupported",
+    "reliability:quantified",
+    "reliability:market",
+    "reliability:proposed_fact",
+    "reliability:weak",
+)
+
+
+def primary_claim_spec(
+    specs: list[ReliabilityFindingSpec],
+) -> list[ReliabilityFindingSpec]:
+    """Reduziert die Findings EINES Claims auf die primäre Ursache."""
+    if len(specs) <= 1:
+        return list(specs)
+
+    def rank(spec: ReliabilityFindingSpec) -> int:
+        family = finding_code_family(spec.finding_code)
+        try:
+            return _PRIMARY_FAMILY_PRIORITY.index(family)
+        except ValueError:
+            return len(_PRIMARY_FAMILY_PRIORITY)
+
+    return [min(specs, key=rank)]
 
 
 def apply_reliability_findings(

@@ -93,20 +93,22 @@ def test_evaluation_seed_adds_deterministic_fixtures(demo_enabled, db):
     items = _market_items(db)
     assert any(i.confidence_label == "source_backed" and i.verified_quote_refs for i in items)
 
-    # RunQualitySummary with an unsupported claim + a reliability blocker.
+    # RunQualitySummary with an unsupported claim + an open reliability finding.
+    # B5-Blockerdisziplin: die unbelegte starke Aussage ist Reviewer-Risiko
+    # (warning), kein automatischer Blocker mehr.
     summary = _summary(db)
     assert summary is not None
     assert summary.unsupported_claims >= 1
     assert summary.supported_claims >= 1
-    blocker = db.scalar(
+    finding = db.scalar(
         select(ReviewFinding).where(
             ReviewFinding.run_id == MAIN.run_id,
             ReviewFinding.profile_id == "M9K.reliability_assurance",
-            ReviewFinding.severity == "blocker",
+            ReviewFinding.severity == "warning",
             ReviewFinding.status == "open",
         )
     )
-    assert blocker is not None
+    assert finding is not None
 
 
 def test_evaluation_run_summary_is_deterministic(demo_enabled, db):

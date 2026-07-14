@@ -58,3 +58,11 @@ def tokens(text: str) -> list[str]:
 def content_terms(text: str) -> set[str]:
     """Distinct non-stopword tokens of length >= 2 — the matchable vocabulary."""
     return {t for t in tokens(text) if len(t) >= _MIN_TOKEN_LEN and t not in STOPWORDS}
+
+
+def is_trivial_quote(text: str) -> bool:
+    """Teil C4 — ein Zitat ohne mindestens zwei nicht-numerische Inhaltsterme
+    trägt keinen Kontext: «Overhead» (1 Term) oder «18/26» (nur Zahlen) dürfen
+    nicht als Claim-Stützung oder Evidenz-Coverage zählen."""
+    terms = {t for t in content_terms(text) if not t.isdigit()}
+    return len(terms) < 2

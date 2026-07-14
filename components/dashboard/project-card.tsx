@@ -118,10 +118,10 @@ export function ProjectCard({ project, onAction, onRemove }: ProjectCardProps) {
                 {WARNING_BADGE_LABELS[warningBadge]}
               </Badge>
             )}
-            {/* R1.3 — kanonische Blocker-Zahl (ReviewStatusView); dieselbe Zahl
-                wie in Anforderungen, Qualitätsprüfung und Export. Ohne
-                durchgeführte Prüfung erscheint nie eine 0, sondern der
-                ehrliche Zustand «Noch nicht geprüft» (Regel 7). */}
+            {/* R1.3/B7 — kanonische Zahl «Blockierende Aufgaben»
+                (ReviewStatusView); dieselbe Zahl wie in Anforderungen,
+                Qualitätsprüfung und Export. Ohne durchgeführte Prüfung
+                erscheint nie eine 0, sondern «Noch nicht geprüft» (Regel 7). */}
             {typeof openBlockerCount === "number" && openBlockerCount > 0 && (
               <Badge
                 variant="outline"
@@ -129,7 +129,7 @@ export function ProjectCard({ project, onAction, onRemove }: ProjectCardProps) {
                 data-blocker-count={openBlockerCount}
                 className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
               >
-                {`${openBlockerCount} Blocker offen`}
+                {`${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Aufgabe" : "Aufgaben"}`}
               </Badge>
             )}
             {typeof openBlockerCount !== "number" && <NotYetReviewedBadge />}

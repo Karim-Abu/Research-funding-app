@@ -24,6 +24,7 @@ import {
 import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
 import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { getCapabilities } from "@/lib/capabilities"
+import { useReviewStatus } from "@/lib/status"
 import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
@@ -154,6 +155,11 @@ export function LiveExport({ runId }: { runId: string }) {
   // Never present anything as submission-ready while approval is missing or
   // blockers exist ("Nicht zur Einreichung", M10.2 / correction 2).
   const notForSubmission = advisoryDraft || readiness.blockerCount > 0
+  // B7 — Headline-Zahl «Blockierende Aufgaben» aus dem kanonischen
+  // Status-View: identisch mit Review, Dashboard und Kopieransicht.
+  const { status: reviewStatus } = useReviewStatus(runId)
+  const blockingTasks =
+    reviewStatus?.blocking_task_count ?? readiness.blockerCount
   const hint =
     readiness.reviewStatus === "nicht_durchgefuehrt"
       ? "Es wurde noch keine Qualitätsprüfung durchgeführt. Exporte werden als Entwurf gekennzeichnet."
@@ -220,14 +226,14 @@ export function LiveExport({ runId }: { runId: string }) {
                     —
                   </dd>
                 ) : (
-                  <dd className={cn("text-lg font-semibold", readiness.blockerCount > 0 && "text-destructive")}>
-                    {readiness.blockerCount}
+                  <dd className={cn("text-lg font-semibold", blockingTasks > 0 && "text-destructive")}>
+                    {blockingTasks}
                   </dd>
                 )}
                 <dt className="text-[11px] text-muted-foreground">
                   {readiness.reviewStatus === "nicht_durchgefuehrt"
-                    ? "Blocker — noch nicht geprüft"
-                    : "Blocker"}
+                    ? "Blockierende Aufgaben — noch nicht geprüft"
+                    : "Blockierende Aufgaben"}
                 </dt>
               </div>
               <div className="rounded-md border border-border px-2 py-2">

@@ -1,6 +1,8 @@
 // R2.5 — Fix Queue UI: «Nächste Aufgaben» + gruppierte Findings («4 × …»).
 import { describe, it, expect } from "vitest"
 import { render, screen, within, fireEvent } from "@testing-library/react"
+import { http, HttpResponse } from "msw"
+import { server } from "./server"
 
 import {
   GroupedFindingsSection,
@@ -25,6 +27,7 @@ function group(overrides: Partial<GroupedFindingDto> = {}): GroupedFindingDto {
     })),
     recommended_next_action: null,
     target_field_id: "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+    area: "evidenz_suffizienz",
     ...overrides,
   }
 }
@@ -106,12 +109,15 @@ describe("NextActionsCard", () => {
 })
 
 describe("GroupedFindingsSection", () => {
-  it("zeigt «4 × Titel» und beim Aufklappen die Einzel-Claims als Beispiele", () => {
+  it("zeigt «4 × Feld-Label: Titel» und beim Aufklappen die Einzel-Claims", () => {
     render(<GroupedFindingsSection groups={[group()]} />)
     const row = screen.getByTestId("grouped-finding")
+    // Feldbewusster Titel über den zentralen fieldLabel-Helfer — nie rohe
+    // Registry-Labels («Open Editor …») oder IDs.
     expect(row).toHaveTextContent(
-      "4 × Quantifizierte Aussage ohne passenden Zahlenbeleg"
+      "4 × Value Creation → Business Targets Model: Quantifizierte Aussage ohne passenden Zahlenbeleg"
     )
+    expect(row).not.toHaveTextContent(/Open Editor|VC\.BUSINESS/)
     fireEvent.click(within(row).getByRole("button", { expanded: false }))
     expect(row).toHaveTextContent("Beispiel-Claim 0 ohne Zahlenbeleg.")
     expect(row).toHaveTextContent("Beispiel-Claim 3 ohne Zahlenbeleg.")
@@ -134,5 +140,58 @@ describe("GroupedFindingsSection", () => {
       expect(titles[i]).not.toEqual(titles[i - 1])
     }
     expect(new Set(titles).size).toBe(titles.length)
+  })
+})
+
+describe("ClaimDetailsDrawer (Technische Details, B4)", () => {
+  it("öffnet aus einer Claim-Gruppe und zeigt claimgenaue Details ohne Provider-Wording", async () => {
+    server.use(
+      http.get("/api/runs/r1/reliability", () =>
+        HttpResponse.json({
+          run_id: "r1",
+          available: true,
+          reliability_stale: false,
+          summary: null,
+          claims: [
+            {
+              claim_id: "c1",
+              field_id: "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+              claim_type: "market",
+              strength: "strong",
+              requires_evidence: true,
+              claim_text: "Der Markt wächst um 40 Prozent pro Jahr.",
+              lineage_status: "no_evidence",
+              sufficiency_status: "insufficient_evidence",
+              reason: "Keine verknüpfte Quelle gefunden.",
+            },
+          ],
+          findings: [],
+        })
+      )
+    )
+    render(<GroupedFindingsSection groups={[group()]} runId="r1" />)
+    const row = screen.getByTestId("grouped-finding")
+    fireEvent.click(within(row).getByRole("button", { expanded: false }))
+    fireEvent.click(
+      within(row).getByRole("button", { name: /Technische Details/ })
+    )
+    const drawer = await screen.findByTestId("claim-details-drawer")
+    expect(drawer).toHaveTextContent("Der Markt wächst um 40 Prozent pro Jahr.")
+    expect(drawer).toHaveTextContent("Marktaussage")
+    expect(drawer).toHaveTextContent(/stark formuliert/)
+    expect(drawer).toHaveTextContent("Kein Beleg verknüpft")
+    // Kein Modell-/Provider-Wording, keine Konfidenz-Prozente.
+    expect(drawer.textContent ?? "").not.toMatch(
+      /anthropic|openai|gpt|claude|sonnet|Konfidenz/i
+    )
+  })
+
+  it("ohne runId bleibt die Gruppe ohne Drawer-Trigger (reine Anzeige)", () => {
+    render(<GroupedFindingsSection groups={[group()]} />)
+    const row = screen.getByTestId("grouped-finding")
+    fireEvent.click(within(row).getByRole("button", { expanded: false }))
+    expect(
+      within(row).queryByRole("button", { name: /Technische Details/ })
+    ).toBeNull()
   })
 })

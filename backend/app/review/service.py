@@ -191,6 +191,12 @@ def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
         per_area[area] = per_area.get(area, 0) + 1
 
     latest = review_package.latest_approval(db, run)
+    # B7 — gruppierte Aufgaben-/Evidenzhinweis-Zähler aus der Fix Queue
+    # (eine Quelle, keine parallele Zähllogik). Lazy Import: fix_queue wird
+    # hier nur für die Zähler gebraucht.
+    from app.review.fix_queue import build_fix_queue
+
+    queue = build_fix_queue(db, run)
     return ReviewStatusView(
         run_id=run.run_id,
         blocker_count=blocker,
@@ -201,6 +207,8 @@ def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
         review_package_version=review_package.package_version(scope_hash),
         per_area_counts=per_area,
         last_reviewed_at=latest.created_at if latest is not None else None,
+        blocking_task_count=queue.blocking_task_count,
+        evidence_note_count=queue.evidence_note_count,
     )
 
 

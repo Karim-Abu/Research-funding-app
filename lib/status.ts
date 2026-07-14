@@ -15,6 +15,11 @@ export interface ReviewStatusDto {
   review_package_version: string
   per_area_counts: Record<string, number>
   last_reviewed_at: string | null
+  /** B7 — «Blockierende Aufgaben»: gruppierte Fix-Queue-Aufgaben mit
+   *  Blocker-Severity. Headline-Zahl auf allen Screens. */
+  blocking_task_count: number
+  /** B7 — «Unterliegende Evidenzhinweise»: technische Claim-Finding-Zahl. */
+  evidence_note_count: number
 }
 
 /** Einheitlicher Stale-Wortlaut auf allen Screens (R1.3). */

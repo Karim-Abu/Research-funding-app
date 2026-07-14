@@ -19,10 +19,20 @@ import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { QualitySummary } from "@/components/review/quality-summary"
 import {
   GroupedFindingsSection,
+  GroupRow,
   NextActionsCard,
 } from "@/components/review/fix-queue"
-import { flags } from "@/lib/flags"
-import { useFixQueue } from "@/lib/fix-queue"
+import { useFixQueue, type GroupedFindingDto } from "@/lib/fix-queue"
+import {
+  useCheckStatus,
+  areaProgress,
+  checkStateLabel,
+  notRunReasonLabel,
+  CHECK_AREA_LABELS,
+  CHECK_AREA_DESCRIPTIONS,
+  CHECK_STATE_STYLE,
+  type CheckAreaStatusDto,
+} from "@/lib/check-status"
 import {
   getReview,
   startRecheck,
@@ -33,29 +43,16 @@ import {
 } from "@/lib/review"
 import { ReviewProgressCard } from "@/components/review/review-progress-card"
 import {
-  REVIEW_FALLBACKS,
   HUMAN_IN_THE_LOOP_NOTE,
   APPROVAL_SCOPE_NOTE,
-  reviewProgress,
   REVIEW_SEVERITY_LABELS,
   REVIEW_SEVERITY_STYLE,
-  GROUP_STATUS_LABELS,
-  GROUP_STATUS_STYLE,
-  groupFindings,
-  summarizeReview,
-  blockerBreakdown,
   fieldLabel,
-  dedupeFindings,
-  blockerRelevance,
-  groupBlockersByField,
-  REVIEW_GROUP_LABELS,
-  classifyFinding,
   aiFindings,
-  deterministicFindings,
   reliabilityStaleFinding,
+  humanReviewCount,
   AI_FINDINGS_LABEL,
   AI_FINDINGS_DESCRIPTION,
-  type DedupedFinding,
 } from "@/lib/review-view"
 
 function disabledReasons(pkg: ReviewPackageDto): string[] {
@@ -89,17 +86,11 @@ export function LiveReview({ runId }: { runId: string }) {
 
   React.useEffect(() => load(), [load])
 
-  // R2.5 — Fix Queue (Flag groupedFindings). Fällt bei Fehler/leerer Antwort
-  // automatisch auf die alte Darstellung zurück (fixQueueActive = false).
-  const { queue: fixQueue } = useFixQueue(
-    runId,
-    pkg?.review_package_version,
-    flags.groupedFindings
-  )
-  const fixQueueActive =
-    flags.groupedFindings &&
-    fixQueue !== null &&
-    fixQueue.grouped_findings.length > 0
+  // Teil A5 — die neun Prüfbereiche kommen AUSSCHLIESSLICH aus dem
+  // autoritativen Check-Status-View; die Aufgabenliste aus der Fix Queue.
+  // Beide laden neu, sobald sich die Package-Version ändert.
+  const { checks } = useCheckStatus(runId, pkg?.review_package_version)
+  const { queue: fixQueue } = useFixQueue(runId, pkg?.review_package_version)
 
   async function recheck() {
     if (!pkg) return
@@ -132,12 +123,12 @@ export function LiveReview({ runId }: { runId: string }) {
     }
   }
 
-  function jumpToFirstBlocker() {
-    const first = pkg?.findings.find((f) => f.severity === "blocker")
-    if (!first) return
-    document
-      .getElementById(`blocker-${first.finding_id}`)
-      ?.scrollIntoView({ behavior: "smooth", block: "center" })
+  function jumpToTasks() {
+    const firstFailed = checks?.areas.find((a) => a.status === "failed")
+    const target = firstFailed
+      ? document.getElementById(`area-${firstFailed.area}`)
+      : document.querySelector('[data-testid="grouped-findings"]')
+    target?.scrollIntoView({ behavior: "smooth", block: "center" })
   }
 
   if (error && !pkg) {
@@ -165,17 +156,30 @@ export function LiveReview({ runId }: { runId: string }) {
   const reasons = disabledReasons(pkg)
   const approvable = reasons.length === 0 && pkg.approval_status !== "approved"
   const staleReliability = reliabilityStaleFinding(pkg)
-  const summary = summarizeReview(pkg)
-  const breakdown = blockerBreakdown(pkg)
-  const hasBlockers = breakdown.blocker > 0
-  // A3 (KI) findings are surfaced in their own section; the deterministic
-  // quality-check groups, blocker cards and hints stay deterministic-only.
-  const detFindings = deterministicFindings(pkg)
   const aiFinds = aiFindings(pkg)
-  const groups = groupFindings(detFindings)
-  const blockerFindings = detFindings.filter((f) => f.severity === "blocker")
-  const warningFindings = detFindings.filter((f) => f.severity !== "blocker")
-  const dedupedHints = dedupeFindings(warningFindings)
+  const hasBlockers = pkg.blocker_count > 0
+  // «Blockierende Aufgaben» = gruppierte Aufgaben (B7); das Gate-Kriterium
+  // bleibt pkg.blocker_count (dieselbe Backend-Zählung wie die Freigabe).
+  const blockingTasks = checks?.blocking_task_count ?? pkg.blocker_count
+  const exportArea = checks?.areas.find((a) => a.area === "export")
+  const panelState: "blocked" | "warnings" | "ready" = hasBlockers
+    ? "blocked"
+    : exportArea?.status === "passed"
+      ? "ready"
+      : "warnings"
+  // Gruppen je Prüfbereich (Join über GroupedFinding.area); Gruppen ohne
+  // Bereich (z. B. menschliche Kommentare) erscheinen als eigene Liste.
+  const groupsByArea = new Map<string, GroupedFindingDto[]>()
+  const unassignedGroups: GroupedFindingDto[] = []
+  for (const group of fixQueue?.grouped_findings ?? []) {
+    if (group.area) {
+      const list = groupsByArea.get(group.area) ?? []
+      list.push(group)
+      groupsByArea.set(group.area, list)
+    } else {
+      unassignedGroups.push(group)
+    }
+  }
 
   return (
     <div className="mx-auto flex max-w-4xl flex-col gap-6">
@@ -244,39 +248,32 @@ export function LiveReview({ runId }: { runId: string }) {
         </p>
       )}
 
-      {/* Bearbeitungs- und Prüfstand — ring over the quality-check groups
-          plus the six status values (with accessible help). */}
-      <ReviewProgressCard
-        summary={summary}
-        progress={reviewProgress(groups)}
-        recheckRequired={pkg.recheck_required}
-      />
-
-      {/* Nächste Schritte/Aufgaben — mit aktiver Fix Queue (R2.5) kommen die
-          Top-5 priorisiert aus der Gruppierungs-API; sonst alte Ableitung. */}
-      {fixQueueActive ? (
-        <NextActionsCard groups={fixQueue.next_actions} limit={5} />
-      ) : (
-        <NextStepsCard
-          pkg={pkg}
-          staleReliability={Boolean(staleReliability)}
-          groups={groups}
-          busy={busy}
-          onRecheck={recheck}
+      {/* Bearbeitungs- und Prüfstand — Ring über die neun Prüfbereiche aus dem
+          autoritativen Check-Status-View (Grau = nicht geprüft). */}
+      {checks && (
+        <ReviewProgressCard
+          progress={areaProgress(checks.areas)}
+          blockingTasks={checks.blocking_task_count}
+          evidenceNotes={checks.evidence_note_count}
+          pruefungNoetig={humanReviewCount(pkg)}
+          recheckRequired={pkg.recheck_required}
         />
       )}
 
+      {/* Nächste Aufgaben — Top-5 priorisiert aus der Fix Queue (Standard). */}
+      {fixQueue && <NextActionsCard groups={fixQueue.next_actions} limit={5} />}
+
       {/* Approval / blocker panel */}
       <ApprovalPanel
-        hasBlockers={hasBlockers}
-        breakdown={breakdown}
+        state={panelState}
+        blockingTasks={blockingTasks}
         reasons={reasons}
         approvable={approvable}
         approved={pkg.approval_status === "approved"}
         busy={busy}
         onApprove={approve}
         onRecheck={recheck}
-        onJumpToBlocker={jumpToFirstBlocker}
+        onJumpToTasks={jumpToTasks}
       />
 
       <p className="flex items-start gap-2 text-xs text-muted-foreground">
@@ -284,40 +281,28 @@ export function LiveReview({ runId }: { runId: string }) {
         {HUMAN_IN_THE_LOOP_NOTE}
       </p>
 
-      {/* Quality checks accordion */}
+      {/* Prüfbereiche — Status ausschliesslich aus dem Check-Status-View;
+          pro Bereich die zugehörigen gruppierten Aufgaben. */}
       <section className="flex flex-col gap-3">
         <h2 className="text-sm font-semibold text-foreground">Qualitätsprüfungen</h2>
         <div className="flex flex-col gap-2">
-          {groups.map((g) => (
-            <GroupAccordion key={g.key} group={g} />
-          ))}
+          {checks
+            ? checks.areas.map((area) => (
+                <CheckAreaRow
+                  key={area.area}
+                  area={area}
+                  groups={groupsByArea.get(area.area) ?? []}
+                  runId={runId}
+                />
+              ))
+            : [1, 2, 3].map((i) => <Skeleton key={i} className="h-12 w-full" />)}
         </div>
       </section>
 
-      {/* Offene Punkte: mit aktiver Fix Queue EINE gruppierte Liste («4 × …»,
-          aufklappbar mit Beispielen) statt Blocker-Karten + Hinweis-Liste;
-          Fallback bleibt die alte Darstellung. */}
-      {fixQueueActive ? (
-        <GroupedFindingsSection groups={fixQueue.grouped_findings} />
-      ) : (
-        <>
-          {/* Blocker cards — grouped by portal field, top 3 groups first */}
-          {blockerFindings.length > 0 && (
-            <BlockerSection blockerFindings={blockerFindings} />
-          )}
-
-          {/* Deduplicated hints */}
-          {dedupedHints.length > 0 && (
-            <section className="flex flex-col gap-3">
-              <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
-              <div className="flex flex-col gap-2">
-                {dedupedHints.map((h) => (
-                  <DedupedHint key={h.description} hint={h} />
-                ))}
-              </div>
-            </section>
-          )}
-        </>
+      {/* Gruppen ohne Prüfbereich (z. B. Kommentare aus der menschlichen
+          Prüfung) — bleiben sichtbar, nur nicht bereichsgebunden. */}
+      {unassignedGroups.length > 0 && (
+        <GroupedFindingsSection groups={unassignedGroups} runId={runId} />
       )}
 
       {/* Fachliche A3-Prüfhinweise (advisory). */}
@@ -344,169 +329,79 @@ export function LiveReview({ runId }: { runId: string }) {
 }
 
 // ---------------------------------------------------------------------------
-// Nächste Schritte — max 3 derived actions (recheck → stale reliability →
-// dominant blocker group). Pure derivation from existing package data.
-// ---------------------------------------------------------------------------
-function NextStepsCard({
-  pkg,
-  staleReliability,
-  groups,
-  busy,
-  onRecheck,
-}: {
-  pkg: ReviewPackageDto
-  staleReliability: boolean
-  groups: ReturnType<typeof groupFindings>
-  busy: boolean
-  onRecheck: () => void
-}) {
-  const steps: { key: string; text: string; action?: React.ReactNode }[] = []
-
-  if (pkg.recheck_required) {
-    steps.push({
-      key: "recheck",
-      text: "Ungeprüfte Änderungen — führen Sie eine erneute Prüfung durch.",
-      action: (
-        <Button size="xs" variant="outline" onClick={onRecheck} disabled={busy}>
-          Erneut prüfen
-        </Button>
-      ),
-    })
-  }
-  if (staleReliability) {
-    steps.push({
-      key: "reliability",
-      text: "Qualitätsprüfung veraltet — führen Sie die Zuverlässigkeitsprüfung erneut aus.",
-      action: (
-        <Button
-          size="xs"
-          variant="outline"
-          onClick={() =>
-            document
-              .querySelector('[data-testid="quality-summary"]')
-              ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
-          }
-        >
-          Zur Qualitätsübersicht
-        </Button>
-      ),
-    })
-  }
-  for (const group of groups) {
-    if (steps.length >= 3) break
-    if (group.status !== "nicht_bestanden") continue
-    const firstField = group.findings.find((f) => f.field_id)?.field_id
-    const editorHref = firstField
-      ? `/editor?field=${encodeURIComponent(firstField)}`
-      : "/editor"
-    steps.push({
-      key: group.key,
-      text: `${group.label}: ${group.findings.length} Punkt(e) klären.`,
-      action: (
-        <Button size="xs" variant="outline" render={<a href={editorHref} />} nativeButton={false}>
-          Im Entwurf öffnen
-        </Button>
-      ),
-    })
-  }
-
-  return (
-    <section
-      data-testid="next-steps"
-      className="flex flex-col gap-2 rounded-lg border border-border bg-card px-5 py-4"
-    >
-      <h2 className="text-sm font-semibold text-foreground">Nächste Schritte</h2>
-      {steps.length === 0 ? (
-        <p className="text-sm text-muted-foreground">
-          Keine offenen Schritte — prüfen Sie den Entwurf final und schliessen Sie die Prüfung ab.
-        </p>
-      ) : (
-        <ol className="flex flex-col gap-1.5">
-          {steps.slice(0, 3).map((step, index) => (
-            <li key={step.key} className="flex flex-wrap items-center gap-2 text-sm">
-              <span className="text-muted-foreground">{index + 1}.</span>
-              <span className="min-w-0 flex-1 text-foreground">{step.text}</span>
-              {step.action}
-            </li>
-          ))}
-        </ol>
-      )}
-    </section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Approval / blocker panel
+// Approval / blocker panel — Zustand aus Gate (blocker_count) + Export-Bereich:
+// blocked (rot), warnings («Mit Warnungen kopierbar», orange — nie grün als
+// fachlich freigegeben) oder ready (grün).
 // ---------------------------------------------------------------------------
 function ApprovalPanel({
-  hasBlockers,
-  breakdown,
+  state,
+  blockingTasks,
   reasons,
   approvable,
   approved,
   busy,
   onApprove,
   onRecheck,
-  onJumpToBlocker,
+  onJumpToTasks,
 }: {
-  hasBlockers: boolean
-  breakdown: ReturnType<typeof blockerBreakdown>
+  state: "blocked" | "warnings" | "ready"
+  blockingTasks: number
   reasons: string[]
   approvable: boolean
   approved: boolean
   busy: boolean
   onApprove: () => void
   onRecheck: () => void
-  onJumpToBlocker: () => void
+  onJumpToTasks: () => void
 }) {
+  const blocked = state === "blocked"
   return (
     <div
       className={cn(
         "flex flex-col gap-3 rounded-lg border px-5 py-4",
-        hasBlockers
-          ? "border-destructive/30 bg-destructive/5"
-          : "border-status-fulfilled/30 bg-status-fulfilled/5"
+        blocked && "border-destructive/30 bg-destructive/5",
+        state === "warnings" && "border-status-partial/30 bg-status-partial/5",
+        state === "ready" && "border-status-fulfilled/30 bg-status-fulfilled/5"
       )}
     >
       <div className="flex items-center gap-2">
-        {hasBlockers ? (
+        {blocked ? (
           <AlertTriangle className="size-4 text-destructive" />
+        ) : state === "warnings" ? (
+          <AlertTriangle className="size-4 text-status-partial" />
         ) : (
           <CheckCircle2 className="size-4 text-status-fulfilled" />
         )}
         <h2 className="text-sm font-semibold text-foreground">
-          {hasBlockers ? "Freigabe blockiert" : "Bereit für Export"}
+          {blocked
+            ? "Freigabe blockiert"
+            : state === "warnings"
+              ? "Mit Warnungen kopierbar"
+              : "Bereit für Export"}
         </h2>
       </div>
 
       <p className="text-sm text-muted-foreground">
-        {hasBlockers
-          ? `Der Antrag kann noch nicht exportiert oder freigegeben werden, weil noch ${breakdown.blocker} Blocker zu klären ${
-              breakdown.blocker === 1 ? "ist" : "sind"
-            }.`
-          : "Alle blockierenden Punkte sind geklärt. Prüfen Sie den Entwurf final und fahren Sie mit dem Export fort."}
+        {blocked
+          ? `Der Antrag kann noch nicht exportiert oder freigegeben werden, weil noch ${blockingTasks} blockierende Aufgabe${
+              blockingTasks === 1 ? "" : "n"
+            } zu klären ${blockingTasks === 1 ? "ist" : "sind"}.`
+          : state === "warnings"
+            ? "Keine blockierenden Punkte offen. Es bestehen aber offene Hinweise oder ungeprüfte Bereiche — der Antrag kann als Arbeitskopie kopiert werden, gilt jedoch nicht als fachlich freigegeben."
+            : "Alle Prüfbereiche sind bestanden. Prüfen Sie den Entwurf final und fahren Sie mit dem Export fort."}
       </p>
 
-      {hasBlockers && (
-        <ul className="flex flex-wrap gap-x-6 gap-y-1 text-xs text-muted-foreground">
-          <li>{breakdown.blocker} Blocker</li>
-          <li>{breakdown.openMandatory} offene Pflichtfelder</li>
-          <li>{breakdown.placeholderFields} Felder mit Platzhaltern</li>
-          <li>{breakdown.missingEvidence} Belege fehlen</li>
-        </ul>
-      )}
-
       <div className="flex flex-wrap items-center gap-2">
-        {hasBlockers && (
-          <Button variant="outline" size="sm" onClick={onJumpToBlocker}>
-            Zum ersten Blocker springen
+        {blocked && (
+          <Button variant="outline" size="sm" onClick={onJumpToTasks}>
+            Zur ersten Aufgabe springen
           </Button>
         )}
         <Button variant="outline" size="sm" onClick={onRecheck} disabled={busy}>
           <RefreshCw data-icon="inline-start" />
           Erneut prüfen
         </Button>
-        {!hasBlockers && (
+        {!blocked && (
           <Button size="sm" render={<a href="/export" />} nativeButton={false}>
             Weiter zum Export
             <ArrowRight className="ml-1.5 size-3.5" />
@@ -533,39 +428,62 @@ function ApprovalPanel({
 }
 
 // ---------------------------------------------------------------------------
-// Quality-check group accordion
+// Prüfbereichs-Zeile — Status ausschliesslich aus dem Check-Status-View
+// (Grau = nicht geprüft, nie stillschweigend bestanden); aufklappbar mit den
+// gruppierten Aufgaben des Bereichs.
 // ---------------------------------------------------------------------------
-function GroupAccordion({
-  group,
+function CheckAreaRow({
+  area,
+  groups,
+  runId,
 }: {
-  group: ReturnType<typeof groupFindings>[number]
+  area: CheckAreaStatusDto
+  groups: GroupedFindingDto[]
+  runId: string
 }) {
-  const [open, setOpen] = React.useState(group.status !== "bestanden")
+  const [open, setOpen] = React.useState(area.status === "failed")
+  const openFindings = area.open_blockers + area.open_warnings
 
-  // Passed groups without findings have no details — render a static row
-  // instead of an expandable accordion that would open empty.
-  if (group.findings.length === 0) {
+  const summaryText =
+    area.status === "not_run"
+      ? notRunReasonLabel(area)
+      : area.status === "passed"
+        ? "Keine offenen Befunde in dieser Prüfung."
+        : `${openFindings} Befund(e)`
+
+  const statusChip = (
+    <span
+      className={cn(
+        "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
+        CHECK_STATE_STYLE[area.status]
+      )}
+    >
+      {checkStateLabel(area)}
+    </span>
+  )
+  const title = (
+    <span className="min-w-0 flex-1">
+      <span className="block text-sm font-medium text-foreground">
+        {CHECK_AREA_LABELS[area.area]}
+      </span>
+      <span className="block truncate text-xs text-muted-foreground">
+        {CHECK_AREA_DESCRIPTIONS[area.area]}
+      </span>
+    </span>
+  )
+
+  if (groups.length === 0) {
     return (
-      <section className="overflow-hidden rounded-lg border border-border bg-card">
+      <section
+        id={`area-${area.area}`}
+        data-testid="check-area"
+        className="overflow-hidden rounded-lg border border-border bg-card"
+      >
         <div className="flex w-full items-center gap-3 px-4 py-3">
-          <span
-            className={cn(
-              "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
-              GROUP_STATUS_STYLE[group.status]
-            )}
-          >
-            {GROUP_STATUS_LABELS[group.status]}
-          </span>
-          <span className="min-w-0 flex-1">
-            <span className="block text-sm font-medium text-foreground">
-              {group.label}
-            </span>
-            <span className="block truncate text-xs text-muted-foreground">
-              {group.description}
-            </span>
-          </span>
+          {statusChip}
+          {title}
           <span className="shrink-0 text-xs text-muted-foreground">
-            Keine offenen Befunde in dieser Prüfung.
+            {summaryText}
           </span>
         </div>
       </section>
@@ -573,7 +491,11 @@ function GroupAccordion({
   }
 
   return (
-    <section className="overflow-hidden rounded-lg border border-border bg-card">
+    <section
+      id={`area-${area.area}`}
+      data-testid="check-area"
+      className="overflow-hidden rounded-lg border border-border bg-card"
+    >
       <button
         type="button"
         onClick={() => setOpen((v) => !v)}
@@ -585,168 +507,26 @@ function GroupAccordion({
         ) : (
           <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
         )}
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-xs font-medium",
-            GROUP_STATUS_STYLE[group.status]
-          )}
-        >
-          {GROUP_STATUS_LABELS[group.status]}
-        </span>
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-medium text-foreground">
-            {group.label}
-          </span>
-          <span className="block truncate text-xs text-muted-foreground">
-            {group.description}
-          </span>
-        </span>
+        {statusChip}
+        {title}
         <span className="shrink-0 text-xs text-muted-foreground">
-          {`${group.findings.length} Befund(e)`}
+          {summaryText}
         </span>
       </button>
-      {open && group.findings.length > 0 && (
-        <ul className="flex flex-col gap-1 border-t border-border bg-muted/20 px-4 py-3">
-          {dedupeFindings(group.findings).map((d) => {
-            const blocker = d.findings.find((f) => f.severity === "blocker")
-            const text = `${d.count > 1 ? `${d.count} × ` : ""}${d.description}`
-            return (
-              <li key={d.description} className="text-xs text-foreground">
-                {blocker ? (
-                  <button
-                    type="button"
-                    onClick={() =>
-                      document
-                        .getElementById(`blocker-${blocker.finding_id}`)
-                        ?.scrollIntoView?.({ behavior: "smooth", block: "center" })
-                    }
-                    className="rounded text-left underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-                  >
-                    • {text}
-                  </button>
-                ) : (
-                  <>• {text}</>
-                )}
-              </li>
-            )
-          })}
-        </ul>
+      {open && (
+        <div className="flex flex-col gap-2 border-t border-border bg-muted/20 px-4 py-3">
+          {groups.map((group) => (
+            <GroupRow key={group.group_key} group={group} runId={runId} />
+          ))}
+        </div>
       )}
     </section>
   )
 }
 
 // ---------------------------------------------------------------------------
-// Blocker section — grouped by portal field, top 3 groups first, rest behind
-// a collapsible toggle so long lists stay scannable.
-// ---------------------------------------------------------------------------
-function BlockerSection({ blockerFindings }: { blockerFindings: ReviewFindingDto[] }) {
-  const [showAll, setShowAll] = React.useState(false)
-  const groups = groupBlockersByField(blockerFindings)
-  const visible = showAll ? groups : groups.slice(0, 3)
-  const hidden = groups.length - visible.length
-  const hiddenCount = groups
-    .slice(3)
-    .reduce((sum, g) => sum + g.findings.length, 0)
-
-  return (
-    <section className="flex flex-col gap-3">
-      <h2 className="text-sm font-semibold text-foreground">
-        Blocker ({blockerFindings.length})
-      </h2>
-      <div className="flex flex-col gap-4">
-        {visible.map((group) => (
-          <div key={group.label} className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              {group.label} · {group.findings.length} Blocker
-            </h3>
-            {group.findings.map((f) => (
-              <BlockerCard key={f.finding_id} finding={f} />
-            ))}
-          </div>
-        ))}
-      </div>
-      {hidden > 0 && !showAll && (
-        <Button variant="outline" size="sm" onClick={() => setShowAll(true)}>
-          {hiddenCount} weitere Blocker in {hidden}{" "}
-          {hidden === 1 ? "Feld" : "Feldern"} anzeigen
-        </Button>
-      )}
-    </section>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Blocker card
-// ---------------------------------------------------------------------------
-function BlockerCard({ finding }: { finding: ReviewFindingDto }) {
-  const group = classifyFinding(finding)
-  const isEvidence = group === "belege"
-  const editorHref = finding.field_id
-    ? `/editor?field=${encodeURIComponent(finding.field_id)}`
-    : "/editor"
-  return (
-    <article
-      id={`blocker-${finding.finding_id}`}
-      className="flex flex-col gap-2 rounded-lg border border-border bg-card px-5 py-4"
-    >
-      <div className="flex items-center gap-2">
-        <span
-          className={cn(
-            "inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium",
-            REVIEW_SEVERITY_STYLE.blocker
-          )}
-        >
-          {REVIEW_SEVERITY_LABELS.blocker}
-        </span>
-        <h3 className="text-sm font-semibold text-foreground">
-          {REVIEW_GROUP_LABELS[group]}
-        </h3>
-      </div>
-
-      <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-        <dt className="text-muted-foreground">Portal-Feld</dt>
-        <dd className="text-foreground">{fieldLabel(finding.field_id)}</dd>
-        <dt className="text-muted-foreground">Problem</dt>
-        <dd className="text-foreground">
-          {finding.description || REVIEW_FALLBACKS.title}
-        </dd>
-        <dt className="text-muted-foreground">Warum relevant</dt>
-        <dd className="text-foreground">{blockerRelevance(finding)}</dd>
-      </dl>
-
-      {/* One primary correction path; no per-finding recheck (the contract
-          only supports re-running the whole check). */}
-      <div className="flex flex-wrap items-center gap-2 pt-1">
-        <Button variant="outline" size="xs" render={<a href={editorHref} />} nativeButton={false}>
-          Im Entwurf öffnen
-        </Button>
-        {finding.requirement_id && (
-          <Button
-            variant="ghost"
-            size="xs"
-            render={
-              <a
-                href={`/anforderungen?requirement=${encodeURIComponent(finding.requirement_id)}`}
-              />
-            }
-            nativeButton={false}
-          >
-            In Anforderungen öffnen
-          </Button>
-        )}
-        {isEvidence && (
-          <Button variant="ghost" size="xs" render={<a href="/anforderungen?tab=evidenz" />} nativeButton={false}>
-            Evidenz prüfen
-          </Button>
-        )}
-      </div>
-    </article>
-  )
-}
-
-// ---------------------------------------------------------------------------
-// Deduplicated hint
+// Fachlicher A3-Prüfhinweis (advisory) — unverändert separat von den
+// deterministischen Prüfbereichen.
 // ---------------------------------------------------------------------------
 function AiFindingCard({ finding }: { finding: ReviewFindingDto }) {
   return (
@@ -764,83 +544,6 @@ function AiFindingCard({ finding }: { finding: ReviewFindingDto }) {
         <p className="mt-2 border-t border-border pt-2 text-xs text-muted-foreground">
           Vorschlag: {finding.suggested_improvement}
         </p>
-      )}
-    </div>
-  )
-}
-
-function DedupedHint({ hint }: { hint: DedupedFinding }) {
-  const [open, setOpen] = React.useState(false)
-  const group = classifyFinding(hint.findings[0])
-  const firstWithField = hint.findings.find((f) => f.field_id)
-  // Every hint gets at least one sensible action (M10.2 / E13).
-  const action =
-    group === "belege"
-      ? { label: "Belege prüfen", href: "/anforderungen?tab=evidenz" }
-      : firstWithField
-        ? {
-            label: "Im Entwurf öffnen",
-            href: `/editor?field=${encodeURIComponent(firstWithField.field_id!)}`,
-          }
-        : { label: "Im Entwurf öffnen", href: "/editor" }
-
-  return (
-    <div className="rounded-md border border-border bg-card px-4 py-2.5">
-      <div className="flex items-start justify-between gap-3">
-        <p className="text-sm text-foreground">
-          {hint.count > 1 ? (
-            <span className="font-medium">{hint.count} × </span>
-          ) : null}
-          {hint.description}
-        </p>
-        {hint.count > 1 && (
-          <button
-            type="button"
-            onClick={() => setOpen((v) => !v)}
-            aria-expanded={open}
-            className="shrink-0 text-xs font-medium text-primary hover:underline"
-          >
-            Betroffene Felder anzeigen ({hint.count})
-          </button>
-        )}
-      </div>
-      <div className="mt-1.5">
-        <Button variant="ghost" size="xs" render={<a href={action.href} />} nativeButton={false}>
-          {action.label}
-        </Button>
-      </div>
-      {open && hint.count > 1 && (
-        <ul className="mt-2 flex flex-col gap-1 border-t border-border pt-2 text-xs text-muted-foreground">
-          {/* Same field (or "no field") listed once with a count — no
-              repeated identical lines without added value. */}
-          {[...hint.findings
-            .reduce((map, f) => {
-              const label = fieldLabel(f.field_id)
-              const entry = map.get(label) ?? {
-                label,
-                fieldId: f.field_id ?? null,
-                count: 0,
-              }
-              entry.count += 1
-              return map.set(label, entry)
-            }, new Map<string, { label: string; fieldId: string | null; count: number }>())
-            .values()].map((entry) => (
-            <li key={entry.label} className="flex items-center gap-2">
-              <span>
-                • {entry.label}
-                {entry.count > 1 ? ` (${entry.count} ×)` : ""}
-              </span>
-              {entry.fieldId && (
-                <a
-                  href={`/editor?field=${encodeURIComponent(entry.fieldId)}`}
-                  className="text-primary underline-offset-2 hover:underline"
-                >
-                  Im Entwurf öffnen
-                </a>
-              )}
-            </li>
-          ))}
-        </ul>
       )}
     </div>
   )

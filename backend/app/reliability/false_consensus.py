@@ -28,9 +28,10 @@ def false_consensus_specs(
     if lineage.supported:
         return []
     if lineage.lineage_status == "no_evidence" or lineage.sufficiency_status in _WEAK_OR_NONE:
-        severity = "blocker" if claim.strength == "strong" else "warning"
+        # B5 — unbelegte Aussagen sind Reviewer-Risiko (warning), nie automatisch
+        # Blocker; Eskalation freigegebener Felder erfolgt im Approval-Gate.
         return [_claim_spec(
-            f"reliability:false_consensus:{claim.claim_id}", severity,
+            f"reliability:false_consensus:{claim.claim_id}", "warning",
             "Falsches Konsensrisiko: A2 hat diese Aussage erzeugt, A3 hat das Feld nicht "
             "beanstandet, doch die Beleg-Suffizienzprüfung findet keinen ausreichenden "
             "Beleg. A3-Schweigen ist kein Korrektheitsbeleg.", claim,

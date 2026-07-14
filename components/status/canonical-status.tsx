@@ -29,7 +29,12 @@ export function CanonicalStatusBadge({ runId }: { runId: string }) {
   const { status } = useReviewStatus(runId)
   if (!status) return null
 
-  const blocked = status.blocker_count > 0
+  // B7 — Headline-Zahl überall: «Blockierende Aufgaben» (gruppierte
+  // Fix-Queue-Aufgaben). Die technische Blocker-Zeilenzahl bleibt das
+  // Gate-Kriterium im Backend und erscheint nur unter «Technische Details».
+  const tasks = status.blocking_task_count
+  const blocked = tasks > 0
+  const taskWord = tasks === 1 ? "blockierende Aufgabe" : "blockierende Aufgaben"
   return (
     <div
       data-testid="canonical-status"
@@ -37,7 +42,7 @@ export function CanonicalStatusBadge({ runId }: { runId: string }) {
     >
       <span
         data-testid="canonical-blocker-count"
-        data-blocker-count={status.blocker_count}
+        data-blocker-count={tasks}
         className={cn(
           "inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs font-medium",
           blocked
@@ -50,9 +55,9 @@ export function CanonicalStatusBadge({ runId }: { runId: string }) {
         ) : (
           <CheckCircle2 className="size-3.5" aria-hidden />
         )}
-        {status.blocker_count === 0
-          ? "Keine Blocker offen"
-          : `${status.blocker_count} Blocker offen`}
+        {tasks === 0
+          ? "Keine blockierenden Aufgaben offen"
+          : `${tasks} ${taskWord} offen`}
       </span>
       {status.stale && (
         <span

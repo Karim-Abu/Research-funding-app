@@ -104,7 +104,8 @@ describe("projects overview", () => {
     expect(screen.getByText("Aktive Projekte")).toBeInTheDocument()
     // "Prüfung offen" appears as summary tile AND as filter chip since M10.2.
     expect(screen.getAllByText("Prüfung offen").length).toBeGreaterThan(0)
-    expect(screen.getByText("Blocker")).toBeInTheDocument()
+    // B7 — die Kachel zeigt gruppierte «Blockierende Aufgaben».
+    expect(screen.getByText("Blockierende Aufgaben")).toBeInTheDocument()
     expect(screen.getByText("Nächste Frist")).toBeInTheDocument()
     // 2 card badges + 1 filter chip (M10.2).
     expect(screen.getAllByText("Demo")).toHaveLength(3)

@@ -28,7 +28,7 @@ export function ProjectSummaryBar({ projects }: ProjectSummaryBarProps) {
       accent: summary.reviewOpenCount > 0 ? "text-status-partial" : undefined,
     },
     {
-      label: "Blocker",
+      label: "Blockierende Aufgaben",
       // Keine Prüfung durchgeführt ⇒ nie eine 0 behaupten (Regel 7).
       value: summary.blockerCountKnown ? summary.blockerCount : "Noch nicht geprüft",
       icon: OctagonAlert,

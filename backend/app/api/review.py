@@ -13,6 +13,7 @@ from app.contracts.review import (
     HumanDecisionCreate,
     RecheckCreate,
     ReviewApproval,
+    ReviewCheckStatusView,
     ReviewPackage,
     ReviewStatusView,
 )
@@ -22,6 +23,7 @@ from app.db.session import get_db
 from app.repositories import idempotency
 from app.repositories import runs as runs_repo
 from app.review import service as review_service
+from app.review.check_status import build_check_status
 from app.review.fix_queue import build_fix_queue
 from app.review.recheck import prepare_recheck, recheck_executor
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
@@ -81,6 +83,19 @@ def get_review_status(
     Blocker-/Warn-/Prüfzahlen aus dieser einen Quelle statt eigener Zählungen."""
     run = _require_run(db, run_id, context.user.workspace_id)
     return review_service.read_status_view(db, run)
+
+
+@router.get("/runs/{run_id}/review/check-status", response_model=ReviewCheckStatusView)
+def get_review_check_status(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> ReviewCheckStatusView:
+    """Teil A — autoritative Check-Status je Prüfbereich (read-only, additiv).
+    ``passed`` nur nach tatsächlich gelaufenem Check; Abwesenheit von Findings
+    ohne gelaufenen Check ist ``not_run``."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    return build_check_status(db, run)
 
 
 @router.get("/runs/{run_id}/review/fix-queue", response_model=FixQueueView)

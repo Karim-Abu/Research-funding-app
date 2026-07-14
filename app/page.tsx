@@ -77,7 +77,9 @@ export default function DashboardPage() {
             if (!card.latestRunId) return card
             try {
               const status = await getReviewStatus(card.latestRunId)
-              return withCanonicalStatus(card, status.blocker_count)
+              // B7 — Headline-Zahl «Blockierende Aufgaben» (gruppierte
+              // Aufgaben), identisch mit Review/Export/Kopieransicht.
+              return withCanonicalStatus(card, status.blocking_task_count)
             } catch {
               return card
             }

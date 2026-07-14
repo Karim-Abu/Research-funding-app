@@ -10,8 +10,10 @@ import { ChevronDown, ChevronRight } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { ClaimDetailsDrawer } from "@/components/review/claim-details-drawer"
 import {
   SEVERITY_CLASS_LABELS,
+  groupDisplayTitle,
   type GroupedFindingDto,
 } from "@/lib/fix-queue"
 
@@ -75,7 +77,7 @@ export function NextActionsCard({
               </Badge>
               <span className="min-w-0 flex-1 text-foreground">
                 {group.count > 1 ? `${group.count} × ` : ""}
-                {group.title}
+                {groupDisplayTitle(group)}
               </span>
               <Button
                 size="xs"
@@ -96,8 +98,11 @@ export function NextActionsCard({
 /** Gruppierte Findings — aufklappbar, Beispiele zeigen die Einzelmeldungen. */
 export function GroupedFindingsSection({
   groups,
+  runId,
 }: {
   groups: GroupedFindingDto[]
+  /** Ermöglicht den Claim-Drawer «Technische Details» (nur mit runId). */
+  runId?: string
 }) {
   if (groups.length === 0) return null
   return (
@@ -107,15 +112,29 @@ export function GroupedFindingsSection({
       </h2>
       <div className="flex flex-col gap-2">
         {groups.map((group) => (
-          <GroupRow key={group.group_key} group={group} />
+          <GroupRow key={group.group_key} group={group} runId={runId} />
         ))}
       </div>
     </section>
   )
 }
 
-function GroupRow({ group }: { group: GroupedFindingDto }) {
+/** Eine gruppierte Aufgabe — aufklappbar mit Beispielen. Wird auch von den
+ *  Prüfbereichs-Zeilen der Qualitätsprüfung eingebettet. */
+export function GroupRow({
+  group,
+  runId,
+}: {
+  group: GroupedFindingDto
+  runId?: string
+}) {
   const [open, setOpen] = React.useState(false)
+  const [drawerOpen, setDrawerOpen] = React.useState(false)
+  // Claim-Level-Details nur im Drawer «Technische Details» (B4): verfügbar,
+  // wenn die Gruppe claimgebundene Findings bündelt und runId bekannt ist.
+  const claimDetails =
+    Boolean(runId) &&
+    group.examples.some((e) => e.target_type === "draft_claim")
   return (
     <section
       className="overflow-hidden rounded-lg border border-border bg-card"
@@ -137,7 +156,7 @@ function GroupRow({ group }: { group: GroupedFindingDto }) {
         </Badge>
         <span className="min-w-0 flex-1 text-sm font-medium text-foreground">
           {group.count > 1 ? `${group.count} × ` : ""}
-          {group.title}
+          {groupDisplayTitle(group)}
         </span>
       </button>
       {open && (
@@ -179,6 +198,24 @@ function GroupRow({ group }: { group: GroupedFindingDto }) {
                 : "Meldungen"}
               .
             </p>
+          )}
+          {claimDetails && runId && (
+            <>
+              <Button
+                size="xs"
+                variant="ghost"
+                className="self-start"
+                onClick={() => setDrawerOpen(true)}
+              >
+                Alle {group.count} Hinweise anzeigen (Technische Details)
+              </Button>
+              <ClaimDetailsDrawer
+                runId={runId}
+                fieldId={group.target_field_id}
+                open={drawerOpen}
+                onOpenChange={setDrawerOpen}
+              />
+            </>
           )}
         </div>
       )}
