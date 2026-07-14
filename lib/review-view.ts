@@ -70,10 +70,12 @@ export function isAiFinding(finding: ReviewFindingDto): boolean {
 // text itself ("[Frage] …") and parsed back for display. "Hinweis" is the
 // default and stays unprefixed.
 // ---------------------------------------------------------------------------
-export const COMMENT_TYPES = ["Hinweis", "Frage", "Änderung nötig"] as const
+// "Notiz" = Arbeitsnotiz (B5): Text, der bewusst NICHT in den Antragstext
+// gehört und über «In Notizen verschieben» aus dem Entwurf entfernt wurde.
+export const COMMENT_TYPES = ["Hinweis", "Frage", "Änderung nötig", "Notiz"] as const
 export type CommentType = (typeof COMMENT_TYPES)[number]
 
-const COMMENT_TYPE_RE = /^\[(Hinweis|Frage|Änderung nötig)\]\s*/
+const COMMENT_TYPE_RE = /^\[(Hinweis|Frage|Änderung nötig|Notiz)\]\s*/
 
 /** Prefix the comment text with the chosen type (default type stays plain). */
 export function commentWithType(type: CommentType, text: string): string {

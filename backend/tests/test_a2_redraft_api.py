@@ -1,6 +1,8 @@
 """createRedraft endpoint + accept/reject flow (Milestone 9D)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy import select
 
@@ -284,5 +286,112 @@ def test_reject_creates_no_version(client, monkeypatch):
             select(DraftVersion).where(DraftVersion.draft_id == draft_id)
         ).all()
         assert len(versions) == 1 and draft.current_version_id == base
+    finally:
+        db.close()
+
+
+# --- C4: Ablehnung als persistierte HumanDecision ---------------------------
+
+
+def _reject(client, csrf, run_id, suggestion_id, comment=None):
+    from tests.review_helpers import mut
+
+    return client.post(
+        f"/api/v1/runs/{run_id}/human-decisions",
+        json={
+            "target_type": "draft_suggestion",
+            "target_id": suggestion_id,
+            "action": "reject",
+            "comment": comment,
+        },
+        headers=mut(csrf),
+    )
+
+
+def _created_suggestion_id(client, csrf, run_id, base) -> str:
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202, res.text
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "succeeded"
+    return op["result"]["suggestion_id"]
+
+
+def _complete_run(run_id: str) -> None:
+    """Human decisions (Ablehnung) laufen in der Review-Phase — Run abschliessen."""
+    db = SessionLocal()
+    try:
+        db.get(AnalysisRun, run_id).status = "completed"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_reject_suggestion_persists_decision_and_status(client, monkeypatch):
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    suggestion_id = _created_suggestion_id(client, csrf, run_id, base)
+    _complete_run(run_id)
+
+    res = _reject(client, csrf, run_id, suggestion_id, "Eigene Formulierung bevorzugt")
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["target_type"] == "draft_suggestion"
+    assert body["action"] == "reject"
+
+    db = SessionLocal()
+    try:
+        suggestion = db.get(DraftSuggestion, suggestion_id)
+        assert suggestion.status == "rejected"
+        assert suggestion.decided_by is not None
+        assert suggestion.decided_at is not None
+        # Der Vorschlagstext bleibt unverändert erhalten (nur der Entscheid).
+        assert suggestion.suggested_text == SECTION_GOOD_TEXT
+    finally:
+        db.close()
+
+    # Bereits entschieden ⇒ 409, kein stiller Doppel-Reject.
+    again = _reject(client, csrf, run_id, suggestion_id)
+    assert again.status_code == 409
+    assert again.json()["code"] == "suggestion_not_rejectable"
+
+
+def test_reject_unknown_or_foreign_suggestion_404(client, monkeypatch):
+    run_id, _draft_id, _base = _setup()
+    _arm_fake(monkeypatch)
+    _complete_run(run_id)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _reject(client, csrf, run_id, "sug-does-not-exist")
+    assert res.status_code == 404
+
+
+def test_reject_audit_carries_no_raw_text(client, monkeypatch):
+    from app.db.models import AuditEvent
+
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    suggestion_id = _created_suggestion_id(client, csrf, run_id, base)
+    _complete_run(run_id)
+    reason = "Der geheime Grund mit Zebra-Marker."
+    assert _reject(client, csrf, run_id, suggestion_id, reason).status_code == 201
+
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run_id)
+        events = db.execute(
+            select(AuditEvent).where(AuditEvent.workspace_id == run.workspace_id)
+        ).scalars().all()
+        blob = json.dumps(
+            [e.detail for e in events], ensure_ascii=False, default=str
+        )
+        # Audit trägt nur IDs/Action — weder Grund noch Vorschlagstext.
+        assert "Zebra-Marker" not in blob
+        assert SECTION_GOOD_TEXT not in blob
+        assert any(
+            (e.detail or {}).get("target_type") == "draft_suggestion"
+            for e in events
+            if e.action == "review.decision_created"
+        )
     finally:
         db.close()

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest"
 import {
+  expectedPhases,
   failedPhaseLabel,
   phasesToView,
   RUN_PHASE_LABELS,
@@ -119,5 +120,41 @@ describe("failedPhaseLabel", () => {
 
   it("liefert null, wenn keine Phase fehlgeschlagen ist", () => {
     expect(failedPhaseLabel([phase()])).toBeNull()
+  })
+})
+
+describe("expectedPhases", () => {
+  it("liefert alle 6 Phasen in Katalog-Reihenfolge ohne Schätzwerte", () => {
+    const phases = expectedPhases({ ki: true, web: true, approvedQueryCount: 2 })
+    expect(phases.map((p) => p.label)).toEqual([
+      RUN_PHASE_LABELS.prepare_documents,
+      RUN_PHASE_LABELS.detect_facts,
+      RUN_PHASE_LABELS.formal_checks,
+      RUN_PHASE_LABELS.web_research,
+      RUN_PHASE_LABELS.draft_fields,
+      RUN_PHASE_LABELS.quality_review,
+    ])
+    expect(phases.every((p) => p.note === undefined)).toBe(true)
+  })
+
+  it("kündigt den Webrecherche-Skip an, wenn sie nicht aktiviert ist", () => {
+    const phases = expectedPhases({ ki: true, web: false, approvedQueryCount: null })
+    const web = phases.find((p) => p.key === "web_research")
+    expect(web?.note).toBe("Wird übersprungen — Webrecherche nicht aktiviert")
+  })
+
+  it("kündigt den Skip an, solange keine Suchanfrage freigegeben ist", () => {
+    const phases = expectedPhases({ ki: true, web: true, approvedQueryCount: 0 })
+    const web = phases.find((p) => p.key === "web_research")
+    expect(web?.note).toBe("Wird übersprungen, bis eine Suchanfrage freigegeben ist")
+    // Freigaben noch nicht geladen (null) ⇒ keine voreilige Skip-Ansage.
+    const pending = expectedPhases({ ki: true, web: true, approvedQueryCount: null })
+    expect(pending.find((p) => p.key === "web_research")?.note).toBeUndefined()
+  })
+
+  it("kündigt Feld-/Qualitätsphase ohne KI an, wenn KI aus ist", () => {
+    const phases = expectedPhases({ ki: false, web: false, approvedQueryCount: null })
+    expect(phases.find((p) => p.key === "draft_fields")?.note).toBe("ohne KI-Vorschläge")
+    expect(phases.find((p) => p.key === "quality_review")?.note).toBe("ohne KI-Prüfung")
   })
 })

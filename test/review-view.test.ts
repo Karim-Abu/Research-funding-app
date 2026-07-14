@@ -95,3 +95,18 @@ describe("humanReviewCount", () => {
     expect(humanReviewCount(pkg)).toBe(2)
   })
 })
+
+describe("Kommentartypen (B5 Notizen)", () => {
+  it("präfixiert und parst den Typ «Notiz»", async () => {
+    const { commentWithType, parseCommentType, COMMENT_TYPES } = await import(
+      "@/lib/review-view"
+    )
+    expect(COMMENT_TYPES).toContain("Notiz")
+    const stored = commentWithType("Notiz", "Interne Überlegung zum Budget.")
+    expect(stored).toBe("[Notiz] Interne Überlegung zum Budget.")
+    expect(parseCommentType(stored)).toEqual({
+      type: "Notiz",
+      text: "Interne Überlegung zum Budget.",
+    })
+  })
+})

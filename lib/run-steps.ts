@@ -156,6 +156,49 @@ export function failedPhaseLabel(phases: RunPhaseDto[]): string | null {
   return failed ? (RUN_PHASE_LABELS[failed.phase_key] ?? null) : null
 }
 
+export interface ExpectedPhase {
+  key: RunPhaseKey
+  label: string
+  /** Ehrlich angekündigter Skip/Modus in Klartext, z. B. «Wird übersprungen —
+   *  Webrecherche nicht aktiviert». */
+  note?: string
+}
+
+const EXPECTED_PHASE_ORDER: RunPhaseKey[] = [
+  "prepare_documents",
+  "detect_facts",
+  "formal_checks",
+  "web_research",
+  "draft_fields",
+  "quality_review",
+]
+
+/** Erwartete Phasen für den Analyse-Start (A2): derselbe Katalog wie die
+ *  Live-Anzeige, plus angekündigte Skips aus den gewählten Einstellungen.
+ *  Bewusst KEINE Dauer-/Kostenschätzung. `approvedQueryCount === null` heisst
+ *  «Freigaben noch nicht geladen» — dann keine Skip-Ansage. */
+export function expectedPhases(opts: {
+  ki: boolean
+  web: boolean
+  approvedQueryCount: number | null
+}): ExpectedPhase[] {
+  return EXPECTED_PHASE_ORDER.map((key) => {
+    let note: string | undefined
+    if (key === "web_research") {
+      if (!opts.web) {
+        note = "Wird übersprungen — Webrecherche nicht aktiviert"
+      } else if (opts.approvedQueryCount === 0) {
+        note = "Wird übersprungen, bis eine Suchanfrage freigegeben ist"
+      }
+    } else if (key === "draft_fields" && !opts.ki) {
+      note = "ohne KI-Vorschläge"
+    } else if (key === "quality_review" && !opts.ki) {
+      note = "ohne KI-Prüfung"
+    }
+    return { key, label: RUN_PHASE_LABELS[key], note }
+  })
+}
+
 // ---------------------------------------------------------------------------
 // Backend-Node -> Klartext-Schritt
 // Die 15 Pre-Review-Nodes werden auf die 4 Banner-Schritte abgebildet.

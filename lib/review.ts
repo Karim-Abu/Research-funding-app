@@ -73,6 +73,8 @@ export type DecisionTargetType =
   | "evidence_anchor"
   | "review_finding"
   | "portal_field_draft"
+  // C4 — ausdrückliche, persistierte Ablehnung eines A2-Vorschlags.
+  | "draft_suggestion"
 
 export interface HumanDecisionCreate {
   target_type: DecisionTargetType

@@ -110,12 +110,16 @@ def calculate(db: Session, project_id: str, workspace_id: str) -> WorkflowSummar
             OpenIssue.severity == "blocker",
         )
     ) or 0
+    # E3 — «Entwurf vorhanden/bearbeitet» zählt echte Inhalte unabhängig von
+    # der Herkunft: Nutzer-Edits, übernommene KI-Vorschläge (agent) und
+    # Innolink-Importe. Template-Versionen zählen bewusst NICHT (jeder Lauf
+    # hat sie; sie sind kein begonnener Entwurf).
     user_drafts = db.scalar(
         select(func.count(DraftVersion.draft_version_id))
         .join(PortalFieldDraft, DraftVersion.draft_id == PortalFieldDraft.draft_id)
         .where(
             PortalFieldDraft.run_id == latest_run.run_id,
-            DraftVersion.created_by == "user",
+            DraftVersion.created_by.in_(("user", "agent", "import")),
         )
     ) or 0
     draft_issues = db.scalar(

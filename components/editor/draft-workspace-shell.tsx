@@ -47,6 +47,9 @@ import {
 } from "@/lib/draft-view"
 import {
   buildOutline,
+  replaceSegmentBody,
+  segmentParts,
+  subsectionSpans,
   SUBSECTION_STATE_LABELS,
   type SubsectionDef,
   type SubsectionState,
@@ -129,6 +132,8 @@ interface DraftWorkspaceShellProps {
   saveStateLabel: string
   deinTextBadge?: React.ReactNode
   deinTextHint?: React.ReactNode
+  /** Aktionen in der «Dein Text»-Kopfzeile (z. B. «In Notizen verschieben»). */
+  deinTextActions?: React.ReactNode
   noticeSlot?: React.ReactNode
   marketHeaderLabel?: string
   /** Owner-supplied handle so the container can jump/insert in the editor. */
@@ -145,8 +150,14 @@ interface DraftWorkspaceShellProps {
   dataClass?: string | null
   /** R6: Registry-Unterabschnitte des aktiven Composite-Felds (Gliederung). */
   subsections?: SubsectionDef[]
-  /** Klick auf einen Gliederungseintrag springt zur Markerstelle im Text. */
+  /** Klick auf einen Gliederungseintrag springt zur Markerstelle im Text
+   *  (Fallback, wenn keine Fokusansicht möglich ist). */
   onJumpToSubsection?: (marker: string) => void
+  /** B1–B4 Fokusansicht: aktiver Unterabschnitt — der Editor zeigt nur dessen
+   *  Antwortbereich; die Portalfrage wird als nicht editierbare Karte gezeigt.
+   *  Nur wirksam, wenn die Marker exakt parsen (sonst Degraded-Hinweis). */
+  activeSubsection?: string | null
+  onSelectSubsection?: (marker: string) => void
   /** Ehrliche Herkunftsbezeichnung des sichtbaren Vorschlagspfads. */
   suggestionPaneLabel?: string
 
@@ -187,6 +198,7 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     saveStateLabel,
     deinTextBadge,
     deinTextHint,
+    deinTextActions,
     noticeSlot,
     marketHeaderLabel,
     editorRef: externalEditorRef,
@@ -195,6 +207,8 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     dataClass,
     subsections = [],
     onJumpToSubsection,
+    activeSubsection = null,
+    onSelectSubsection,
     suggestionPaneLabel = "Vorschlag",
     kiContent,
     aiActions = [],
@@ -256,11 +270,59 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
 
   const count = charCount(text)
   const limitInfo = charLimitInfo(count, activeVm.characterLimit)
-  const placeholders = placeholderMatches(text)
-  const showPlaceholder = placeholders.length > 0
   const portalPath = `${activeVm.sectionLabel} › ${activeVm.fieldLabel}`
   // R6-Gliederung: Status je Unterabschnitt aus dem aktuellen Text.
   const outline = subsections.length > 0 ? buildOutline(text, subsections) : []
+
+  // B1–B4 Fokusansicht: exakte Spans über dem Live-Puffer. Fail-closed —
+  // parsen die Marker nicht (gelöscht/doppelt/umsortiert), degradiert die
+  // Ansicht zum bisherigen Ein-Block-Editor mit Hinweis. Der Volltext bleibt
+  // die einzige Quelle: der Editor zeigt nur den Antwortbereich des aktiven
+  // Segments, jede Eingabe wird sofort in den Volltext zurückgeschrieben —
+  // ein Abschnittswechsel kann deshalb nichts verlieren.
+  const wantsFocus = Boolean(onSelectSubsection) && subsections.length > 0
+  const spans = wantsFocus ? subsectionSpans(text, subsections) : null
+  const degradedSubsections = wantsFocus && spans === null
+  const activeSpan =
+    spans && activeSubsection
+      ? (spans.find((s) => s.marker === activeSubsection) ?? null)
+      : null
+  const focusParts = activeSpan ? segmentParts(text, activeSpan) : null
+  const focusBodyRaw =
+    focusParts !== null ? text.slice(focusParts.bodyStart, focusParts.end) : null
+  // Tiptap serialisiert Klartext OHNE abschliessende Zeilenumbrüche. Der
+  // Separator vor dem nächsten Marker bleibt deshalb ausserhalb des Editors
+  // und wird beim Zurückschreiben wieder angefügt — sonst klebt der nächste
+  // Marker an der Eingabe und die Gliederung degradiert (Datenverlust-Risiko).
+  let focusSuffix = ""
+  if (focusBodyRaw !== null && activeSpan) {
+    focusSuffix =
+      /\n+$/.exec(focusBodyRaw)?.[0] ??
+      (activeSpan.end < text.length ? "\n" : "")
+  }
+  const focusBody =
+    focusBodyRaw !== null
+      ? focusBodyRaw.slice(0, focusBodyRaw.length - focusSuffix.length)
+      : null
+  const focusHeading =
+    focusParts !== null
+      ? text.slice(focusParts.headingStart, focusParts.bodyStart).trimEnd()
+      : null
+  const activeDef = activeSubsection
+    ? subsections.find((s) => s.marker === activeSubsection)
+    : undefined
+  // Zeichenzahl je Segment für die Chip-Navigation (Antwortbereich).
+  const segmentCounts = new Map<string, number>(
+    (spans ?? []).map((span) => {
+      const parts = segmentParts(text, span)
+      return [span.marker, charCount(text.slice(parts.bodyStart, parts.end))]
+    })
+  )
+
+  // Platzhalter: in der Fokusansicht segmentbezogen (der Editor enthält nur
+  // das Segment, die Sprungindizes müssen dazu passen).
+  const placeholders = placeholderMatches(focusBody ?? text)
+  const showPlaceholder = placeholders.length > 0
 
   // Explain why the Speichern button is disabled (P0 requirement #6). Derived
   // from the label + limit state so it works for both the live and mock editors.
@@ -564,34 +626,71 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                     )}
                   </p>
                   {/* R6: sichtbare Unterabschnitte (3.1–3.3 / 4.1–4.6) des
-                      Composite-Felds — Klick springt zur Markerstelle. */}
+                      Composite-Felds. Mit Fokusansicht wählt ein Klick den
+                      Abschnitt zum Bearbeiten aus; sonst (Fallback/Degraded)
+                      springt er zur Markerstelle im Volltext. */}
                   {outline.length > 0 && (
                     <nav
                       aria-label="Unterabschnitte"
                       className="mt-1 flex flex-wrap items-center gap-1.5"
                     >
-                      {outline.map((entry) => (
-                        <button
-                          key={entry.marker}
-                          type="button"
-                          onClick={() => onJumpToSubsection?.(entry.marker)}
-                          title={`${entry.label} — ${SUBSECTION_STATE_LABELS[entry.state]}`}
-                          className="inline-flex items-center gap-1.5 rounded-full border border-border bg-card px-2 py-0.5 text-[11px] font-medium text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground"
-                        >
-                          <span
-                            aria-hidden
+                      {outline.map((entry) => {
+                        const isActive =
+                          activeSpan !== null && entry.marker === activeSubsection
+                        const segmentCount = segmentCounts.get(entry.marker)
+                        return (
+                          <button
+                            key={entry.marker}
+                            type="button"
+                            aria-pressed={spans !== null ? isActive : undefined}
+                            onClick={() =>
+                              spans !== null && onSelectSubsection
+                                ? onSelectSubsection(entry.marker)
+                                : onJumpToSubsection?.(entry.marker)
+                            }
+                            title={`${entry.label} — ${SUBSECTION_STATE_LABELS[entry.state]}`}
                             className={cn(
-                              "size-1.5 rounded-full",
-                              SUBSECTION_DOT[entry.state]
+                              "inline-flex items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] font-medium transition-colors",
+                              isActive
+                                ? "border-primary/40 bg-primary/10 text-foreground"
+                                : "border-border bg-card text-muted-foreground hover:bg-accent hover:text-accent-foreground"
                             )}
-                          />
-                          {entry.marker}
-                          <span className="sr-only">
-                            {` — ${SUBSECTION_STATE_LABELS[entry.state]}`}
-                          </span>
-                        </button>
-                      ))}
+                          >
+                            <span
+                              aria-hidden
+                              className={cn(
+                                "size-1.5 rounded-full",
+                                SUBSECTION_DOT[entry.state]
+                              )}
+                            />
+                            {entry.marker}
+                            {segmentCount !== undefined && (
+                              <span
+                                aria-hidden
+                                className="tabular-nums text-muted-foreground/70"
+                              >
+                                {segmentCount}
+                              </span>
+                            )}
+                            <span className="sr-only">
+                              {` — ${SUBSECTION_STATE_LABELS[entry.state]}`}
+                              {segmentCount !== undefined
+                                ? ` — ${segmentCount} Zeichen`
+                                : ""}
+                            </span>
+                          </button>
+                        )
+                      })}
                     </nav>
+                  )}
+                  {degradedSubsections && (
+                    <p className="mt-1 rounded-md border border-status-partial/25 bg-status-partial/8 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                      Die Abschnittsmarker (z.&nbsp;B. 3.1, 4.2) wurden im Text
+                      verändert — die abschnittsweise Bearbeitung ist nicht
+                      verfügbar. Stellen Sie die Markerzeilen wieder her, um
+                      Abschnitt für Abschnitt zu arbeiten; der gesamte Text
+                      bleibt hier editierbar.
+                    </p>
                   )}
                 </div>
 
@@ -609,7 +708,10 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                         <h3 className="text-sm font-semibold text-foreground">Dein Text</h3>
                         {deinTextBadge}
                       </div>
-                      <span className="text-[11px] text-muted-foreground">{saveStateLabel}</span>
+                      <div className="flex items-center gap-2">
+                        {deinTextActions}
+                        <span className="text-[11px] text-muted-foreground">{saveStateLabel}</span>
+                      </div>
                     </div>
                     {deinTextHint}
                     {limitInfo.state === "over" && (
@@ -638,17 +740,55 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                         </button>
                       </div>
                     )}
+                    {/* B4 — die Portalfrage ist sichtbarer, aber nicht
+                        editierbarer Inhalt: Markerzeile aus dem Text (für
+                        Vorlagen identisch mit der Registry-Frage). */}
+                    {activeSpan && focusParts && (
+                      <div
+                        data-testid="subsection-question"
+                        className="rounded-md border border-border bg-muted/40 px-3 py-2"
+                      >
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="inline-flex items-center rounded-full bg-secondary px-2 py-0.5 text-[11px] font-medium text-secondary-foreground">
+                            Portalfrage – nicht editierbar
+                          </span>
+                          <span
+                            className="text-[11px] tabular-nums text-muted-foreground"
+                            data-testid="subsection-count"
+                          >
+                            Abschnitt {activeSubsection}:{" "}
+                            {charCount(focusBody ?? "")} Zeichen
+                          </span>
+                        </div>
+                        <p className="mt-1 whitespace-pre-wrap text-sm font-medium text-foreground">
+                          {focusHeading?.trim() || activeDef?.label || activeSubsection}
+                        </p>
+                      </div>
+                    )}
                     <RichTextEditor
                       ref={editorRef}
-                      fieldKey={selectedId}
-                      serverText={serverText ?? text}
+                      fieldKey={
+                        activeSpan ? `${selectedId}#${activeSpan.marker}` : selectedId
+                      }
+                      serverText={
+                        activeSpan && focusBody !== null
+                          ? focusBody
+                          : (serverText ?? text)
+                      }
                       projectId={projectId}
                       dataClass={dataClass}
                       fieldLabel={activeVm.fieldLabel}
                       placeholder={DRAFT_FALLBACK.noDraft}
                       spell={spell}
                       minHeightClass={editorMinH}
-                      onChange={onChangeText}
+                      onChange={
+                        activeSpan
+                          ? (value: string) =>
+                              onChangeText(
+                                replaceSegmentBody(text, activeSpan, value + focusSuffix)
+                              )
+                          : onChangeText
+                      }
                       onSave={onSave}
                       saveDisabled={saveDisabled}
                     />

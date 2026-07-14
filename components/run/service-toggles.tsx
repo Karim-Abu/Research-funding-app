@@ -13,6 +13,9 @@ interface ServiceToggleProps {
   available: boolean
   availableLabel?: string
   disabled?: boolean
+  /** Konkreter Grund, warum der Dienst nicht verfügbar ist (A4) — ersetzt
+   *  das generische «Dienst aktuell nicht verfügbar». */
+  unavailableReason?: string
 }
 
 /** Shared toggle row used for "KI-Unterstützung" and "Webrecherche". */
@@ -25,6 +28,7 @@ function ServiceToggle({
   available,
   availableLabel = "Dienst verfügbar",
   disabled,
+  unavailableReason,
 }: ServiceToggleProps) {
   const isDisabled = disabled || !available
   return (
@@ -42,7 +46,9 @@ function ServiceToggle({
             )}
           />
           <span className="text-muted-foreground">
-            {available ? availableLabel : "Dienst aktuell nicht verfügbar"}
+            {available
+              ? availableLabel
+              : (unavailableReason ?? "Dienst aktuell nicht verfügbar")}
           </span>
         </span>
       </div>

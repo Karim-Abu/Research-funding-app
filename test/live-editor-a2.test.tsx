@@ -234,6 +234,10 @@ describe("LiveEditor A2 suggestions", () => {
         screen.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
       ).toBeInTheDocument()
     )
+    // C8 — klarer Status nach der Übernahme (Badge, nicht nur Banner).
+    expect(
+      screen.getByText("In Bearbeitung – erneute Prüfung nötig")
+    ).toBeInTheDocument()
   })
 
   it("renders side-by-side and accepts a Value Creation (VC) suggestion", async () => {
@@ -377,7 +381,55 @@ describe("LiveEditor A2 suggestions", () => {
     ).toBeInTheDocument()
   })
 
-  it("dismisses the suggestion without saving", async () => {
+  it("persistiert die Ablehnung als HumanDecision (C4) — ohne den Text zu ändern", async () => {
+    baseMock([solDraft()])
+    const decisions: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "succeeded", created_at: new Date().toISOString(), result: suggestionResult(),
+        })
+      ),
+      http.post("/api/runs/r1/human-decisions", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        decisions.push(body)
+        return HttpResponse.json(
+          {
+            ...body, decision_id: "dec1", user_id: "u1", run_id: "r1",
+            created_at: new Date().toISOString(),
+          },
+          { status: 201 }
+        )
+      })
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    await screen.findByRole("button", { name: "Vorschlag ablehnen" })
+    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ablehnen" }))
+    fireEvent.click(screen.getByRole("button", { name: "Eigene Formulierung bevorzugt" }))
+    fireEvent.click(screen.getByRole("button", { name: "Ablehnen bestätigen" }))
+    await waitFor(() =>
+      expect(screen.queryByTestId("suggestion-text")).not.toBeInTheDocument()
+    )
+    // Serverseitig persistiert: target draft_suggestion + Grund; kein PATCH.
+    await waitFor(() => expect(decisions).toHaveLength(1))
+    expect(decisions[0]).toMatchObject({
+      target_type: "draft_suggestion",
+      target_id: "s1",
+      action: "reject",
+      comment: "Eigene Formulierung bevorzugt",
+    })
+    // The empty-state hint returns; no recheck notice (nothing was saved).
+    expect(
+      screen.getByText("Demo-Vorschlag (kein echtes KI-Modell) für diesen Abschnitt noch nicht erstellt.")
+    ).toBeInTheDocument()
+  })
+
+  it("Schliessen (X) ist kein Verwerfen — der Vorschlag bleibt erreichbar", async () => {
     baseMock([solDraft()])
     server.use(
       http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
@@ -392,14 +444,11 @@ describe("LiveEditor A2 suggestions", () => {
     )
     render(<LiveEditor runId="r1" />)
     await clickGenerate("4.2")
-    await screen.findByRole("button", { name: "Vorschlag ausblenden" })
-    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ausblenden" }))
-    await waitFor(() =>
-      expect(screen.queryByTestId("suggestion-text")).not.toBeInTheDocument()
-    )
-    // The empty-state hint returns; no recheck notice (nothing was saved).
-    expect(
-      screen.getByText("Demo-Vorschlag (kein echtes KI-Modell) für diesen Abschnitt noch nicht erstellt.")
-    ).toBeInTheDocument()
+    await screen.findByTestId("suggestion-review-sheet")
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    // Sheet zu, aber der Vorschlag ist über «Vorschlag anzeigen» wieder da.
+    const reopen = await screen.findByRole("button", { name: "Vorschlag anzeigen" })
+    fireEvent.click(reopen)
+    expect(await screen.findByTestId("suggestion-text")).toBeInTheDocument()
   })
 })

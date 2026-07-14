@@ -138,6 +138,23 @@ def mark_accepted(
     db.flush()
 
 
+def mark_rejected(
+    db: Session,
+    suggestion: DraftSuggestion,
+    *,
+    decided_by: str | None,
+) -> None:
+    """C4 — ausdrückliche menschliche Ablehnung (HumanDecision-Pfad).
+
+    Nur der Entscheid wird festgehalten (Status + decided_at/decided_by);
+    der Vorschlagstext bleibt unverändert erhalten.
+    """
+    suggestion.status = REJECTED
+    suggestion.decided_at = _now()
+    suggestion.decided_by = decided_by
+    db.flush()
+
+
 def expire_superseded(db: Session, draft_id: str, current_base_version_id: str) -> int:
     """Mark proposed suggestions for a draft whose base no longer matches as
     expired (a newer DraftVersion supersedes them)."""

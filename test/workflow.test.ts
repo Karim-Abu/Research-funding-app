@@ -191,6 +191,53 @@ describe("deriveStepStatuses", () => {
     expect(statuses.uebernahme).toBe("in_bearbeitung")
   })
 
+  // D — Stepper folgt Artefakten: Entwurf vorhanden/bearbeitet ⇒ «In
+  // Bearbeitung»; ein blosser KI-Vorschlag erzeugt nie einen Haken.
+  it("Entwurf bearbeitet (continue_draft) ⇒ Entwurf «In Bearbeitung», kein Haken", () => {
+    const statuses = derive({
+      project: makeProject({
+        workflow_summary: {
+          bearbeitungsstand_percent: 72,
+          current_step: 5,
+          next_action: "continue_draft",
+          latest_run_id: "run-1",
+        },
+      }),
+      runs: [makeRun("run-1", "completed")],
+      reviewStatus: makeReviewStatus(),
+    })
+    expect(statuses.entwurf).toBe("in_bearbeitung")
+  })
+
+  it("nur Analyse/Vorschläge ohne Entwurfsarbeit ⇒ Entwurf «Nicht begonnen»", () => {
+    // next_action bleibt review_analysis, solange kein echter Draft-Inhalt
+    // existiert (Template zählt nicht; ein unübernommener Vorschlag auch nicht).
+    const statuses = derive({
+      runs: [makeRun("run-1", "completed")],
+      reviewStatus: makeReviewStatus(),
+    })
+    expect(statuses.entwurf).toBe("nicht_begonnen")
+  })
+
+  it("Freigabe + stale (z. B. nach Übernahme eines Vorschlags) ⇒ kein Haken", () => {
+    // Jede Übernahme invalidiert die Freigabe (recheck_required) — der Haken
+    // verschwindet, bis Review + Freigabe erneut abgeschlossen sind.
+    const statuses = derive({
+      project: makeProject({
+        workflow_summary: {
+          bearbeitungsstand_percent: 72,
+          current_step: 5,
+          next_action: "continue_draft",
+          latest_run_id: "run-1",
+        },
+      }),
+      runs: [makeRun("run-1", "completed")],
+      reviewStatus: makeReviewStatus({ approval_status: "approved", stale: true }),
+    })
+    expect(statuses.entwurf).toBe("in_bearbeitung")
+    expect(statuses.pruefung).not.toBe("abgeschlossen")
+  })
+
   it("completed Run ohne ladbaren Review-Status ⇒ Prüfung «Nicht begonnen» (Noch nicht geprüft)", () => {
     const statuses = derive({
       runs: [makeRun("run-1", "completed")],

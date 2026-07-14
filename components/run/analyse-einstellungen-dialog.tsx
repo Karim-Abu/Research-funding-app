@@ -3,13 +3,13 @@
 import * as React from "react"
 import { CheckCircle2, Loader2, Lock } from "lucide-react"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -27,6 +27,8 @@ import {
   type ApprovalQuery,
 } from "@/components/research/query-approval-list"
 import { planMarketResearch } from "@/lib/market-research"
+import { AI_REASON_INFO, FALLBACK_AI_REASON } from "@/lib/redraft"
+import { expectedPhases } from "@/lib/run-steps"
 import { LLMToggle, WebSearchToggle } from "./service-toggles"
 import {
   isCloudAllowed,
@@ -95,6 +97,37 @@ export function AnalyseEinstellungenDialog({
 
   const webDisabled = !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
+
+  // A4 — jeder deaktivierte Schalter erklärt exakt warum. Reihenfolge: die
+  // speziellste Ursache gewinnt (NDA → Datenklasse → Provider → Projektherkunft).
+  // Die Texte unterscheiden sich bewusst vom Datenklassen-Banner, damit beide
+  // gleichzeitig lesbar bleiben.
+  let kiUnavailableReason: string | undefined
+  if (!aiAvailable) {
+    if (dataClass === "nda") {
+      kiUnavailableReason = AI_REASON_INFO.nda_locked.text
+    } else if (isLocalOnlyClass) {
+      kiUnavailableReason = `Für die Vertraulichkeitsstufe «${dataClassLabel[dataClass]}» ist kein KI-Provider freigegeben — es laufen nur regelbasierte Prüfungen.`
+    } else if (
+      !serviceAvailability.ki ||
+      serviceAvailability.generationMode === "unavailable" ||
+      !serviceAvailability.generationMode
+    ) {
+      const reasonCode = serviceAvailability.unavailableReason
+      kiUnavailableReason =
+        (reasonCode ? AI_REASON_INFO[reasonCode]?.text : undefined) ??
+        AI_REASON_INFO[FALLBACK_AI_REASON].text
+    } else if (!evaluationOrigin) {
+      kiUnavailableReason =
+        "Nur für synthetische oder anonymisierte Evaluationsfälle verfügbar — dieses Projekt enthält echte Projektdaten."
+    }
+  }
+  let webUnavailableReason: string | undefined
+  if (webDisabled) {
+    webUnavailableReason = `Nur bei Vertraulichkeitsstufe «Öffentlich» verfügbar — aktuelle Stufe: ${dataClassLabel[dataClass]}.`
+  } else if (!serviceAvailability.web) {
+    webUnavailableReason = "Die öffentliche Websuche ist serverseitig deaktiviert."
+  }
   // Der Demo-Pfad nutzt aus Kompatibilitätsgründen denselben Run-Modus, ruft
   // aber keinen Provider auf. Die Bestätigung benennt das ausdrücklich.
   const cloudOptIn = ki && (realEvaluation || demoMode)
@@ -159,22 +192,35 @@ export function AnalyseEinstellungenDialog({
     onOpenChange(false)
   }
 
+  // Volle Konfiguration als breites Side-Sheet (Desktop ≥880 px, 85 vw, Cap
+  // 1000 px); Aktiv-Lauf- und Kompaktansicht bleiben schmal. Die Overrides
+  // sind varianten-identisch zu den Sheet-Defaults (data-[side=right]:…),
+  // damit tailwind-merge die eingebauten w-3/4 / sm:max-w-sm sicher ersetzt.
+  const fullConfig = !hasActiveRun && variant !== "compact"
+  const widthClasses = fullConfig
+    ? "data-[side=right]:w-full data-[side=right]:sm:w-[85vw] data-[side=right]:sm:min-w-[880px] data-[side=right]:sm:max-w-[1000px]"
+    : "data-[side=right]:w-full data-[side=right]:sm:max-w-md"
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] max-w-[560px] flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Analyse starten</DialogTitle>
-          <DialogDescription>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className={`flex flex-col gap-0 overflow-hidden p-0 ${widthClasses}`}
+      >
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-4">
+          <SheetTitle>Analyse starten</SheetTitle>
+          <SheetDescription>
             Prüfen Sie kurz die Einstellungen für diesen Durchlauf.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
         {hasActiveRun ? (
           <ActiveRunBody onClose={handleCancel} />
         ) : variant === "compact" ? (
           <CompactBody available={serviceAvailability.ki} />
         ) : (
-          <div className="flex flex-col gap-5 overflow-y-auto py-1 pr-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 lg:grid lg:grid-cols-2 lg:content-start lg:gap-x-10">
+            <div className="flex min-w-0 flex-col gap-5">
             {/* Immer Teil des Durchlaufs: die Analyse der Projektunterlagen. */}
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1">
@@ -212,6 +258,7 @@ export function AnalyseEinstellungenDialog({
                 aiAvailable
               }
               generationMode={serviceAvailability.generationMode}
+              unavailableReason={kiUnavailableReason}
             />
 
             {/* Cloud-KI one-run confirmation (public/synthetic only) */}
@@ -267,6 +314,7 @@ export function AnalyseEinstellungenDialog({
               onCheckedChange={setWeb}
               available={serviceAvailability.web && isWebAllowed(dataClass)}
               disabled={webDisabled}
+              unavailableReason={webUnavailableReason}
             />
 
             {/* R8 — jede ausgehende Suchanfrage wird gesehen und freigegeben. */}
@@ -320,8 +368,11 @@ export function AnalyseEinstellungenDialog({
               </div>
             )}
 
-            <Separator />
+            </div>
 
+            <Separator className="lg:hidden" />
+
+            <div className="flex min-w-0 flex-col gap-5">
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="cost-limit"
@@ -360,14 +411,42 @@ export function AnalyseEinstellungenDialog({
               </div>
             </div>
 
-            {/* Ehrliche Erwartung statt erfundener Schätzung: es gibt keine
-                belastbaren Dauer-/Kostenprognosen; der Fortschritt ist während
-                der Analyse je Phase sichtbar. */}
-            <p className="text-xs text-muted-foreground">
-              Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt ist
-              während der Analyse Schritt für Schritt sichtbar. Die Kosten sind
-              durch das Limit oben begrenzt.
-            </p>
+            {/* A2 — erwartete Phasen aus dem echten Phasenkatalog, mit ehrlich
+                angekündigten Skips. Keine Dauer-/Kostenprognose. */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">
+                Erwartete Phasen
+              </span>
+              <ol className="flex flex-col gap-1" data-testid="expected-phases">
+                {expectedPhases({
+                  ki: ki && aiAvailable,
+                  web: effectiveWeb,
+                  approvedQueryCount: webQueries
+                    ? approvedIds(webQueries).length
+                    : null,
+                }).map((phase, index) => (
+                  <li
+                    key={phase.key}
+                    className="flex items-baseline gap-2 text-xs"
+                  >
+                    <span className="tabular-nums text-muted-foreground/70">
+                      {index + 1}.
+                    </span>
+                    <span className="text-foreground">{phase.label}</span>
+                    {phase.note && (
+                      <span className="text-muted-foreground">
+                        — {phase.note}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="text-xs text-muted-foreground">
+                Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt
+                ist während der Analyse Schritt für Schritt sichtbar. Die Kosten
+                sind durch das Limit oben begrenzt.
+              </p>
+            </div>
 
             {/* Tier 2 — only for lead_admin */}
             {role === "lead_admin" && (
@@ -427,41 +506,47 @@ export function AnalyseEinstellungenDialog({
                 </AccordionItem>
               </Accordion>
             )}
+            </div>
           </div>
         )}
 
         {!hasActiveRun && (
-          <DialogFooter className="shrink-0">
+          <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border px-6 py-4">
+            {cloudConfirmationMissing && (
+              <p className="mr-auto text-xs text-muted-foreground">
+                Bitte bestätigen Sie die Verarbeitung für diesen Durchlauf.
+              </p>
+            )}
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
             <Button onClick={handleStart} disabled={cloudConfirmationMissing}>
               Analyse starten
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
 
 function ActiveRunBody({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 px-6 py-5">
       <p className="text-sm text-muted-foreground">
         Eine Analyse läuft bereits. Pro Antrag ist ein Durchlauf gleichzeitig
         möglich.
       </p>
-      <DialogFooter>
+      <SheetFooter className="p-0">
         <Button onClick={onClose}>Schließen</Button>
-      </DialogFooter>
+      </SheetFooter>
     </div>
   )
 }
 
 function CompactBody({ available }: { available: boolean }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 px-6 py-5">
       <span className="flex items-center gap-1.5 text-sm">
         <span
           className={`size-2 rounded-full ${available ? "bg-status-fulfilled" : "bg-muted-foreground/40"}`}

@@ -212,12 +212,30 @@ class DraftDecisionCreate(BaseModel):
     comment: str | None = None
 
 
+class SuggestionDecisionCreate(BaseModel):
+    """C4 — ausdrückliche, persistierte Ablehnung eines A2-Vorschlags.
+
+    Additive Union-Variante: setzt ``DraftSuggestion.status = rejected``
+    (der Status existierte bereits ungenutzt). ``comment`` trägt den optionalen
+    Ablehnungsgrund — er bleibt in der HumanDecision-Zeile, NIE im Audit-Log
+    (dort nur target_type/action/IDs).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: Literal["draft_suggestion"]
+    target_id: str
+    action: Literal["reject"]
+    comment: str | None = None
+
+
 HumanDecisionCreate = Annotated[
     Union[
         RequirementDecisionCreate,
         EvidenceDecisionCreate,
         FindingDecisionCreate,
         DraftDecisionCreate,
+        SuggestionDecisionCreate,
     ],
     Field(discriminator="target_type"),
 ]
@@ -233,6 +251,7 @@ class HumanDecision(BaseModel):
         "evidence_anchor",
         "review_finding",
         "portal_field_draft",
+        "draft_suggestion",
     ]
     target_id: str
     action: str

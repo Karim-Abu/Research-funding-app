@@ -24,6 +24,7 @@ from app.contracts.review import (
 from app.contracts.review import ApprovalCreate, ReviewPackage, ReviewStatusView
 from app.db.models import (
     AnalysisRun,
+    DraftSuggestion,
     DraftVersion,
     EvidenceAnchor,
     EvidenceLink,
@@ -39,6 +40,7 @@ from app.drafts import has_placeholder, is_empty
 from app.drafts.charcount import within_limit
 from app.registry import get_registry
 from app.repositories import audit, controls
+from app.repositories import draft_suggestions as suggestions_repo
 from app.repositories import drafts as drafts_repo
 from app.repositories import requirements as requirements_repo
 from app.review import package as review_package
@@ -261,6 +263,13 @@ def _require_target(db: Session, run: AnalysisRun, target_type: str, target_id: 
         )
     elif target_type == "portal_field_draft":
         row = _draft_for_target(db, run, target_id)
+    elif target_type == "draft_suggestion":
+        row = db.scalar(
+            select(DraftSuggestion).where(
+                DraftSuggestion.suggestion_id == target_id,
+                DraftSuggestion.run_id == run.run_id,
+            )
+        )
     else:  # pragma: no cover - schema-validated
         row = None
     if row is None:
@@ -275,6 +284,14 @@ def record_human_decision(
     db: Session, run: AnalysisRun, decision, actor_user_id: str
 ) -> HumanDecisionContract:
     target = _require_target(db, run, decision.target_type, decision.target_id)
+
+    # C4 — nur ein noch offener Vorschlag ist ablehnbar (accepted/expired/
+    # rejected sind bereits entschieden). Vor dem Insert prüfen (fail-closed).
+    if decision.target_type == "draft_suggestion" and target.status != "proposed":
+        raise ProblemException(
+            status=409, code="suggestion_not_rejectable", title="Conflict",
+            detail="Dieser Vorschlag ist bereits entschieden (übernommen, abgelaufen oder abgelehnt).",
+        )
 
     record = HumanDecision(
         decision_id=str(uuid.uuid4()),
@@ -301,6 +318,10 @@ def record_human_decision(
         target.updated_at = record.created_at
     elif decision.target_type == "portal_field_draft":
         _apply_comment(db, run, target, decision, actor_user_id)
+    elif decision.target_type == "draft_suggestion":
+        # C4 — Ablehnung persistieren; der Vorschlagstext bleibt erhalten,
+        # das Audit trägt nur target_type/action/IDs (kein Rohtext).
+        suggestions_repo.mark_rejected(db, target, decided_by=actor_user_id)
     # requirement_assessment / evidence_anchor decisions are review-level only:
     # recorded + audited, never mutating the deterministic assessment or the
     # technical EvidenceAnchor.verification_status (corr. #3).
