@@ -66,6 +66,14 @@ def import_result(
     actor_user_id: str,
 ) -> SourceDocument:
     settings = get_settings()
+    # CI-/Demo-Suchergebnisse sind keine Webquellen und dürfen den produktiven
+    # SourceDocument-/A2-/Marktvergleichspfad niemals betreten.
+    if task.execution_mode == "fake_demo" or task.provider == "fake":
+        raise ImportBlocked(
+            "demo_result_not_importable",
+            "Demo-Recherche enthält keine echten Webquellen und kann nicht übernommen werden.",
+            status=422,
+        )
     classification = project.data_classification or {}
     try:
         data_class = (

@@ -235,6 +235,7 @@ def research_executor(task_id: str, operation_id: str) -> None:
 
             task.result_count = kept
             task.provider = outcome.provider
+            task.execution_mode = "fake_demo" if outcome.provider == "fake" else "live"
             task.provider_usage = {
                 "result_count": kept, "credits_used": outcome.credits_used,
                 "latency_ms": outcome.latency_ms,

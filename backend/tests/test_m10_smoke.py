@@ -24,6 +24,8 @@ from app.config.settings import get_settings
 from app.db.models import (
     AuditEvent,
     ControlResult,
+    Project,
+    ResearchBrief,
     ResearchTask,
     SearchQueryApproval,
     ToolInvocation,
@@ -250,6 +252,27 @@ def test_no_raw_d2_query_reaches_research_task_or_provider_payload(
         f"/api/v1/search-query-approvals/{preview['approval_id']}/approve",
         headers=_mut(csrf),
     ).status_code == 200
+    provenance_db = SessionLocal()
+    try:
+        project = provenance_db.get(Project, pid)
+        brief = ResearchBrief(
+            research_brief_id=str(uuid.uuid4()), project_id=pid,
+            workspace_id=project.workspace_id, version=1, status="approved",
+            application_domain="public industrial research",
+            technology_class="robotics",
+            target_customer_segments=["industrial organisations"],
+            region="Switzerland", competence_needs=[], modules=["market_growth"],
+            content_hash=uuid.uuid4().hex, created_by="test-user",
+            approved_by="test-user",
+        )
+        provenance_db.add(brief)
+        approval = provenance_db.get(SearchQueryApproval, preview["approval_id"])
+        approval.research_brief_id = brief.research_brief_id
+        approval.research_module = "market_growth"
+        approval.planner_purpose = "market_size"
+        provenance_db.commit()
+    finally:
+        provenance_db.close()
     created = client.post(f"/api/v1/projects/{pid}/research-tasks", headers=_mut(csrf), json={
         "purpose": "partner_role_suggestion", "subject_type": "topic",
         "query_preview": raw_query, "max_results": 3,

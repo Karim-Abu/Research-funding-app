@@ -55,6 +55,7 @@ export interface AIMissingInput {
 export interface DraftProposal {
   suggestion_text: string
   used_anchor_ids: string[]
+  used_research_source_ids: string[]
   missing_inputs: AIMissingInput[]
   profile_id: string
   prompt_version: string | null
@@ -87,6 +88,7 @@ export interface SectionResult {
   new_claims: string[]
   missing_inputs: AIMissingInput[]
   evidence_anchor_ids: string[]
+  research_source_ids: string[]
   open_issue_ids: string[]
 }
 
@@ -100,6 +102,13 @@ export interface A2Suggestion {
   suggested_text: string
   rationale?: string | null
   evidence: A2EvidenceItem[]
+  research_sources?: Array<{
+    source_id: string
+    title: string
+    url: string
+    research_module?: string | null
+    support_status: "research_candidate"
+  }>
   open_issue_ids: string[]
   placeholders: A2Placeholder[]
   character_count: number
@@ -116,6 +125,7 @@ export function parseDraftProposal(value: unknown): DraftProposal | null {
   if (typeof v.suggestion_text !== "string" || typeof v.profile_id !== "string") return null
   if (v.human_review_required !== true) return null
   if (!Array.isArray(v.used_anchor_ids) || !Array.isArray(v.missing_inputs)) return null
+  if (v.used_research_source_ids != null && !Array.isArray(v.used_research_source_ids)) return null
   if (
     v.generation_kind != null &&
     !["rule_template", "fake_demo", "model_generated"].includes(String(v.generation_kind))

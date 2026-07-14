@@ -20,6 +20,8 @@ from app.db.models import (
     MarketComparison,
     MarketComparisonItem,
     Project,
+    ResearchResult,
+    ResearchTask,
     RequirementAssessment,
     SourceDocument,
     SourceFragment,
@@ -54,8 +56,17 @@ def db():
 def web_enabled(monkeypatch):
     s = get_settings()
     monkeypatch.setattr(s, "web_research_enabled", True)
-    monkeypatch.setattr(s, "web_research_fake_provider", True)
-    monkeypatch.setattr(s, "firecrawl_api_key", None)
+    monkeypatch.setattr(s, "web_research_fake_provider", False)
+    monkeypatch.setattr(s, "firecrawl_api_key", "unit-test-key")
+    from app.agents.providers.fake import FakeProvider
+
+    monkeypatch.setattr(
+        market_executor,
+        "_resolver",
+        lambda candidates: (
+            lambda _route: FakeProvider(raw_output=market_executor._fake_bundle(candidates))
+        ),
+    )
     return s
 
 
@@ -101,6 +112,24 @@ def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT)
         fragment_id=str(uuid.uuid4()), source_version_id=version_id, ordinal=0,
         original_text=text, normalized_text=text, start_offset=0, end_offset=len(text),
         content_hash=hashlib.sha256(text.encode()).hexdigest(),
+    ))
+    task_id = str(uuid.uuid4())
+    db.add(ResearchTask(
+        research_task_id=task_id, project_id=project_id, workspace_id=workspace_id,
+        created_by="user-anna", purpose="market_comparison", subject_type="topic",
+        query_text="public market comparison", normalized_query_hash="unit-test",
+        status="succeeded", preferred_domains=[], disallowed_domains=[],
+        competence_needs=[], requested_partner_roles=[], max_results=1, max_pages=1,
+        provider="firecrawl", execution_mode="live", result_count=1,
+        firewall_data_class="D0_PUBLIC", research_module="competition_alternatives",
+        planner_purpose="competitors_alternatives",
+    ))
+    db.add(ResearchResult(
+        result_id=str(uuid.uuid4()), research_task_id=task_id, workspace_id=workspace_id,
+        source_url="https://public.example.test/market-report",
+        final_url="https://public.example.test/market-report", title="Public market report",
+        snippet="Public candidate snippet", status="imported",
+        source_document_id=doc_id,
     ))
     db.commit()
     return doc_id, version_id
@@ -238,7 +267,7 @@ def test_internal_project_blocked(client, db, web_enabled):
     assert res.status_code == 422
 
 
-def test_unsupported_item_quote_becomes_needs_review(client, db, web_enabled, monkeypatch):
+def test_unsupported_item_quote_becomes_research_gap(client, db, web_enabled, monkeypatch):
     import json as _json
 
     def bad_bundle(candidates):
@@ -260,10 +289,8 @@ def test_unsupported_item_quote_becomes_needs_review(client, db, web_enabled, mo
     body, op = _generate(client, csrf, project_id)
     assert op["status"] == "succeeded"
     view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
-    item = view["items"][0]
-    assert item["confidence_label"] == "insufficient_evidence"
-    assert item["status"] == "needs_human_review"
-    assert item["evidence_quotes"] == []  # fabricated quote is never stored as evidence
+    assert view["items"] == []
+    assert any("exakte Fundstelle" in gap for gap in view["research_gaps"])
 
 
 def test_duplicate_names_deduped(client, db, web_enabled, monkeypatch):

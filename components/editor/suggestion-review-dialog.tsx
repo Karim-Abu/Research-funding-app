@@ -158,6 +158,33 @@ export function SuggestionReviewDialog({
           </p>
         )}
 
+        {(suggestion.research_sources?.length ?? 0) > 0 && (
+          <section className="flex flex-col gap-1" data-testid="used-research-sources">
+            <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Verwendete Research-Quellen
+            </p>
+            <p className="text-xs text-muted-foreground">
+              Vom Vorschlag referenzierte öffentliche Quellen. Eine Fundstelle ist nicht
+              automatisch eine fachliche Stützung.
+            </p>
+            <ul className="flex flex-col gap-1">
+              {suggestion.research_sources?.map((source) => (
+                <li key={source.source_id} className="rounded border border-border px-2 py-1 text-xs">
+                  <a
+                    href={source.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-primary underline-offset-2 hover:underline"
+                  >
+                    {source.title}
+                  </a>
+                  <p className="text-muted-foreground">Quellenkandidat – fachlich prüfen</p>
+                </li>
+              ))}
+            </ul>
+          </section>
+        )}
+
         <details className="rounded-md border border-border px-3 py-2 text-xs">
           <summary className="cursor-pointer font-medium">Technische Details</summary>
           <dl className="mt-2 grid gap-1 text-muted-foreground">

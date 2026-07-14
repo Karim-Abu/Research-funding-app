@@ -1,12 +1,14 @@
 """Research router (Milestone 9I-A) — createResearchTask / getResearchTask /
 listResearchResults / importResearchResult.
 
-Role note (binding correction 2): the OpenAPI marks createResearchTask lead_admin-only;
-this implementation allows member OR lead_admin to start a research task on accessible
-public/synthetic projects, as an authorized, documented beta-usability deviation. The
-data policy still gates the actual external call. Web research is public/synthetic only.
+The legacy createResearchTask route remains for compatibility, but it can no longer
+execute a client-provided free query. It delegates only a server-loaded, approved query
+bound to an approved public research brief into the existing market/partner task services.
+The data policy still gates the external call.
 """
 from __future__ import annotations
+
+import uuid
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header
 from sqlalchemy.orm import Session
@@ -20,6 +22,7 @@ from app.contracts.research import (
 from app.contracts.run import AsyncAccepted
 from app.contracts.source import SourceDocument
 from app.config.settings import Settings
+from app.db.models import ResearchBrief, SearchQueryApproval
 from app.db.session import get_db
 from app.repositories import idempotency
 from app.repositories import projects as projects_repo
@@ -32,6 +35,7 @@ from app.security.deps import (
     require_unsafe_guards,
     settings_dep,
 )
+from app.security.data_class import derive_data_class, is_external_blocked
 
 router = APIRouter(tags=["Research"])
 
@@ -57,6 +61,49 @@ def _require_web_research_enabled(settings: Settings) -> None:
         )
 
 
+def _require_brief_approval(
+    db: Session, *, project_id: str, workspace_id: str, approval_id: str | None
+) -> tuple[ResearchBrief, SearchQueryApproval]:
+    approval = db.get(SearchQueryApproval, approval_id) if approval_id else None
+    brief = (
+        db.get(ResearchBrief, approval.research_brief_id)
+        if approval is not None and approval.research_brief_id
+        else None
+    )
+    provenance_invalid = (
+        approval is None
+        or brief is None
+        or approval.project_id != project_id
+        or approval.workspace_id != workspace_id
+        or brief.project_id != project_id
+        or brief.workspace_id != workspace_id
+        or brief.status != "approved"
+        or approval.research_module not in (brief.modules or [])
+    )
+    if provenance_invalid:
+        raise ProblemException(
+            status=422,
+            code="research_brief_approval_required",
+            title="Research request refused",
+            detail=(
+                "Die Recherche muss aus einem freigegebenen öffentlichen "
+                "Recherchebrief und einer freigegebenen Query gestartet werden."
+            ),
+        )
+    assert approval is not None and brief is not None
+    if approval.status == "used":
+        raise ProblemException(
+            status=409, code="approval_already_used", title="Research request refused",
+            detail="Diese Query-Freigabe wurde bereits verwendet.",
+        )
+    if approval.status != "approved":
+        raise ProblemException(
+            status=422, code="approval_not_approved", title="Research request refused",
+            detail="Die gebundene Query ist nicht freigegeben.",
+        )
+    return brief, approval
+
+
 @router.post("/projects/{project_id}/research-tasks", status_code=202)
 def create_research_task(
     project_id: str,
@@ -70,8 +117,12 @@ def create_research_task(
     ),
 ) -> AsyncAccepted:
     project = _require_project(db, project_id, context.user.workspace_id)
+    if is_external_blocked(derive_data_class(project.data_classification or {})):
+        raise ProblemException(
+            status=403, code="web_research_class_blocked", title="Research request refused",
+            detail="Webrecherche ist für diese Datenklasse gesperrt.",
+        )
     _require_web_research_enabled(settings)
-
     fingerprint = idempotency.fingerprint(
         "POST", f"/projects/{project_id}/research-tasks", payload.model_dump_json()
     )
@@ -85,10 +136,38 @@ def create_research_task(
             )
         return AsyncAccepted(**existing.response_body)
 
+    _brief, approval = _require_brief_approval(
+        db,
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        approval_id=payload.approval_id,
+    )
+
     try:
-        _task, _op, accepted = service.create_research_task(
-            db, project=project, payload=payload, actor_user_id=context.user.id,
+        task_id = str(uuid.uuid4())
+        operation_id = str(uuid.uuid4())
+        create = (
+            service.create_partner_research_task
+            if approval.research_module == "swiss_research_partners"
+            else service.create_market_research_task
+        )
+        _task, _op = create(
+            db,
+            project=project,
+            query_preview=approval.sanitized_query,
+            actor_user_id=context.user.id,
+            max_results=payload.max_results,
+            task_id=task_id,
+            operation_id=operation_id,
             idempotency_key=idempotency_key,
+            approval=approval,
+        )
+        accepted = AsyncAccepted(
+            operation_id=operation_id,
+            resource_type="research_task",
+            resource_id=task_id,
+            status="queued",
+            poll_url=f"/api/v1/operations/{operation_id}",
         )
     except service.ResearchBlocked as exc:
         db.commit()  # persist the firewall control/audit records

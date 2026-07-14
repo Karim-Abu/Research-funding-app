@@ -1529,11 +1529,55 @@ class ProcessingConfirmation(Base):
 # ---------------------------------------------------------------------------
 
 
+class ResearchBrief(Base):
+    """Versionierter, vom Menschen freigegebener public-safe Recherchebrief.
+
+    Der Brief enthält ausschliesslich abstrakte Suchdeskriptoren. Rohprojekttext,
+    Partnernamen, Budgets und Kontaktangaben gehören nie in diese Tabelle.
+    """
+
+    __tablename__ = "research_briefs"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "version", name="uq_research_briefs_project_version"
+        ),
+    )
+
+    research_brief_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+    # draft | approved | superseded
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    application_domain: Mapped[str] = mapped_column(String, nullable=False, default="")
+    technology_class: Mapped[str] = mapped_column(String, nullable=False, default="")
+    target_customer_segments: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    region: Mapped[str] = mapped_column(String, nullable=False, default="")
+    competence_needs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    modules: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
 class ResearchTask(Base):
     """Explicit, user-initiated public web research task (Domain Model
     ResearchTask). Internal table; the public surface is the openapi ResearchTask
-    schema. ``query_text`` only ever holds the user-confirmed public query — never
-    raw confidential/internal project text."""
+    schema. ``query_text`` only ever holds the server-loaded, human-approved public-safe
+    query — never raw confidential/internal project text."""
 
     __tablename__ = "research_tasks"
 
@@ -1547,10 +1591,15 @@ class ResearchTask(Base):
     # Controlled enum: partner_role_suggestion | competence_gap_analysis |
     # publication_track_record (openapi ResearchTaskCreate.purpose).
     purpose: Mapped[str] = mapped_column(String, nullable=False)
+    research_brief_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_briefs.research_brief_id"), nullable=True, index=True
+    )
+    research_module: Mapped[str | None] = mapped_column(String, nullable=True)
+    planner_purpose: Mapped[str | None] = mapped_column(String, nullable=True)
     # person | organisation | topic
     subject_type: Mapped[str] = mapped_column(String, nullable=False)
     subject_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    # User-confirmed public query only (== ResearchTaskCreate.query_preview).
+    # Server-loaded sanitized query from SearchQueryApproval.
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_query_hash: Mapped[str] = mapped_column(String, nullable=False)
     # queued | running | succeeded | failed | blocked | cancelled
@@ -1562,6 +1611,8 @@ class ResearchTask(Base):
     max_results: Mapped[int] = mapped_column(nullable=False, default=10)
     max_pages: Mapped[int] = mapped_column(nullable=False, default=1)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    # fake_demo | live; null solange noch kein Provider erfolgreich geantwortet hat.
+    execution_mode: Mapped[str | None] = mapped_column(String, nullable=True)
     provider_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     result_count: Mapped[int] = mapped_column(nullable=False, default=0)
     # Advisory A1 public-competence synthesis state (non-blocking): null | succeeded |
@@ -1572,7 +1623,7 @@ class ResearchTask(Base):
     )
     # Milestone 9J — Search Query Firewall provenance. ``firewall_data_class`` is the
     # derived D0–D3/UNKNOWN class at creation; ``firewall_approval_id`` links the
-    # single-use sanitized-query approval consumed for D1/D2 (null for D0).
+    # single-use sanitized-query approval consumed for new D0/D1/D2 brief tasks.
     firewall_data_class: Mapped[str | None] = mapped_column(String, nullable=True)
     firewall_approval_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1705,6 +1756,11 @@ class MarketComparisonItem(Base):
     source_document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # list of verified-quote reference dicts (rule 6). Never search snippets.
     verified_quote_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Lösungstyp, Zentralität, Daten-/Zugriffsmodell und Schweizer Bezug.
+    comparison_dimensions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Exakte Fundstelle und fachliche Stützung bleiben getrennt.
+    coverage_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    support_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -1737,6 +1793,11 @@ class SearchQueryApproval(Base):
     # firecrawl | web_research (intended tool for the sanitized query).
     intended_tool: Mapped[str] = mapped_column(String, nullable=False)
     purpose: Mapped[str | None] = mapped_column(String, nullable=True)
+    research_brief_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_briefs.research_brief_id"), nullable=True, index=True
+    )
+    research_module: Mapped[str | None] = mapped_column(String, nullable=True)
+    planner_purpose: Mapped[str | None] = mapped_column(String, nullable=True)
     # D0_PUBLIC | D1_INTERNAL | D2_CONFIDENTIAL_IDEA | D3_NDA_BLOCKED | UNKNOWN
     data_class: Mapped[str] = mapped_column(String, nullable=False)
     # SHA256 of the normalized RAW query. The raw query itself is never persisted.

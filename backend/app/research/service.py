@@ -79,10 +79,10 @@ def _firewall_query(
     query/purpose/approval as explicit args so both the public ``ResearchTaskCreate`` flow
     and the internal market-research flow share this single chokepoint (RESEARCH.1a).
 
-    ``approval`` (R8, Markt-Query-Freigabe): a SERVER-loaded, human-approved
+    ``approval``: a SERVER-loaded, human-approved
     ``SearchQueryApproval``. Only ``approval.sanitized_query`` is executed — there is no
-    client query to re-hash. D0-only by design (the market vertical never runs for
-    confidential classes); scope and single-use are enforced here in the chokepoint.
+    client query to re-hash. Scope, data class and single-use are enforced here in the
+    chokepoint. D1/D2 remain additionally gated in ``ResearchExecutor``.
     """
     data_class = derive_data_class(project.data_classification)
     qhash = raw_query_hash(query_preview)
@@ -108,14 +108,13 @@ def _firewall_query(
             status=403, reason="class_blocked",
         )
 
-    # Server-seitige Markt-Query-Freigabe (R8): exakt der freigegebene Text wird
-    # ausgeführt; Scope + Single-Use fail-closed. D0-only — vertrauliche Klassen
-    # erreichen den Markt-Vertikal weiterhin nie über diesen Pfad.
+    # Server-seitige Brief-/Query-Freigabe: exakt der freigegebene Text wird
+    # ausgeführt; Scope, Datenklasse und Single-Use fail-closed.
     if approval is not None:
         if (
             approval.project_id != project.project_id
             or approval.workspace_id != project.workspace_id
-            or data_class != DataClass.D0_PUBLIC
+            or approval.data_class != str(data_class)
         ):
             raise _blocked(
                 "approval_required",
@@ -290,6 +289,9 @@ def create_market_research_task(
         created_by=actor_user_id,
         operation_id=actual_operation_id,
         purpose=MARKET_RESEARCH_PURPOSE,
+        research_brief_id=approval.research_brief_id if approval else None,
+        research_module=approval.research_module if approval else None,
+        planner_purpose=approval.planner_purpose if approval else None,
         subject_type="topic",
         subject_name=None,
         query_text=query,
@@ -350,6 +352,7 @@ def create_partner_research_task(
     task_id: str | None = None,
     operation_id: str | None = None,
     idempotency_key: str | None = None,
+    approval: SearchQueryApproval | None = None,
 ) -> tuple[ResearchTask, AsyncOperation]:
     """Create an internal partner-research ResearchTask through the SAME Search Query
     Firewall chokepoint as the public flow (RESEARCH.2). Organisation/topic queries only —
@@ -363,6 +366,7 @@ def create_partner_research_task(
         db, project=project, query_preview=query_preview,
         purpose=PARTNER_RESEARCH_PURPOSE, approval_id=None,
         actor_user_id=actor_user_id, task_id=actual_task_id,
+        approval=approval,
     )
 
     task = ResearchTask(
@@ -372,6 +376,9 @@ def create_partner_research_task(
         created_by=actor_user_id,
         operation_id=actual_operation_id,
         purpose=PARTNER_RESEARCH_PURPOSE,
+        research_brief_id=approval.research_brief_id if approval else None,
+        research_module=approval.research_module if approval else None,
+        planner_purpose=approval.planner_purpose if approval else None,
         subject_type="topic",
         subject_name=None,
         query_text=query,

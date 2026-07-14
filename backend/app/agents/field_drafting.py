@@ -28,7 +28,15 @@ from app.agents.schemas import (
 )
 from app.config import provider_policy
 from app.config.settings import get_settings
-from app.db.models import AgentInvocation, AnalysisRun, ProcessingConfirmation, Project
+from app.db.models import (
+    AgentInvocation,
+    AnalysisRun,
+    ProcessingConfirmation,
+    Project,
+    ResearchResult,
+    ResearchTask,
+    SourceDocument,
+)
 from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
@@ -74,6 +82,7 @@ def _default_resolver(config: A2FieldConfig, target_section: str | None = None):
                     "new_claims": [],
                     "missing_inputs": [],
                     "evidence_anchor_ids": [],
+                    "research_source_ids": [],
                     "open_issue_ids": [],
                 },
                 "warnings": ["fake_demo_no_model"],
@@ -259,6 +268,12 @@ def _validate_candidate(
             return None, "application_language_changed"
         if proposal_anchor_violations(cand.evidence_anchor_ids, ctx.allowed_anchor_ids):
             return None, "unknown_evidence_anchor"
+        if next(
+            (source_id for source_id in cand.research_source_ids
+             if source_id not in ctx.allowed_research_source_ids),
+            None,
+        ):
+            return None, "unknown_research_source"
         if next((i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None):
             return None, "unknown_open_issue"
         placeholders = [p.model_dump() for p in cand.missing_inputs]
@@ -515,6 +530,35 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
         suggestion, invocation, data_mode=data_mode, safety_notes=warn
     )
     proposal_json = proposal.model_dump(mode="json")
+    research_source_ids = list(
+        (suggestion.section_result_json or {}).get("research_source_ids", [])
+    )
+    research_sources = []
+    if research_source_ids:
+        rows = db.execute(
+            select(SourceDocument, ResearchResult, ResearchTask)
+            .join(ResearchResult, ResearchResult.source_document_id == SourceDocument.source_id)
+            .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+            .where(
+                SourceDocument.source_id.in_(research_source_ids),
+                SourceDocument.project_id == run.project_id,
+                ResearchResult.status == "imported",
+                ResearchTask.execution_mode == "live",
+            )
+        )
+        by_id = {doc.source_id: (doc, result, task) for doc, result, task in rows}
+        for source_id in research_source_ids:
+            row = by_id.get(source_id)
+            if row is None:
+                continue
+            doc, result_row, task = row
+            research_sources.append({
+                "source_id": source_id,
+                "title": doc.name,
+                "url": result_row.final_url or result_row.source_url,
+                "research_module": task.research_module,
+                "support_status": "research_candidate",
+            })
     return {
         "suggestion_id": suggestion.suggestion_id,
         "operation_id": suggestion.operation_id,
@@ -531,6 +575,7 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
         "character_limit": config.char_limit if config else None,
         "warnings": warn,
         "section_result": suggestion.section_result_json,
+        "research_sources": research_sources,
         # mode="json": datetime → ISO-String für die AsyncOperation-JSON-Spalte.
         "proposal": proposal_json,
         "ai_proposal": (

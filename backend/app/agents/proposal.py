@@ -40,6 +40,7 @@ class DraftProposal(BaseModel):
 
     suggestion_text: str
     used_anchor_ids: list[str] = []
+    used_research_source_ids: list[str] = []
     missing_inputs: list[MissingInputRecord] = []
     profile_id: str
     prompt_version: str | None = None
@@ -95,6 +96,9 @@ def build_proposal(
     return proposal_type(
         suggestion_text=suggestion.suggested_text,
         used_anchor_ids=list(suggestion.evidence_anchor_ids or []),
+        used_research_source_ids=list(
+            (suggestion.section_result_json or {}).get("research_source_ids", [])
+        ),
         missing_inputs=[
             MissingInputRecord(**p) for p in (suggestion.placeholders or [])
         ],

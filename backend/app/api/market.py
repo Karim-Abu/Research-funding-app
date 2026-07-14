@@ -138,6 +138,6 @@ def update_item_status(
             status=404, code="not_found", title="Resource not found",
             detail="Comparison item not found.",
         )
-    service.update_item_status(db, item, payload.status)
+    service.update_item_status(db, item, payload.status, payload.support_status)
     db.commit()
     return service.item_to_contract(item)

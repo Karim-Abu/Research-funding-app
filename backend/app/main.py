@@ -20,6 +20,7 @@ from app.api import (
     imports,
     integrated_draft,
     market_research,
+    research_briefs,
     me,
     operations,
     market,
@@ -107,6 +108,6 @@ app.add_exception_handler(Exception, unhandled_exception_handler)
 for module in (
     health, auth, me, capabilities, projects, sources, runs, operations,
     partners, requirements, evidence, fields, review, exports, research, market,
-    firewall, reliability, imports, market_research, integrated_draft,
+    firewall, reliability, imports, market_research, research_briefs, integrated_draft,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

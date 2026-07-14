@@ -4,6 +4,14 @@ Versionsprotokoll für die Prompt-Dateien in diesem Ordner (`*_vN.md`). Jede
 inhaltliche Änderung an einer aktiven Prompt-Datei muss hier sichtbar werden —
 `tests/test_prompt_snapshots.py` erzwingt das über einen Content-Hash pro Datei.
 
+## 2026-07-14 — Research-Provenienz in A2 v3
+
+- A2-Sektionsausgaben weisen verwendete öffentliche Research-Quellen separat über
+  `research_source_ids` aus; Evidence Anchors und fachliche Stützung bleiben getrennt.
+- Der bestehende Marktvergleich-v2-Prompt verbietet generische Ersatzidentitäten und
+  strukturiert nur belegte Vergleichsdimensionen; der deterministische Validator bleibt
+  die durchsetzende Instanz.
+
 ## Wie ändere ich einen Prompt?
 
 Eine Änderung an einem aktiven Prompt lässt `test_prompt_snapshots.py` rot werden.

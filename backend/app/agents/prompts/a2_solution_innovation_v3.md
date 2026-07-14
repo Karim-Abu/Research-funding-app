@@ -67,5 +67,6 @@ keinen anderen Registry-Abschnitt. Fülle konkret:
 - `new_claims`: nur aus erlaubtem Kontext abgeleitete neue Formulierungen;
 - `missing_inputs`: konkrete fehlende Angaben;
 - `evidence_anchor_ids`: ausschließlich tatsächlich verwendete externe Belege;
+- `research_source_ids`: ausschließlich tatsächlich referenzierte öffentliche
+  Research-Quellen; nie als bestätigte Belege darstellen;
 - `open_issue_ids`: tatsächlich berücksichtigte offene Punkte.
-

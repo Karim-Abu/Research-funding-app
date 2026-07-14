@@ -227,17 +227,17 @@ def node_evaluate_requirements_and_rules(state: RunState) -> RunState:
 def node_web_research(state: RunState) -> RunState:
     """Öffentliche Webrecherche im Lauf (Owner-Entscheid; Freigabepflicht R8):
     nur wenn das Web-Budget des Laufs > 0 ist, die Webrecherche verfügbar ist,
-    die effektive Datenklasse öffentlich/ohne NDA ist UND freigegebene
-    Suchanfragen vorliegen — sonst ehrlicher Skip. Ausgeführt wird exakt der
+    ein freigegebener public-safe Brief UND freigegebene Suchanfragen vorliegen
+    — sonst ehrlicher Skip. Ausgeführt wird exakt der
     freigegebene Text (Single-Use im Firewall-Chokepoint), begrenzt durch
     max_web_calls. Wiederverwendet das BESTEHENDE Research-Vertikal
     (Search Query Firewall im Service → Executor → Fake/Firecrawl).
     Ergebnisse bleiben ResearchResult-Kandidaten — nie Evidenz/Anker. Ein
     Fehler markiert nur die Phase als fehlgeschlagen (Partial Success)."""
-    from app.db.models import SearchQueryApproval
-    from app.market_research.runner import run_market_research
-    from app.market_research.topic import suggest_market_topic
+    from app.db.models import ResearchBrief, SearchQueryApproval
+    from app.research import brief_service
     from app.research.service import ResearchBlocked
+    from app.security.data_class import derive_data_class, is_external_blocked
 
     db = SessionLocal()
     try:
@@ -247,16 +247,23 @@ def node_web_research(state: RunState) -> RunState:
         run_phases.start(db, run, "web_research")
         settings = get_settings()
         policy = db.get(RunPolicySnapshot, run.run_id)
-        max_web_calls = policy.max_web_calls if policy is not None else 0
-        feature_available = settings.web_research_enabled and (
-            settings.web_research_fake_provider or bool(settings.firecrawl_api_key)
+        project = db.get(Project, run.project_id)
+        class_blocked = is_external_blocked(
+            derive_data_class(project.data_classification if project else {})
         )
-        cls = run.effective_data_classification or {}
-        # Vorprüfung nur für ehrliche Skip-Gründe — die durchsetzende Instanz
-        # bleibt die Search Query Firewall im Research-Service (D0-only).
-        class_ok = cls.get("sensitivity") == "public" and not cls.get("nda_applies")
-        # R8 Freigabepflicht: der Lauf führt NUR menschlich freigegebene
-        # Suchanfragen aus (im Analyse-Dialog erteilt; single-use).
+        max_web_calls = policy.max_web_calls if policy is not None else 0
+        mode = brief_service.provider_mode()
+        active_brief = db.scalar(
+            select(ResearchBrief)
+            .where(
+                ResearchBrief.project_id == run.project_id,
+                ResearchBrief.workspace_id == run.workspace_id,
+                ResearchBrief.status == "approved",
+            )
+            .order_by(ResearchBrief.version.desc())
+        )
+        # Der Lauf führt nur Approvals der aktiven Briefversion aus. Querytext
+        # stammt damit ausschliesslich aus dem menschlich freigegebenen Brief.
         approvals = list(
             db.scalars(
                 select(SearchQueryApproval)
@@ -264,7 +271,9 @@ def node_web_research(state: RunState) -> RunState:
                     SearchQueryApproval.project_id == run.project_id,
                     SearchQueryApproval.workspace_id == run.workspace_id,
                     SearchQueryApproval.status == "approved",
-                    SearchQueryApproval.purpose.like("market_comparison%"),
+                    SearchQueryApproval.research_brief_id == (
+                        active_brief.research_brief_id if active_brief else ""
+                    ),
                 )
                 .order_by(SearchQueryApproval.created_at, SearchQueryApproval.approval_id)
             )
@@ -272,10 +281,12 @@ def node_web_research(state: RunState) -> RunState:
         skip_reason = None
         if max_web_calls <= 0:
             skip_reason = "web_research_not_requested"
-        elif not feature_available:
-            skip_reason = "web_research_unavailable"
-        elif not class_ok:
+        elif class_blocked:
             skip_reason = "web_research_class_blocked"
+        elif mode == "unavailable":
+            skip_reason = "web_research_unavailable"
+        elif active_brief is None:
+            skip_reason = "research_brief_required"
         elif not approvals:
             skip_reason = "approval_required"
         if skip_reason is not None:
@@ -286,18 +297,10 @@ def node_web_research(state: RunState) -> RunState:
             db.commit()
             return state
 
-        project = db.get(Project, run.project_id)
         try:
-            outcome = run_market_research(
-                db, project=project, actor_user_id=run.created_by,
-                topic=suggest_market_topic(project),
-                case_id=f"run-{run.run_id}",
-                data_mode=(
-                    "fake_test" if settings.web_research_fake_provider
-                    else "synthetic_eval"
-                ),
-                max_queries=max_web_calls,
-                approvals=approvals,
+            outcome = brief_service.run(
+                db, active_brief, run.created_by,
+                [approval.approval_id for approval in approvals[:max_web_calls]],
             )
             run_phases.finish(
                 db, run, "web_research", "succeeded",
@@ -305,7 +308,7 @@ def node_web_research(state: RunState) -> RunState:
                     "approved_queries": len(approvals),
                     "web_queries": len(outcome.task_ids),
                     "results_found": outcome.result_count,
-                    "blocked_queries": outcome.blocked_queries,
+                    "execution_mode": outcome.execution_mode,
                 },
             )
             db.commit()
@@ -313,7 +316,7 @@ def node_web_research(state: RunState) -> RunState:
                 "web research queries=%d results=%d run=%s",
                 len(outcome.task_ids), outcome.result_count, run.run_id,
             )
-        except ResearchBlocked as blocked:
+        except (ResearchBlocked, brief_service.BriefError) as blocked:
             # Firewall hat das letzte Wort — Phase ehrlich übersprungen.
             run_phases.finish(
                 db, run, "web_research", "skipped",

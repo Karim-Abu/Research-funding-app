@@ -28,6 +28,7 @@ from tests.conftest import (
     ANNA_EMAIL, ANNA_PASSWORD, TOBIAS_EMAIL, TOBIAS_PASSWORD,
     OUTSIDER_EMAIL, OUTSIDER_PASSWORD, login, unsafe_headers,
 )
+from tests.research_brief_helpers import approve_research_brief
 
 WEB_CLASSIFICATION = {
     "sensitivity": "public", "origin": "synthetic", "processing_mode": "cloud_assisted",
@@ -80,7 +81,27 @@ def _task_payload(**over) -> dict:
     return base
 
 
+def _brief_approval(client, csrf, project_id) -> dict:
+    brief = approve_research_brief(
+        client, csrf, project_id, modules=["market_growth"],
+    )
+    planned = client.post(
+        f"/api/v1/research-briefs/{brief['research_brief_id']}/queries/plan",
+        headers=unsafe_headers(csrf),
+    )
+    assert planned.status_code == 200, planned.text
+    query = planned.json()["queries"][0]
+    approved = client.post(
+        f"/api/v1/search-query-approvals/{query['approval_id']}/approve",
+        headers=unsafe_headers(csrf),
+    )
+    assert approved.status_code == 200, approved.text
+    return query
+
+
 def _run_task(client, csrf, project_id, **over):
+    if not over.get("approval_id"):
+        over["approval_id"] = _brief_approval(client, csrf, project_id)["approval_id"]
     res = client.post(f"/api/v1/projects/{project_id}/research-tasks",
                       json=_task_payload(**over), headers=_headers(csrf))
     assert res.status_code == 202, res.text
@@ -197,8 +218,10 @@ def test_create_task_member_allowed_and_succeeds(client, db, web_enabled):
     assert op["status"] == "succeeded"
     task = db.get(ResearchTask, body["resource_id"])
     assert task.status == "succeeded" and task.result_count == 3
-    # Only the user-confirmed public query is stored.
-    assert task.query_text == "öffentliche Forschungskompetenz Photonik"
+    # Only the server-loaded query from the approved public brief is stored.
+    assert task.research_brief_id is not None
+    assert task.research_module == "market_growth"
+    assert "öffentliche Forschungskompetenz Photonik" not in task.query_text
     results = client.get(f"/api/v1/projects/{project_id}/research-results")
     assert results.status_code == 200
     rows = results.json()
@@ -209,7 +232,8 @@ def test_create_task_idempotent(client, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     headers = _headers(csrf)
-    payload = _task_payload()
+    query = _brief_approval(client, csrf, project_id)
+    payload = _task_payload(approval_id=query["approval_id"])
     first = client.post(f"/api/v1/projects/{project_id}/research-tasks", json=payload, headers=headers)
     second = client.post(f"/api/v1/projects/{project_id}/research-tasks", json=payload, headers=headers)
     assert first.status_code == second.status_code == 202
@@ -254,7 +278,7 @@ def test_blocked_classification_refused_at_firewall(client, db, web_enabled):
     refused = client.post(f"/api/v1/projects/{project_id}/research-tasks",
                           json=_task_payload(), headers=_headers(csrf))
     assert refused.status_code == 422, refused.text
-    assert refused.json()["code"] == "approval_required"
+    assert refused.json()["code"] == "research_brief_approval_required"
 
 
 # --- import → SourceDocument + A1 synthesis ---------------------------------
@@ -264,11 +288,45 @@ def _first_candidate(client, project_id):
     return rows[0]["result_id"]
 
 
-def test_import_creates_source_with_fragments_and_no_anchor(client, db, web_enabled):
+def _use_live_fetch_test_double(db, monkeypatch, result_id: str) -> None:
+    """Exercise the live import path without a network call.
+
+    The persisted task is explicitly marked live; the fake provider is only a transport
+    test double here and never appears to the product as a source provider.
+    """
+    from app.research import import_service
+
+    result = db.get(ResearchResult, result_id)
+    task = db.get(ResearchTask, result.research_task_id)
+    task.provider = "firecrawl"
+    task.execution_mode = "live"
+    db.commit()
+    monkeypatch.setattr(
+        import_service,
+        "get_web_provider",
+        lambda settings: (FakeWebProvider(result_count=1), fake_dns_resolver),
+    )
+
+
+def test_demo_result_is_not_importable(client, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
     result_id = _first_candidate(client, project_id)
+
+    res = client.post(f"/api/v1/research-results/{result_id}/import", headers=_headers(csrf))
+    assert res.status_code == 422, res.text
+    assert res.json()["code"] == "demo_result_not_importable"
+
+
+def test_import_creates_source_with_fragments_and_no_anchor(
+    client, db, web_enabled, monkeypatch
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_research_project(client, csrf)
+    _run_task(client, csrf, project_id)
+    result_id = _first_candidate(client, project_id)
+    _use_live_fetch_test_double(db, monkeypatch, result_id)
 
     res = client.post(f"/api/v1/research-results/{result_id}/import", headers=_headers(csrf))
     assert res.status_code == 201, res.text
@@ -333,11 +391,12 @@ def test_discard_workspace_isolation(client, web_enabled):
     assert res.status_code == 404
 
 
-def test_import_runs_advisory_a1_synthesis(client, db, web_enabled):
+def test_import_runs_advisory_a1_synthesis(client, db, web_enabled, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
     result_id = _first_candidate(client, project_id)
+    _use_live_fetch_test_double(db, monkeypatch, result_id)
     res = client.post(f"/api/v1/research-results/{result_id}/import", headers=_headers(csrf))
     assert res.status_code == 201
 
@@ -357,6 +416,7 @@ def test_a1_failure_is_non_blocking(client, db, web_enabled, monkeypatch):
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
     result_id = _first_candidate(client, project_id)
+    _use_live_fetch_test_double(db, monkeypatch, result_id)
 
     from app.agents import public_competence_research
     monkeypatch.setattr(
@@ -374,11 +434,12 @@ def test_a1_failure_is_non_blocking(client, db, web_enabled, monkeypatch):
     assert rr.professional_evidence == []
 
 
-def test_import_idempotent(client, web_enabled):
+def test_import_idempotent(client, db, web_enabled, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
     result_id = _first_candidate(client, project_id)
+    _use_live_fetch_test_double(db, monkeypatch, result_id)
     headers = _headers(csrf)
     first = client.post(f"/api/v1/research-results/{result_id}/import", headers=headers)
     second = client.post(f"/api/v1/research-results/{result_id}/import", headers=headers)

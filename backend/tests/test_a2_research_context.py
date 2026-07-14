@@ -174,6 +174,38 @@ def test_vc_imported_source_number_is_not_an_anchor(db):
     assert proposal.used_anchor_ids == []  # the market number never became an anchor
 
 
+def test_used_research_source_is_subset_checked_and_visible_separately(db):
+    run, draft, base = _vc_draft(db)
+    source_id = add_imported_public_source(
+        db, run, name="Live market report",
+        text="Market competitors serve manufacturing customers.",
+    )
+    out = _run(
+        db, run, draft, base, VC_FIELD_ID,
+        success_fake(_vc_bundle(research_source_ids=[source_id])),
+    )
+    assert out.status == "succeeded"
+    proposal = DraftProposal.model_validate(out.view["proposal"])
+    assert proposal.used_research_source_ids == [source_id]
+    assert proposal.used_anchor_ids == []
+    assert out.view["research_sources"] == [{
+        "source_id": source_id,
+        "title": "Live market report",
+        "url": "https://public.example.test/research",
+        "research_module": "competition_alternatives",
+        "support_status": "research_candidate",
+    }]
+
+    other_run, other_draft, other_base = _vc_draft(db)
+    rejected = _run(
+        db, other_run, other_draft, other_base, VC_FIELD_ID,
+        success_fake(_vc_bundle(research_source_ids=["unknown-source"])),
+        op="op-unknown-research-source",
+    )
+    assert rejected.status == "failed"
+    assert rejected.reason == "unknown_research_source"
+
+
 # --- missing evidence → missing_inputs (Rule 6) ------------------------------
 
 

@@ -24,6 +24,7 @@ function suggestion(overrides: Partial<A2Suggestion> = {}): A2Suggestion {
     character_count: 46,
     character_limit: 25000,
     warnings: ["contains_placeholders", "based_on_unconfirmed_facts"],
+    research_sources: [],
     ...overrides,
   }
 }
@@ -83,5 +84,31 @@ describe("SuggestionReviewDialog", () => {
     )
     const accept = screen.getByRole("button", { name: "Übernehmen" })
     expect(accept).toBeDisabled()
+  })
+
+  it("shows actually used research sources separately from evidence", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({
+          research_sources: [{
+            source_id: "research-1",
+            title: "Swiss market report",
+            url: "https://research.example.edu/report",
+            research_module: "market_growth",
+            support_status: "research_candidate",
+          }],
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByText("Verwendete Research-Quellen")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Swiss market report" })).toHaveAttribute(
+      "href", "https://research.example.edu/report",
+    )
+    expect(screen.getByText(/nicht automatisch eine fachliche Stützung/)).toBeInTheDocument()
   })
 })

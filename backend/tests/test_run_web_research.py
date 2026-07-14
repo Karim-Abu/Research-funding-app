@@ -16,6 +16,7 @@ from app.config.settings import get_settings
 from app.db.models import ResearchResult, ResearchTask, RunPhase, SearchQueryApproval
 from app.db.session import SessionLocal
 from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, login, unsafe_headers
+from tests.research_brief_helpers import approve_research_brief
 from tests.run_graph_helpers import (
     cloud_project_with_source,
     cloud_run,
@@ -25,6 +26,7 @@ from tests.run_graph_helpers import (
 
 def approve_market_queries(client, csrf, project_id) -> list[str]:
     """Plan-Endpoint aufrufen und alle vorgeschlagenen Queries freigeben (R8)."""
+    approve_research_brief(client, csrf, project_id)
     res = client.post(
         f"/api/v1/projects/{project_id}/market-research/plan",
         json={}, headers=unsafe_headers(csrf),
@@ -160,7 +162,7 @@ def test_no_approvals_skips_with_approval_required(client, fake_providers):
     assert _research_tasks(project_id) == []
     phase = _phase(run_id)
     assert phase.status == "skipped"
-    assert phase.detail["reason"] == "approval_required"
+    assert phase.detail["reason"] == "research_brief_required"
 
 
 def test_zero_web_budget_skips_research(client, fake_providers):
@@ -188,9 +190,8 @@ def test_web_research_unavailable_skips_honestly(client, monkeypatch):
     assert phase.detail["reason"] == "web_research_unavailable"
 
 
-def test_non_public_run_never_reaches_research(client, fake_providers):
-    """Interne/vertrauliche Läufe überspringen die Recherche-Phase — die
-    Search Query Firewall bleibt unangetastet und wird nie umgangen."""
+def test_internal_run_without_approved_brief_never_reaches_research(client, fake_providers):
+    """Interne Läufe benötigen denselben freigegebenen öffentlichen Brief."""
     from tests.conftest import create_project
 
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
@@ -225,4 +226,4 @@ def test_non_public_run_never_reaches_research(client, fake_providers):
     assert _research_tasks(project_id) == []
     phase = _phase(run_id)
     assert phase.status == "skipped"
-    assert phase.detail["reason"] == "web_research_class_blocked"
+    assert phase.detail["reason"] == "research_brief_required"

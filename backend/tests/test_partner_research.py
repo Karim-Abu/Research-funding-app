@@ -219,7 +219,8 @@ def test_candidate_view_types_and_status():
     assert cands[0].candidate_type == "university_lab"
     assert cands[1].candidate_type == "competence_center"
     assert all(c.status == "needs_human_review" for c in cands)
-    assert all(c.swiss_relevance is True for c in cands)
+    assert all(c.swiss_relevance is None for c in cands)
+    assert all(c.country_or_region is None for c in cands)
     assert all(len(c.limitations) > 0 for c in cands)
     # rank-2 with no rank-1 corroborating host anywhere → "low"; a lone rank-1 (no other
     # purpose sharing its host) → "medium", never invented as "high" without corroboration.

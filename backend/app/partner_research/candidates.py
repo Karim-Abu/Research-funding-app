@@ -67,7 +67,7 @@ class PartnerCandidate:
     country_or_region: str | None
     expertise_keywords: list[str]
     potential_project_role: str
-    swiss_relevance: bool
+    swiss_relevance: bool | None
     evidence_url: str
     evidence_snippet: str | None
     confidence: Confidence
@@ -123,12 +123,14 @@ def to_partner_candidates(
                 candidate_name=r.title,
                 organization=r.title,
                 candidate_type=candidate_type,
-                country_or_region=topic.region,
+                # The research brief's region scopes the query; it is not evidence for
+                # the candidate's actual location or Swiss nexus.
+                country_or_region=None,
                 expertise_keywords=keywords,
                 potential_project_role=_POTENTIAL_ROLE.get(
                     candidate_type, _POTENTIAL_ROLE["unknown"]
                 ),
-                swiss_relevance=True,
+                swiss_relevance=None,
                 evidence_url=r.source_url,
                 evidence_snippet=r.snippet,
                 confidence=confidence,

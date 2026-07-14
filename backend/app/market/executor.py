@@ -12,6 +12,8 @@ import threading
 import uuid
 from datetime import datetime, timezone
 
+from sqlalchemy import select
+
 from app.agents import gateway
 from app.agents.prompt_assets import prompt_version_for
 from app.agents.schemas import SchemaNotImplementedError, ValidationError, validate_payload
@@ -66,6 +68,7 @@ def _fake_bundle(candidates) -> str:
     ``customer_problem``, wenn das Fragment entsprechende Signale trägt — damit der
     deterministische CI-Pfad alle fünf Zusammenfassungs-Abschnitte zeigen kann."""
     import json
+    import re
 
     if not candidates:
         return json.dumps({"items": [], "research_gaps":
@@ -93,19 +96,23 @@ def _fake_bundle(candidates) -> str:
             "quote": quote,
         }
 
+    identified = re.search(
+        r"(?:Plattform|Anbieter|Lösung)\s+([A-ZÄÖÜ][\wÄÖÜäöü-]{2,})", text
+    )
+    identity_or_claim = identified.group(1) if identified else quote[:80]
     items = [_item(
-        "Öffentlich genannte Lösung", "alternative_solution",
+        identity_or_claim, "alternative_solution",
         "In einer öffentlichen Quelle erwähnte Lösung (zu prüfen).",
     )]
     low = text.lower()
     if "markt" in low or "market" in low:
         items.append(_item(
-            "Marktgrössen-Hinweis", "market_size_claim",
+            f"Markt-Claim: {quote[:70]}", "market_size_claim",
             "Marktbezogene Aussage aus einer öffentlichen Quelle (zu prüfen).",
         ))
     if any(t in low for t in ("problem", "herausforderung", "bedarf", "pain", "need")):
         items.append(_item(
-            "Kundenproblem-Hinweis", "customer_problem",
+            f"Kundenproblem: {quote[:65]}", "customer_problem",
             "In einer öffentlichen Quelle beschriebenes Kundenproblem (zu prüfen).",
         ))
     bundle = {
@@ -147,6 +154,14 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             return
 
         try:
+            if get_settings().web_research_fake_provider:
+                _complete_empty(
+                    db, comparison, operation_id,
+                    "Demo-Recherche enthält keine echten Webquellen; es wurde kein Marktvergleich erzeugt.",
+                )
+                comparison.warnings = ["Demo-Recherche – keine echten Webquellen"]
+                db.commit()
+                return
             guard = cost_guard.pre_check_generation(comparison)
             if not guard.allowed:
                 _finish_operation(db, operation_id, "succeeded")
@@ -167,7 +182,9 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             payload = {
                 "project_id": comparison.project_id,
                 "comparison_id": comparison.comparison_id,
-                "project_title": project.title if project else "",
+                # Der Vergleich erhält nur public-safe Quellenmaterial, nie einen
+                # Realprojekt-Codenamen oder Rohprojekttext.
+                "project_title": "Öffentlich freigegebener Recherchekontext",
                 "candidate_fragments": [
                     {"fragment_id": c.fragment_id, "source_version_id": c.source_version_id,
                      "source_document_id": c.source_document_id, "text": c.text}
@@ -225,6 +242,11 @@ def _persist(db, comparison, candidates, response) -> None:
     by_fragment = {c.fragment_id: c for c in candidates}
     seen_names: set[str] = set()
     count = 0
+    gaps = list(out.research_gaps or [])
+    generic_names = {
+        "öffentlich genannte lösung", "publicly mentioned solution",
+        "marktgrössen-hinweis", "kundenproblem-hinweis",
+    }
     for rec in out.items:
         if count >= cost_guard.MAX_ITEMS_PER_COMPARISON:
             break
@@ -232,6 +254,9 @@ def _persist(db, comparison, candidates, response) -> None:
         if not name:
             continue
         norm = normalize_for_match(name)
+        if norm in generic_names:
+            gaps.append("Ein Recherchetreffer hatte keine eindeutig identifizierbare Organisation oder Aussage.")
+            continue
         if norm in seen_names:
             continue  # dedup by normalized name
         seen_names.add(norm)
@@ -247,14 +272,21 @@ def _persist(db, comparison, candidates, response) -> None:
                     source_document_id=cand.source_document_id, quote=rec.quote,
                 )
                 if ref is not None:
+                    from app.db.models import ResearchResult
+                    result = db.scalar(
+                        select(ResearchResult).where(
+                            ResearchResult.source_document_id == cand.source_document_id
+                        )
+                    )
+                    if result is not None:
+                        ref["source_url"] = result.final_url or result.source_url
                     verified_refs.append(ref)
                     source_doc_ids.append(cand.source_document_id)
 
-        if verified_refs:
-            confidence, status = "source_backed", "proposed"
-        else:
-            # No exact verified quote → never presented as confirmed (rules 5/8).
-            confidence, status = "insufficient_evidence", "needs_human_review"
+        if not verified_refs or not verified_refs[0].get("source_url"):
+            gaps.append(f"Für „{name[:80]}“ fehlt eine exakte Fundstelle mit URL.")
+            continue
+        confidence, status = "source_backed", "proposed"
 
         db.add(MarketComparisonItem(
             item_id=str(uuid.uuid4()),
@@ -274,10 +306,18 @@ def _persist(db, comparison, candidates, response) -> None:
             status=status,
             source_document_ids=source_doc_ids,
             verified_quote_refs=verified_refs,
+            comparison_dimensions={
+                "solution_type": rec.solution_type,
+                "centralization": rec.centralization,
+                "data_access_model": rec.data_access_model,
+                "swiss_relevance": rec.swiss_relevance,
+            },
+            coverage_status="exact_quote_verified",
+            support_status="unreviewed",
         ))
         count += 1
 
-    comparison.research_gaps = list(out.research_gaps or [])
+    comparison.research_gaps = list(dict.fromkeys(gaps))
     comparison.warnings = list(out.warnings or [])
     return count
 

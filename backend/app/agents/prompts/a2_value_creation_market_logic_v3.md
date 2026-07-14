@@ -34,5 +34,6 @@ Gib ausschließlich JSON für `PortalSectionDraftBundle@v1` zurück. Genau ein
 `suggested_text` enthält nur den Zielabschnitt einschließlich Markerzeile. Fülle
 `rationale`, `preserved_facts`, `removed_or_reframed_claims`, `new_claims`,
 `missing_inputs`, tatsächlich verwendete `evidence_anchor_ids` und berücksichtigte
-`open_issue_ids`. Keine unbekannten Schlüssel.
-
+`open_issue_ids`. Setze `research_source_ids` nur auf IDs der im Vorschlag tatsächlich
+referenzierten öffentlichen Research-Quellen. Diese IDs sind keine Beleg-IDs und dürfen
+nicht als fachliche Stützung bezeichnet werden. Keine unbekannten Schlüssel.

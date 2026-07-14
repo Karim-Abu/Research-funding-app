@@ -285,6 +285,7 @@ class SectionDraftCandidateRecord(BaseModel):
     new_claims: list[str] = []
     missing_inputs: list[PlaceholderRecord] = []
     evidence_anchor_ids: list[str] = []
+    research_source_ids: list[str] = []
     open_issue_ids: list[str] = []
 
 
@@ -489,6 +490,10 @@ class MarketComparisonItemRecord(BaseModel):
     strengths: str | None = None
     weaknesses: str | None = None
     differentiation_relevance: str | None = None
+    solution_type: str | None = None
+    centralization: Literal["centralized", "decentralized", "hybrid", "unclear"] = "unclear"
+    data_access_model: str | None = None
+    swiss_relevance: str | None = None
     relation_to_project: MarketRelation = "unclear"
     source_fragment_id: str | None = None
     source_document_id: str | None = None

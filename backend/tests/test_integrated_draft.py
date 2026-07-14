@@ -90,11 +90,15 @@ def _make_seed_ctx(seeded_ids: list[str]):
         if purpose is None:
             return
         task_id = "rt-" + uuid.uuid4().hex[:8]
+        source_id = "src-" + uuid.uuid4().hex[:8]
         db.add(ResearchTask(
             research_task_id=task_id, project_id=project.project_id,
             workspace_id=project.workspace_id, created_by="user-anna", purpose=purpose,
             subject_type="topic", query_text="öffentliche Suche", normalized_query_hash="qh",
-            status="succeeded",
+            status="succeeded", provider="firecrawl", execution_mode="live",
+            research_module=(
+                "market_growth" if field_id == VC_FIELD else "swiss_research_partners"
+            ),
         ))
         rid = "rr-" + uuid.uuid4().hex[:8]
         db.add(ResearchResult(
@@ -106,7 +110,6 @@ def _make_seed_ctx(seeded_ids: list[str]):
             "Der Markt für Anbieter und Wettbewerber wächst; alternative Lösungen "
             "und Produkte für Kunden sind öffentlich beschrieben."
         )
-        source_id = "src-" + uuid.uuid4().hex[:8]
         version_id = "sv-" + uuid.uuid4().hex[:8]
         dc = {
             "sensitivity": "public", "origin": "public_source",
@@ -131,6 +134,13 @@ def _make_seed_ctx(seeded_ids: list[str]):
             fragment_id="frag-" + uuid.uuid4().hex[:8], source_version_id=version_id,
             ordinal=0, original_text=text, normalized_text=text, start_offset=0,
             end_offset=len(text), content_hash="fh",
+        ))
+        db.add(ResearchResult(
+            result_id="rr-imported-" + uuid.uuid4().hex[:8],
+            research_task_id=task_id, workspace_id=project.workspace_id,
+            source_url="https://research.example.org/imported/1",
+            title="Übernommene öffentliche Quelle", snippet="Importierter Auszug.",
+            provider_rank=2, status="imported", source_document_id=source_id,
         ))
         db.flush()
         seeded_ids.append(rid)

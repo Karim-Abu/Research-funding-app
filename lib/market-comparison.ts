@@ -29,6 +29,7 @@ export type ItemStatus =
   | "accepted"
   | "rejected"
   | "needs_human_review"
+export type SupportStatus = "unreviewed" | "supports" | "partial" | "does_not_support"
 
 export interface AsyncAcceptedDto {
   operation_id: string
@@ -43,6 +44,7 @@ export interface EvidenceQuoteDto {
   source_document_id: string
   source_version_id: string
   linked_evidence_anchor_id?: string | null
+  source_url?: string | null
 }
 
 export interface MarketComparisonItemDto {
@@ -55,11 +57,17 @@ export interface MarketComparisonItemDto {
   strengths?: string | null
   weaknesses?: string | null
   differentiation_relevance?: string | null
+  solution_type?: string | null
+  centralization?: "centralized" | "decentralized" | "hybrid" | "unclear"
+  data_access_model?: string | null
+  swiss_relevance?: string | null
   relation_to_project: ItemRelation
   confidence_label: ConfidenceLabel
   status: ItemStatus
   source_document_ids: string[]
   evidence_quotes: EvidenceQuoteDto[]
+  coverage_status?: "exact_quote_verified" | null
+  support_status?: SupportStatus | null
 }
 
 export interface MarketComparisonDto {
@@ -141,6 +149,20 @@ export const ITEM_STATUS_LABELS: Record<ItemStatus, string> = {
   needs_human_review: "Prüfung nötig",
 }
 
+export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
+  unreviewed: "Stützung ungeprüft",
+  supports: "Stützt die Aussage",
+  partial: "Stützt teilweise",
+  does_not_support: "Stützt die Aussage nicht",
+}
+
+export const CENTRALIZATION_LABELS: Record<NonNullable<MarketComparisonItemDto["centralization"]>, string> = {
+  centralized: "zentral",
+  decentralized: "dezentral",
+  hybrid: "hybrid",
+  unclear: "unklar",
+}
+
 const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",
@@ -220,7 +242,8 @@ export async function getLatestComparison(
 
 export async function updateItemStatus(
   itemId: string,
-  status: ItemStatus
+  status: ItemStatus,
+  supportStatus?: SupportStatus,
 ): Promise<MarketComparisonItemDto> {
   const res = await fetch(
     `/api/market-comparison-items/${encodeURIComponent(itemId)}/status`,
@@ -231,7 +254,7 @@ export async function updateItemStatus(
         "Idempotency-Key": idempotencyKey(),
         ...csrfHeaders(),
       },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, ...(supportStatus ? { support_status: supportStatus } : {}) }),
     }
   )
   if (!res.ok) throw await toError(res)

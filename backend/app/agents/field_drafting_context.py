@@ -31,6 +31,8 @@ from app.db.models import (
     OpenIssue,
     Partner,
     Project,
+    ResearchResult,
+    ResearchTask,
     RequirementAssessment,
     RunProjectSnapshot,
     SourceDocument,
@@ -87,6 +89,7 @@ class A2Context:
     context_hash: str = ""
     allowed_anchor_ids: set = field(default_factory=set)
     allowed_issue_ids: set = field(default_factory=set)
+    allowed_research_source_ids: set = field(default_factory=set)
     meta: dict = field(default_factory=dict)
     context_components: list[dict] = field(default_factory=list)
 
@@ -310,8 +313,18 @@ def _trim(text: str | None, limit: int) -> str:
     return one_line[:limit] + "…" if len(one_line) > limit else one_line
 
 
+_SECTION_RESEARCH_MODULES: dict[str, set[str]] = {
+    "3.1": {"market_growth", "customer_problem"},
+    "3.2": {"competition_alternatives", "market_growth"},
+    "3.3": {"customer_problem", "market_growth"},
+    "4.1": {"state_of_the_art"},
+    "4.2": {"state_of_the_art"},
+    "4.6": {"swiss_research_partners"},
+}
+
+
 def retrieve_advisory_research_context(
-    db: Session, run: AnalysisRun, profile_id: str
+    db: Session, run: AnalysisRun, profile_id: str, target_section: str | None = None,
 ) -> dict:
     """R5.7/R8 — advisory research context for the two big fields only.
 
@@ -326,13 +339,39 @@ def retrieve_advisory_research_context(
     if not purposes or not run.project_id:
         return {}
 
-    sources = source_scope.imported_public_sources(db, run.project_id, run.workspace_id)
+    allowed_modules = _SECTION_RESEARCH_MODULES.get(target_section or "")
+    rows = list(db.execute(
+        select(SourceDocument, ResearchResult, ResearchTask)
+        .join(ResearchResult, ResearchResult.source_document_id == SourceDocument.source_id)
+        .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+        .where(
+            SourceDocument.project_id == run.project_id,
+            SourceDocument.workspace_id == run.workspace_id,
+            SourceDocument.status == "processed",
+            ResearchResult.status == "imported",
+            ResearchTask.execution_mode == "live",
+        )
+    ))
+    if allowed_modules is not None:
+        rows = [row for row in rows if row[2].research_module in allowed_modules]
+    sources = [row[0] for row in rows]
+    provenance = {row[0].source_id: row for row in rows}
     fragments = source_scope.prefilter_fragments(
         db, sources, max_fragments=_RESEARCH_SOURCE_MAX_FRAGMENTS,
         char_budget=_RESEARCH_SOURCE_CHAR_BUDGET,
+        require_market_signal=profile_id == "A2.value_creation_market_logic",
     )
     imported = [
-        {"source_name": f.source_name, "snippet": _trim(f.text, _RESEARCH_SNIPPET_MAX)}
+        {
+            "source_id": f.source_document_id,
+            "source_name": f.source_name,
+            "source_url": (
+                provenance[f.source_document_id][1].final_url
+                or provenance[f.source_document_id][1].source_url
+            ),
+            "research_module": provenance[f.source_document_id][2].research_module,
+            "snippet": _trim(f.text, _RESEARCH_SNIPPET_MAX),
+        }
         for f in fragments
     ]
     if not imported:
@@ -348,7 +387,10 @@ def _render_research_context(rc: dict) -> str:
         "on it, keep a placeholder / missing_input instead):"
     ]
     for s in rc.get("imported_sources", []):
-        lines.append(f"- [imported public source | {s['source_name']}] {s['snippet']}")
+        lines.append(
+            f"- [research_source_id={s['source_id']} | module={s['research_module']} | "
+            f"imported public source | {s['source_name']}] {s['snippet']}"
+        )
     return "\n".join(lines)
 
 
@@ -498,9 +540,14 @@ def assemble_a2_context(
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
     # R5.7: advisory research context (VC/SOL only) — never added to allowed_anchor_ids.
-    ctx.research_context = retrieve_advisory_research_context(db, run, profile_id)
+    ctx.research_context = retrieve_advisory_research_context(
+        db, run, profile_id, target_section
+    )
     ctx.allowed_anchor_ids = {e["anchor_id"] for e in ctx.verified_evidence}
     ctx.allowed_issue_ids = {i["issue_id"] for i in ctx.open_issues}
+    ctx.allowed_research_source_ids = {
+        item["source_id"] for item in ctx.research_context.get("imported_sources", [])
+    }
 
     # Record the tool invocations (authorization checked against the registry).
     _record_tool(db, run, "lookup_portal_field_profile",

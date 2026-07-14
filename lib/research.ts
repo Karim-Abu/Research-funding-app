@@ -120,6 +120,7 @@ async function toError(res: Response): Promise<ResearchError> {
   )
 }
 
+/** @deprecated Normal UI uses the approved public research brief workflow. */
 export async function createResearchTask(
   projectId: string,
   input: ResearchTaskInput

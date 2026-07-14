@@ -173,6 +173,7 @@ def add_research_candidate(
 def add_imported_public_source(
     db, run, *, name: str = "Marktbericht (öffentlich)",
     text: str = "Der Markt für Anbieter und Wettbewerber wächst; Umsatz ca. 12 Mio.",
+    research_module: str = "competition_alternatives",
 ) -> str:
     """R5.7: an imported D0/public web SourceDocument (type=url, origin=public_source) with
     a market-signal fragment so source_scope.prefilter_fragments picks it. Returns source_id."""
@@ -201,6 +202,30 @@ def add_imported_public_source(
         original_text=text, normalized_text=text, start_offset=0, end_offset=len(text),
         content_hash="fh",
     ))
+    task_id = "rt-" + uuid.uuid4().hex[:8]
+    db.add(ResearchTask(
+        research_task_id=task_id, project_id=run.project_id,
+        workspace_id=run.workspace_id, created_by="user-anna",
+        purpose=MARKET_PURPOSE, subject_type="topic", subject_name=None,
+        query_text="public research query", normalized_query_hash="query-hash",
+        status="succeeded", preferred_domains=[], disallowed_domains=[],
+        competence_needs=[], requested_partner_roles=[], max_results=1, max_pages=1,
+        provider="firecrawl", execution_mode="live", result_count=1,
+        firewall_data_class="D0_PUBLIC", research_module=research_module,
+        planner_purpose=(
+            "competitors_alternatives"
+            if research_module == "competition_alternatives"
+            else "state_of_the_art"
+        ),
+    ))
+    db.add(ResearchResult(
+        result_id="rr-" + uuid.uuid4().hex[:8], research_task_id=task_id,
+        workspace_id=run.workspace_id,
+        source_url="https://public.example.test/research",
+        final_url="https://public.example.test/research", title=name,
+        snippet="Imported live research source", status="imported",
+        source_document_id=source_id,
+    ))
     db.flush()
     return source_id
 
@@ -226,7 +251,7 @@ def section_bundle(
     *, suggested_text=SECTION_GOOD_TEXT, target_section=TARGET_SECTION,
     evidence_anchor_ids=None, open_issue_ids=None, missing_inputs=None,
     rationale="Der Zielabschnitt wurde projektspezifisch präzisiert.",
-    field_id=FIELD_ID,
+    field_id=FIELD_ID, research_source_ids=None,
 ) -> dict:
     return {
         "section_candidate": {
@@ -239,6 +264,7 @@ def section_bundle(
             "new_claims": [],
             "missing_inputs": missing_inputs or [],
             "evidence_anchor_ids": evidence_anchor_ids or [],
+            "research_source_ids": research_source_ids or [],
             "open_issue_ids": open_issue_ids or [],
         },
         "warnings": [],
