@@ -46,6 +46,11 @@ class AgentUsageSummary(BaseModel):
     generation_kinds: list[str] = []
     model_calls: int = 0
     prompt_versions: list[str] = []
+    actual_models: list[str] = []
+    skill_versions: list[str] = []
+    retry_count: int = 0
+    termination_reasons: list[str] = []
+    attempts: list[dict[str, Any]] = []
 
 
 class RunTechnicalSummary(BaseModel):
@@ -64,3 +69,5 @@ class RunPhases(BaseModel):
     run_status: str
     phases: list[RunPhaseOut]
     technical: RunTechnicalSummary
+    live_execution_status: str | None = None
+    live_status_reason: str | None = None

@@ -62,4 +62,6 @@ def to_contract(run: AnalysisRun) -> AnalysisRunSchema:
         issue_counts=IssueCounts(blocker=0, warning=0, info=0),
         review_package_version=run.review_package_version,
         approval_scope_hash=run.approval_scope_hash,
+        live_execution_status=run.live_execution_status,
+        live_status_reason=run.live_status_reason,
     )

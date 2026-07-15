@@ -2,10 +2,12 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
 
 from app.config.settings import Settings
 from app.contracts.capabilities import Capabilities
 from app.security.deps import require_session, settings_dep
+from app.db.session import get_db
 
 router = APIRouter(tags=["Infrastructure"])
 
@@ -14,6 +16,7 @@ router = APIRouter(tags=["Infrastructure"])
 def get_capabilities(
     _: object = Depends(require_session),
     settings: Settings = Depends(settings_dep),
+    db: Session | None = Depends(get_db),
 ) -> Capabilities:
     # Truthful feature flags — only fully-implemented slices are advertised.
     # Milestone 4 activates the deterministic formal-eligibility precheck:
@@ -58,6 +61,26 @@ def get_capabilities(
     real_eval_available = live_intent and bool(
         settings.openai_api_key or settings.anthropic_api_key
     )
+    # HTTP callers additionally require a fresh synthetic preflight for at
+    # least one route of each core role. Direct unit calls without a Session
+    # retain the configuration-only contract.
+    preflight_reason = None
+    if real_eval_available and hasattr(db, "scalar"):
+        from app.agents.registry import get_agent_registry
+        from app.evaluation.preflight import route_preflight_passed
+        registry = get_agent_registry()
+        core_roles = (
+            "A1_FACT_EVIDENCE_ANALYST",
+            "A2_INNOSUISSE_PROPOSAL_WRITER",
+            "A3_INNOSUISSE_CRITICAL_REVIEWER",
+        )
+        for role_id in core_roles:
+            role = (registry.role_routes or {}).get(role_id)
+            route_keys = [key for key in (role.primary, role.fallback) if key] if role else []
+            if not any(route_preflight_passed(db, key) for key in route_keys):
+                real_eval_available = False
+                preflight_reason = "live_preflight_required"
+                break
     generation_mode = (
         "real_eval" if real_eval_available
         else "live_unavailable" if live_intent
@@ -68,6 +91,8 @@ def get_capabilities(
         "unavailable": "no_approved_model_provider",
         "live_unavailable": "live_provider_key_missing",
     }
+    unavailable_reason = preflight_reason or unavailable_reasons.get(generation_mode)
+    ai_available = generation_mode == "real_eval"
     return Capabilities(
         api_version=settings.api_version,
         polling_interval_seconds=settings.polling_interval_seconds,
@@ -75,5 +100,9 @@ def get_capabilities(
         supported_source_types=settings.supported_source_types,
         features=features,
         generation_mode=generation_mode,
-        generation_unavailable_reason=unavailable_reasons.get(generation_mode),
+        generation_unavailable_reason=unavailable_reason,
+        ai_available=ai_available,
+        ai_unavailable_reason=None if ai_available else (
+            unavailable_reason or "live_ai_not_enabled"
+        ),
     )

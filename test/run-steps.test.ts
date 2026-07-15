@@ -92,7 +92,7 @@ describe("phasesToView — echte Backend-Phasen, kein erfundener Fortschritt", (
       }),
     ])
     expect(view[0].error).toBe(
-      "Die KI-Qualitätsprüfung ist fehlgeschlagen — die Feldvorschläge bleiben erhalten."
+      "Kritik nicht durchgeführt: Die KI-Qualitätsprüfung ist fehlgeschlagen. Die Feldvorschläge bleiben erhalten."
     )
     // Anforderung 13: der Fehler nennt den manuellen Ausweg (keine Sackgasse).
     expect(view[1].error).toBe(

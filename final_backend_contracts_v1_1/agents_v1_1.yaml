@@ -74,6 +74,111 @@ model_catalog:
     status: active_candidate
     verified_on: '2026-06-21'
     source_url: https://developers.openai.com/api/docs/models
+  openai_gpt_56_luna_candidate:
+    provider: openai_direct
+    model_id: gpt-5.6-luna
+    model_setting: agent_model_gpt_56_luna_id
+    alias: gpt-5.6-luna
+    status: hypothesis_requires_runtime_resolution
+    purpose: cost_effective_structured_extraction_candidate
+    capabilities:
+      endpoint: responses
+      structured_outputs: true
+      effort_levels: [low, medium]
+      default_effort: low
+  openai_gpt_56_terra_candidate:
+    provider: openai_direct
+    model_id: gpt-5.6-terra
+    model_setting: agent_model_gpt_56_terra_id
+    alias: gpt-5.6-terra
+    status: hypothesis_requires_runtime_resolution
+    purpose: drafting_and_independent_critique_candidate
+    capabilities:
+      endpoint: responses
+      structured_outputs: true
+      effort_levels: [medium, high]
+      default_effort: high
+  openai_gpt_56_sol_candidate:
+    provider: openai_direct
+    model_id: gpt-5.6-sol
+    model_setting: agent_model_gpt_56_sol_id
+    alias: gpt-5.6-sol
+    status: evaluation_only_requires_runtime_resolution
+    purpose: optional_quality_reference
+    evaluation_only: true
+    capabilities:
+      endpoint: responses
+      structured_outputs: true
+      effort_levels: [high]
+      default_effort: high
+  anthropic_haiku_45_candidate:
+    provider: anthropic_direct
+    model_id: claude-haiku-4-5-20251001
+    model_setting: agent_model_claude_haiku_45_id
+    alias: claude-haiku-4-5
+    status: evaluation_candidate
+    capabilities:
+      endpoint: messages
+      structured_outputs: true
+      effort_levels: []
+  anthropic_sonnet_5_candidate:
+    provider: anthropic_direct
+    model_id: claude-sonnet-5
+    model_setting: agent_model_claude_sonnet_5_id
+    alias: claude-sonnet-5
+    status: evaluation_candidate
+    capabilities:
+      endpoint: messages
+      structured_outputs: true
+      effort_levels: [low, medium, high]
+      default_effort: medium
+  anthropic_fable_5_candidate:
+    provider: anthropic_direct
+    model_id: claude-fable-5
+    model_setting: agent_model_claude_fable_5_id
+    alias: claude-fable-5
+    status: evaluation_only
+    purpose: optional_quality_ceiling
+    evaluation_only: true
+    capabilities:
+      endpoint: messages
+      structured_outputs: true
+      effort_levels: [medium, high]
+      default_effort: high
+role_routes:
+  A1_FACT_EVIDENCE_ANALYST:
+    execution_kind: model_gateway
+    primary: openai_gpt_56_luna_candidate
+    fallback: anthropic_haiku_45_candidate
+    comparison: anthropic_haiku_45_candidate
+    max_cost_chf: 0.50
+    max_latency_seconds: 180
+  A2_INNOSUISSE_PROPOSAL_WRITER:
+    execution_kind: model_gateway
+    primary: anthropic_sonnet_5_candidate
+    fallback: openai_gpt_56_terra_candidate
+    comparison: openai_gpt_56_terra_candidate
+    max_cost_chf: 2.00
+    max_latency_seconds: 240
+  A3_INNOSUISSE_CRITICAL_REVIEWER:
+    execution_kind: model_gateway
+    primary: openai_gpt_56_terra_candidate
+    fallback: anthropic_sonnet_5_candidate
+    comparison: openai_gpt_56_sol_candidate
+    max_cost_chf: 2.00
+    max_latency_seconds: 300
+  RESEARCH_QUERY_PLANNER:
+    execution_kind: deterministic
+    deterministic_service: research.brief_service.plan_queries_with_firewall
+  RESEARCH_EVIDENCE_SYNTHESIZER:
+    execution_kind: model_gateway
+    primary: anthropic_sonnet_5_candidate
+    fallback: anthropic_haiku_45_candidate
+    max_cost_chf: 2.00
+    max_latency_seconds: 240
+  EVIDENCE_SUPPORT_VERIFIER:
+    execution_kind: deterministic
+    deterministic_service: reliability.sufficiency.check_support
 agents:
 - agent_id: A1
   name: Project Input & Evidence Extraction

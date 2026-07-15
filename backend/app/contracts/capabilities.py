@@ -21,3 +21,5 @@ class Capabilities(BaseModel):
         "unavailable", "fake_demo", "real_eval", "live_unavailable"
     ] = "unavailable"
     generation_unavailable_reason: str | None = None
+    ai_available: bool = False
+    ai_unavailable_reason: str | None = None

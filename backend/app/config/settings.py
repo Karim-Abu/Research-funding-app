@@ -6,7 +6,7 @@ local-dev only and are documented in the README. Never commit real secrets.
 from __future__ import annotations
 
 from functools import lru_cache
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -90,7 +90,7 @@ class Settings(BaseSettings):
 
     # Agent infrastructure (Milestone 9A) — keys are env-only, never defaulted
     # to a real value, never logged. Missing keys never break startup; the route
-    # is simply marked unavailable and the fake provider is used.
+    # is simply marked unavailable. Live intent never falls back to fake.
     anthropic_api_key: str | None = None
     openai_api_key: str | None = None
     # External cloud processing of internal real-project data requires an
@@ -111,6 +111,19 @@ class Settings(BaseSettings):
     # synthetic) — nie für echte D1/D2-Daten. Default off; das Setzen der
     # Variable gilt als dokumentierte Owner-Freigabe für den Evaluationslauf.
     ai_eval_mode: Literal["off", "real"] = "off"
+    # Deployment resolution for versioned logical model aliases. OpenAI 5.6
+    # candidate names are intentionally not treated as provider API ids.
+    agent_model_gpt_56_luna_id: str | None = None
+    agent_model_gpt_56_terra_id: str | None = None
+    agent_model_gpt_56_sol_id: str | None = None
+    agent_model_claude_haiku_45_id: str | None = None
+    agent_model_claude_sonnet_5_id: str | None = None
+    agent_model_claude_fable_5_id: str | None = None
+    agent_quality_ceiling_enabled: bool = False
+    provider_preflight_ttl_seconds: int = 60 * 60 * 6
+    # JSON mapping provider model id -> versioned price evidence object. A live
+    # deployment supplies only prices it has verified; missing means unknown.
+    agent_model_pricing_chf_per_million: dict[str, dict[str, Any]] = {}
 
     # R6 Rubric v0: deterministische Reviewer-Heuristiken (severity_class
     # reviewer_risk, NIE Blocker). Ganze Rubric per Flag abschaltbar; einzelne

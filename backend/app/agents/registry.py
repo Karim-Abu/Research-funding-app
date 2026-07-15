@@ -33,6 +33,31 @@ class ModelRoute:
     model_id: str
     alias: str
     status: str
+    model_setting: str | None = None
+    capabilities: dict[str, Any] | None = None
+    evaluation_only: bool = False
+
+    def requested_model_id(self, settings=None) -> str | None:
+        """Resolve a provider API id without treating a logical alias as one."""
+        if self.model_setting:
+            if settings is None:
+                from app.config.settings import get_settings
+                settings = get_settings()
+            value = getattr(settings, self.model_setting, None)
+            return str(value).strip() if value else None
+        return self.model_id or None
+
+
+@dataclass(frozen=True)
+class RoleRouteDef:
+    role_id: str
+    execution_kind: str
+    primary: str | None
+    fallback: str | None
+    comparison: str | None
+    deterministic_service: str | None
+    max_cost_chf: float | None = None
+    max_latency_seconds: int | None = None
 
 
 @dataclass(frozen=True)
@@ -102,6 +127,7 @@ class AgentRegistry:
     model_routes: dict[str, ModelRoute]
     agents: dict[str, AgentDef]
     profiles: dict[str, AgentProfileDef]
+    role_routes: dict[str, RoleRouteDef] | None = None
 
     def profile(self, profile_id: str) -> AgentProfileDef:
         try:
@@ -114,6 +140,15 @@ class AgentRegistry:
             return self.model_routes[key]
         except KeyError as exc:
             raise AgentRegistryError(f"Unknown model route: {key}") from exc
+
+    def route_keys_for_profile(
+        self, profile: AgentProfileDef, role_id: str | None, *, live: bool
+    ) -> list[str]:
+        if live and role_id and self.role_routes and role_id in self.role_routes:
+            role_route = self.role_routes[role_id]
+            if role_route.execution_kind == "model_gateway" and role_route.primary:
+                return [key for key in (role_route.primary, role_route.fallback) if key]
+        return [key for key in (profile.primary_model, profile.fallback_model) if key]
 
 
 def _profile_permitted(profile_id: str, allowed: list[str]) -> bool:
@@ -139,6 +174,8 @@ def _build(
     tools_raw: dict[str, Any],
     controls_raw: dict[str, Any],
     schemas_raw: dict[str, Any],
+    *,
+    require_role_routes: bool = False,
 ) -> AgentRegistry:
     # Reference sets ---------------------------------------------------------
     tool_index = {
@@ -149,12 +186,25 @@ def _build(
 
     model_routes: dict[str, ModelRoute] = {}
     for key, entry in (agents_raw.get("model_catalog") or {}).items():
+        capabilities = dict(entry.get("capabilities", {}) or {})
+        endpoint = capabilities.get("endpoint")
+        expected_endpoint = {
+            "openai_direct": "responses",
+            "anthropic_direct": "messages",
+        }.get(entry["provider"])
+        if endpoint and expected_endpoint and endpoint != expected_endpoint:
+            raise AgentRegistryError(
+                f"{key}: endpoint {endpoint} incompatible with {entry['provider']}"
+            )
         model_routes[key] = ModelRoute(
             key=key,
             provider=entry["provider"],
             model_id=entry["model_id"],
             alias=entry.get("alias", entry["model_id"]),
             status=entry.get("status", "unknown"),
+            model_setting=entry.get("model_setting"),
+            capabilities=capabilities,
+            evaluation_only=bool(entry.get("evaluation_only", False)),
         )
     if not model_routes:
         raise AgentRegistryError("agents registry has no model_catalog")
@@ -259,7 +309,64 @@ def _build(
     if not profiles:
         raise AgentRegistryError("agents registry has no profiles")
 
-    return AgentRegistry(model_routes=model_routes, agents=agents, profiles=profiles)
+    role_routes: dict[str, RoleRouteDef] = {}
+    for role_id, entry in (agents_raw.get("role_routes") or {}).items():
+        execution_kind = str(entry.get("execution_kind") or "")
+        primary = entry.get("primary")
+        fallback = entry.get("fallback")
+        comparison = entry.get("comparison")
+        if execution_kind not in ("model_gateway", "deterministic"):
+            raise AgentRegistryError(f"{role_id}: invalid execution_kind")
+        for route_key in (primary, fallback, comparison):
+            if route_key is not None and route_key not in model_routes:
+                raise AgentRegistryError(f"{role_id}: unknown model route {route_key}")
+        if execution_kind == "model_gateway" and primary is None:
+            raise AgentRegistryError(f"{role_id}: missing primary model route")
+        role_routes[role_id] = RoleRouteDef(
+            role_id=role_id,
+            execution_kind=execution_kind,
+            primary=primary,
+            fallback=fallback,
+            comparison=comparison,
+            deterministic_service=entry.get("deterministic_service"),
+            max_cost_chf=(
+                float(entry["max_cost_chf"])
+                if entry.get("max_cost_chf") is not None else None
+            ),
+            max_latency_seconds=(
+                int(entry["max_latency_seconds"])
+                if entry.get("max_latency_seconds") is not None else None
+            ),
+        )
+
+    from app.agents.role_skills import get_role_skill_registry
+
+    if require_role_routes or role_routes:
+        contract_roles = get_role_skill_registry().roles
+        missing_routes = set(contract_roles) - set(role_routes)
+        extra_routes = set(role_routes) - set(contract_roles)
+        if missing_routes or extra_routes:
+            raise AgentRegistryError(
+                "role route coverage mismatch: "
+                f"missing={sorted(missing_routes)} extra={sorted(extra_routes)}"
+            )
+        for role_id, contract_role in contract_roles.items():
+            route = role_routes[role_id]
+            if route.execution_kind != contract_role.execution_kind:
+                raise AgentRegistryError(
+                    f"{role_id}: execution_kind disagrees with role/skill registry"
+                )
+            if route.execution_kind == "deterministic" and not route.deterministic_service:
+                raise AgentRegistryError(f"{role_id}: missing deterministic_service")
+            if route.max_cost_chf is not None and route.max_cost_chf <= 0:
+                raise AgentRegistryError(f"{role_id}: max_cost_chf must be positive")
+            if route.max_latency_seconds is not None and route.max_latency_seconds <= 0:
+                raise AgentRegistryError(f"{role_id}: max_latency_seconds must be positive")
+
+    return AgentRegistry(
+        model_routes=model_routes, agents=agents, profiles=profiles,
+        role_routes=role_routes,
+    )
 
 
 def load_agent_registry() -> AgentRegistry:
@@ -269,6 +376,7 @@ def load_agent_registry() -> AgentRegistry:
         _read_yaml(base / TOOLS_FILE),
         _read_yaml(base / CONTROLS_FILE),
         _read_yaml(base / SCHEMA_CATALOG_FILE),
+        require_role_routes=True,
     )
     logger.info(
         "agent registry loaded agents=%d profiles=%d model_routes=%d",

@@ -21,7 +21,12 @@ from __future__ import annotations
 
 import json
 import re
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.agents.providers.anthropic import AnthropicProvider
 from app.agents.providers.base import (
@@ -33,6 +38,7 @@ from app.agents.providers.base import (
 from app.agents.providers.openai import OpenAIProvider
 from app.agents.registry import AgentRegistry, get_agent_registry
 from app.config.settings import Settings, get_settings
+from app.db.models import ProviderPreflightResult
 
 PASS = "pass"
 FAIL = "fail"
@@ -79,6 +85,11 @@ class ProviderPreflight:
     provider: str
     mode: str  # live | fake | disabled | not_configured
     checks: list[PreflightCheck] = field(default_factory=list)
+    route_key: str | None = None
+    requested_model_id: str | None = None
+    actual_model_id: str | None = None
+    latency_ms: int | None = None
+    error_class: str | None = None
 
     @property
     def status(self) -> str:
@@ -117,6 +128,134 @@ def classify_provider_error(message: str) -> tuple[str, str]:
         "Der Provider-Aufruf ist fehlgeschlagen (keine HTTP-Statusangabe). "
         "Netzwerk/Konfiguration prüfen."
     )
+
+
+def preflight_route(
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+    adapter=None,
+    execute_live: bool = True,
+) -> ProviderPreflight:
+    """Synthetic, schema-validating smoke for one exact configured route."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    route = registry.route(route_key)
+    adapter_cls = OpenAIProvider if route.provider == "openai_direct" else AnthropicProvider
+    adapter = adapter or adapter_cls()
+    requested = route.requested_model_id(settings)
+    result = ProviderPreflight(
+        provider=route.provider, mode="live", route_key=route_key,
+        requested_model_id=requested,
+    )
+    key_present = adapter.available()
+    result.checks.append(PreflightCheck(
+        "key_present", PASS if key_present else FAIL,
+        "API-Schlüssel konfiguriert." if key_present else "Kein API-Schlüssel konfiguriert.",
+    ))
+    if not key_present:
+        result.mode = "not_configured"
+        result.error_class = "auth_failed"
+        result.checks = _not_run_rest(result.checks, "Ohne Schlüssel nicht prüfbar.")
+        return result
+    if not requested:
+        result.error_class = "model_unavailable"
+        result.checks.append(PreflightCheck(
+            "model_available", FAIL,
+            "Der logische Kandidat ist nicht auf eine Provider-Modell-ID aufgelöst.",
+        ))
+        result.checks = _not_run_rest(result.checks, "Modell-ID nicht konfiguriert.")
+        return result
+    if not execute_live:
+        result.checks = _not_run_rest(result.checks, "Live-Aufruf nicht freigegeben.")
+        return result
+    request = ProviderRequest(
+        model_id=requested, prompt=PING_PROMPT, output_schema_id=PING_SCHEMA_ID,
+        timeout_seconds=PING_TIMEOUT_SECONDS, output_json_schema=PING_JSON_SCHEMA,
+        reasoning_effort=(route.capabilities or {}).get("default_effort"),
+    )
+    started = datetime.now(timezone.utc)
+    try:
+        ping = adapter.generate(request)
+    except ProviderError as exc:
+        result.error_class = exc.code
+        result.checks.append(PreflightCheck(
+            "api_reachable", FAIL, f"[{exc.code}] Provider-Aufruf fehlgeschlagen.",
+        ))
+        result.checks = _not_run_rest(result.checks, "Wegen Providerfehler nicht prüfbar.")
+        return result
+    finally:
+        result.latency_ms = int(
+            (datetime.now(timezone.utc) - started).total_seconds() * 1000
+        )
+    result.actual_model_id = ping.model
+    result.checks.extend([
+        PreflightCheck("api_reachable", PASS, "Provider-API hat geantwortet."),
+        PreflightCheck(
+            "model_available", PASS if bool(ping.model) else FAIL,
+            "Provider hat die tatsächliche Modell-ID gemeldet."
+            if ping.model else "Provider hat keine Modell-ID gemeldet.",
+        ),
+    ])
+    try:
+        structured_ok = json.loads(ping.raw_output) == {"pong": True}
+    except (json.JSONDecodeError, TypeError):
+        structured_ok = False
+    result.checks.extend([
+        PreflightCheck(
+            "structured_output", PASS if structured_ok else FAIL,
+            "Schema-Smoke erfolgreich." if structured_ok else "Schema-Smoke fehlgeschlagen.",
+        ),
+        PreflightCheck("rate_limit_clarity", PASS, "Fehlerklassifikation aktiv."),
+    ])
+    if not structured_ok:
+        result.error_class = "schema_invalid"
+    return result
+
+
+def persist_route_preflight(
+    db: Session, result: ProviderPreflight, *, triggered_by: str | None = None,
+    settings: Settings | None = None,
+) -> ProviderPreflightResult:
+    settings = settings or get_settings()
+    now = datetime.now(timezone.utc)
+    route_key = result.route_key or "unknown"
+    try:
+        route_alias = get_agent_registry().route(route_key).alias
+    except Exception:  # pragma: no cover - malformed registry fails at startup
+        route_alias = route_key
+    row = ProviderPreflightResult(
+        preflight_id=str(uuid.uuid4()), route_key=route_key,
+        route_alias=route_alias, provider=result.provider,
+        requested_model_id=result.requested_model_id,
+        actual_model_id=result.actual_model_id, status=result.status,
+        checks_json=[{"name": c.name, "status": c.status, "detail": c.detail} for c in result.checks],
+        error_class=result.error_class, latency_ms=result.latency_ms,
+        triggered_by=triggered_by, checked_at=now,
+        expires_at=now + timedelta(seconds=settings.provider_preflight_ttl_seconds),
+    )
+    db.add(row)
+    db.flush()
+    return row
+
+
+def latest_route_preflight(db: Session, route_key: str) -> ProviderPreflightResult | None:
+    return db.scalar(
+        select(ProviderPreflightResult)
+        .where(ProviderPreflightResult.route_key == route_key)
+        .order_by(ProviderPreflightResult.checked_at.desc())
+    )
+
+
+def route_preflight_passed(db: Session, route_key: str) -> bool:
+    row = latest_route_preflight(db, route_key)
+    if row is None or row.status != PASS:
+        return False
+    expires = row.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    return expires > datetime.now(timezone.utc)
 
 
 def _not_run_rest(done: list[PreflightCheck], reason: str) -> list[PreflightCheck]:

@@ -12,6 +12,7 @@ Pins:
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -22,7 +23,7 @@ from app.agents.providers.base import ProviderResult, ProviderUsage
 from app.agents.registry import get_agent_registry
 from app.api.capabilities import get_capabilities
 from app.config.settings import Settings
-from app.db.models import AgentInvocation
+from app.db.models import AgentInvocation, AgentInvocationAttempt
 from app.db.session import SessionLocal
 from app.evaluation.preflight import (
     FAIL,
@@ -32,6 +33,9 @@ from app.evaluation.preflight import (
     classify_provider_error,
     firecrawl_mode,
     preflight_agent_provider,
+    preflight_route,
+    persist_route_preflight,
+    route_preflight_passed,
     render_report,
     run_preflight,
 )
@@ -183,6 +187,44 @@ def test_preflight_pass_path_with_injected_adapter():
     assert PING_PROMPT not in report
 
 
+def test_route_preflight_requires_environment_model_resolution():
+    result = preflight_route(
+        "openai_gpt_56_luna_candidate",
+        settings=Settings(agent_model_gpt_56_luna_id=None),
+        adapter=FakeProvider(), execute_live=True,
+    )
+    assert result.status == FAIL
+    assert result.error_class == "model_unavailable"
+
+
+def test_fresh_persisted_route_preflight_expires(db):
+    class _Echo(FakeProvider):
+        name = "openai_direct"
+
+        def generate(self, request):
+            return ProviderResult(
+                raw_output='{"pong": true}', usage=ProviderUsage(1, 1),
+                model="actual-hermetic-model",
+            )
+
+    settings = Settings(
+        agent_model_gpt_56_luna_id="requested-hermetic-model",
+        provider_preflight_ttl_seconds=60,
+    )
+    result = preflight_route(
+        "openai_gpt_56_luna_candidate", settings=settings,
+        adapter=_Echo(), execute_live=True,
+    )
+    assert result.status == PASS
+    row = persist_route_preflight(db, result, settings=settings)
+    assert row.requested_model_id == "requested-hermetic-model"
+    assert row.actual_model_id == "actual-hermetic-model"
+    assert route_preflight_passed(db, result.route_key)
+    row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
+    db.flush()
+    assert not route_preflight_passed(db, result.route_key)
+
+
 def test_rate_limit_and_quota_errors_are_understandable():
     code, text = classify_provider_error("openai http 429")
     assert code == "rate_limited"
@@ -221,15 +263,20 @@ def test_technical_trace_carries_actual_model_and_prompt_version(db):
     from app.db.models import AnalysisRun
 
     run = db.get(AnalysisRun, run_id)
+    invocation_id = "inv-" + uuid.uuid4().hex[:8]
     db.add(
         AgentInvocation(
-            invocation_id="inv-" + uuid.uuid4().hex[:8],
+            invocation_id=invocation_id,
             run_id=run_id, workspace_id=run.workspace_id,
             agent_id="A2", profile_id="A2.solution_innovation",
             model_route="m1", provider="openai_direct",
-            model_id="gpt-route", actual_model_id="gpt-route-2026-06",
+            model_id="gpt-route", requested_model_id="gpt-requested",
+            actual_model_id="gpt-route-2026-06",
             input_schema_id="In@v1", output_schema_id="Out@v1",
             prompt_version="a2_solution_innovation_v3", status="succeeded",
+            role_id="A2_INNOSUISSE_PROPOSAL_WRITER",
+            skill_id="a2.novelty_4_2", skill_version="a2_novelty_skill_v2",
+            retry_count=1, termination_reason="stop",
             context_meta={
                 "actual_adapter": "openai_direct",
                 "generation_kind": "model_generated",
@@ -237,6 +284,14 @@ def test_technical_trace_carries_actual_model_and_prompt_version(db):
             },
         )
     )
+    now = datetime.now(timezone.utc)
+    db.add(AgentInvocationAttempt(
+        attempt_id="att-" + uuid.uuid4().hex[:8], invocation_id=invocation_id,
+        attempt_index=0, retry_index=0, route_key="m1", route_alias="candidate",
+        provider="openai_direct", requested_model_id="gpt-requested",
+        actual_model_id="gpt-route-2026-06", status="succeeded",
+        termination_reason="stop", started_at=now, finished_at=now,
+    ))
     db.flush()
     trace = _technical_trace(db, run)
     item = next(
@@ -246,6 +301,10 @@ def test_technical_trace_carries_actual_model_and_prompt_version(db):
     assert item["model_id"] == "gpt-route"
     assert item["actual_model_id"] == "gpt-route-2026-06"
     assert item["prompt_version"] == "a2_solution_innovation_v3"
+    assert item["skill_version"] == "a2_novelty_skill_v2"
+    assert item["requested_model_id"] == "gpt-requested"
+    assert item["retry_count"] == 1
+    assert item["attempts"][0]["actual_model_id"] == "gpt-route-2026-06"
 
 
 def test_run_snapshot_versions_include_prompt_and_model_versions():

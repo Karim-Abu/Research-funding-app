@@ -1,0 +1,110 @@
+"use client"
+
+import * as React from "react"
+import {
+  getLiveSystemStatus,
+  runLiveSystemPreflight,
+  type LiveSystemStatusDto,
+} from "@/lib/live-system-status"
+
+const OVERALL_LABEL = {
+  available: "KI verfügbar",
+  degraded: "Teilweise verfügbar",
+  unavailable: "KI nicht verfügbar",
+} as const
+
+const PREFLIGHT_LABEL = {
+  pass: "Bestanden",
+  fail: "Fehlgeschlagen",
+  not_run: "Nicht durchgeführt",
+} as const
+
+export function LiveSystemStatus() {
+  const [status, setStatus] = React.useState<LiveSystemStatusDto | null>(null)
+  const [error, setError] = React.useState<string | null>(null)
+  const [busy, setBusy] = React.useState(false)
+
+  const load = React.useCallback(async () => {
+    try {
+      setError(null)
+      setStatus(await getLiveSystemStatus())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Status nicht verfügbar.")
+    }
+  }, [])
+
+  React.useEffect(() => void load(), [load])
+
+  async function preflight() {
+    setBusy(true)
+    setError(null)
+    try {
+      setStatus(await runLiveSystemPreflight())
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Preflight fehlgeschlagen.")
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <section className="rounded-lg border border-border bg-card p-4" aria-labelledby="live-system-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 id="live-system-title" className="text-sm font-semibold">Live-Systemstatus</h2>
+          <p className="text-xs text-muted-foreground">
+            Nur sichere Metadaten. Der Preflight sendet ausschliesslich synthetische Testdaten.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={preflight}
+          disabled={busy}
+          className="rounded-md border border-border px-3 py-1.5 text-xs font-medium disabled:opacity-50"
+        >
+          {busy ? "Preflight läuft …" : "Synthetischen Preflight starten"}
+        </button>
+      </div>
+      {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
+      {status && (
+        <div className="mt-4 flex flex-col gap-3">
+          <p className="text-sm font-medium">{OVERALL_LABEL[status.overall_status]}</p>
+          <p className="text-xs text-muted-foreground">Registry: {status.registry_version}</p>
+          <div className="overflow-x-auto">
+            <table className="w-full min-w-[760px] text-left text-xs">
+              <thead className="border-b border-border text-muted-foreground">
+                <tr>
+                  <th className="py-2 pr-3">Rolle / Route</th>
+                  <th className="py-2 pr-3">Provider</th>
+                  <th className="py-2 pr-3">Angefragt</th>
+                  <th className="py-2 pr-3">Tatsächlich</th>
+                  <th className="py-2 pr-3">Preflight</th>
+                  <th className="py-2">Kostenstatus</th>
+                </tr>
+              </thead>
+              <tbody>
+                {status.routes.map((route) => (
+                  <tr key={`${route.role_id}:${route.route_key}`} className="border-b border-border/60 align-top">
+                    <td className="py-2 pr-3">
+                      <div className="font-medium text-foreground">{route.role_id}</div>
+                      <div className="text-muted-foreground">{route.route_alias}</div>
+                    </td>
+                    <td className="py-2 pr-3">{route.provider}</td>
+                    <td className="py-2 pr-3">{route.requested_model_id ?? "nicht aufgelöst"}</td>
+                    <td className="py-2 pr-3">{route.actual_model_id ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      {PREFLIGHT_LABEL[route.preflight_status]}
+                      {route.error_class ? ` · ${route.error_class}` : ""}
+                      {route.latency_ms != null ? ` · ${route.latency_ms} ms` : ""}
+                    </td>
+                    <td className="py-2">{route.cost_status}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+    </section>
+  )
+}

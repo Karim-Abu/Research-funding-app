@@ -24,7 +24,7 @@ _KEY_TABLES = {
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
 }
-_HEAD = "b8f4d6a2c9e1"  # versionierte Rollen-/Skill-Metadaten auf agent_invocations.
+_HEAD = "c9e5a7b1d3f4"  # ehrliches rollenbasiertes Live-Model-Routing.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -76,6 +76,12 @@ _ROLE_SKILL_COLUMNS = {
     "contract_version", "input_artifact_refs",
 }
 
+_LIVE_INVOCATION_COLUMNS = {
+    "requested_model_id", "retry_count", "termination_reason",
+}
+
+_LIVE_RUN_COLUMNS = {"live_execution_status", "live_status_reason"}
+
 
 def _head_version(db_path: Path) -> str | None:
     con = sqlite3.connect(db_path)
@@ -92,6 +98,13 @@ def test_fresh_db_upgrade_head(tmp_path):
     assert result.returncode == 0, result.stderr
     assert _head_version(db) == _HEAD
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
+    assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
+    assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
+    assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
+    assert {
+        "requested_model_id", "actual_model_id", "retry_index",
+        "termination_reason", "estimated_cost_chf", "estimated_cost_status",
+    } <= _columns(db, "agent_invocation_attempts")
     missing = _KEY_TABLES - _tables(db)
     assert not missing, f"missing tables after fresh upgrade: {missing}"
     # App connectivity smoke: the migrated DB is a valid, queryable schema.
@@ -205,11 +218,15 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive v2-Vertragsebene auf
-    # agent_invocations. Alle übrigen Strukturen (inkl. Recherchebrief- und
+    # Down one entfernt nur die additive Live-Routing-Ebene. Alle übrigen
+    # Strukturen (inkl. Rollen-/Skill-, Recherchebrief- und
     # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert not (_ROLE_SKILL_COLUMNS & _columns(db, "agent_invocations"))
+    assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
+    assert not (_LIVE_INVOCATION_COLUMNS & _columns(db, "agent_invocations"))
+    assert not (_LIVE_RUN_COLUMNS & _columns(db, "analysis_runs"))
+    assert "agent_invocation_attempts" not in _tables(db)
+    assert "provider_preflight_results" not in _tables(db)
     assert "actual_model_id" in _columns(db, "agent_invocations")
     assert "research_briefs" in _tables(db)
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
@@ -253,6 +270,9 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
+    assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
+    assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
+    assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
     assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)

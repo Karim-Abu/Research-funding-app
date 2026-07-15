@@ -92,6 +92,11 @@ def test_minimal_valid_build():
     assert _build(*_raws()).profile("A1.p").agent_id == "A1"
 
 
+def test_startup_mode_requires_complete_role_routes():
+    with pytest.raises(AgentRegistryError, match="role route coverage mismatch"):
+        _build(*_raws(), require_role_routes=True)
+
+
 def test_duplicate_profile_id_fails():
     agents, tools, controls, schemas = _raws()
     agents["profiles"].append(copy.deepcopy(agents["profiles"][0]))

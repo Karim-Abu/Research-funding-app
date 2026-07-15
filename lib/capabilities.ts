@@ -12,6 +12,8 @@ export interface Capabilities {
   // nie ein stiller Abstieg auf den Demo-Generator (Ebene E).
   generation_mode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
   generation_unavailable_reason?: string | null
+  ai_available?: boolean
+  ai_unavailable_reason?: string | null
 }
 
 export const MOCK_CAPABILITIES: Capabilities = {
@@ -39,12 +41,16 @@ export const MOCK_CAPABILITIES: Capabilities = {
   },
   generation_mode: "fake_demo",
   generation_unavailable_reason: null,
+  ai_available: false,
+  ai_unavailable_reason: "demo_only",
 }
 
 const UNAVAILABLE_CAPABILITIES: Capabilities = {
   ...MOCK_CAPABILITIES,
   generation_mode: "unavailable",
   generation_unavailable_reason: "capabilities_unavailable",
+  ai_available: false,
+  ai_unavailable_reason: "capabilities_unavailable",
 }
 
 export async function getCapabilities(): Promise<Capabilities> {

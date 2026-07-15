@@ -72,6 +72,11 @@ class AnalysisRun(BaseModel):
     issue_counts: IssueCounts | None = None
     review_package_version: str | None = None
     approval_scope_hash: str | None = None
+    live_execution_status: Literal[
+        "completed_live", "partial_live", "live_unavailable",
+        "blocked_by_policy", "failed_live",
+    ] | None = None
+    live_status_reason: str | None = None
 
 
 class RunList(BaseModel):

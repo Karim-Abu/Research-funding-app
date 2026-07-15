@@ -114,7 +114,7 @@ function phaseError(phase: RunPhaseDto): string | undefined {
   const mapped = PHASE_ERROR_TEXT[phase.error_code ?? ""]
   if (mapped) return mapped
   if (phase.phase_key === "quality_review") {
-    return "Die KI-Qualitätsprüfung ist fehlgeschlagen — die Feldvorschläge bleiben erhalten."
+    return "Kritik nicht durchgeführt: Die KI-Qualitätsprüfung ist fehlgeschlagen. Die Feldvorschläge bleiben erhalten."
   }
   return "Dieser Schritt ist fehlgeschlagen."
 }

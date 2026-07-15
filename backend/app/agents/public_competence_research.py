@@ -196,7 +196,10 @@ def _run(db: Session, task: ResearchTask, project: Project, resolver) -> str:
         context_text=context_text,
         context_meta={"research_task_id": task.research_task_id,
                       "imported_version_count": len(version_ids)},
-        skill_id="a1.public_competence_research",
+        # Prompt 9A routes synthesis as its own role. The profile remains the
+        # existing public-research implementation/schema, while role, prompt
+        # asset and model route come from the versioned role/skill registry.
+        skill_id="research.public_evidence_synthesis",
         input_artifact_refs=(
             {
                 "kind": "imported_public_research",

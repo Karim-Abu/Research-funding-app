@@ -177,10 +177,11 @@ def test_schema_failure_with_run_id_writes_usage_record(db):
     ).all()
     # Genau 1 Failure-Record; Tokens über beide Versuche akkumuliert
     # (Contract max_retries=1 ⇒ 2 generate-Calls à 7/9).
-    assert len(records) == 1
-    assert records[0].input_tokens == 14 and records[0].output_tokens == 18
-    assert records[0].cost_status == "not_applicable"  # fake-served
-    assert records[0].price_version is None
+    assert len(records) == 2
+    assert sum(record.input_tokens for record in records) == 14
+    assert sum(record.output_tokens for record in records) == 18
+    assert all(record.cost_status == "not_applicable" for record in records)
+    assert all(record.price_version is None for record in records)
 
 
 def test_schema_failure_without_run_id_writes_nothing(db):

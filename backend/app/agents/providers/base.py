@@ -22,9 +22,12 @@ class ProviderRequest:
     max_output_tokens: int | None = None
     # R5.5b: optional JSON Schema of the declared output (pydantic
     # model_json_schema). Adapters MAY use it for provider-native structured
-    # output (OpenAI response_format / Anthropic forced tool use). Advisory
+    # output (OpenAI Responses / Anthropic Messages output_config). Advisory
     # only — the gateway's pydantic validation stays the sole authority.
     output_json_schema: dict | None = None
+    # Provider-neutral role setting. Adapters translate this only when the
+    # selected route supports it; unsupported sampling knobs are never added.
+    reasoning_effort: str | None = None
 
 
 @dataclass(frozen=True)
@@ -35,18 +38,45 @@ class ProviderResult:
     # Modell (z. B. Auflösung eines Alias) — nie das angefragte model_id.
     # None, wenn der Provider kein Modell zurückmeldet.
     model: str | None = None
+    # Safe provider stop reason (stop, max_tokens, refusal, ...), never raw text.
+    termination_reason: str | None = None
 
 
 class ProviderError(Exception):
-    """Provider returned an error (non-timeout)."""
+    """Typed, log-safe provider failure."""
+
+    def __init__(
+        self,
+        message: str = "provider request failed",
+        *,
+        code: str = "provider_error",
+        retryable: bool = False,
+        termination_reason: str | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.retryable = retryable
+        self.termination_reason = termination_reason or code
 
 
-class ProviderTimeout(Exception):
+class ProviderTimeout(ProviderError):
     """Provider call exceeded the configured timeout."""
 
+    def __init__(self, message: str = "provider timeout") -> None:
+        super().__init__(
+            message, code="timeout", retryable=True, termination_reason="timeout"
+        )
 
-class ProviderUnavailable(Exception):
-    """Provider route is not configured (e.g. missing API key)."""
+
+class ProviderUnavailable(ProviderError):
+    """Provider route is not configured (e.g. missing API key/model mapping)."""
+
+    def __init__(self, message: str = "provider unavailable") -> None:
+        super().__init__(
+            message,
+            code="model_unavailable",
+            termination_reason="provider_unavailable",
+        )
 
 
 @runtime_checkable

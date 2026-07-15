@@ -133,7 +133,7 @@ skills:
 profile_defaults:
   A1.project_fact_extraction: a1.fact_extraction
   A1.evidence_candidate_mapping: a1.evidence_candidate_mapping
-  A1.public_competence_research: a1.public_competence_research
+  A1.public_competence_research: research.public_evidence_synthesis
   A2.introduction_public_summary: a2.executive_summary
   A2.organisations_governance: a2.organisations_governance
   A2.value_creation_market_logic: a2.value_creation_3_1

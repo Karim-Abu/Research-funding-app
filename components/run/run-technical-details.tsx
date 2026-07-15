@@ -48,6 +48,12 @@ export function RunTechnicalDetails({
                       {agent.invocations}
                     </span>
                     <span>
+                      Tatsächlich gemeldet: {agent.actual_models?.join(", ") || "—"}
+                      {agent.skill_versions?.length
+                        ? ` · Skill-Version: ${agent.skill_versions.join(", ")}`
+                        : ""}
+                    </span>
+                    <span>
                       Tokens: {agent.input_tokens} ein / {agent.output_tokens}{" "}
                       aus · Kosten:{" "}
                       {agent.priced_cost_chf > 0
@@ -57,6 +63,32 @@ export function RunTechnicalDetails({
                           : "keine externen Kosten"}{" "}
                       · Latenz: {agent.latency_ms_total} ms
                     </span>
+                    <span>
+                      Retries: {agent.retry_count ?? 0} · Beendigung:{" "}
+                      {agent.termination_reasons?.join(", ") || "—"}
+                    </span>
+                    {agent.attempts && agent.attempts.length > 0 && (
+                      <details className="mt-1">
+                        <summary className="cursor-pointer">Versuche anzeigen</summary>
+                        <ul className="mt-1 flex flex-col gap-1 pl-3">
+                          {agent.attempts.map((attempt, index) => (
+                            <li key={`${attempt.route_alias}:${index}`}>
+                              {attempt.route_alias} · {attempt.provider} · angefragt:{" "}
+                              {attempt.requested_model_id ?? "—"} · tatsächlich:{" "}
+                              {attempt.actual_model_id ?? "—"} · {attempt.status}
+                              {attempt.retry_index ? ` · Retry ${attempt.retry_index}` : ""}
+                              {attempt.error_class ? ` · ${attempt.error_class}` : ""}
+                              {attempt.cost_status
+                                ? ` · ${attempt.input_tokens ?? 0}/${attempt.output_tokens ?? 0} Tokens · ${attempt.cost_status}`
+                                : ""}
+                              {attempt.estimated_cost_status
+                                ? ` · Schätzung: ${attempt.estimated_cost_status}${attempt.estimated_cost_chf != null ? ` (CHF ${attempt.estimated_cost_chf.toFixed(4)})` : ""}`
+                                : ""}
+                            </li>
+                          ))}
+                        </ul>
+                      </details>
+                    )}
                   </li>
                 ))}
               </ul>

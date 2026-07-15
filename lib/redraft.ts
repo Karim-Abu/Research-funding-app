@@ -182,6 +182,18 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
     text: "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider konfiguriert. Die App führt nur regelbasierte Prüfungen aus.",
     ctaLabel: "Provider-Konfiguration prüfen",
   },
+  live_provider_key_missing: {
+    text: "Live-KI ist nicht verfügbar, weil Schlüssel, Modellzuordnung oder Preisangaben fehlen. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    ctaLabel: "Live-Systemstatus prüfen",
+  },
+  live_preflight_required: {
+    text: "Live-KI ist erst nach einem erfolgreichen synthetischen Systemtest verfügbar. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    ctaLabel: "Live-Systemstatus prüfen",
+  },
+  no_approved_model_provider: {
+    text: "Es ist kein freigegebener KI-Provider aktiv. Die App führt nur regelbasierte Prüfungen aus.",
+    ctaLabel: "Provider-Konfiguration prüfen",
+  },
   run_mode_mismatch: {
     text: "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
     ctaLabel: "Analysemodus prüfen",

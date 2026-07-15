@@ -11,12 +11,15 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
+import time
 import uuid
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timezone
 
 from pydantic import BaseModel, ValidationError
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from app.agents import cost_guard, data_policy, generation
@@ -40,7 +43,7 @@ from app.agents.schemas import (
     validate_payload,
 )
 from app.config.settings import get_settings
-from app.db.models import AgentInvocation
+from app.db.models import AgentInvocation, AgentInvocationAttempt
 from app.repositories import audit, controls
 
 logger = logging.getLogger("app.agents.gateway")
@@ -120,6 +123,10 @@ class _SchemaFailure(Exception):
     def __init__(self, reason: str, usage: ProviderUsage | None = None) -> None:
         super().__init__(reason)
         self.usage = usage
+
+
+class _BudgetBlocked(Exception):
+    """A hard role/run budget stopped an attempt before provider content."""
 
 
 @dataclass(frozen=True)
@@ -306,15 +313,55 @@ def _safe(db, inv, status, error_code, reason) -> SafeFailure:
     return SafeFailure(inv.invocation_id, inv.profile_id, status, error_code, reason[:200])
 
 
-def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[BaseModel, object]:
+def _execute(
+    adapter, preq, *, retries, output_schema, allowed_frags, on_attempt=None,
+    deadline: float | None = None, before_attempt=None,
+) -> tuple[BaseModel, object]:
     """Run a single route with at most ``retries`` retries on schema failure.
     Provider timeout/error propagate (→ fallback). Returns (validated, result)
     — das volle ProviderResult trägt Usage UND das vom Provider gemeldete
     Modell (Ebene E)."""
     last_code: str | None = None
     spent = ProviderUsage()
-    for _ in range(1 + retries):
-        result = adapter.generate(preq)  # ProviderTimeout/Error propagate
+    for retry_index in range(1 + retries):
+        started = _now()
+        request_for_attempt = preq
+        if deadline is not None:
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                if on_attempt:
+                    on_attempt(
+                        retry_index, started, None, "timed_out", "timeout",
+                        "role_deadline_exceeded",
+                    )
+                raise ProviderTimeout("role deadline exceeded")
+            request_for_attempt = replace(
+                preq,
+                timeout_seconds=max(
+                    1, min(preq.timeout_seconds, int(math.ceil(remaining)))
+                ),
+            )
+        if before_attempt is not None:
+            blocked_reason = before_attempt()
+            if blocked_reason:
+                if on_attempt:
+                    on_attempt(
+                        retry_index, started, None, "blocked", blocked_reason,
+                        blocked_reason,
+                    )
+                raise _BudgetBlocked(blocked_reason)
+        try:
+            result = adapter.generate(request_for_attempt)
+        except ProviderError as exc:
+            if on_attempt:
+                on_attempt(
+                    retry_index, started, None,
+                    "timed_out" if exc.code == "timeout" else "failed",
+                    exc.code, exc.termination_reason,
+                )
+            if exc.retryable and retry_index < retries:
+                continue
+            raise
         spent = ProviderUsage(
             spent.input_tokens + result.usage.input_tokens,
             spent.output_tokens + result.usage.output_tokens,
@@ -324,18 +371,39 @@ def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[B
             model = validate_payload(output_schema, parsed)
         except json.JSONDecodeError:
             last_code = "provider_output_not_json"
+            if on_attempt:
+                on_attempt(
+                    retry_index, started, result, "failed", "schema_invalid", last_code
+                )
             continue
         except ValidationError:
             last_code = "provider_output_schema_invalid"
+            if on_attempt:
+                on_attempt(
+                    retry_index, started, result, "failed", "schema_invalid", last_code
+                )
             continue
         except SchemaNotImplementedError:
             last_code = "output_schema_not_implemented"
+            if on_attempt:
+                on_attempt(
+                    retry_index, started, result, "failed", "schema_invalid", last_code
+                )
             continue
         if isinstance(model, ProjectFactExtractionResult):
             violations = fact_reference_violations(model, set(allowed_frags))
             if violations:
                 last_code = "invalid_evidence_reference"
+                if on_attempt:
+                    on_attempt(
+                        retry_index, started, result, "failed", "schema_invalid", last_code
+                    )
                 continue
+        if on_attempt:
+            on_attempt(
+                retry_index, started, result, "succeeded", None,
+                result.termination_reason or "stop",
+            )
         return model, result
     raise _SchemaFailure(
         last_code or "schema_validation_failed", usage=spent
@@ -353,8 +421,13 @@ def invoke(
     settings = get_settings()
     resolver = provider_resolver or default_provider_resolver
     profile = registry.profile(request.profile_id)
-    primary = registry.route(profile.primary_model)
     role_skill = get_role_skill_registry().resolve(profile.profile_id, request.skill_id)
+    live_routing = settings.ai_eval_mode == "real" and not settings.agent_fake_provider
+    route_keys = registry.route_keys_for_profile(
+        profile, role_skill.role.role_id, live=live_routing
+    )
+    primary = registry.route(route_keys[0])
+    primary_requested_model = primary.requested_model_id(settings)
 
     inv = AgentInvocation(
         invocation_id=str(uuid.uuid4()),
@@ -363,9 +436,10 @@ def invoke(
         project_id=request.project_id,
         agent_id=profile.agent_id,
         profile_id=profile.profile_id,
-        model_route=profile.primary_model,
+        model_route=route_keys[0],
         provider=primary.provider,
-        model_id=primary.model_id,
+        model_id=primary_requested_model or primary.model_id,
+        requested_model_id=primary_requested_model,
         input_schema_id=request.input_schema_id or profile.input_schema,
         output_schema_id=request.output_schema_id or profile.output_schema,
         prompt_version=request.prompt_version or prompt_version_for(profile.profile_id),
@@ -416,7 +490,7 @@ def invoke(
     return _execute_routes(db, inv, profile, request, registry, resolver)
 
 
-def _try_route(inv, profile, request, registry, resolver, route_key):
+def _try_route(inv, profile, request, registry, resolver, route_key, deadline=None):
     """Attempt one route. Returns (model_out, provider_result, route,
     adapter_name) on success, or ``(None, status, reason, extra)`` on failure —
     ``extra`` ist
@@ -425,9 +499,40 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
     (Selbstauskunft) steuert die Kostensemantik: fake-served Calls dürfen
     nicht als externe Calls gemetert werden (EVAL.1)."""
     route = registry.route(route_key)
-    inv.model_route, inv.provider, inv.model_id = route_key, route.provider, route.model_id
+    settings = get_settings()
+    requested_model_id = route.requested_model_id(settings)
+    estimated_attempt_cost = None
+    estimated_cost_status = "not_checked"
+    inv.model_route, inv.provider = route_key, route.provider
+    inv.model_id = requested_model_id or route.model_id
+    if inv.requested_model_id is None:
+        inv.requested_model_id = requested_model_id
+    db = Session.object_session(inv)
+    next_attempt_index = int(db.scalar(
+        select(func.count(AgentInvocationAttempt.attempt_id)).where(
+            AgentInvocationAttempt.invocation_id == inv.invocation_id
+        )
+    ) or 0)
+    def route_failure(status: str, reason: str):
+        now = _now()
+        db.add(AgentInvocationAttempt(
+            attempt_id=str(uuid.uuid4()), invocation_id=inv.invocation_id,
+            attempt_index=next_attempt_index, retry_index=0,
+            route_key=route_key, route_alias=route.alias, provider=route.provider,
+            requested_model_id=requested_model_id, status=status,
+            error_class=reason, termination_reason=reason,
+            estimated_cost_chf=estimated_attempt_cost,
+            estimated_cost_status=estimated_cost_status,
+            started_at=now, finished_at=now,
+        ))
+        inv.termination_reason = reason
+        db.flush()
+    if requested_model_id is None:
+        route_failure("model_unavailable", "model_id_not_resolved")
+        return None, "failed", "model_unavailable", None
     adapter = resolver(route)
     if adapter is None:
+        route_failure("model_unavailable", "provider_unavailable")
         return None, "failed", "provider_unavailable", None
     # R4.3 ProviderPolicy: provider × data_class (× origin/eval) — geprüft VOR
     # available(), damit gesetzte API-Keys nie eine blockierte Klasse öffnen.
@@ -435,11 +540,14 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         adapter, request.classification, get_settings()
     )
     if not p_decision.allowed:
+        route_failure("blocked", p_decision.reason)
         return None, "blocked", p_decision.reason, None
     if not adapter.available():
+        route_failure("model_unavailable", "provider_unavailable")
         return None, "failed", "provider_unavailable", None
     adapter_name = getattr(adapter, "name", None)
     generation_kind = generation.for_adapter_name(adapter_name)
+    product_adapter = False
     if generation_kind == generation.MODEL_GENERATED:
         origin = (request.classification or {}).get("origin")
         if (
@@ -447,7 +555,19 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
             or get_settings().ai_eval_mode != "real"
             or not request.run_confirmation
         ):
+            route_failure("blocked", "real_eval_gate_blocked")
             return None, "blocked", "real_eval_gate_blocked", None
+        # Product adapters require a fresh synthetic route preflight before any
+        # project-facing prompt is sent. Injected contract-test adapters remain
+        # hermetic and do not depend on persisted deployment health.
+        product_adapter = adapter.__class__.__module__ in {
+            "app.agents.providers.openai", "app.agents.providers.anthropic"
+        }
+        if product_adapter:
+            from app.evaluation.preflight import route_preflight_passed
+            if not route_preflight_passed(db, route_key):
+                route_failure("model_unavailable", "preflight_required")
+                return None, "failed", "preflight_required", None
     # Metadata only: adapter identity + booleans/counts, never prompt/context.
     # A FakeProvider executes test code but is explicitly not a model call.
     inv.context_meta = {
@@ -459,64 +579,149 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
     # Persist before generate() so timeouts/provider failures remain truthful.
     Session.object_session(inv).flush()
     output_schema = request.output_schema_id or profile.output_schema
+    capabilities = route.capabilities or {}
+    if not capabilities.get("structured_outputs", True):
+        route_failure("model_unavailable", "structured_outputs_unsupported")
+        return None, "failed", "structured_outputs_unsupported", None
+    effort = profile.reasoning_effort or capabilities.get("default_effort")
+    effort_levels = capabilities.get("effort_levels") or []
+    if effort and effort_levels and effort not in effort_levels:
+        route_failure("model_unavailable", "effort_unsupported")
+        return None, "failed", "effort_unsupported", None
+    prompt = _assemble_prompt(profile, request)
+    role_route = (registry.role_routes or {}).get(inv.role_id)
+    max_output_tokens = int(profile.invocation_limits.get("max_output_tokens") or 4096)
+    estimated_attempt_cost = 0.0
+    if (
+        generation_kind == generation.MODEL_GENERATED
+        and product_adapter
+        and role_route
+        and role_route.max_cost_chf
+    ):
+        estimate = cost_guard.estimated_upper_cost(
+            provider=route.provider, model_id=requested_model_id,
+            prompt=prompt, max_output_tokens=max_output_tokens,
+        )
+        if estimate.cost_status != "priced":
+            estimated_cost_status = estimate.cost_status
+            route_failure("model_unavailable", "price_unknown_for_cost_guard")
+            return None, "failed", "price_unknown_for_cost_guard", None
+        if estimate.cost_chf > role_route.max_cost_chf:
+            estimated_cost_status = estimate.cost_status
+            route_failure("blocked", "role_cost_limit_exceeded")
+            return None, "blocked", "role_cost_limit_exceeded", None
+        estimated_attempt_cost = estimate.cost_chf
+        estimated_cost_status = estimate.cost_status
+    elif generation_kind != generation.MODEL_GENERATED:
+        estimated_cost_status = "not_applicable"
+    timeout = cost_guard.timeout_seconds(profile)
+    if role_route and role_route.max_latency_seconds:
+        timeout = min(timeout, role_route.max_latency_seconds)
     preq = ProviderRequest(
-        model_id=route.model_id, prompt=_assemble_prompt(profile, request),
+        model_id=requested_model_id, prompt=prompt,
         output_schema_id=output_schema,
-        timeout_seconds=cost_guard.timeout_seconds(profile),
+        timeout_seconds=timeout,
         max_output_tokens=profile.invocation_limits.get("max_output_tokens"),
         # R5.5b: provider-native structured output (advisory) — pydantic below
         # remains the sole validation authority.
         output_json_schema=json_schema_for(output_schema),
+        reasoning_effort=effort,
     )
+    last_usage_record_id = None
+
+    def record_attempt(
+        retry_index, started, result, status, error_class, termination_reason
+    ):
+        nonlocal next_attempt_index, last_usage_record_id
+        usage_record_id = None
+        if result is not None and request.run_id is not None:
+            rec = cost_guard.record_usage(
+                db, run_id=request.run_id, workspace_id=request.workspace_id,
+                provider=route.provider, model_id=requested_model_id,
+                usage=result.usage, adapter_name=adapter_name,
+            )
+            usage_record_id = rec.usage_record_id
+            last_usage_record_id = usage_record_id
+        finished = _now()
+        db.add(AgentInvocationAttempt(
+            attempt_id=str(uuid.uuid4()), invocation_id=inv.invocation_id,
+            attempt_index=next_attempt_index, retry_index=retry_index,
+            route_key=route_key, route_alias=route.alias, provider=route.provider,
+            requested_model_id=requested_model_id,
+            actual_model_id=(result.model if result is not None else None),
+            status=status,
+            error_class=error_class,
+            termination_reason=termination_reason,
+            latency_ms=int((finished - started).total_seconds() * 1000),
+            estimated_cost_chf=estimated_attempt_cost,
+            estimated_cost_status=estimated_cost_status,
+            usage_record_id=usage_record_id, started_at=started, finished_at=finished,
+        ))
+        next_attempt_index += 1
+        if retry_index > 0:
+            inv.retry_count += 1
+        inv.termination_reason = termination_reason
+        db.flush()
+    def before_attempt():
+        if not product_adapter:
+            return None
+        decision = cost_guard.attempt_budget_check(
+            db, run_id=request.run_id, invocation_id=inv.invocation_id,
+            estimated_cost_chf=estimated_attempt_cost,
+            role_max_cost_chf=(role_route.max_cost_chf if role_route else None),
+        )
+        return None if decision.allowed else decision.reason
     try:
         model_out, provider_result = _execute(
             adapter, preq, retries=cost_guard.max_retries(profile),
             output_schema=output_schema,
             allowed_frags=request.allowed_fragment_ids,
+            on_attempt=record_attempt,
+            deadline=deadline,
+            before_attempt=before_attempt,
         )
-    except ProviderTimeout:
-        return None, "timed_out", "provider_timeout", None
-    except (ProviderError, ProviderUnavailable):
-        return None, "failed", "provider_error", None
+    except _BudgetBlocked as exc:
+        return None, "blocked", str(exc), None
+    except ProviderTimeout as exc:
+        return None, "timed_out", exc.code, None
+    except (ProviderError, ProviderUnavailable) as exc:
+        return None, "failed", exc.code, None
     except _SchemaFailure as exc:
         # EVAL.2: 4. Slot trägt hier die konsumierten Tokens (der Provider hat
         # geantwortet) — auf Erfolg trägt er den Adapter-Namen (str).
         return None, "failed", str(exc), _FailedUsage(
             exc.usage, adapter_name
         )
-    return model_out, provider_result, route, adapter_name
+    return model_out, provider_result, route, (adapter_name, last_usage_record_id)
 
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
-    routes = [profile.primary_model]
-    if profile.fallback_model:
-        routes.append(profile.fallback_model)
+    settings = get_settings()
+    live_routing = settings.ai_eval_mode == "real" and not settings.agent_fake_provider
+    routes = registry.route_keys_for_profile(
+        profile, inv.role_id, live=live_routing
+    )[:2]
+    role_route = (registry.role_routes or {}).get(inv.role_id)
+    role_deadline = (
+        time.monotonic() + role_route.max_latency_seconds
+        if role_route and role_route.max_latency_seconds else None
+    )
     last_status, last_reason = "failed", "provider_unavailable"
 
     for route_key in routes:
         model_out, second, third, extra = _try_route(
-            inv, profile, request, registry, resolver, route_key
+            inv, profile, request, registry, resolver, route_key, role_deadline
         )
         if model_out is None:
             last_status, last_reason = second, third
             # EVAL.2: Schema-Failure nach realer Provider-Antwort — die
             # konsumierten Tokens werden trotzdem gemetert (run-scoped).
-            if (
-                request.run_id is not None
-                and isinstance(extra, _FailedUsage)
-                and extra.usage is not None
-            ):
-                failed_route = registry.route(route_key)
-                cost_guard.record_usage(
-                    db, run_id=request.run_id, workspace_id=request.workspace_id,
-                    provider=failed_route.provider,
-                    model_id=failed_route.model_id,
-                    usage=extra.usage, adapter_name=extra.adapter_name,
-                )
+            if last_status == "blocked" or last_reason == "refusal":
+                break
             continue
         provider_result, route = second, third
         usage = provider_result.usage
-        adapter_name = extra
+        adapter_name, usage_record_id = extra
         generation_kind = generation.for_adapter_name(adapter_name)
         if generation_kind is None:
             _control(db, inv, "CTRL.DATA_POLICY", "blocked", "unknown_adapter_kind")
@@ -526,26 +731,20 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
         if not cost_guard.output_within_limit(profile, usage):
             _control(db, inv, "CTRL.COST_GUARD", "blocked", "max_output_tokens")
             return _safe(db, inv, "blocked", "cost_guard_output_blocked", "max_output_tokens")
-        usage_record_id = None
-        if request.run_id is not None:
-            rec = cost_guard.record_usage(
-                db, run_id=request.run_id, workspace_id=request.workspace_id,
-                provider=route.provider, model_id=route.model_id, usage=usage,
-                adapter_name=adapter_name,
-            )
-            usage_record_id = rec.usage_record_id
         inv.output_hash = _hash(model_out.model_dump())
         inv.usage_record_id = usage_record_id
         # Ebene E: das vom Provider GEMELDETE Modell (Alias-Auflösung) — nie
         # still das angefragte model_id einsetzen. None = nicht gemeldet.
         inv.actual_model_id = provider_result.model
+        inv.termination_reason = provider_result.termination_reason or "stop"
         _control(db, inv, "CTRL.OUTPUT_SCHEMA", "passed", "output_validated")
         _control(db, inv, "CTRL.AUDIT_WRITE", "passed", "agent_invocation_recorded")
         _finalize(db, inv, "succeeded")
         return ModelResponse(
             invocation_id=inv.invocation_id, profile_id=profile.profile_id,
             status="succeeded", output=model_out, provider=route.provider,
-            model_id=route.model_id, input_tokens=usage.input_tokens,
+            model_id=route.requested_model_id(settings) or route.model_id,
+            input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens, generation_kind=generation_kind,
             actual_adapter_name=adapter_name,
             prompt_version=inv.prompt_version,

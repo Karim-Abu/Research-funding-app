@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.models import (
     AnalysisRun,
     AgentInvocation,
+    AgentInvocationAttempt,
     AuditEvent,
     ClaimLineage,
     CopyEvent,
@@ -380,6 +381,31 @@ def _technical_trace(db: Session, run: AnalysisRun) -> dict:
         item.usage_record_id: item
         for item in db.scalars(select(UsageRecord).where(UsageRecord.run_id == run.run_id))
     }
+    def attempt_trace(attempt: AgentInvocationAttempt) -> dict:
+        record = usage.get(attempt.usage_record_id)
+        return {
+            "attempt_index": attempt.attempt_index,
+            "retry_index": attempt.retry_index,
+            "route_key": attempt.route_key,
+            "route_alias": attempt.route_alias,
+            "provider": attempt.provider,
+            "requested_model_id": attempt.requested_model_id,
+            "actual_model_id": attempt.actual_model_id,
+            "status": attempt.status,
+            "error_class": attempt.error_class,
+            "termination_reason": attempt.termination_reason,
+            "latency_ms": attempt.latency_ms,
+            "estimated_cost_chf": attempt.estimated_cost_chf,
+            "estimated_cost_status": attempt.estimated_cost_status,
+            "usage_record_id": attempt.usage_record_id,
+            "metering": ({
+                "input_tokens": record.input_tokens,
+                "output_tokens": record.output_tokens,
+                "cost_chf": record.cost_chf,
+                "cost_status": record.cost_status,
+                "price_version": record.price_version,
+            } if record is not None else {"status": "no_provider_usage"}),
+        }
     agents = []
     for inv in db.scalars(
         select(AgentInvocation).where(AgentInvocation.run_id == run.run_id).order_by(AgentInvocation.invocation_id.asc())
@@ -391,6 +417,11 @@ def _technical_trace(db: Session, run: AnalysisRun) -> dict:
             "profile_id": inv.profile_id, "model_route": inv.model_route,
             "input_schema_id": inv.input_schema_id, "output_schema_id": inv.output_schema_id,
             "prompt_version": inv.prompt_version, "status": inv.status,
+            "role_id": inv.role_id, "role_version": inv.role_version,
+            "skill_id": inv.skill_id, "skill_version": inv.skill_version,
+            "requested_model_id": inv.requested_model_id,
+            "retry_count": inv.retry_count,
+            "termination_reason": inv.termination_reason,
             "input_hash": inv.input_hash, "output_hash": inv.output_hash,
             "latency_ms": inv.latency_ms, "usage_record_id": inv.usage_record_id,
             "generation_kind": context.get("generation_kind"),
@@ -414,6 +445,14 @@ def _technical_trace(db: Session, run: AnalysisRun) -> dict:
                 item["metering"] = {"status": "missing_usage_record"}
         else:
             item["metering"] = {"status": "not_applicable_no_real_model_call"}
+        item["attempts"] = [
+            attempt_trace(attempt)
+            for attempt in db.scalars(
+                select(AgentInvocationAttempt)
+                .where(AgentInvocationAttempt.invocation_id == inv.invocation_id)
+                .order_by(AgentInvocationAttempt.attempt_index)
+            )
+        ]
         agents.append(item)
     tools = [
         {

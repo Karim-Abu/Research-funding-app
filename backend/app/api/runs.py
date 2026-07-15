@@ -238,6 +238,8 @@ def get_run_phases(
     return RunPhases(
         run_id=run.run_id,
         run_status=run.status,
+        live_execution_status=run.live_execution_status,
+        live_status_reason=run.live_status_reason,
         phases=[
             {
                 "phase_key": row.phase_key,

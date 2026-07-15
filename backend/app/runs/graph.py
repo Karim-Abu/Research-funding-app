@@ -20,11 +20,14 @@ from app.agents import critic_review, evidence_mapping, fact_extraction, field_d
 from app.agents.a3_review import A3_PROFILE_ID
 from app.config.settings import get_settings
 from app.db.models import (
+    AgentInvocation,
+    AgentInvocationAttempt,
     AnalysisRun,
     Project,
     RunPolicySnapshot,
     RunProjectSnapshot,
     RunSourceSnapshot,
+    UsageRecord,
 )
 from app.db.session import SessionLocal
 from app.drafts import pipeline as drafts_pipeline
@@ -514,6 +517,7 @@ def node_finalize_run(state: RunState) -> RunState:
         if _is_cancelled(run):
             return {**state, "cancelled": True}
         _set_stage(db, run, "finalize_run")
+        _finalize_live_status(db, run)
         transition_run(run, "completed")  # guards against terminal states
         run.ended_at = _now()
         # Run-Wahrheit: der Projekt-Pointer zeigt immer auf den letzten
@@ -534,6 +538,79 @@ def node_finalize_run(state: RunState) -> RunState:
         return state
     finally:
         db.close()
+
+
+def _finalize_live_status(db, run: AnalysisRun) -> None:
+    """Derive the AI-only outcome without changing the general run status."""
+    from app.evaluation.pricing import sum_priced_chf
+
+    usage_records = list(db.scalars(
+        select(UsageRecord).where(UsageRecord.run_id == run.run_id)
+    ))
+    run.actual_cost_chf = sum_priced_chf(usage_records)
+    if run.processing_mode != "cloud_assisted" or get_settings().ai_eval_mode != "real":
+        run.live_execution_status = None
+        run.live_status_reason = None
+        return
+    invocations = list(db.scalars(
+        select(AgentInvocation).where(AgentInvocation.run_id == run.run_id)
+    ))
+    attempts = list(db.scalars(
+        select(AgentInvocationAttempt).join(
+            AgentInvocation,
+            AgentInvocation.invocation_id == AgentInvocationAttempt.invocation_id,
+        ).where(AgentInvocation.run_id == run.run_id)
+    ))
+    successful_roles = {
+        inv.role_id for inv in invocations
+        if inv.status == "succeeded"
+        and (inv.context_meta or {}).get("generation_kind") == "model_generated"
+    }
+    failed = any(
+        inv.status in ("failed", "timed_out") for inv in invocations
+    )
+    policy_blocked = any(
+        inv.error_code in {"data_policy_blocked", "provider_policy_blocked"}
+        for inv in invocations
+    ) or any(
+        attempt.error_class in {
+            "provider_blocked_for_data_class", "provider_unknown_adapter",
+            "real_eval_gate_blocked",
+        }
+        for attempt in attempts
+    )
+    budget_blocked = any(
+        (attempt.error_class or "").endswith("_limit_exceeded")
+        or attempt.error_class == "run_policy_missing"
+        for attempt in attempts
+    )
+    provider_attempted = any(
+        attempt.status in ("succeeded", "failed", "timed_out")
+        for attempt in attempts
+    )
+    core_roles = {
+        "A1_FACT_EVIDENCE_ANALYST",
+        "A2_INNOSUISSE_PROPOSAL_WRITER",
+        "A3_INNOSUISSE_CRITICAL_REVIEWER",
+    }
+    if successful_roles:
+        if core_roles.issubset(successful_roles) and not failed:
+            run.live_execution_status = "completed_live"
+            run.live_status_reason = "all_applicable_live_roles_completed"
+        else:
+            run.live_execution_status = "partial_live"
+            run.live_status_reason = "one_or_more_live_roles_incomplete"
+    elif policy_blocked:
+        run.live_execution_status = "blocked_by_policy"
+        run.live_status_reason = "live_processing_blocked_by_policy"
+    elif provider_attempted or budget_blocked:
+        run.live_execution_status = "failed_live"
+        run.live_status_reason = (
+            "live_budget_blocked" if budget_blocked else "live_provider_calls_failed"
+        )
+    else:
+        run.live_execution_status = "live_unavailable"
+        run.live_status_reason = "live_provider_or_preflight_unavailable"
 
 
 _checkpointer: SqliteSaver | None = None

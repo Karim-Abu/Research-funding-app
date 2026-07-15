@@ -499,6 +499,9 @@ class AnalysisRun(Base):
     actual_cost_chf: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     last_error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # KI-Teilstatus getrennt vom allgemeinen, deterministischen Run-Status.
+    live_execution_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    live_status_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     # Cooperative cancellation flag, checked by the executor between stages.
     cancel_requested: Mapped[bool] = mapped_column(default=False, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(
@@ -1328,6 +1331,11 @@ class AgentInvocation(Base):
     # Ebene E (Live-Readiness): das vom Provider in der Antwort gemeldete
     # Modell (Alias-Auflösung). model_id bleibt das ANGEFRAGTE Modell.
     actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Initial angeforderte Provider-ID. ``model_id`` bleibt der
+    # Kompatibilitätswert der letzten/finalen Route.
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    retry_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    termination_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     # queued | running | succeeded | failed | blocked | timed_out
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     input_hash: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1351,6 +1359,64 @@ class AgentInvocation(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+class AgentInvocationAttempt(Base):
+    """One provider-route attempt; metadata only, never prompt/output text."""
+
+    __tablename__ = "agent_invocation_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "invocation_id", "attempt_index", name="uq_agent_invocation_attempt_index"
+        ),
+    )
+
+    attempt_id: Mapped[str] = mapped_column(String, primary_key=True)
+    invocation_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_invocations.invocation_id"), nullable=False, index=True
+    )
+    attempt_index: Mapped[int] = mapped_column(nullable=False)
+    retry_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    route_key: Mapped[str] = mapped_column(String, nullable=False)
+    route_alias: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    estimated_cost_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_cost_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    usage_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ProviderPreflightResult(Base):
+    """Persisted, redacted synthetic route smoke result."""
+
+    __tablename__ = "provider_preflight_results"
+
+    preflight_id: Mapped[str] = mapped_column(String, primary_key=True)
+    route_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    route_alias: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    checks_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    triggered_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------

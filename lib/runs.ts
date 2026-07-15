@@ -37,6 +37,14 @@ export interface AnalysisRunDto {
   started_at?: string | null
   ended_at?: string | null
   stop_reason?: string | null
+  live_execution_status?:
+    | "completed_live"
+    | "partial_live"
+    | "live_unavailable"
+    | "blocked_by_policy"
+    | "failed_live"
+    | null
+  live_status_reason?: string | null
 }
 
 export interface RunListDto {
@@ -180,6 +188,27 @@ export interface AgentUsageSummaryDto {
   generation_kinds?: string[]
   model_calls?: number
   prompt_versions?: string[]
+  actual_models?: string[]
+  skill_versions?: string[]
+  retry_count?: number
+  termination_reasons?: string[]
+  attempts?: Array<{
+    route_alias: string
+    provider: string
+    requested_model_id?: string | null
+    actual_model_id?: string | null
+    status: string
+    error_class?: string | null
+    retry_index: number
+    termination_reason?: string | null
+    latency_ms?: number | null
+    estimated_cost_chf?: number | null
+    estimated_cost_status?: string | null
+    input_tokens?: number
+    output_tokens?: number
+    cost_chf?: number
+    cost_status?: string
+  }>
 }
 
 export interface RunTechnicalSummaryDto {
@@ -196,6 +225,8 @@ export interface RunPhasesDto {
   run_status: RunStatus
   phases: RunPhaseDto[]
   technical: RunTechnicalSummaryDto
+  live_execution_status?: AnalysisRunDto["live_execution_status"]
+  live_status_reason?: string | null
 }
 
 export async function getRunPhases(runId: string): Promise<RunPhasesDto> {

@@ -51,6 +51,15 @@ def _agent_config_versions() -> dict:
             profile_id: agent_registry.route(profile.primary_model).model_id
             for profile_id, profile in sorted(agent_registry.profiles.items())
         },
+        "role_routes": {
+            role_id: {
+                "execution_kind": route.execution_kind,
+                "primary": route.primary,
+                "fallback": route.fallback,
+                "comparison": route.comparison,
+            }
+            for role_id, route in sorted((agent_registry.role_routes or {}).items())
+        },
     }
 
 
