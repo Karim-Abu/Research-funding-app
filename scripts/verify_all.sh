@@ -10,6 +10,7 @@
 #
 # Opt-in-Kategorien (NIE Teil dieses Gates; werden nur als Status berichtet):
 #   Live model evaluation (scripts/run_model_quality_eval.py),
+#   Model selection (scripts/run_role_model_eval.py),
 #   Live Firecrawl evaluation (scripts/run_live_research_smoke.py),
 #   Provider-Preflight (scripts/run_provider_preflight.py),
 #   Supervised live E2E (manuell, docs/demo/demo-runbook.md).
@@ -170,6 +171,13 @@ if [ -f "$MQ_JSON" ]; then
 else
   CAT_MODEL="not_run (opt-in — scripts/run_model_quality_eval.py)"
 fi
+RME_JSON="$BACKEND/var/evaluation/role_model_eval/summary.json"
+if [ -f "$RME_JSON" ]; then
+  RME_STATUS="$("$PY" -c "import json;print(json.load(open(r'$RME_JSON',encoding='utf-8'))['status'])" 2>/dev/null || echo "Artefakt vorhanden")"
+  CAT_ROLE_EVAL="$RME_STATUS — $RME_JSON"
+else
+  CAT_ROLE_EVAL="not_run (opt-in — scripts/run_role_model_eval.py)"
+fi
 LR_MD="$BACKEND/var/evaluation/live_research_smoke.md"
 if [ -f "$LR_MD" ]; then
   LR_STATUS="$(grep -m1 -o 'Status: [a-zA-Zü_]*' "$LR_MD" | head -1 | cut -d' ' -f2)"
@@ -188,12 +196,13 @@ CAT_TECH="FAIL"; case "$R_PLAYWRIGHT$R_GOLDEN2" in passpass) CAT_TECH="pass";; e
 CAT_IMPORT="FAIL"; case "$R_FUNCTIONAL" in pass) CAT_IMPORT="pass";; esac
 
 echo ""
-echo "=========== ABNAHME — FÜNF GETRENNTE KATEGORIEN ==========="
+echo "=========== ABNAHME — SECHS GETRENNTE KATEGORIEN ==========="
 echo "1. Technical deterministic E2E : $CAT_TECH   (Fake-Provider; Suite + 2. Lauf)"
 echo "2. Structured import E2E       : $CAT_IMPORT   (e2e/import-functional.spec.ts)"
 echo "3. Live model evaluation       : $CAT_MODEL"
-echo "4. Live Firecrawl evaluation   : $CAT_FIRECRAWL"
-echo "5. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)"
+echo "4. Model selection (A1/A2/A3)  : $CAT_ROLE_EVAL"
+echo "5. Live Firecrawl evaluation   : $CAT_FIRECRAWL"
+echo "6. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)"
 echo "Provider-Preflight (Ebene E)   : $CAT_PREFLIGHT"
 echo "Private SEDATE-Acceptance      : manuell — scripts/run_private_innolink_acceptance.py"
 echo ""

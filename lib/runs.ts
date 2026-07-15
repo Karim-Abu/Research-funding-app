@@ -234,3 +234,37 @@ export async function getRunPhases(runId: string): Promise<RunPhasesDto> {
   if (!res.ok) throw await toError(res)
   return (await res.json()) as RunPhasesDto
 }
+
+/** Ruhige, nutzerverständliche Meldung zum Live-Ausführungsstatus eines Runs
+ *  (Status-Sprache: Orange = Teilweise). `completed_live` und Fake-Läufe
+ *  brauchen keinen Hinweis; der technische Grund bleibt unter
+ *  «Technische Details». */
+export function liveStatusNotice(
+  status: AnalysisRunDto["live_execution_status"]
+): string | null {
+  switch (status) {
+    case "partial_live":
+      return (
+        "Teilweise — nicht alle Live-Schritte wurden mit echten Providern " +
+        "abgeschlossen. Vorhandene Ergebnisse bleiben erhalten; Details " +
+        "stehen unter «Technische Details»."
+      )
+    case "blocked_by_policy":
+      return (
+        "Die Live-Verarbeitung wurde durch die Datenrichtlinie blockiert. " +
+        "Die Ergebnisse stammen aus dem regelbasierten Pfad."
+      )
+    case "failed_live":
+      return (
+        "Die Live-Verarbeitung ist fehlgeschlagen. Bisherige Ergebnisse " +
+        "bleiben erhalten; Details stehen unter «Technische Details»."
+      )
+    case "live_unavailable":
+      return (
+        "Für diesen Lauf war kein Live-Provider verfügbar. Es wurde kein " +
+        "Demo-Ergebnis als Ersatz erzeugt."
+      )
+    default:
+      return null
+  }
+}

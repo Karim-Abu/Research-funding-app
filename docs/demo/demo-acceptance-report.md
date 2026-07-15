@@ -1,11 +1,16 @@
-# Acceptance-Report — fünf getrennte Abnahmekategorien
+# Acceptance-Report — sieben getrennte Abnahmekategorien
 
 Stand: 2026-07-15. Dieser Report trennt bewusst, WAS bewiesen ist: der
 deterministische Fake-Pfad beweist Technik, der funktionale Import-Pfad
-beweist fachliche Auslese, die Live-Kategorien beweisen echten Betrieb.
+beweist fachliche Auslese, die Agent-Tests beweisen Schema-/Skill-Verträge,
+die Live-Kategorien beweisen echten Betrieb.
 Nicht Durchgeführtes steht wörtlich als **`not_run`** — es gibt keine
-Pauschalaussage «ALL GREEN», wenn nur Fake-Pfade grün sind.
+Pauschalaussage «ALL GREEN», wenn Live-Teile fehlen.
 (Vorgängerstand mit der M10-Aufgabentabelle: Git-Historie dieses Dokuments.)
+
+Kategorien: 1 Deterministic CI E2E · 2 Functional Import E2E ·
+3 Agent Skill/Schema Tests · 4 Model Selection · 5 Live Firecrawl ·
+6 Supervised Live E2E · 7 Known Limitations.
 
 ## 1. Technical deterministic E2E — **pass**
 
@@ -40,7 +45,35 @@ Pauschalaussage «ALL GREEN», wenn nur Fake-Pfade grün sind.
     überschreiben»), Partner/Budget ohne Neuanlage auf `/partner`,
     Budget-Vorprüfung konsistent (Umsetzungsbeitrag 59 %, Barbeitrag 6.5 %).
 
-## 3. Live model evaluation — Status siehe `backend/var/evaluation/model_quality_summary.md`
+## 3. Agent skill/schema tests — **pass** (gate-pflichtige Backend-Suite)
+
+- Was: versionierte Rollen-/Skill-Verträge, Output-Schema-Grenze, Registry
+  fail-closed, Prompt-Pinning und die Scorer/Harness-Logik der
+  Rollen-Modell-Evaluation — alles deterministisch, ohne Provider.
+- Nachweis (Teil der Pflicht-Backend-Tests im Gate):
+  [`test_agent_registry.py`](../../backend/tests/test_agent_registry.py) ·
+  [`test_agent_schemas.py`](../../backend/tests/test_agent_schemas.py) ·
+  [`test_role_skill_contracts.py`](../../backend/tests/test_role_skill_contracts.py) ·
+  [`test_prompt_snapshots.py`](../../backend/tests/test_prompt_snapshots.py) ·
+  [`test_role_model_eval_metrics.py`](../../backend/tests/test_role_model_eval_metrics.py) ·
+  [`test_role_model_eval_harness.py`](../../backend/tests/test_role_model_eval_harness.py).
+
+## 4. Model selection — Rollen-Modell-Evaluation (A1/A2/A3) — **`not_run`** (live)
+
+- Was: Reproduzierbarer Kandidatenvergleich **je Agentenrolle** (A1 Extraction,
+  A2 Drafting inkl. Quality-Ceiling, A3 Critic) auf den synthetischen Fällen
+  F1/F2 (Dev) und H1 (Holdout, nie für Prompt-Tuning): automatische Gates +
+  Fatal-Gates, blinde Human-Rubrik (Model A/B/C/…), Kosten/Latenz/Varianz,
+  Prompt-SHA-Freeze. Ableitung der Modellroute je Rolle im
+  [`model-selection-report`](../evaluation/model-selection-report.md).
+- Status: opt-in ([`scripts/run_role_model_eval.py`](../../scripts/run_role_model_eval.py));
+  ohne Live-Lauf wörtlich **`not_run`**. Der komplette Zyklus (Runs → Blindung
+  → Ingest → Aggregation) ist per `--fake`-Dry-Run verifiziert; Dry-Run-Samples
+  sind unübersehbar als `fake_dryrun` markiert und zählen nie als Live-Aussage.
+  Gate-Statuszeile: «Model selection (A1/A2/A3)» liest
+  `backend/var/evaluation/role_model_eval/summary.json`.
+
+### Ebene C (Feldmetriken, Vorgänger) — Status siehe `backend/var/evaluation/model_quality_summary.md`
 
 - Was: Gleicher synthetischer F1/D0-Eingabetext, gleiche Rubrik, OpenAI
   **und** Anthropic — Generierung ausschliesslich über den produktiven
@@ -58,7 +91,7 @@ Pauschalaussage «ALL GREEN», wenn nur Fake-Pfade grün sind.
   nie rot. Anleitung/Template:
   [`docs/evaluation/model_quality_report.md`](../evaluation/model_quality_report.md).
 
-## 4. Live Firecrawl evaluation — Status siehe `backend/var/evaluation/live_research_smoke.md`
+## 5. Live Firecrawl evaluation — Status siehe `backend/var/evaluation/live_research_smoke.md`
 
 - Was: Public-safe synthetischer Recherchebrief; Canary-Marker (Projekttitel,
   Partnername, Budgetzahl) bleiben nachweislich aus bereinigter Query, Audit
@@ -72,14 +105,18 @@ Pauschalaussage «ALL GREEN», wenn nur Fake-Pfade grün sind.
   **kein `example.org` im Live-Modus**; Leer-/Fehlerzustände (0 Treffer,
   Kontingent, Ausfall) werden dokumentiert statt ersetzt.
 
-## 5. Supervised live E2E — **`not_run`**
+## 6. Supervised live E2E — **`not_run`**
 
 - Was: Begleiteter Live-Durchlauf mit realen Providern — nur mit
-  Owner-Freigabe und ausschliesslich synthetischen/anonymisierten Inhalten.
-- Protokoll: [`docs/demo/demo-runbook.md`](demo-runbook.md) §6b. Nach
-  Durchführung hier Datum, Provider und tatsächliche Modell-IDs eintragen
-  (aus dem Technical Evidence: `model_id`, `actual_model_id`,
-  `prompt_version`).
+  Owner-Freigabe und ausschliesslich synthetischen/anonymisierten Inhalten;
+  A3 über eine vom A2-Provider unabhängige Route, Firecrawl nur nach
+  menschlicher Query-Freigabe, externe Störung ⇒ ehrliches `partial_live`.
+- Protokoll: [`docs/demo/demo-runbook.md`](demo-runbook.md) §6b (inkl.
+  Zweimal-Regel: Volllauf + gezielter Wiederholungslauf der kritischen
+  Provider-/Research-Schritte). Nach Durchführung hier Datum, Provider und
+  tatsächliche Modell-IDs eintragen (aus dem Technical Evidence: `model_id`,
+  `actual_model_id`, `prompt_version`); Evidenz-Archiv unter
+  `backend/var/evaluation/supervised_live/<datum>/`.
 
 ## Private SEDATE-Acceptance (lokal, nicht committet) — **12/12 PASS**
 
@@ -126,14 +163,15 @@ Playwright-Suite · technischer E2E (2. Lauf) · **funktionaler Import** ·
 **Review-Truth** · **DOCX-Render-Smoke (eigene Zeile, benötigt Word)** ·
 API-Smoke · Testdaten-Marker · Legacy-Status-Guard. Das Gate endet mit
 «TECHNISCHES GATE (deterministisch, Fake-Provider): GRÜN/ROT» und listet die
-fünf Kategorien einzeln; Live-Kategorien erscheinen als `not_run`, solange
-sie nicht durchgeführt wurden. Es gibt kein «ALL GREEN» mehr.
+sechs Kategorien einzeln (inkl. «Model selection (A1/A2/A3)»); Live-Kategorien
+erscheinen als `not_run`, solange sie nicht durchgeführt wurden. Es gibt kein
+«ALL GREEN» mehr.
 
 Letzter vollständiger Gate-Lauf nach dieser Umstellung: siehe
 Konsolen-Summary (`scripts/verify_all.ps1`); die Zeilen «funktionaler
 Import», «review truth» und «docx render smoke» müssen `pass` zeigen.
 
-## Known Limitations
+## 7. Known Limitations
 
 - **Fake-Modus liefert bewusst keine Markt-/Webinhalte:** Demo-Recherche ist
   als solche markiert und nicht übernehmbar; der Marktvergleich bleibt ohne
@@ -159,6 +197,10 @@ Import», «review truth» und «docx render smoke» müssen `pass` zeigen.
 
 - Runbook §5 (Demoablauf) und §5a (funktionaler Import) live nachvollziehen.
 - `scripts/run_private_innolink_acceptance.py` lokal ausführen (12/12 PASS).
-- Opt-in-Läufe nach Runbook §6a starten und die Statuszeilen der fünf
+- Opt-in-Läufe nach Runbook §6a starten und die Statuszeilen der sechs
   Kategorien im Gate-Summary prüfen (`not_run` verschwindet nur durch echte
   Durchführung).
+- Blind-Scoring der Rollen-Modell-Evaluation nach
+  [`blind_rubric_a2.md`](../evaluation/blind_rubric_a2.md) /
+  [`blind_rubric_a3.md`](../evaluation/blind_rubric_a3.md) durchführen
+  (`mapping.json` erst nach Abschluss öffnen).

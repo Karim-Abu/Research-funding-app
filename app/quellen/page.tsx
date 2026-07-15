@@ -67,6 +67,7 @@ import {
   cancelRun,
   createRun,
   getRunPhases,
+  liveStatusNotice,
   RunError,
   type RunSettings,
   type RunStatus,
@@ -306,6 +307,8 @@ function QuellenPageContent() {
   const [runTechnical, setRunTechnical] =
     React.useState<RunTechnicalSummaryDto | null>(null)
   const [partialLabel, setPartialLabel] = React.useState<string | null>(null)
+  // Ehrlicher Live-Status (partial_live etc.) — nie ein stiller Fallback.
+  const [liveNotice, setLiveNotice] = React.useState<string | null>(null)
   const [runCost, setRunCost] = React.useState<RunCostDto | undefined>(undefined)
   const [canResume, setCanResume] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
@@ -368,6 +371,7 @@ function QuellenPageContent() {
         setRunPhases(phasesToView(data.phases))
         setRunTechnical(data.technical)
         setPartialLabel(failedPhaseLabel(data.phases))
+        setLiveNotice(liveStatusNotice(data.live_execution_status))
         return data.run_status
       } catch {
         // letzte bekannte Phasen behalten; der Watcher versucht es erneut.
@@ -926,6 +930,7 @@ function QuellenPageContent() {
           <div className="mb-4 flex flex-col gap-3">
             <CompletedAnalysisBanner
               partialPhaseLabel={partialLabel}
+              liveNotice={liveNotice}
               onGoToRequirements={() => router.push("/anforderungen")}
               onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
             />

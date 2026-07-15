@@ -7,7 +7,8 @@
 # Testdaten-Marker, Legacy-Status-Guard.
 #
 # Opt-in-Kategorien (NIE Teil dieses Gates; nur Statusbericht): Live model
-# evaluation, Live Firecrawl evaluation, Provider-Preflight, Supervised live E2E.
+# evaluation, Model selection (scripts/run_role_model_eval.py), Live Firecrawl
+# evaluation, Provider-Preflight, Supervised live E2E.
 # Es gibt bewusst KEINE Pauschalaussage «ALL GREEN».
 
 $ErrorActionPreference = "Continue"
@@ -170,6 +171,14 @@ if (Test-Path $mqJson) {
 } else {
     $catModel = "not_run (opt-in — scripts/run_model_quality_eval.py)"
 }
+$rmeJson = Join-Path $backend "var\evaluation\role_model_eval\summary.json"
+if (Test-Path $rmeJson) {
+    try { $rmeStatus = (Get-Content $rmeJson -Raw -Encoding utf8 | ConvertFrom-Json).status }
+    catch { $rmeStatus = "Artefakt vorhanden" }
+    $catRoleEval = "$rmeStatus — $rmeJson"
+} else {
+    $catRoleEval = "not_run (opt-in — scripts/run_role_model_eval.py)"
+}
 $lrMd = Join-Path $backend "var\evaluation\live_research_smoke.md"
 if (Test-Path $lrMd) {
     $lrLine = (Select-String -Path $lrMd -Pattern "Status: (\S+)" | Select-Object -First 1)
@@ -186,12 +195,13 @@ $catTech   = if ($R.playwright -eq "pass" -and $R.golden2 -eq "pass") { "pass" }
 $catImport = if ($R.functional -eq "pass") { "pass" } else { "FAIL" }
 
 Write-Host ""
-Write-Host "=========== ABNAHME — FÜNF GETRENNTE KATEGORIEN ==========="
+Write-Host "=========== ABNAHME — SECHS GETRENNTE KATEGORIEN ==========="
 Write-Host "1. Technical deterministic E2E : $catTech   (Fake-Provider; Suite + 2. Lauf)"
 Write-Host "2. Structured import E2E       : $catImport   (e2e/import-functional.spec.ts)"
 Write-Host "3. Live model evaluation       : $catModel"
-Write-Host "4. Live Firecrawl evaluation   : $catFirecrawl"
-Write-Host "5. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)"
+Write-Host "4. Model selection (A1/A2/A3)  : $catRoleEval"
+Write-Host "5. Live Firecrawl evaluation   : $catFirecrawl"
+Write-Host "6. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)"
 Write-Host "Provider-Preflight (Ebene E)   : $catPreflight"
 Write-Host "Private SEDATE-Acceptance      : manuell — scripts/run_private_innolink_acceptance.py"
 Write-Host ""

@@ -1,0 +1,72 @@
+{
+  "_comment": "F2 TERRAFLUX — eingefrorene Eingabefragmente für die A1-Evaluation. Einmalig abgeleitet aus spike/make_fixture.py::STRUCTURED_LINES (synthetisch, Testdaten-Policy R0.4); deterministisch und parser-unabhängig. Enthält bewusst Portal-Rauschen (Zeichenzähler, Seitenkopf) als Negativziel für falsche Portaltextübernahme.",
+  "case_id": "F2",
+  "source_title": "innolink_structured.pdf (synthetisch, TERRAFLUX)",
+  "fragments": [
+    {
+      "fragment_id": "F2-frag-01",
+      "section": "Kopf",
+      "text": "Innosuisse Innolink - Innovationsprojekt (Entwurf)  -  Seite 1\nProject Start Date: 01.03.2026\nProject End Date: 31.08.2027\nProject Duration: 18 months"
+    },
+    {
+      "fragment_id": "F2-frag-02",
+      "section": "1 Introduction — Application Name and Abstract",
+      "text": "1 Introduction\nApplication Name and Abstract\nApplication name\nTERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün\nTitle in English:\nTERRAFLUX - Adaptive Irrigation Control for Urban Green\nAbstract (wird in Aramis publiziert)\nCharacters: 228/300\nDas Projekt entwickelt eine adaptive Bewässerungssteuerung für städtisches Grün. Sensorbasierte Bodenmodelle senken den Wasserverbrauch um bis zu 25 Prozent und entlasten die Betriebsteams der Stadtgärtnereien."
+    },
+    {
+      "fragment_id": "F2-frag-03",
+      "section": "1 Introduction — Executive Summary",
+      "text": "Executive summary (wird nicht in Aramis publiziert)\nCharacters: 0/2000"
+    },
+    {
+      "fragment_id": "F2-frag-04",
+      "section": "1 Introduction — Scientific Integrity",
+      "text": "Scientific Integrity\nHas any staff member who will be collaborating on the application been severely sanctioned for violation of scientific integrity in the last three years?\nNo"
+    },
+    {
+      "fragment_id": "F2-frag-05",
+      "section": "1 Introduction — Intellectual Property Rights",
+      "text": "Intellectual Property Rights\nWas a patent search performed with or without IPI (Swiss Federal Institute for Intellectual Property)?\nYes\nEine synthetische Recherche ergab zwei thematisch verwandte Dokumente.\nDoes the project require (patent-)licencense(s)? If yes, please explain which background IP is needed for the project and the ownership of that background IP.\nNo\nHave the project partners concluded a prior written agreement regarding the assignement or exploitation of any research findings or patents?\nYes\nEin Konsortialvertrag regelt die Verwertung der Ergebnisse."
+    },
+    {
+      "fragment_id": "F2-frag-06",
+      "section": "2 Organisations & People — Research Partner",
+      "text": "2 Organisations & People\nResearch Partner\nName: Nordlicht Institut für Angewandte Forschung\nCountry: CH\nDepartment: Umweltsysteme\nIndustry: Research\nFTE: 38\nOfficial Representative: Robin Muster\nProject Role: Modellentwicklung und Validierung"
+    },
+    {
+      "fragment_id": "F2-frag-07",
+      "section": "2 Organisations & People — Implementation Partner 1",
+      "text": "Implementation Partner 1\nName: Voltaris AG\nCountry: CH\nDepartment: Produktentwicklung\nIndustry: Sensorik\nFTE: 74\nOfficial Representative: Alex Beispiel\nProject Role: Systemintegration und Pilotierung"
+    },
+    {
+      "fragment_id": "F2-frag-08",
+      "section": "2 Organisations & People — Implementation Partner 2",
+      "text": "Implementation Partner 2\nName: Brimatec GmbH\nCountry: CH\nDepartment: Betrieb\nIndustry: Gartenbau\nFTE: 26\nOfficial Representative: Kim Probe\nProject Role: Pilotbetrieb in zwei Städten"
+    },
+    {
+      "fragment_id": "F2-frag-09",
+      "section": "2 Organisations & People — Independence",
+      "text": "Independence of Research and Implementation Partners\nPersonnel Independence\nAre any of the employees involved in the project on the part of a research partner also an employee of an implementation partner?\nNo\nAre any of the employees involved in the project on the part of the research partners a member of an involved implementation partner's executive board, supervisory board or scientific committee?\nNo\nHave any of the employees involved in the project on the part of the research partners been commissioned by an involved implementation partner to perform another role?\nNo\nFinancial Independence\nI confirm that none of the employees involved in the project on behalf of the research partners holds 20% or more of the ownership interest (e.g., shares) in any implementation partner\nChecked\nI confirm that the research partner, as a legal entity, does not hold 20% or more of the ownership interest (e.g., shares) in any implementation partner\nChecked\nExplanations and Comments\nCharacters: 0/300"
+    },
+    {
+      "fragment_id": "F2-frag-10",
+      "section": "3 Value Creation",
+      "text": "3 Value Creation\n3.1 Describe the business targets and the business model.\nZielmodell ist ein Abo pro Grünfläche; nach drei Jahren sollen zwölf Städte die Lösung im Regelbetrieb nutzen.\n3.2 Describe potential customers and how they are to be reached\nStadtgärtnereien und Facility-Betreiber werden über bestehende Fachverbände und Pilotreferenzen erreicht.\n3.3 Does the planned project have a particular relevance to energy or ecological or social topics?\nDer reduzierte Wasserverbrauch entlastet städtische Ökosysteme."
+    },
+    {
+      "fragment_id": "F2-frag-11",
+      "section": "4 Solution",
+      "text": "4 Solution\n4.1 Describe the state of the art that you intend to advance.\nBestehende Steuerungen bewässern nach festen Zeitplänen ohne Bodenfeuchtemodell.\n4.2 Describe the novelty of your solution (technology, product, business model or process, service)\nNeu ist die Kopplung eines Bodenfeuchtemodells mit selbstlernender Ventilsteuerung je Grünfläche.\n4.3 Describe the quantifiable goals to reach.\nWasserverbrauch minus 25 Prozent in zwei Pilotstädten.\n4.4 Describe the preliminary work already performed.\nEin Laborprüfstand mit zwölf Ventilen wurde aufgebaut und vermessen.\n4.5 Describe how the selected partners are suited for the planned project.\nForschung, Sensorik und Betrieb ergänzen sich ohne Überschneidung."
+    },
+    {
+      "fragment_id": "F2-frag-12",
+      "section": "5 Project Setup — Planned Hours",
+      "text": "5 Project Setup\nPlanned Hours\nPartner | Research | Implementation | Management\nNordlicht Institut | 2400 | 0 | 0\nVoltaris AG | 0 | 1100 | 0\nBrimatec GmbH | 0 | 500 | 0\nExplanation"
+    },
+    {
+      "fragment_id": "F2-frag-13",
+      "section": "5 Project Setup — Financial Overview",
+      "text": "Financial Overview\nDirect total project costs excluding overhead: CHF 200'000\nImplementation Partner Own Contribution: CHF 105'000\nCash Contribution: CHF 13'000\nRequested Innosuisse Funding: CHF 82'000\nRequested Innosuisse Funding incl. Overhead: CHF 94'300"
+    }
+  ]
+}

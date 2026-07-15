@@ -201,6 +201,28 @@ $env:RUN_REAL_PROVIDER_SMOKE = "true"
 $env:WEB_RESEARCH_ENABLED = "true"; $env:WEB_RESEARCH_FAKE_PROVIDER = "false"
 backend\.venv\Scripts\python.exe scripts\run_live_research_smoke.py
 # → backend/var/evaluation/live_research_smoke.md (echte URL, nie example.org)
+
+# Rollen-Modell-Evaluation (Model Selection): Kandidatenvergleich je Agentenrolle
+# (A1/A2/A3) auf F1/F2 (Dev) + H1 (Holdout), ≥2 Wiederholungen, Blindbogen.
+# VORAUSSETZUNGEN: Keys in backend/.env, AGENT_MODEL_*_ID für alle Kandidaten
+# gesetzt UND AGENT_MODEL_PRICING_CHF_PER_MILLION mit verifizierten Preisen je
+# Modell-ID gefüllt — ohne Preis blockiert das Gateway die Route
+# (price_unknown_for_cost_guard); Ceiling-Routen (fable-5, gpt-5.6-sol)
+# brauchen zusätzlich AGENT_QUALITY_CEILING_ENABLED=true.
+$env:RUN_REAL_PROVIDER_SMOKE = "true"; $env:AI_EVAL_MODE = "real"
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a1
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a3
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py blind --role a2
+# → Blindbogen menschlich ausfüllen (docs/evaluation/blind_rubric_a2.md), dann:
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py ingest --role a2 `
+  --scores backend/var/evaluation/role_model_eval/blind/a2/a2_scoring_sheet.csv
+# Holdout erst NACH dem Blind-Scoring der Dev-Läufe (identischer Prompt-SHA):
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2 `
+  --cases H1 --allow-holdout
+# → backend/var/evaluation/role_model_eval/summary.{md,json}
+# Kostenloser Probelauf des gesamten Zyklus (keine Keys nötig): «run --fake …»
+# — Samples sind unübersehbar als fake_dryrun markiert, nie eine Live-Aussage.
 ```
 
 ## 6b. Supervised live E2E (manuelles Protokoll)
@@ -215,9 +237,22 @@ durchgeführt:
    «KI-Unterstützung für Evaluationsfälle verfügbar»; ist Live konfiguriert,
    aber kein Key vorhanden, zeigt die UI ausdrücklich den Zustand
    `live_unavailable` — es erscheint **nie** ein Demo-Ergebnis als Ersatz.
-3. Golden-Path-Schritte 1–14 begleitet durchführen; jede Query-Freigabe und
-   jede Übernahme bleibt menschlich.
-4. Ergebnis (Datum, Provider, tatsächliche Modell-IDs aus dem Technical
+3. Die Modellrouten je Rolle sind die im
+   [`model-selection-report`](../evaluation/model-selection-report.md)
+   dokumentierten Sieger (gesetzt über `AGENT_MODEL_*_ID` in `backend/.env`);
+   A3 läuft über einen anderen Provider als A2 — die Warnung
+   `same_provider_a2_a3` in «Technische Details» muss fehlen.
+4. Golden-Path-Schritte 1–14 begleitet durchführen; jede Query-Freigabe und
+   jede Übernahme bleibt menschlich. Externe Störungen führen zu einem ehrlich
+   ausgewiesenen `partial_live` mit Begründung — nie zu einem stillen Fallback.
+5. **Zweimal-Regel:** ein vollständiger Lauf auf Demo-Projekt 1 **plus** ein
+   gezielter Wiederholungslauf der kritischen Provider-/Research-Schritte
+   (Preflight → A1 → Query-Freigabe → Firecrawl → Quelle übernehmen → A2 → A3)
+   auf Demo-Projekt 2 — oder alternativ zwei vollständige Läufe.
+6. Evidenz archivieren unter `backend/var/evaluation/supervised_live/<datum>/`:
+   Technical-Evidence-Export (Provider, Modell, Skill, Tokens, Kosten, Latenz,
+   Quellen), Preflight-Artefakte, Run-/Projekt-IDs.
+7. Ergebnis (Datum, Provider, tatsächliche Modell-IDs aus dem Technical
    Evidence, Beobachtungen) im Acceptance-Report unter «Supervised live E2E»
    eintragen; ohne Durchführung bleibt dort `not_run` stehen.
 
