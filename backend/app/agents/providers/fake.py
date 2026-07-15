@@ -57,18 +57,28 @@ class FakeProvider:
         if self.mode == "error":
             raise ProviderError("fake provider error")
         if self.mode == "malformed_json":
-            return ProviderResult(raw_output="{ this is not valid json", usage=self._usage)
+            return ProviderResult(
+                raw_output="{ this is not valid json", usage=self._usage,
+                model="fake",
+            )
         if self.mode == "malformed":
             # Structurally JSON but schema-invalid (extra/forbidden field).
             return ProviderResult(
-                raw_output=json.dumps({"unexpected_field": True}), usage=self._usage
+                raw_output=json.dumps({"unexpected_field": True}), usage=self._usage,
+                model="fake",
             )
         # success
         if self._raw_output is not None:
-            return ProviderResult(raw_output=self._raw_output, usage=self._usage)
+            return ProviderResult(
+                raw_output=self._raw_output, usage=self._usage, model="fake"
+            )
         payload = (
             self._payload
             if self._payload is not None
             else _DEFAULT_OUTPUTS.get(request.output_schema_id, {})
         )
-        return ProviderResult(raw_output=json.dumps(payload), usage=self._usage)
+        # Ebene E: der Fake meldet sich unverwechselbar als "fake" — ein
+        # Fake-Ergebnis kann nie als reales Modell erscheinen.
+        return ProviderResult(
+            raw_output=json.dumps(payload), usage=self._usage, model="fake"
+        )

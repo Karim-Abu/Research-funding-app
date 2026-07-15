@@ -17,7 +17,8 @@ const CLASSIFICATION = {
 const SOURCE_TEXT =
   "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. " +
   "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden."
-const TITLE = "Eigener Testantrag M10-2 UX"
+// Zeitstempel: die Suite läuft im Gate zweimal auf derselben Demo-DB.
+const TITLE = `Eigener Testantrag M10-2 UX ${Date.now()}`
 
 function idem(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)

@@ -6,6 +6,7 @@ import {
   FieldTransferCard,
   OVERRIDE_REASONS,
 } from "@/components/portal-transfer/field-transfer-card"
+import { StructuredTransfer } from "@/components/portal-transfer/structured-transfer"
 import {
   COVERAGE_STATEMENT,
   CLIPBOARD_PRIVACY_NOTE,
@@ -15,6 +16,7 @@ import {
   fieldWarnings,
   groupBySection,
   type WarningCode,
+  type TransferSnapshotDto,
 } from "@/lib/portal-transfer"
 import { fieldReadinessRows, readinessSummary } from "@/lib/export-view"
 import { copyPlain } from "@/lib/clipboard"
@@ -52,6 +54,7 @@ export function PortalTransfer({
   runId = null,
   copyEventsEnabled = false,
   portalFields = null,
+  transferSnapshot = null,
   onReload,
 }: {
   fields: PortalFieldDraftDto[]
@@ -67,6 +70,7 @@ export function PortalTransfer({
   /** Slice 4: full registry catalog. When present, a toggle offers the
    * read-only "Alle Portalfelder" checklist; absent → today's view only. */
   portalFields?: PortalFieldInfoDto[] | null
+  transferSnapshot?: TransferSnapshotDto | null
   /** Reload the field list after a stale-version conflict (409). */
   onReload?: () => void
 }) {
@@ -115,6 +119,14 @@ export function PortalTransfer({
         <p className="text-xs text-muted-foreground">
           Hinweis: Der Prüfungs-Status ist in der Demo-Ansicht nicht verfügbar.
         </p>
+      )}
+
+      {!mockMode && (
+        <StructuredTransfer
+          snapshot={transferSnapshot}
+          runId={runId}
+          copyEventsEnabled={copyEventsEnabled}
+        />
       )}
 
       {/* Slice 4: view toggle — default stays today's supported-fields view. */}

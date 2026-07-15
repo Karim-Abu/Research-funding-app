@@ -31,6 +31,10 @@ class ProviderRequest:
 class ProviderResult:
     raw_output: str  # the model's structured output (expected JSON), unparsed
     usage: ProviderUsage = field(default_factory=ProviderUsage)
+    # Live-Readiness (Ebene E): das vom Provider in der Antwort GEMELDETE
+    # Modell (z. B. Auflösung eines Alias) — nie das angefragte model_id.
+    # None, wenn der Provider kein Modell zurückmeldet.
+    model: str | None = None
 
 
 class ProviderError(Exception):

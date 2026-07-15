@@ -8,7 +8,9 @@ export interface Capabilities {
   max_upload_bytes?: number | null
   supported_source_types: string[]
   features: Record<string, boolean>
-  generation_mode?: "unavailable" | "fake_demo" | "real_eval"
+  // "live_unavailable": Live-Betrieb konfiguriert, Provider nicht verfügbar —
+  // nie ein stiller Abstieg auf den Demo-Generator (Ebene E).
+  generation_mode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
   generation_unavailable_reason?: string | null
 }
 

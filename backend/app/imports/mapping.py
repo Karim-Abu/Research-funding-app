@@ -1374,14 +1374,16 @@ def _structured_scalar_candidates(
             "project.implementation_own_contribution",
             "budget",
             (
-                r"^(?:implementation partner\s+)?own contribution\s*:?\s*(?P<value>.*)$",
+                # \b: Spaltenüberschriften wie «… Contributions» sind KEIN
+                # gelabelter Einzelwert (sie lieferten sonst «s» als Wert).
+                r"^(?:implementation partner\s+)?own contribution\b\s*:?\s*(?P<value>.*)$",
             ),
             "currency",
         ),
         (
             "project.cash_contribution",
             "budget",
-            (r"^cash contribution\s*:?\s*(?P<value>.*)$",),
+            (r"^cash contribution\b\s*:?\s*(?P<value>.*)$",),
             "currency",
         ),
         (
@@ -1429,10 +1431,23 @@ def _scientific_candidate(lines: list[_Line]) -> MappedStructuredCandidate | Non
     if answer is None:
         return None
     value, source_line = answer
+    # Der Kommentar wird nur im Antwortbereich der Integritätsfrage gesucht
+    # (bis zum nächsten Struktur-Heading). «Explanations and Comments» der
+    # Unabhängigkeit und «Explanation» der Planned Hours sind andere
+    # Portalfelder und dürfen nie als Integritätskommentar erscheinen.
+    answer_index = next(
+        (index for index, line in enumerate(lines) if line is source_line), None
+    )
+    region: list[_Line] = []
+    if answer_index is not None:
+        for line in lines[answer_index + 1 :]:
+            if line.norm and _matches(line.norm, ALL_STRUCTURAL_HEADINGS):
+                break
+            region.append(line)
     comment_match = _scalar_value(
-        lines,
+        region,
         (
-            r"^(?:scientific integrity )?(?:comment|explanation)\s*:?\s*(?P<value>.*)$",
+            r"^(?:scientific integrity )?(?:comment|explanation)\b\s*:?\s*(?P<value>.*)$",
         ),
     )
     comment = comment_match[0] if comment_match else None
@@ -1616,10 +1631,29 @@ def _structured_candidates(
     lines: list[_Line], layout_lines: list[_Line], mapped: dict[str, MappedField]
 ) -> list[MappedStructuredCandidate]:
     result = _structured_scalar_candidates(lines, mapped)
+
+    # Gelabelte Skalare haben Vorrang — AUSSER ihr Wert liess sich nicht
+    # streng parsen (value None): dann ersetzt der geparste Wert aus der
+    # Financial-Overview-Tabelle den unbrauchbaren Kandidaten (nie zwei
+    # Kandidaten pro target_key; Belegter SEDATE-Fall: Spaltenüberschrift
+    # neben echter Tabellenzeile).
+    def _parsed(item: MappedStructuredCandidate) -> bool:
+        field_name = item.target_key.removeprefix("project.")
+        return item.payload_json.get(field_name) is not None
+
+    layout_by_target = {
+        item.target_key: item
+        for item in _layout_financial_candidates(layout_lines)
+    }
+    result = [
+        item
+        for item in result
+        if _parsed(item) or item.target_key not in layout_by_target
+    ]
     existing_targets = {item.target_key for item in result}
     result.extend(
         item
-        for item in _layout_financial_candidates(layout_lines)
+        for item in layout_by_target.values()
         if item.target_key not in existing_targets
     )
     financial = mapped.get("ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS")

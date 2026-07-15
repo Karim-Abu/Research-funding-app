@@ -433,6 +433,9 @@ def test_provider_boundary_only_reached_via_research_modules():
         ("research", "executor.py"),
         ("research", "import_service.py"),
         ("research", "providers", "resolver.py"),
+        # Ebene E: der opt-in Provider-Preflight ruft den Provider bewusst
+        # direkt — mit konstantem D0-Ping ohne Antragsinhalt, nie im Run-Pfad.
+        ("evaluation", "preflight.py"),
     }
     offenders = []
     for path in root.rglob("*.py"):

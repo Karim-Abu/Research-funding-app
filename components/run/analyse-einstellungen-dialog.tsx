@@ -108,6 +108,13 @@ export function AnalyseEinstellungenDialog({
       kiUnavailableReason = AI_REASON_INFO.nda_locked.text
     } else if (isLocalOnlyClass) {
       kiUnavailableReason = `Für die Vertraulichkeitsstufe «${dataClassLabel[dataClass]}» ist kein KI-Provider freigegeben — es laufen nur regelbasierte Prüfungen.`
+    } else if (serviceAvailability.generationMode === "live_unavailable") {
+      // Ebene E: Live ist konfiguriert, der Provider aber nicht verfügbar —
+      // ausdrücklich benennen; es erscheint NIE ein Demo-Ergebnis als Ersatz.
+      kiUnavailableReason =
+        "Live-KI ist konfiguriert, aber der Provider ist derzeit nicht " +
+        "verfügbar (z. B. fehlender API-Schlüssel). Es wird kein " +
+        "Demo-Ergebnis als KI-Ergebnis angezeigt."
     } else if (
       !serviceAvailability.ki ||
       serviceAvailability.generationMode === "unavailable" ||

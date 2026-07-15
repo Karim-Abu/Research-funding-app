@@ -74,6 +74,32 @@ async function publicProjectWithSource(page: Page, title: string) {
     }
   )
   expect((await src.json()).status).toBe("processed")
+
+  // Query-Planung setzt seit dem Brief-Gate einen freigegebenen public-safe
+  // Recherchebrief voraus (API-Setup; zwei Module ⇒ zwei geplante Queries).
+  const briefResponse = await page.request.put(
+    `/api/projects/${projectId}/research-brief`,
+    {
+      headers: mut(),
+      data: {
+        application_domain: "Energiemanagement",
+        technology_class: "Prognosesoftware",
+        target_customer_segments: ["Verteilnetzbetreiber"],
+        region: "Schweiz",
+        competence_needs: ["Energiedatenanalyse"],
+        modules: ["market_growth", "competition_alternatives", "customer_problem"],
+      },
+    }
+  )
+  expect(briefResponse.ok()).toBeTruthy()
+  const briefId = (await briefResponse.json()).research_brief_id as string
+  expect(
+    (
+      await page.request.post(`/api/research-briefs/${briefId}/approve`, {
+        headers: mut(),
+      })
+    ).ok()
+  ).toBeTruthy()
   await page.reload()
   return { projectId, csrf, mut }
 }
@@ -128,21 +154,35 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   const rows = list.getByTestId("query-approval-row")
   await expect(rows.first()).toBeVisible()
 
-  // 2. Bearbeiten: neuer Text mit Budget in ZAHLWÖRTERN — die Firewall entfernt
-  //    ihn; angezeigt (und später ausgeführt) wird nur der bereinigte Text.
+  // 2a. Bearbeiten mit NEUEN Fachbegriffen ausserhalb des geprüften Briefs
+  //     wird abgelehnt — fremdes Vokabular muss zuerst in den Brief (kein
+  //     stiller Bypass der Brief-Prüfung).
   await rows.nth(0).getByRole("button", { name: "Bearbeiten" }).click()
   await dialog
     .getByTestId("query-edit-input")
-    .fill("Anlagenmarkt Automatisierung Schweiz eine halbe Million Franken")
+    .fill("Anlagenmarkt Automatisierung eine halbe Million Franken")
   await rows
     .nth(0)
     .getByRole("button", { name: "Prüfen und übernehmen" })
     .click()
-  await expect(rows.nth(0)).toContainText("Anlagenmarkt Automatisierung Schweiz", {
-    timeout: 20_000,
-  })
+  await expect(
+    dialog.getByText(/Suchanfrage konnte nicht geprüft werden/)
+  ).toBeVisible({ timeout: 20_000 })
+
+  // 2b. Bearbeiten mit Brief-Vokabular wird geprüft übernommen — angezeigt
+  //     (und später ausgeführt) wird nur der geprüfte Text.
+  await dialog
+    .getByTestId("query-edit-input")
+    .fill("Energiemanagement Prognosesoftware Verteilnetzbetreiber Schweiz")
+  await rows
+    .nth(0)
+    .getByRole("button", { name: "Prüfen und übernehmen" })
+    .click()
+  await expect(rows.nth(0)).toContainText(
+    "Energiemanagement Prognosesoftware Verteilnetzbetreiber Schweiz",
+    { timeout: 20_000 }
+  )
   await expect(rows.nth(0)).not.toContainText("Million")
-  await expect(rows.nth(0)).not.toContainText("Franken")
 
   // 3. Freigeben (bearbeitete + eine geplante Query), eine ablehnen.
   await rows.nth(0).getByRole("button", { name: "Freigeben" }).click()
@@ -153,8 +193,13 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   await expect(rows.nth(2).getByText("Abgelehnt")).toBeVisible()
   await expect(dialog.getByTestId("query-approval-count")).toContainText("2 von")
 
+  // KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus — idempotent einschalten.
+  const kiSwitch = dialog.getByRole("switch", { name: /Demo-Vorschläge|KI-Unterstützung/ })
+  if ((await kiSwitch.getAttribute("aria-checked")) !== "true") {
+    await kiSwitch.click()
+  }
   await dialog
-    .getByRole("checkbox", { name: "Cloud-KI für diesen Durchlauf erlauben" })
+    .getByRole("checkbox", { name: "Demo-Generator für diesen Durchlauf aktivieren" })
     .click()
   await dialog.getByRole("button", { name: "Analyse starten" }).click()
   const runId = await completedRunId(page, projectId)
@@ -188,6 +233,8 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   )
   expect(discarded.status()).toBe(200)
   expect((await discarded.json()).status).toBe("rejected")
+  // Demo-Ergebnisse sind KEINE Webquellen: der Import wird auch auf API-Ebene
+  // ehrlich verweigert (kein Fake-Output als echte Quelle).
   const imported = await page.request.post(
     `/api/research-results/${results[1].result_id}/import`,
     {
@@ -198,14 +245,14 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
       },
     }
   )
-  expect(imported.status()).toBe(201)
-  const doc = await imported.json()
-  expect(doc.type).toBe("url")
-  expect(doc.data_classification.origin).toBe("public_source")
+  expect(imported.status()).toBe(422)
+  const refusal = await imported.json()
+  expect(JSON.stringify(refusal)).toContain("demo_result_not_importable")
+  // Es entsteht KEINE URL-Quelle aus dem Demo-Ergebnis.
   const sources = await (
     await page.request.get(`/api/projects/${projectId}/sources`)
   ).json()
-  expect(sources.some((s: { source_id: string }) => s.source_id === doc.source_id)).toBe(true)
+  expect(sources.some((s: { type: string }) => s.type === "url")).toBe(false)
   // Verworfen bleibt verworfen (Reload/erneutes Lesen).
   const resultsAfter = await (
     await page.request.get(`/api/projects/${projectId}/research-results`)
@@ -215,24 +262,16 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   )
   expect(first.status).toBe("rejected")
 
-  // 6. Strukturierte, persistierte Zusammenfassung aus der akzeptierten Quelle —
-  //    über die UI erstellt; Abschnitte + Status «Textstelle gefunden».
+  // 6. Marktvergleich ohne echte Webquellen: die UI weist die Evidenzlücke
+  //    ehrlich aus — es wird KEIN Vergleich aus Demo-Ergebnissen fabriziert.
   await page.goto("/quellen")
   const section = page.getByTestId("market-comparison-section")
   await expect(section).toBeVisible({ timeout: 20_000 })
   await section.getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ }).click()
-  await expect(page.getByTestId("market-comparison-table")).toBeVisible({
-    timeout: 30_000,
-  })
-  await expect(section.getByText("Marktgrössen-Kandidaten")).toBeVisible()
-  await expect(section.getByText("Wettbewerber und Alternativen")).toBeVisible()
-  await expect(section.getByText("Textstelle gefunden").first()).toBeVisible()
-  await expect(page.getByTestId("market-research-gaps")).toContainText(
-    /Marktgröße|Evidenz/
-  )
-  await expect(page.getByTestId("market-used-sources")).toContainText(
-    "Öffentliche Quelle"
-  )
+  await expect(
+    section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
+  ).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   // Kein Provider-Branding in der Standard-UI.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)
 
@@ -261,8 +300,13 @@ test("ohne Freigabe wird die Recherche-Phase ehrlich übersprungen", async ({
   await expect(
     dialog.getByText(/Die Webrecherche wird übersprungen, bis mindestens eine/)
   ).toBeVisible()
+  // KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus — idempotent einschalten.
+  const kiSwitch = dialog.getByRole("switch", { name: /Demo-Vorschläge|KI-Unterstützung/ })
+  if ((await kiSwitch.getAttribute("aria-checked")) !== "true") {
+    await kiSwitch.click()
+  }
   await dialog
-    .getByRole("checkbox", { name: "Cloud-KI für diesen Durchlauf erlauben" })
+    .getByRole("checkbox", { name: "Demo-Generator für diesen Durchlauf aktivieren" })
     .click()
   await dialog.getByRole("button", { name: "Analyse starten" }).click()
   const runId = await completedRunId(page, projectId)

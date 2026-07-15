@@ -77,6 +77,32 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
     }
   )
   expect((await src.json()).status).toBe("processed")
+
+  // Query-Planung setzt seit dem Brief-Gate einen freigegebenen public-safe
+  // Recherchebrief voraus (API-Setup; zwei Module ⇒ zwei geplante Queries).
+  const briefResponse = await page.request.put(
+    `/api/projects/${projectId}/research-brief`,
+    {
+      headers: mut(),
+      data: {
+        application_domain: "Energiemanagement",
+        technology_class: "Prognosesoftware",
+        target_customer_segments: ["Verteilnetzbetreiber"],
+        region: "Schweiz",
+        competence_needs: ["Energiedatenanalyse"],
+        modules: ["market_growth", "competition_alternatives"],
+      },
+    }
+  )
+  expect(briefResponse.ok()).toBeTruthy()
+  const briefId = (await briefResponse.json()).research_brief_id as string
+  expect(
+    (
+      await page.request.post(`/api/research-briefs/${briefId}/approve`, {
+        headers: mut(),
+      })
+    ).ok()
+  ).toBeTruthy()
   await page.reload()
 
   // 4. Vereinfachter Dialog: Cloud-Freigabe + öffentliche Webrecherche.
@@ -101,8 +127,13 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   await expect(dialog.getByTestId("query-approval-count")).toContainText(
     "2 von"
   )
+  // KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus — idempotent einschalten.
+  const kiSwitch = dialog.getByRole("switch", { name: /Demo-Vorschläge|KI-Unterstützung/ })
+  if ((await kiSwitch.getAttribute("aria-checked")) !== "true") {
+    await kiSwitch.click()
+  }
   await dialog
-    .getByRole("checkbox", { name: "Cloud-KI für diesen Durchlauf erlauben" })
+    .getByRole("checkbox", { name: "Demo-Generator für diesen Durchlauf aktivieren" })
     .click()
   await dialog.getByRole("button", { name: "Analyse starten" }).click()
 
@@ -177,7 +208,7 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   // über «KI-Assist öffnen» sichtbar.
   await page.goto("/editor?field=INTRO.APP.ABSTRACT")
   await page
-    .getByRole("button", { name: "KI-Assist öffnen" })
+    .getByRole("button", { name: "Vorschläge", exact: true })
     .click({ timeout: 20_000 })
   await expect(page.getByTestId("run-suggestion-hint")).toBeVisible({
     timeout: 20_000,
@@ -188,7 +219,7 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   expect(abstractBefore.current_version.created_by).toBe("template")
 
   await page.getByRole("button", { name: "Vorschlag anzeigen" }).click()
-  await page.getByRole("button", { name: "Übernehmen" }).click()
+  await page.getByRole("button", { name: "Übernehmen", exact: true }).click()
   // Übernahme abgeschlossen: der Editor meldet die nötige erneute Prüfung.
   await expect(
     page.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
@@ -207,8 +238,13 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   await page.goto("/quellen")
   await page.getByRole("button", { name: "Analyse starten" }).click()
   const dialog2 = page.getByRole("dialog")
+  // KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus — idempotent einschalten.
+  const kiSwitch2 = dialog2.getByRole("switch", { name: /Demo-Vorschläge|KI-Unterstützung/ })
+  if ((await kiSwitch2.getAttribute("aria-checked")) !== "true") {
+    await kiSwitch2.click()
+  }
   await dialog2
-    .getByRole("checkbox", { name: "Cloud-KI für diesen Durchlauf erlauben" })
+    .getByRole("checkbox", { name: "Demo-Generator für diesen Durchlauf aktivieren" })
     .click()
   await dialog2.getByRole("button", { name: "Analyse starten" }).click()
   await expect(

@@ -1082,7 +1082,10 @@ function QuellenPageContent() {
           ki: liveMode
             ? Boolean(
                 capabilities?.generation_mode &&
-                  capabilities.generation_mode !== "unavailable"
+                  capabilities.generation_mode !== "unavailable" &&
+                  // Live konfiguriert, aber Provider fehlt ⇒ KI ist NICHT
+                  // verfügbar — es erscheint kein Demo-Ergebnis als Ersatz.
+                  capabilities.generation_mode !== "live_unavailable"
               )
             : activeScenario.kiAvailable,
           web: activeScenario.webAvailable,

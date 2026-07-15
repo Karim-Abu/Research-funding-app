@@ -108,10 +108,34 @@ def run(base: str, email: str, password: str) -> int:
             _check(f"download {kind}", len(body) > 0)
 
         if features.get("web_research"):
+            # Brief-Gate: ohne brief-gebundene Freigabe wird ein Task ehrlich
+            # abgelehnt; der legitime Pfad läuft über den public-safe Brief.
+            bare = c.post(f"{base}/projects/{pid}/research-tasks", headers=_mut(csrf), json={
+                "purpose": "partner_role_suggestion", "subject_type": "topic",
+                "query_preview": "öffentliche Wettbewerbsanalyse", "max_results": 2,
+                "user_confirms_public_professional_purpose": True,
+            })
+            _check("web research ohne Brief-Freigabe (422)", bare.status_code == 422)
+            brief = c.put(f"{base}/projects/{pid}/research-brief", headers=_mut(csrf), json={
+                "application_domain": "Automatisierungstechnik",
+                "technology_class": "Robotik-Software",
+                "target_customer_segments": ["Industrieanwender"],
+                "region": "Schweiz",
+                "competence_needs": ["Robotik"],
+                "modules": ["swiss_research_partners"],
+            }).json()
+            c.post(f"{base}/research-briefs/{brief['research_brief_id']}/approve",
+                   headers=_mut(csrf))
+            plan = c.post(f"{base}/research-briefs/{brief['research_brief_id']}/queries/plan",
+                          headers=_mut(csrf)).json()
+            approval_id = plan["queries"][0]["approval_id"]
+            c.post(f"{base}/search-query-approvals/{approval_id}/approve",
+                   headers=_mut(csrf))
             acc = c.post(f"{base}/projects/{pid}/research-tasks", headers=_mut(csrf), json={
                 "purpose": "partner_role_suggestion", "subject_type": "topic",
                 "query_preview": "öffentliche Wettbewerbsanalyse", "max_results": 2,
                 "user_confirms_public_professional_purpose": True,
+                "approval_id": approval_id,
             })
             _check("web research (fake)", acc.status_code == 202
                    and _wait(c, base, acc.json()["operation_id"]) == "succeeded")

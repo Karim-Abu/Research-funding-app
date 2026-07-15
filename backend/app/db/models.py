@@ -1051,8 +1051,12 @@ class CopyEvent(Base):
         ForeignKey("analysis_runs.run_id"), nullable=False, index=True
     )
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    field_id: Mapped[str] = mapped_column(String, nullable=False)
-    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    # ``portal_field`` keeps the original field/version reference. Structured
+    # transfer targets are snapshot-addressed and therefore have no draft.
+    target_type: Mapped[str] = mapped_column(String, nullable=False, default="portal_field")
+    target_key: Mapped[str] = mapped_column(String, nullable=False, default="")
+    field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     # Warning codes (open | limit | review): as reported by the client vs.
     # recomputed on the server — the union decides the override requirement.
@@ -1314,6 +1318,9 @@ class AgentInvocation(Base):
     input_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     output_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Ebene E (Live-Readiness): das vom Provider in der Antwort gemeldete
+    # Modell (Alias-Auflösung). model_id bleibt das ANGEFRAGTE Modell.
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # queued | running | succeeded | failed | blocked | timed_out
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     input_hash: Mapped[str | None] = mapped_column(String, nullable=True)

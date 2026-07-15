@@ -14,5 +14,10 @@ class Capabilities(BaseModel):
     features: dict[str, bool]
     # Deployment-level capability only; project/source policy remains
     # authoritative at run creation and before every gateway call.
-    generation_mode: Literal["unavailable", "fake_demo", "real_eval"] = "unavailable"
+    # ``live_unavailable`` (Ebene E): Live-Betrieb ist KONFIGURIERT
+    # (ai_eval_mode=real), aber kein Provider verfügbar — Live fällt nie
+    # still auf den Demo-Generator zurück.
+    generation_mode: Literal[
+        "unavailable", "fake_demo", "real_eval", "live_unavailable"
+    ] = "unavailable"
     generation_unavailable_reason: str | None = None

@@ -66,7 +66,7 @@ export function LLMToggle({
   generationMode = "unavailable",
   ...props
 }: Omit<ServiceToggleProps, "title" | "subtitle"> & {
-  generationMode?: "unavailable" | "fake_demo" | "real_eval"
+  generationMode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
 }) {
   const isDemo = generationMode === "fake_demo"
   return (

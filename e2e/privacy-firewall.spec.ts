@@ -2,8 +2,11 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 
 // M9J Search Query Firewall (fake provider). Requires the backend started with
 // WEB_RESEARCH_ENABLED=true, WEB_RESEARCH_FAKE_PROVIDER=true, AGENT_FAKE_PROVIDER=true.
-// Flow A: D0 public query works. Flow B: D2 query with partner+budget → sanitize →
-// approve → search with sanitized query → import. Flow C: D3/UNKNOWN blocked.
+// Seit dem Brief-Gate: Research-Tasks laufen NUR über brief-gebundene, menschlich
+// freigegebene Queries. Flow A: D0 mit Brief-Query. Flow B: D2 — der Standalone-
+// Firewall-Preview bereinigt (kein Roh-Leak), aber seine Freigabe genügt NICHT
+// für einen Task (Brief-Provenienz Pflicht); brief-geplante Queries tragen nie
+// Partner-/Budgetbezeichner. Flow C: D3/UNKNOWN blocked.
 type Mut = () => Record<string, string>
 
 const EMAIL = process.env.E2E_EMAIL ?? "anna.keller@example.test"
@@ -74,21 +77,52 @@ function taskBody(query: string, approvalId?: string) {
   return body
 }
 
+
+/** Brief anlegen + freigeben + Queries planen + freigeben (Provenienz-Pflicht). */
+async function approvedBriefQuery(
+  request: APIRequestContext, mut: Mut, projectId: string, modules: string[]
+): Promise<string> {
+  const brief = await (await request.put(`/api/projects/${projectId}/research-brief`, {
+    headers: mut(),
+    data: {
+      application_domain: "Robotik-Messtechnik",
+      technology_class: "Automatisierungssoftware",
+      target_customer_segments: ["Industrieanwender"],
+      region: "Schweiz",
+      competence_needs: ["Robotik"],
+      modules,
+    },
+  })).json()
+  const briefId = brief.research_brief_id as string
+  expect((await request.post(`/api/research-briefs/${briefId}/approve`, { headers: mut() })).ok()).toBeTruthy()
+  const plan = await (await request.post(
+    `/api/research-briefs/${briefId}/queries/plan`, { headers: mut() })).json()
+  const first = (plan.queries as Array<{ approval_id: string; query_text: string }>)[0]
+  expect(first).toBeTruthy()
+  expect((await request.post(
+    `/api/search-query-approvals/${first.approval_id}/approve`, { headers: mut() })).ok()).toBeTruthy()
+  return first.approval_id
+}
+
 test("Flow A: D0 public web research works as before", async ({ page }) => {
   const mut = await login(page)
   const pid = await createProject(page.request, mut, dc("public", "synthetic"))
+  const approvalId = await approvedBriefQuery(
+    page.request, mut, pid, ["swiss_research_partners"]
+  )
   const res = await page.request.post(`/api/projects/${pid}/research-tasks`, {
-    headers: mut(), data: taskBody("öffentliche Wettbewerbsanalyse Robotik"),
+    headers: mut(), data: taskBody("öffentliche Wettbewerbsanalyse Robotik", approvalId),
   })
   expect(res.status()).toBe(202)
   expect(await waitForOperation(page.request, (await res.json()).operation_id)).toBe("succeeded")
 })
 
-test("Flow B (API): D2 query sanitized, approved, searched, imported — no raw leak", async ({ page }) => {
+test("Flow B (API): D2 — Preview bereinigt ohne Roh-Leak; Tasks verlangen Brief-Provenienz", async ({ page }) => {
   const mut = await login(page)
   const pid = await createProject(page.request, mut, dc("confidential", "real_project"), 500000)
   await addPartner(page.request, mut, pid)
 
+  // Standalone-Firewall-Preview: bereinigt Partnername + Budget (kein Roh-Leak).
   const preview = await (await page.request.post(
     `/api/projects/${pid}/search-query-firewall/preview`,
     { headers: mut(), data: { raw_query: D2_QUERY } })).json()
@@ -101,8 +135,20 @@ test("Flow B (API): D2 query sanitized, approved, searched, imported — no raw 
     `/api/search-query-approvals/${preview.approval_id}/approve`, { headers: mut() })
   expect(approved.status()).toBe(200)
 
-  const created = await page.request.post(`/api/projects/${pid}/research-tasks`, {
+  // Diese Freigabe hat KEINE Brief-Provenienz — ein Research-Task damit wird
+  // abgelehnt (kein Bypass des geprüften Briefs).
+  const rejected = await page.request.post(`/api/projects/${pid}/research-tasks`, {
     headers: mut(), data: taskBody(D2_QUERY, preview.approval_id),
+  })
+  expect(rejected.status()).toBe(422)
+  expect(await rejected.text()).toContain("research_brief_approval_required")
+
+  // Der legitime Weg: brief-geplante Queries tragen nie Partner-/Budgetwerte.
+  const approvalId = await approvedBriefQuery(
+    page.request, mut, pid, ["swiss_research_partners"]
+  )
+  const created = await page.request.post(`/api/projects/${pid}/research-tasks`, {
+    headers: mut(), data: taskBody(D2_QUERY, approvalId),
   })
   expect(created.status()).toBe(202)
   expect(await waitForOperation(page.request, (await created.json()).operation_id)).toBe("succeeded")
@@ -114,10 +160,11 @@ test("Flow B (API): D2 query sanitized, approved, searched, imported — no raw 
   const rows = JSON.parse(text) as { result_id: string }[]
   expect(rows.length).toBeGreaterThanOrEqual(1)
 
+  // Demo-Ergebnisse sind keine Webquellen — Import ehrlich verweigert.
   const imported = await page.request.post(
     `/api/research-results/${rows[0].result_id}/import`, { headers: mut() })
-  expect(imported.status()).toBe(201)
-  expect((await imported.json()).data_classification.origin).toBe("public_source")
+  expect(imported.status()).toBe(422)
+  expect(await imported.text()).toContain("demo_result_not_importable")
 
   await page.getByText("Anna Keller").first().click()
   await page.getByText("Abmelden").click()
@@ -139,10 +186,11 @@ test("Flow C: D3 (NDA) and UNKNOWN web research are blocked", async ({ page }) =
   expect(r2.status()).toBe(403)
 })
 
-test("Flow B (UI): confidential panel previews, approves and searches the sanitized query", async ({ page }) => {
+test("Flow B (UI): vertrauliches Projekt — Queries entstehen nur aus dem Brief, ohne vertrauliche Bezeichner", async ({ page }) => {
   const mut = await login(page)
   const pid = await createProject(page.request, mut, dc("confidential", "real_project"), 500000)
   await addPartner(page.request, mut, pid)
+  await approvedBriefQuery(page.request, mut, pid, ["market_growth"])
 
   await page.evaluate(
     ({ id }) => {
@@ -155,20 +203,20 @@ test("Flow B (UI): confidential panel previews, approves and searches the saniti
 
   const panel = page.getByTestId("public-research-panel")
   await expect(panel).toBeVisible({ timeout: 20_000 })
-  await expect(panel).toContainText("möglicherweise vertrauliche Angaben")
+  // Public-safe Leitplanke: keine Rohidee/Partnernamen/Budgets in den Brief.
+  await expect(panel).toContainText(
+    "Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben"
+  )
+  await expect(panel.getByText("Brief v1 freigegeben")).toBeVisible()
 
-  await page.getByLabel("Öffentlicher Suchbegriff").fill(D2_QUERY)
-  await page.getByRole("button", { name: "Vor Webrecherche prüfen" }).click()
-
-  const preview = page.getByTestId("firewall-preview")
-  await expect(preview).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByTestId("sanitized-query")).not.toContainText("Acme")
-  await expect(preview).not.toContainText("500")
+  // Die geplante Query stammt aus dem Brief-Vokabular — vertrauliche
+  // Bezeichner (Partnername, Budgetzahl) erscheinen nirgends.
+  const rows = panel.getByTestId("query-approval-row")
+  await expect(rows.first()).toBeVisible({ timeout: 20_000 })
+  await expect(panel).not.toContainText("Acme")
+  await expect(panel).not.toContainText("500")
   // No provider/model branding.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)
-
-  await page.getByRole("button", { name: "Bereinigte Anfrage freigeben und suchen" }).click()
-  await expect(page.getByTestId("research-results")).toBeVisible({ timeout: 20_000 })
 
   await page.getByText("Anna Keller").first().click()
   await page.getByText("Abmelden").click()

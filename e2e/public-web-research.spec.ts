@@ -3,8 +3,11 @@ import { test, expect, type APIRequestContext, type Page } from "@playwright/tes
 type Mut = () => Record<string, string>
 
 // M9I-A public web research smoke (fake provider). Requires the backend started with
-// WEB_RESEARCH_ENABLED=true, WEB_RESEARCH_FAKE_PROVIDER=true and AGENT_FAKE_PROVIDER=true
-// (the A1 synthesis). No real Firecrawl is ever contacted.
+// WEB_RESEARCH_ENABLED=true, WEB_RESEARCH_FAKE_PROVIDER=true and AGENT_FAKE_PROVIDER=true.
+// EHRLICHER Fake-Modus (a2c9b1c): Queries entstehen NUR aus dem menschlich
+// freigegebenen public-safe Recherchebrief; Demo-Ergebnisse sind klar markiert
+// und werden NIE als Quelle importiert (API 422 «demo_result_not_importable»).
+// No real Firecrawl is ever contacted.
 const EMAIL = process.env.E2E_EMAIL ?? "anna.keller@example.test"
 const PASSWORD = process.env.E2E_PASSWORD ?? "changeme-dev-lead"
 const ORIGIN = "http://localhost:3000"
@@ -52,44 +55,86 @@ async function createProject(request: APIRequestContext, mut: Mut): Promise<stri
   })).json()).project_id
 }
 
-test("public research: search, import as source, deterministic analysis can use it", async ({ page }) => {
+/** Brief anlegen + freigeben + Queries planen; liefert die approval_ids. */
+async function approvedQueryIds(
+  request: APIRequestContext,
+  mut: Mut,
+  projectId: string,
+  modules: string[]
+): Promise<{ briefId: string; approvalIds: string[] }> {
+  const brief = await (
+    await request.put(`/api/projects/${projectId}/research-brief`, {
+      headers: mut(),
+      data: {
+        application_domain: "Photonik-Messtechnik",
+        technology_class: "Optische Sensorik",
+        target_customer_segments: ["Industrieanwender"],
+        region: "Schweiz",
+        competence_needs: ["Photonik"],
+        modules,
+      },
+    })
+  ).json()
+  const briefId = brief.research_brief_id as string
+  expect(
+    (await request.post(`/api/research-briefs/${briefId}/approve`, { headers: mut() })).ok()
+  ).toBeTruthy()
+  const plan = await (
+    await request.post(`/api/research-briefs/${briefId}/queries/plan`, { headers: mut() })
+  ).json()
+  const approvalIds: string[] = []
+  for (const query of plan.queries as Array<{ approval_id: string }>) {
+    expect(
+      (
+        await request.post(
+          `/api/search-query-approvals/${query.approval_id}/approve`,
+          { headers: mut() }
+        )
+      ).ok()
+    ).toBeTruthy()
+    approvalIds.push(query.approval_id)
+  }
+  expect(approvalIds.length).toBeGreaterThan(0)
+  return { briefId, approvalIds }
+}
+
+test("public research: brief-gebundene Suche liefert Demo-Kandidaten, Import wird ehrlich verweigert", async ({ page }) => {
   const mut = await login(page)
   const projectId = await createProject(page.request, mut)
+  const { approvalIds } = await approvedQueryIds(
+    page.request, mut, projectId, ["swiss_research_partners"]
+  )
 
-  // Start a research task and wait for candidates.
+  // Research-Task nur mit freigegebener Brief-Query (approval_id).
   const accepted = await (await page.request.post(
     `/api/projects/${projectId}/research-tasks`,
     { headers: mut(), data: {
       purpose: "partner_role_suggestion", subject_type: "topic",
       query_preview: "öffentliche Forschungskompetenz Photonik", max_results: 3,
-      user_confirms_public_professional_purpose: true } },
+      user_confirms_public_professional_purpose: true,
+      approval_id: approvalIds[0] } },
   )).json()
   expect(await waitForOperation(page.request, accepted.operation_id)).toBe("succeeded")
 
   const results = await (await page.request.get(
     `/api/projects/${projectId}/research-results`)).json() as { result_id: string; status: string }[]
   expect(results.length).toBeGreaterThan(0)
+  expect(results.every((r) => r.status === "candidate")).toBe(true)
 
-  // Import the first candidate as a normal source.
+  // Demo-Ergebnisse sind KEINE Webquellen: Import wird auf API-Ebene verweigert.
   const imported = await page.request.post(
     `/api/research-results/${results[0].result_id}/import`, { headers: mut() })
-  expect(imported.status()).toBe(201)
-  const source = await imported.json()
-  expect(source.type).toBe("url")
-  expect(source.status).toBe("processed")
-  const versionId = source.current_source_version_id as string
-  expect(versionId).toBeTruthy()
+  expect(imported.status()).toBe(422)
+  expect(JSON.stringify(await imported.json())).toContain("demo_result_not_importable")
 
-  // The imported source appears in the project's source list.
+  // Es entsteht keine URL-Quelle; die deterministische Analyse läuft unabhängig.
   const sources = await (await page.request.get(
-    `/api/projects/${projectId}/sources`)).json() as { source_id: string }[]
-  expect(sources.some((s) => s.source_id === source.source_id)).toBe(true)
-
-  // The deterministic evidence pipeline can use the imported source in an analysis run.
+    `/api/projects/${projectId}/sources`)).json() as { type: string }[]
+  expect(sources.some((s) => s.type === "url")).toBe(false)
   const run = await (await page.request.post(`/api/projects/${projectId}/runs`, {
     headers: mut(), data: { settings: {
       processing_mode: "deterministic_only", max_cost_chf: 0, max_llm_calls: 0,
-      max_web_calls: 0, source_version_ids: [versionId] } },
+      max_web_calls: 0 } },
   })).json()
   expect(await waitForOperation(page.request, run.operation_id)).toBe("succeeded")
 
@@ -98,9 +143,10 @@ test("public research: search, import as source, deterministic analysis can use 
   await expect(page).toHaveURL(/\/login/, { timeout: 20_000 })
 })
 
-test("public research panel: run + import from the Quellen UI, no provider branding", async ({ page }) => {
+test("public research panel: Brief → Queries → Demo-Ergebnisse ohne Übernahme, kein Provider-Branding", async ({ page }) => {
   const mut = await login(page)
   const projectId = await createProject(page.request, mut)
+  await approvedQueryIds(page.request, mut, projectId, ["market_growth"])
 
   await page.evaluate((id) => sessionStorage.setItem("rf_active_project_id", id), projectId)
   await page.goto("/quellen")
@@ -108,15 +154,22 @@ test("public research panel: run + import from the Quellen UI, no provider brand
   const panel = page.getByTestId("public-research-panel")
   await expect(panel).toBeVisible({ timeout: 20_000 })
   await expect(panel).toContainText("Öffentliche Recherche")
-  await expect(panel).toContainText("Keine vertraulichen oder personenbezogenen")
+  // Public-safe Leitplanke des Brief-Workflows.
+  await expect(panel).toContainText(
+    "Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben"
+  )
+  await expect(panel.getByText("Brief v1 freigegeben")).toBeVisible()
 
-  await page.getByPlaceholder(/öffentliche Forschungskompetenz/i).fill("Photonik Kompetenz")
-  await page.getByRole("button", { name: "Suchen" }).click()
-
-  const importBtn = page.getByRole("button", { name: "Quelle importieren" }).first()
-  await expect(importBtn).toBeVisible({ timeout: 20_000 })
-  await importBtn.click()
-  await expect(page.getByText("Als Quelle gespeichert").first()).toBeVisible({ timeout: 20_000 })
+  // Freigegebene Queries ausführen → Ergebnisse klar als «Demo» markiert,
+  // ohne «Übernehmen» (Demo-Ergebnisse werden nie zu Quellen).
+  await panel.getByRole("button", { name: "Freigegebene Queries ausführen" }).click()
+  const results = page.getByTestId("research-results")
+  await expect(results.getByText("Demo", { exact: true }).first()).toBeVisible({
+    timeout: 30_000,
+  })
+  await expect(
+    results.getByRole("button", { name: "Übernehmen", exact: true })
+  ).toHaveCount(0)
 
   // No provider/API terminology anywhere on the page.
   await expect(page.locator("body")).not.toContainText(/firecrawl/i)

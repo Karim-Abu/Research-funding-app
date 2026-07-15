@@ -42,6 +42,7 @@ import {
   type FieldReadiness,
 } from "@/lib/export-view"
 import { UNSUPPORTED_AREAS } from "@/lib/portal-transfer"
+import { getTransferSnapshot, type TransferSnapshotDto } from "@/lib/portal-transfer"
 
 const PAGE_DISCLAIMER =
   "Dies ist keine Einreichfreigabe. Die Einreichung erfolgt durch Sie im " +
@@ -99,6 +100,7 @@ export function LiveExport({ runId }: { runId: string }) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [tab, setTab] = React.useState<"optionen" | "innolink">("optionen")
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
+  const [transferSnapshot, setTransferSnapshot] = React.useState<TransferSnapshotDto | null>(null)
   const [readinessFilter, setReadinessFilter] = React.useState<FieldReadiness | "all">("all")
   // Slice 3: only an explicit `false` disables server-side copy logging.
   const [copyEventsEnabled, setCopyEventsEnabled] = React.useState(true)
@@ -121,6 +123,7 @@ export function LiveExport({ runId }: { runId: string }) {
         setApproval(null)
       })
     loadFields()
+    getTransferSnapshot(runId).then(setTransferSnapshot).catch(() => setTransferSnapshot(null))
   }, [runId, loadFields])
   React.useEffect(() => {
     getCapabilities()
@@ -476,6 +479,7 @@ export function LiveExport({ runId }: { runId: string }) {
               embedded
               runId={runId}
               copyEventsEnabled={copyEventsEnabled}
+              transferSnapshot={transferSnapshot}
               onReload={loadFields}
             />
           )}

@@ -156,7 +156,10 @@ test("M8 export: draft (ENTWURF) flow and approved flow", async ({ page }) => {
   expect(md.filename).not.toContain("ENTWURF")
   const mdText = (await (await api.get(`/api/exports/${md.export_id}/download`)).body()).toString("utf-8")
   expect(mdText).toContain("Dies ist keine Einreichfreigabe")
-  expect(mdText).not.toContain("ENTWURF")
+  // Ehrlichkeit: JEDER Export bleibt eine Arbeitskopie — der Kopfhinweis
+  // «ENTWURF – Arbeitskopie – Nicht zur Einreichung» steht auch nach der
+  // Freigabe im Dokument; nur Dateiname/draft_marked unterscheiden approved.
+  expect(mdText).toContain("Arbeitskopie – Nicht zur Einreichung")
 
   // --- UI smoke: live Export Center ----------------------------------------
   await page.evaluate((pid) => sessionStorage.setItem("rf_active_project_id", pid), draftRun.projectId)

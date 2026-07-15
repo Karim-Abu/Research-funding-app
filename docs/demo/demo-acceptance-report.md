@@ -1,97 +1,164 @@
-# Demo-Acceptance-Report — Golden Path reproduzierbar & demonstrierbar
+# Acceptance-Report — fünf getrennte Abnahmekategorien
 
-Nachweis, dass der Golden Path reproduzierbar und demonstrierbar ist. Evidenz
-verweist auf Tests, Skripte und Dokumente im Repo. Fake-Provider, keine externen
-Schlüssel. Datum des letzten Nachweislaufs: 2026-07-13.
+Stand: 2026-07-15. Dieser Report trennt bewusst, WAS bewiesen ist: der
+deterministische Fake-Pfad beweist Technik, der funktionale Import-Pfad
+beweist fachliche Auslese, die Live-Kategorien beweisen echten Betrieb.
+Nicht Durchgeführtes steht wörtlich als **`not_run`** — es gibt keine
+Pauschalaussage «ALL GREEN», wenn nur Fake-Pfade grün sind.
+(Vorgängerstand mit der M10-Aufgabentabelle: Git-Historie dieses Dokuments.)
 
-## Zusammenfassung je Aufgabenpunkt
+## 1. Technical deterministic E2E — **pass**
 
-| # | Aufgabe | Ergebnis | Evidenz |
-|---|---------|----------|---------|
-| 1 | Playwright-Golden-Path (Fake-LLM + Fake-Web, deterministisch, ohne Keys) | **Pass** | [`e2e/golden-path.spec.ts`](../../e2e/golden-path.spec.ts) + [`e2e/helpers.ts`](../../e2e/helpers.ts); lokal 2× grün (17,5 s / 21,7 s / 22,1 s). |
-| 2 | Separater opt-in Real-Provider-Smoke; Ausfall macht Gate nicht rot, wird klar berichtet | **Pass** | [`scripts/run_provider_availability_smoke.py`](../../scripts/run_provider_availability_smoke.py) → `backend/var/evaluation/provider_availability_summary.md`; ohne Opt-in 3× «übersprungen», Exit 0. |
-| 3 | Demo-/Dummy-/synthetic_eval-/Preis-unbekannt-Texte aus dem Standardmodus entfernen | **Pass** | Sechs Workflow-Phasen im Live-Modus bereits sauber; Eval-Ansichten (`/admin`, `/kosten`, `/antragsentwurf`) hinter Flag [`lib/flags.ts`](../../lib/flags.ts) `evalViews` (Default aus) — Sidebar-Link in [`components/shell/sidebar.tsx`](../../components/shell/sidebar.tsx) ausgeblendet. |
-| 4 | Loading-/Empty-/Error-/Retry-Zustände der sechs Phasen | **Pass** | Bestehende Retries verifiziert (s. Checkliste); ergänzt: Budget-Precheck-/Ladefehler und Partner-Ladefehler mit «Erneut versuchen» ([`components/partner/budget-form.tsx`](../../components/partner/budget-form.tsx), [`components/partner/partner-manager.tsx`](../../components/partner/partner-manager.tsx)). |
-| 5 | Modalhöhe, sticky Footer, Tastaturbedienung, lange 25'000-Zeichen-Felder | **Pass** | [`e2e/ui-states.spec.ts`](../../e2e/ui-states.spec.ts): Dialog ≤ Viewport, Footer sichtbar, Escape schliesst; SOL-Feld (Limit 25'000) mit Limit-Warnung + deaktiviertem Speichern. |
-| 6 | Production-Build-Hänger beheben oder Ursache mit minimalem Fix dokumentieren | **Pass** | Kein Hänger reproduzierbar: `corepack pnpm build` läuft mit frischem `.next` in ~50 s sauber. Ursache des bekannten Fehlers ist ein OneDrive-`EPERM`-Lock auf stalem `.next` (Milestone_9D_1). Minimaler Fix: `.next`-Bereinigung vor dem Build in beiden `verify_all`-Skripten. |
-| 7 | `scripts/verify_all.sh` als Abschlussgate | **Pass** | [`scripts/verify_all.sh`](../../scripts/verify_all.sh) + [`.ps1`](../../scripts/verify_all.ps1) um `.next`-Cleanup und Golden-Path-2.-Lauf ergänzt; Abschlussgate-Ergebnis unten. |
-| 8 | `docs/demo/demo-runbook.md` | **Pass** | [`demo-runbook.md`](demo-runbook.md) (Voraussetzungen, .env ohne Secrets, Startbefehle, Health-Check, 10-Min-Ablauf, Fallback, Backup-Run, Limitationen). |
-| 9 | `docs/demo/demo-acceptance-report.md` mit Pass/Fail + Evidenz | **Pass** | Dieses Dokument. |
-| 10 | README für frischen Rechner (Frontend, Backend, Migration, Seed, Live-Modus) | **Pass** | [`README.md`](../../README.md). |
+- Was: UI-/Persistenztechnik des Golden Path (Login → Intake → Import →
+  Partner/Budget → Recherchebrief → Analyse → Editor → Qualitätsprüfung →
+  Kopieransicht → Reload), deterministisch mit Fake-LLM/Fake-Web, ohne Keys.
+- Nachweis: [`e2e/golden-path.spec.ts`](../../e2e/golden-path.spec.ts)
+  («Technischer E2E (Fake-Provider) …»), im Gate als Suite-Lauf **und** als
+  2. Lauf auf derselben frischen Demo-DB (zeitgestempelte Projekttitel).
+- Ehrlichkeit des Fake-Modus (neu gepinnt): Demo-Recherche-Ergebnisse sind als
+  «Demo» markiert und **nicht** als Quelle übernehmbar; ohne echte Webquellen
+  wird **kein** Marktvergleich fabriziert (die Evidenzlücke wird ausgewiesen);
+  die Ein-Lauf-Bestätigung heisst wahrheitsgemäss «Demo-Generator für diesen
+  Durchlauf aktivieren».
 
-## Akzeptanzkriterium
+## 2. Structured import E2E — **pass**
 
-- **Golden Path läuft zweimal hintereinander auf einer frischen Demo-DB:**
-  erfüllt. Die Playwright-Suite im Gate ist Lauf 1; die `verify_all`-Skripte
-  hängen einen expliziten zweiten Golden-Path-Lauf an (Summary-Zeile «golden
-  path (2nd run)»). Eindeutige, zeitgestempelte Projekttitel machen den zweiten
-  Lauf kollisionsfrei. Lokal zusätzlich mit `--repeat-each=2` bestätigt (2/2 grün).
-- **Provider-Ausfall:** ein klar gekennzeichneter Fake-/manueller Fallback bleibt
-  verfügbar; der Fake-Provider ist Demo-Default und in der UI ehrlich als
-  Test-/Synthetik-Pfad beschriftet — keine Täuschung über die Datenquelle.
+- Was: Ein unfertiger Antrag im **älteren** Innolink-Schema wird fachlich
+  korrekt ausgelesen — Partner und Budget erscheinen ohne manuelle Neuanlage.
+- Nachweis (exakte Erwartungswerte, rein synthetisches Fixture «TERRAFLUX»,
+  [`spike/make_fixture.py`](../../spike/make_fixture.py)):
+  - [`backend/tests/test_import_functional_fixture.py`](../../backend/tests/test_import_functional_fixture.py)
+    (13 Tests): Titel; Dauer 18 Monate; genau 3 Partner (1 Forschungs- +
+    2 Umsetzungspartner, Independence bestätigt); Budget
+    200'000/105'000/13'000/82'000/94'300; Scientific Integrity «No» ohne
+    Fremdkommentar; Management-Stunden 0 mit generiertem
+    Erklärungsvorschlag; **leere Executive Summary bleibt leer**;
+    Alt→Neu-Migration (IPR → 4.5.1–4.5.4, alt-4.5 → 4.6).
+  - [`e2e/import-functional.spec.ts`](../../e2e/import-functional.spec.ts)
+    (Pflichtteil des Gates): 15 strukturierte Kandidaten mit exakten Werten,
+    HITL-Übernahme je Kandidat (Titelkonflikt verlangt «Geprüft
+    überschreiben»), Partner/Budget ohne Neuanlage auf `/partner`,
+    Budget-Vorprüfung konsistent (Umsetzungsbeitrag 59 %, Barbeitrag 6.5 %).
 
-## Zustands-Checkliste der sechs Phasen (Aufgabe 4)
+## 3. Live model evaluation — Status siehe `backend/var/evaluation/model_quality_summary.md`
 
-| Phase | Loading | Empty | Error | Retry |
-|-------|---------|-------|-------|-------|
-| Projekt & Unterlagen (Intake/Import/Quellen) | ✓ (Import-Skeleton/Phasen) | ✓ | ✓ | ✓ (`UploadErrorNotice`, Intake-Fehlerbanner) |
-| Partner & Budget | ✓ | ✓ («Noch keine Partner erfasst») | ✓ | ✓ **neu** (Budget-Precheck/-Ladefehler, Partner-Ladefehler) |
-| Analyse & Recherche (Anforderungen) | ✓ | ✓ | ✓ | ✓ (`live-requirements.tsx`) |
-| Antragsentwurf (Editor) | ✓ | ✓ | ✓ | ✓ (`live-editor.tsx`) |
-| Qualitätsprüfung (Review) | ✓ | ✓ | ✓ | ✓ (`live-review.tsx`) |
-| Innolink-Übernahme (Export/Kopieransicht) | ✓ | ✓ | ✓ | ✓ (`export-screen.tsx`) |
+- Was: Gleicher synthetischer F1/D0-Eingabetext, gleiche Rubrik, OpenAI
+  **und** Anthropic — Generierung ausschliesslich über den produktiven
+  Gateway-Pfad (Registry-Profile, versionierte Prompts, echte Adapter; keine
+  parallele Evaluationslogik). Deterministische Metriken: Begriffe erhalten,
+  Pflichtunterabschnitte, Zeichenlimit, keine erfundenen Zahlen/Patente,
+  keine Review-Notizen/Portalfragen als finale Prosa, KPI-Lücken als offen.
+  Human-Rubric (Nützlichkeit/Struktur/Präzision) bleibt manuell.
+- Status: opt-in ([`scripts/run_model_quality_eval.py`](../../scripts/run_model_quality_eval.py));
+  ohne Lauf wörtlich **`not_run`**. Auswertung vom 2026-07-15 auf Basis der
+  lokalen R5.9-REAL-Ergebnisse: beide Provider ausgewertet; Befunde u. a.
+  fehlender Pflichtunterabschnitt 3.3 (OpenAI, VC-Feld) und nicht als offen
+  markierte KPI-Lücken in zwei Kurzfeldern. Details und tatsächliche
+  Modell-IDs im gitignorierten Summary. Ein Provider-Ausfall macht das Gate
+  nie rot. Anleitung/Template:
+  [`docs/evaluation/model_quality_report.md`](../evaluation/model_quality_report.md).
 
-## Echtes Innolink-PDF (lokal verifiziert, nicht committet)
+## 4. Live Firecrawl evaluation — Status siehe `backend/var/evaluation/live_research_smoke.md`
 
-Das echte SEDATE-PDF liegt git-ignoriert unter `private_inputs/`. Der
-**produktive** Import-Code ([`backend/app/imports/mapping.py`](../../backend/app/imports/mapping.py))
-liefert darauf **5 von 8 Feldern automatisch nutzbar** (deckungsgleich mit
-[`pdf-import-gate-report.md`](../evaluation/pdf-import-gate-report.md)):
+- Was: Public-safe synthetischer Recherchebrief; Canary-Marker (Projekttitel,
+  Partnername, Budgetzahl) bleiben nachweislich aus bereinigter Query, Audit
+  und Logs; die geblockte Canary-Query wird **nie** gesendet (der Live-Call
+  nutzt die separat geprüfte public-safe Query).
+- Status: opt-in ([`scripts/run_live_research_smoke.py`](../../scripts/run_live_research_smoke.py));
+  ohne Lauf wörtlich **`not_run`**. Lauf vom 2026-07-15: **PASS** —
+  Firewall-Entscheid `block` für die Canary-Query (Redaktionen budget×2,
+  partner×2, project×1), 0 Canary-Leaks in Query/Audit/Logs, Live-Suche mit
+  3 echten Ergebnissen (erste Domain `iea.blob.core.windows.net`),
+  **kein `example.org` im Live-Modus**; Leer-/Fehlerzustände (0 Treffer,
+  Kontingent, Ausfall) werden dokumentiert statt ersetzt.
 
-| Feld | Konfidenz | Zeichen |
-|------|-----------|---------|
-| INTRO.APP.NAME | nicht gefunden (kein Label im Export) | – |
-| INTRO.APP.NAME_EN | found | 6 |
-| INTRO.APP.ABSTRACT | found | 297 |
-| INTRO.APP.EXECUTIVE_SUMMARY | found | 1586 |
-| ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS | uncertain (Feld leer) | 0 |
-| VC.BUSINESS_TARGETS_MODEL.EDITOR | found | 22283 |
-| SOL.INNOVATION_SOLUTION.EDITOR | found | 20738 |
-| PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION | uncertain (Feld leer) | 0 |
+## 5. Supervised live E2E — **`not_run`**
 
-Reproduktion (lokal, kein Repo-Artefakt mit Inhalt):
-`backend\.venv\Scripts\python.exe spike\map_pdf.py "<pfad-zum-pdf>"`.
-Der E2E-Test nutzt bewusst das **synthetische** Fixture (`spike/fixtures/innolink_sample.pdf`,
-8/8), damit keine echten Antragsdaten ins Repo gelangen (Testdaten-Policy E-12).
+- Was: Begleiteter Live-Durchlauf mit realen Providern — nur mit
+  Owner-Freigabe und ausschliesslich synthetischen/anonymisierten Inhalten.
+- Protokoll: [`docs/demo/demo-runbook.md`](demo-runbook.md) §6b. Nach
+  Durchführung hier Datum, Provider und tatsächliche Modell-IDs eintragen
+  (aus dem Technical Evidence: `model_id`, `actual_model_id`,
+  `prompt_version`).
 
-## Abschlussgate `verify_all`
+## Private SEDATE-Acceptance (lokal, nicht committet) — **12/12 PASS**
 
-`scripts/verify_all.sh` am 2026-07-13, Exit 0, **ALL GREEN**:
+[`scripts/run_private_innolink_acceptance.py`](../../scripts/run_private_innolink_acceptance.py)
+gegen das gitignorierte echte Innolink-PDF (2026-07-15): Titel erkannt ·
+Executive Summary `empty` · 3 Partner (1 F + 2 U) · 18 Monate ·
+Umsetzungsbeitragsquote 52.52 % (Soll 52.5 ± 0.5) · Barbeitragsquote 6.46 %
+(Soll ~6.5 ± 0.5) · Alt→Neu-Migration vorhanden (4.5.1, 4.5.2/4.5.3, 4.5.4,
+4.6) · 0 Pflichtblocker aus dem Regelkern (leerer Independence-Kommentar bei
+bestätigten Antworten und 0 Management-Stunden lösen keinen Blocker aus).
+Die Ausgabe enthält nur Feldnamen, Zählwerte und Pass/Fail — keine PII, keine
+Antragstexte. Narrative Quote des produktiven Mappings auf demselben PDF:
+weiterhin 5 von 8 Feldern automatisch nutzbar (Messung
+[`spike/map_pdf.py`](../../spike/map_pdf.py), vgl.
+[`pdf-import-gate-report.md`](../evaluation/pdf-import-gate-report.md)).
 
-```
-================ M10 VERIFICATION SUMMARY ================
-backend tests            : pass
-migration                : pass
-frontend tests (vitest)  : pass        (61 Dateien, 388 Tests)
-build/typecheck/lint     : pass
-Playwright               : pass        (42 Tests, inkl. golden-path #9, ui-states #41/#42)
-golden path (2nd run)    : pass        (e2e/golden-path.spec.ts, 2. Lauf auf frischer DB)
-API smoke                : pass        (18/18)
-export smoke             : pass        (test_m10_smoke.py::test_export_all_types)
-no-raw-log               : pass        (test_m10_smoke.py::test_no_raw_log)
-testdata markers         : pass        (scripts/check_testdata_markers.py)
-legacy status guard      : pass        (scripts/check_legacy_status_paths.py)
-evaluation summary       : backend/var/evaluation/EvaluationRunSummary.json
-=========================================================
-ALL GREEN
-```
+## Live-Readiness (Ebene E) — verankert und getestet
 
-Damit ist das Akzeptanzkriterium belegt: Der Golden Path lief innerhalb **eines**
-Gate-Durchgangs auf **einer frischen** `verify_e2e.db` **zweimal** durch — als
-Test #9 der Playwright-Suite (Lauf 1) und als expliziter zweiter Lauf danach.
+- **Eine versionierte Registry je Agentrolle:** Profil + Skill-/Prompt-Version
+  (aus den sha256-gepinnten Prompt-Assets), Provider/Modellroute,
+  `output_schema@vN`, Timeout, Retries, optional
+  `reasoning_effort`/`max_cost_chf`
+  ([`backend/tests/test_agent_registry.py`](../../backend/tests/test_agent_registry.py)).
+- **Fake/deterministisch/live sind getrennte, sichtbare Modi; Live fällt nie
+  still auf Fake zurück:** Capabilities melden bei Live-Absicht ohne Provider
+  ausdrücklich `live_unavailable` (die UI erklärt den Grund); das Gateway
+  liefert `SafeFailure` statt eines Fake-Ersatzes; Firecrawl kennt
+  disabled/fake/live explizit
+  ([`backend/tests/test_live_readiness.py`](../../backend/tests/test_live_readiness.py)).
+- **Versionen im Artefakt:** Das vom Provider gemeldete Modell
+  (`actual_model_id`) wird pro Invocation persistiert und steht mit
+  `prompt_version` im Technical-Evidence-Export; neue Runs frieren
+  Prompt-Versionen + Modellrouten in `snapshot_versions` ein.
+- **Provider-Preflight ohne Antragsinhalt:**
+  [`scripts/run_provider_preflight.py`](../../scripts/run_provider_preflight.py)
+  prüft Key → API-Erreichbarkeit → Modell-Echo → strukturierte Ausgabe →
+  verständliche Rate-Limit-/Quota-Klassifikation; ohne Opt-in wörtlich
+  `not_run`. Keine Rohprompts/Keys im Report.
+
+## Abschlussgate `verify_all` (deterministisch, Fake-Provider)
+
+Pflichtzeilen: Backend-Tests · Migration · Frontend-Tests · lint/tsc/build ·
+Playwright-Suite · technischer E2E (2. Lauf) · **funktionaler Import** ·
+**Review-Truth** · **DOCX-Render-Smoke (eigene Zeile, benötigt Word)** ·
+API-Smoke · Testdaten-Marker · Legacy-Status-Guard. Das Gate endet mit
+«TECHNISCHES GATE (deterministisch, Fake-Provider): GRÜN/ROT» und listet die
+fünf Kategorien einzeln; Live-Kategorien erscheinen als `not_run`, solange
+sie nicht durchgeführt wurden. Es gibt kein «ALL GREEN» mehr.
+
+Letzter vollständiger Gate-Lauf nach dieser Umstellung: siehe
+Konsolen-Summary (`scripts/verify_all.ps1`); die Zeilen «funktionaler
+Import», «review truth» und «docx render smoke» müssen `pass` zeigen.
+
+## Known Limitations
+
+- **Fake-Modus liefert bewusst keine Markt-/Webinhalte:** Demo-Recherche ist
+  als solche markiert und nicht übernehmbar; der Marktvergleich bleibt ohne
+  echte Webquellen leer (ehrlicher Leerzustand statt Fake-Analyse).
+- **PDF-Titel bleibt bestätigungspflichtig:** konservative Erkennung
+  (Dokumentkopf ohne Label ⇒ «unsicher»; gelabelt ⇒ Konfliktdialog gegen den
+  bestehenden Projekttitel) — nie stille Übernahme.
+- **Zwei reale Mapping-Lücken wurden in dieser Abnahme gefunden und behoben**
+  (Beleg: SEDATE-PDF): die Spaltenüberschrift «Cash Contributions» wurde als
+  Wert «s» gefangen und beschattete den korrekten Tabellenwert; der
+  Integritätskommentar wurde aus fremden «Explanations…»-Labels gezogen.
+  Beide Fälle sind jetzt regressionsgetestet.
+- **Modellqualität (Ebene C) misst deterministische Signale**, keine
+  inhaltliche Wahrheit; der Human-Rubric-Teil bleibt Pflicht.
+- **DOCX-Render-Smoke benötigt lokal Microsoft Word** (bewusst; die eigene
+  Gate-Zeile macht die Abhängigkeit sichtbar).
+- **OneDrive-Sync/SQLite:** stale `.next`-Locks werden im Gate geräumt;
+  E2E-Läufe sind mit `--workers=1` serialisiert (Single-Writer).
+- **Kein Portal-Writeback, keine Förderentscheide:** Texte werden nur zum
+  manuellen Kopieren vorbereitet; jede Übernahme bleibt menschlich.
 
 ## Manuelle Prüfschritte
 
-- Runbook Abschnitt 5 Schritt für Schritt in einer Live-Vorführung nachvollziehen.
-- Weitere Beispiel-PDFs in `private_inputs/` ablegen und mit `spike/map_pdf.py`
-  messen; Quote im Gate-Report ergänzen.
+- Runbook §5 (Demoablauf) und §5a (funktionaler Import) live nachvollziehen.
+- `scripts/run_private_innolink_acceptance.py` lokal ausführen (12/12 PASS).
+- Opt-in-Läufe nach Runbook §6a starten und die Statuszeilen der fünf
+  Kategorien im Gate-Summary prüfen (`not_run` verschwindet nur durch echte
+  Durchführung).

@@ -111,10 +111,10 @@ Anmeldung (Seed-Nutzer): `anna.keller@example.test` / `changeme-dev-lead`
 | 3 | Importkandidaten prüfen, «Abstract» übernehmen | 8 Kandidaten sichtbar, unsichere Felder markiert; nach Klick zeigt die Zeile «Übernommen». |
 | 4 | Partner ergänzen (`/partner`) | Zwei Partner erscheinen in der Liste. |
 | 5 | Budget erfassen (100'000 / 45'000 / 5'000 / 24) und speichern | «Budgetangaben gespeichert.»; die «Formale Vorprüfung» zeigt zweimal «Erfüllt» (50 % Umsetzung + 5 % Cash). |
-| 6 | Analyse starten (`/quellen`), öffentliche Webrecherche einschalten | Der Dialog zeigt jede geplante Suchanfrage. |
-| 7 | Sichere Research-Queries genehmigen (2 freigeben, 1 ablehnen), Cloud-KI bestätigen, starten | Analyse läuft und schliesst ab (Fake-Provider, schnell). |
-| 8 | Öffentliche Recherche durchführen, ein Ergebnis als Quelle übernehmen; Markt-/Konkurrenzvergleich erstellen | «Als Quelle gespeichert»; Vergleichstabelle erscheint; eine Zeile «Übernehmen» → «Inhaltlich geprüft». |
-| 9 | Editor öffnen (`/editor`): A2-Vorschlag (KI-Assist) und A3-Hinweis (Modus «Prüfen» → «Schwächen») ansehen | Vorschlag aus der Analyse sichtbar (nie automatisch übernommen); A3-Hinweis zu unbelegten Aussagen im Feld «Lösung & Innovation». |
+| 6 | Recherchebrief (`/quellen`, Panel «Öffentliche Recherche»): «Recherchebrief vorschlagen», Pflichtfelder public-safe ergänzen (Anwendungsdomäne, Technologieklasse, Zielkundensegmente, Kompetenzen), «Public-safe Brief freigeben» | «Brief v1 freigegeben» — Queries entstehen nur aus dem geprüften Brief. |
+| 7 | Analyse starten (`/quellen`), öffentliche Webrecherche einschalten, geplante Query freigeben, «Demo-Generator für diesen Durchlauf aktivieren» bestätigen, starten | Der Dialog zeigt jede geplante Suchanfrage; Analyse läuft und schliesst ab (Fake-Provider, schnell). |
+| 8 | Im Recherche-Panel «Queries erzeugen», die offene Query freigeben, «Freigegebene Queries ausführen» | Ergebnisse erscheinen klar als «Demo» markiert; **kein** «Übernehmen»-Knopf (Demo-Ergebnisse werden nie zu Quellen). «Vergleich erstellen» weist die Evidenzlücke ehrlich aus: kein fabrizierter Marktvergleich ohne echte Webquellen. |
+| 9 | Editor öffnen (`/editor`): A2-Vorschlag (Modus «Vorschläge») und A3-Hinweis (Modus «Prüfen» → «Schwächen») ansehen | Vorschlag aus der Analyse sichtbar (nie automatisch übernommen); A3-Hinweis zu unbelegten Aussagen im Feld «Lösung & Innovation». |
 | 10 | Ein Feld bearbeiten (Abstract), speichern | «Die erneute Prüfung ist vor der Freigabe erforderlich.» |
 | 11 | Qualitätsprüfung (`/review`): «Gesamte Prüfung erneut ausführen» | KI-gestützte Hinweise sichtbar; erneute Prüfung schliesst ab. |
 | 12 | Zurück im Editor, Modus «Prüfen» → «Kommentare» → «Abschnitt freigeben» | «Abschnitt freigegeben.» |
@@ -123,8 +123,40 @@ Anmeldung (Seed-Nutzer): `anna.keller@example.test` / `changeme-dev-lead`
 
 > **Hinweis «Prüfen»-Modus:** Die Assistenz-Tabs und die Aktion «Abschnitt
 > freigeben» sind bewusst nur im Editor-Modus **«Prüfen»** sichtbar (ruhiger
-> Schreibmodus als Default). In den Modi «Bearbeiten»/«KI-Assist» ist das
+> Schreibmodus als Default). In den Modi «Bearbeiten»/«Vorschläge» ist das
 > Kontextpanel eingeklappt.
+
+## 5a. Funktionaler Import-Pfad (Ebene B — Structured import E2E)
+
+Beweist fachlich, dass ein unfertiger Antrag im **älteren** Innolink-Schema
+korrekt ausgelesen wird (Fixture `spike/fixtures/innolink_structured.pdf`,
+rein synthetisches Projekt «TERRAFLUX»):
+
+| Schritt | Erwartetes Ergebnis |
+|---|---|
+| PDF im Intake hochladen | 8 Antragstexte + 15 strukturierte Kandidaten in der Import-Review. |
+| Executive Summary | Badge «Leer»; «Übernehmen» deaktiviert — erbt nie Folgeinhalte. |
+| «Innovation & Lösung» → Abschnittsdetails | «Altstruktur migriert»: IPR → 4.5.1–4.5.4, alt-4.5 → 4.6; mehrdeutige Altangabe verlangt fachliche Zuordnung. |
+| Strukturierte Kandidaten übernehmen (HITL, je Zeile) | Titelkonflikt verlangt «Geprüft überschreiben»; nichts wird still übernommen. |
+| `/partner` | 3 Partner (1 Forschungs-, 2 Umsetzungspartner) **ohne** manuelle Neuanlage, Herkunft «Aus PDF übernommen»; Budgetformular vorbefüllt (200'000/105'000/13'000/18), Vorprüfung 2× «Erfüllt». |
+
+Automatisiert als `e2e/import-functional.spec.ts` (Pflichtteil des Gates) und
+`backend/tests/test_import_functional_fixture.py`.
+
+## 5b. Review-Truth-Pfad (Statuswahrheit)
+
+Automatisiert als `e2e/review-truth.spec.ts` (Pflichtteil des Gates) +
+`backend/tests/test_review_truth.py`:
+
+- «Bearbeitungs- und Prüfstand» zeigt exakt die Zahlen des autoritativen
+  Check-Status-Views; **«Nicht geprüft» ist nie grün**.
+- Nach einer Feldänderung ist die Prüfung veraltet: 0/9 «Bestanden», Badge
+  «Stand veraltet».
+- Evidenz-Leiter: «Textstelle gefunden» (exakt verifizierte Fundstelle ohne
+  inhaltliches Stützurteil) ist Abdeckung, keine fachliche Stützung.
+- Massen-Findings derselben Familie erzeugen EINE gruppierte Hauptaufgabe;
+  die Zahl «blockierende Aufgaben» ist auf Review/Export/Dashboard identisch
+  (zusätzlich `e2e/status-parity.spec.ts`).
 
 ## 6. Fallback bei Firecrawl-/Provider-Ausfall
 
@@ -143,6 +175,61 @@ Anmeldung (Seed-Nutzer): `anna.keller@example.test` / `changeme-dev-lead`
   ```
   Bericht: `backend/var/evaluation/provider_availability_summary.md`. Ohne
   Opt-in/Keys erscheinen alle Provider als «übersprungen».
+
+## 6a. Opt-in Live-Evaluationen (nie Teil des Gates)
+
+Alle Live-Läufe sind explizit opt-in, machen das Gate nie rot und berichten
+nicht Durchgeführtes wörtlich als `not_run` (nie als bestanden):
+
+```powershell
+# Provider-Preflight (Ebene E): Key → Erreichbarkeit → Modell-Echo →
+# strukturierte Ausgabe → verständliche 429-Klassifikation; ohne Antragsinhalt.
+$env:RUN_REAL_PROVIDER_SMOKE = "true"
+backend\.venv\Scripts\python.exe scripts\run_provider_preflight.py
+# → backend/var/evaluation/provider_preflight.{md,json}
+
+# Live model evaluation (Ebene C): gleicher F1/D0-Eingabetext, gleiche Rubrik,
+# OpenAI UND Anthropic über den produktiven Gateway-Pfad + Qualitätsmetriken.
+$env:RUN_REAL_PROVIDER_SMOKE = "true"; $env:AI_EVAL_MODE = "real"
+backend\.venv\Scripts\python.exe scripts\run_model_quality_eval.py
+# → backend/var/evaluation/model_quality_summary.{md,json}
+#   (Human-Rubric Nützlichkeit/Struktur/Präzision manuell ergänzen)
+
+# Live Firecrawl evaluation (Ebene D): public-safe Brief-Query durch die
+# Query-Firewall (Canaries bleiben aus Query/Log/Audit), dann echte Suche.
+$env:RUN_REAL_PROVIDER_SMOKE = "true"
+$env:WEB_RESEARCH_ENABLED = "true"; $env:WEB_RESEARCH_FAKE_PROVIDER = "false"
+backend\.venv\Scripts\python.exe scripts\run_live_research_smoke.py
+# → backend/var/evaluation/live_research_smoke.md (echte URL, nie example.org)
+```
+
+## 6b. Supervised live E2E (manuelles Protokoll)
+
+Ein begleiteter Live-Durchlauf (reale Provider) wird nur mit
+Owner-Freigabe und ausschliesslich synthetischen/anonymisierten Inhalten
+durchgeführt:
+
+1. Preflight (oben) muss für den gewünschten Provider `bestanden` melden.
+2. Backend mit `AI_EVAL_MODE=real`, `AGENT_FAKE_PROVIDER=false` starten;
+   Projekt mit Herkunft «synthetisch» anlegen. Die Capabilities zeigen dann
+   «KI-Unterstützung für Evaluationsfälle verfügbar»; ist Live konfiguriert,
+   aber kein Key vorhanden, zeigt die UI ausdrücklich den Zustand
+   `live_unavailable` — es erscheint **nie** ein Demo-Ergebnis als Ersatz.
+3. Golden-Path-Schritte 1–14 begleitet durchführen; jede Query-Freigabe und
+   jede Übernahme bleibt menschlich.
+4. Ergebnis (Datum, Provider, tatsächliche Modell-IDs aus dem Technical
+   Evidence, Beobachtungen) im Acceptance-Report unter «Supervised live E2E»
+   eintragen; ohne Durchführung bleibt dort `not_run` stehen.
+
+## 6c. Private SEDATE-Acceptance (lokal, gitignoriert)
+
+```powershell
+backend\.venv\Scripts\python.exe scripts\run_private_innolink_acceptance.py
+```
+
+Prüft das lokale echte Innolink-PDF (`private_inputs/`, gitignoriert) mit der
+produktiven Mapping-/Regel-Pipeline; Ausgabe enthält nur Feldnamen, Zählwerte
+und Pass/Fail — keine Antragstexte, keine PII.
 
 ## 7. Vorbereiteter synthetischer Backup-Run
 

@@ -25,6 +25,8 @@ def create(
         copy_event_id=str(uuid.uuid4()),
         run_id=run.run_id,
         workspace_id=run.workspace_id,
+        target_type="portal_field",
+        target_key=draft.field_id,
         field_id=draft.field_id,
         draft_version_id=version.draft_version_id,
         # Already the sha256 of the version text — no recomputation, no raw text.
@@ -40,11 +42,30 @@ def create(
     return event
 
 
+def create_structured(
+    db: Session, *, run: AnalysisRun, target_type: str, target_key: str,
+    content_hash: str, actor_user_id: str | None,
+) -> CopyEvent:
+    """Persist only a target reference and server-derived hash, never its value."""
+    event = CopyEvent(
+        copy_event_id=str(uuid.uuid4()), run_id=run.run_id,
+        workspace_id=run.workspace_id, target_type=target_type, target_key=target_key,
+        field_id=None, draft_version_id=None, content_hash=content_hash,
+        client_warnings=[], server_warnings=[], override_reason_code=None,
+        override_reason_note=None, actor_user_id=actor_user_id,
+    )
+    db.add(event)
+    db.flush()
+    return event
+
+
 def to_contract(event: CopyEvent) -> CopyEventSchema:
     return CopyEventSchema(
         copy_event_id=event.copy_event_id,
         field_id=event.field_id,
         draft_version_id=event.draft_version_id,
+        target_type=event.target_type,
+        target_key=event.target_key,
         client_warnings=list(event.client_warnings or []),
         server_warnings=list(event.server_warnings or []),
         override_reason_code=event.override_reason_code,

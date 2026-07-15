@@ -51,15 +51,23 @@ def get_capabilities(
         # per copy. False → the UI skips the call (endpoint stays active).
         "copy_events": settings.copy_events_enabled,
     }
-    real_eval_available = (
-        settings.ai_eval_mode == "real"
-        and bool(settings.openai_api_key or settings.anthropic_api_key)
+    # Ebene E: Live-ABSICHT (ai_eval_mode=real) gewinnt. Ist Live konfiguriert,
+    # aber kein Provider-Schlüssel vorhanden, ist der Status ausdrücklich
+    # ``live_unavailable`` — nie ein stiller Abstieg auf den Demo-Generator.
+    live_intent = settings.ai_eval_mode == "real"
+    real_eval_available = live_intent and bool(
+        settings.openai_api_key or settings.anthropic_api_key
     )
     generation_mode = (
         "real_eval" if real_eval_available
+        else "live_unavailable" if live_intent
         else "fake_demo" if settings.agent_fake_provider
         else "unavailable"
     )
+    unavailable_reasons = {
+        "unavailable": "no_approved_model_provider",
+        "live_unavailable": "live_provider_key_missing",
+    }
     return Capabilities(
         api_version=settings.api_version,
         polling_interval_seconds=settings.polling_interval_seconds,
@@ -67,8 +75,5 @@ def get_capabilities(
         supported_source_types=settings.supported_source_types,
         features=features,
         generation_mode=generation_mode,
-        generation_unavailable_reason=(
-            None if generation_mode != "unavailable"
-            else "no_approved_model_provider"
-        ),
+        generation_unavailable_reason=unavailable_reasons.get(generation_mode),
     )

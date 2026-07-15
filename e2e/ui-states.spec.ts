@@ -1,5 +1,13 @@
 import { test, expect, type Page } from "@playwright/test"
-import { choosePublic, login, mutFactory, waitOp, type Mut } from "./helpers"
+import {
+  approveBriefViaApi,
+  choosePublic,
+  getActiveProjectId,
+  login,
+  mutFactory,
+  waitOp,
+  type Mut,
+} from "./helpers"
 
 // UI-Zustände (Aufgabe 4/5): Modalhöhe, sticky Footer und Tastaturbedienung des
 // Analyse-Dialogs sowie das Verhalten eines langen 25'000-Zeichen-Feldes
@@ -75,6 +83,11 @@ test("Analyse-Dialog: Höhe im Viewport, sichtbarer Footer, Escape schliesst", a
   await choosePublic(page)
   await page.getByRole("button", { name: "Projekt erstellen und weiter" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
+
+  // Query-Planung setzt seit dem Brief-Gate einen freigegebenen public-safe
+  // Recherchebrief voraus (API-Setup; HITL-UI-Variante im technischen E2E).
+  const mut = await mutFactory(page)
+  await approveBriefViaApi(page.request, mut, await getActiveProjectId(page))
 
   await page.getByRole("button", { name: "Analyse starten" }).click()
   const dialog = page.getByRole("dialog")

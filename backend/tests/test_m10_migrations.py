@@ -24,7 +24,7 @@ _KEY_TABLES = {
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
 }
-_HEAD = "9d2f4a6b8c13"  # öffentlicher Recherchebrief + persistente Research-Provenienz.
+_HEAD = "a7e3c9f1b5d2"  # actual_model_id auf agent_invocations (Ebene E, Live-Readiness).
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -198,19 +198,15 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur den Recherchebrief und dessen additive Provenienzspalten.
-    # Die vorherige A2/A3- und Importstruktur sowie alle Bestandsdaten bleiben erhalten.
+    # Down one entfernt nur die additive Ebene-E-Spalte ``actual_model_id`` auf
+    # agent_invocations. Alle übrigen Strukturen (inkl. Recherchebrief- und
+    # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "research_briefs" not in _tables(db)
-    assert not {
-        "research_brief_id", "research_module", "planner_purpose", "execution_mode",
-    }.intersection(_columns(db, "research_tasks"))
-    assert not {
-        "research_brief_id", "research_module", "planner_purpose",
-    }.intersection(_columns(db, "search_query_approvals"))
-    assert not {
-        "comparison_dimensions", "coverage_status", "support_status",
-    }.intersection(_columns(db, "market_comparison_items"))
+    assert "actual_model_id" not in _columns(db, "agent_invocations")
+    assert "research_briefs" in _tables(db)
+    assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
+        db, "research_tasks"
+    )
     assert "run_phases" in _tables(db)
     assert {"mapping_version", "mapping_status", "section_metadata"} <= _columns(
         db, "import_candidates"

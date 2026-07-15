@@ -227,3 +227,48 @@ def test_audit_detail_contains_no_field_text(client):
             )
     finally:
         db.close()
+
+
+def test_structured_copy_events_are_snapshot_addressed_and_text_free(client):
+    csrf, _project_id, run_id = setup_completed_run(client, title="Structured Copy Event")
+    snapshot = client.get(f"/api/v1/runs/{run_id}/transfer-snapshot")
+    assert snapshot.status_code == 200, snapshot.text
+    body = snapshot.json()
+    assert body["snapshot_available"] is True
+    assert body["partners"]
+
+    attempts = [
+        ("partner_row", body["partners"][0]["copy_target_row"]),
+        ("partner_cell", "partner:0:name"),
+        ("duration", "duration"),
+    ]
+    if body["budget"]["values"]:
+        attempts.append(("budget_value", body["budget"]["values"][0]["copy_target"]))
+    for target_type, target_key in attempts:
+        response = client.post(
+            f"/api/v1/runs/{run_id}/transfer-copy-events",
+            json={"target_type": target_type, "target_key": target_key},
+            headers=unsafe_headers(csrf),
+        )
+        assert response.status_code == 201, response.text
+        assert response.json()["target_type"] == target_type
+        event_id = response.json()["copy_event_id"]
+        db = SessionLocal()
+        try:
+            event = db.get(CopyEvent, event_id)
+            assert event.field_id is None and event.draft_version_id is None
+            assert event.target_type == target_type and event.target_key == target_key
+            assert event.content_hash
+            audit_event = db.scalar(select(AuditEvent).where(AuditEvent.target_id == event_id))
+            dumped = json.dumps(audit_event.detail, ensure_ascii=False)
+            assert "text" not in dumped.lower()
+            assert set(audit_event.detail) == {"target_type", "target_key", "content_hash"}
+        finally:
+            db.close()
+
+    rejected = client.post(
+        f"/api/v1/runs/{run_id}/transfer-copy-events",
+        json={"target_type": "duration", "target_key": "duration", "text": "must not be accepted"},
+        headers=unsafe_headers(csrf),
+    )
+    assert rejected.status_code == 422

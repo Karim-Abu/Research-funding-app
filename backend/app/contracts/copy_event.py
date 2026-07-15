@@ -32,8 +32,10 @@ class CopyEventCreate(BaseModel):
 
 class CopyEvent(BaseModel):
     copy_event_id: str
-    field_id: str
-    draft_version_id: str
+    field_id: str | None = None
+    draft_version_id: str | None = None
+    target_type: str = "portal_field"
+    target_key: str | None = None
     client_warnings: list[WarningCode]
     server_warnings: list[WarningCode]
     override_reason_code: OverrideReasonCode | None = None

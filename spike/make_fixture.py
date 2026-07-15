@@ -1,10 +1,17 @@
-"""Erzeugt ein synthetisches Innolink-artiges Test-PDF (spike/fixtures/innolink_sample.pdf).
+"""Erzeugt synthetische Innolink-artige Test-PDFs (spike/fixtures/*.pdf).
 
-SPIKE-Werkzeug — ausschliesslich synthetische Daten (fiktives Projekt
-"SmartGrid Optimizer"). Kein reportlab o. ä.: bewusst ein minimaler,
-handgeschriebener PDF-Writer (Helvetica, WinAnsi/cp1252), damit keine neue
-Dependency nötig ist. Ein eigenes/echtes Test-PDF kann die Datei einfach
-ersetzen; ground_truth.json muss dann angepasst werden.
+SPIKE-Werkzeug — ausschliesslich synthetische Daten (fiktive Projekte
+"SmartGrid Optimizer" und "TERRAFLUX"). Kein reportlab o. ä.: bewusst ein
+minimaler, handgeschriebener PDF-Writer (Helvetica, WinAnsi/cp1252), damit
+keine neue Dependency nötig ist. Ein eigenes/echtes Test-PDF kann die Datei
+einfach ersetzen; ground_truth.json muss dann angepasst werden.
+
+Fixtures:
+- innolink_sample.pdf           — narrativer 8-Feld-Golden-Path (SmartGrid).
+- innolink_sample_degraded.pdf  — schlechte Extraktion (Zeilen verschmolzen).
+- innolink_structured.pdf       — funktionale Abnahme (TERRAFLUX): leere
+  Executive Summary, strukturierte Partner/Budget/Antworten, Management 0,
+  Alt-Schema (IPR unter Introduction, 4.5 Partner-Eignung → 4.6).
 
 Aufruf:  python spike/make_fixture.py
 """
@@ -90,6 +97,173 @@ LINES: list[Line] = [
     ("body", "Die Management-Stunden verteilen sich auf Projektleitung (60 Prozent"),
     ("body", "Hochschule) und Koordination der Pilotquartiere (40 Prozent"),
     ("body", "Umsetzungspartner), entsprechend der Arbeitspaketverantwortung."),
+]
+
+# Funktionale Abnahme (Prompt B): unfertiger Antrag im ÄLTEREN Innolink-Schema
+# mit strukturierten Angaben. Rein fiktives Projekt "TERRAFLUX" (Testdaten-
+# Policy R0.4). Frage-Wortlaute entsprechen dem belegten älteren Export bzw.
+# der Registry (siehe backend/app/imports/mapping.py und
+# backend/tests/structured_import_fixture.py).
+STRUCTURED_LINES: list[Line] = [
+    ("noise", "Project Start Date: 01.03.2026"),
+    ("noise", "Project End Date: 31.08.2027"),
+    ("noise", "Project Duration: 18 months"),
+    ("h1", "1 Introduction"),
+    ("h2", "Application Name and Abstract"),
+    ("label", "Application name"),
+    ("body", "TERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün"),
+    ("label", "Title in English:"),
+    ("body", "TERRAFLUX - Adaptive Irrigation Control for Urban Green"),
+    ("label", "Abstract (wird in Aramis publiziert)"),
+    ("noise", "Characters: 228/300"),
+    ("body", "Das Projekt entwickelt eine adaptive Bewässerungssteuerung für"),
+    ("body", "städtisches Grün. Sensorbasierte Bodenmodelle senken den"),
+    ("body", "Wasserverbrauch um bis zu 25 Prozent und entlasten die"),
+    ("body", "Betriebsteams der Stadtgärtnereien."),
+    ("label", "Executive summary (wird nicht in Aramis publiziert)"),
+    ("noise", "Characters: 0/2000"),
+    ("h2", "Scientific Integrity"),
+    (
+        "body",
+        "Has any staff member who will be collaborating on the application "
+        "been severely sanctioned for violation of scientific integrity in "
+        "the last three years?",
+    ),
+    ("body", "No"),
+    ("h2", "Intellectual Property Rights"),
+    (
+        "body",
+        "Was a patent search performed with or without IPI (Swiss Federal "
+        "Institute for Intellectual Property)?",
+    ),
+    ("body", "Yes"),
+    ("body", "Eine synthetische Recherche ergab zwei thematisch verwandte Dokumente."),
+    (
+        "body",
+        "Does the project require (patent-)licencense(s)? If yes, please "
+        "explain which background IP is needed for the project and the "
+        "ownership of that background IP.",
+    ),
+    ("body", "No"),
+    (
+        "body",
+        "Have the project partners concluded a prior written agreement "
+        "regarding the assignement or exploitation of any research findings "
+        "or patents?",
+    ),
+    ("body", "Yes"),
+    ("body", "Ein Konsortialvertrag regelt die Verwertung der Ergebnisse."),
+    ("h1", "2 Organisations & People"),
+    ("h2", "Research Partner"),
+    ("body", "Name: Nordlicht Institut für Angewandte Forschung"),
+    ("body", "Country: CH"),
+    ("body", "Department: Umweltsysteme"),
+    ("body", "Industry: Research"),
+    ("body", "FTE: 38"),
+    ("body", "Official Representative: Robin Muster"),
+    ("body", "Project Role: Modellentwicklung und Validierung"),
+    ("h2", "Implementation Partner 1"),
+    ("body", "Name: Voltaris AG"),
+    ("body", "Country: CH"),
+    ("body", "Department: Produktentwicklung"),
+    ("body", "Industry: Sensorik"),
+    ("body", "FTE: 74"),
+    ("body", "Official Representative: Alex Beispiel"),
+    ("body", "Project Role: Systemintegration und Pilotierung"),
+    ("h2", "Implementation Partner 2"),
+    ("body", "Name: Brimatec GmbH"),
+    ("body", "Country: CH"),
+    ("body", "Department: Betrieb"),
+    ("body", "Industry: Gartenbau"),
+    ("body", "FTE: 26"),
+    ("body", "Official Representative: Kim Probe"),
+    ("body", "Project Role: Pilotbetrieb in zwei Städten"),
+    ("h2", "Independence of Research and Implementation Partners"),
+    ("body", "Personnel Independence"),
+    (
+        "body",
+        "Are any of the employees involved in the project on the part of a "
+        "research partner also an employee of an implementation partner?",
+    ),
+    ("body", "No"),
+    (
+        "body",
+        "Are any of the employees involved in the project on the part of the "
+        "research partners a member of an involved implementation partner's "
+        "executive board, supervisory board or scientific committee?",
+    ),
+    ("body", "No"),
+    (
+        "body",
+        "Have any of the employees involved in the project on the part of "
+        "the research partners been commissioned by an involved "
+        "implementation partner to perform another role?",
+    ),
+    ("body", "No"),
+    ("body", "Financial Independence"),
+    (
+        "body",
+        "I confirm that none of the employees involved in the project on "
+        "behalf of the research partners holds 20% or more of the ownership "
+        "interest (e.g., shares) in any implementation partner",
+    ),
+    ("body", "Checked"),
+    (
+        "body",
+        "I confirm that the research partner, as a legal entity, does not "
+        "hold 20% or more of the ownership interest (e.g., shares) in any "
+        "implementation partner",
+    ),
+    ("body", "Checked"),
+    ("label", "Explanations and Comments"),
+    ("noise", "Characters: 0/300"),
+    ("h1", "3 Value Creation"),
+    ("body", "3.1 Describe the business targets and the business model."),
+    ("body", "Zielmodell ist ein Abo pro Grünfläche; nach drei Jahren sollen"),
+    ("body", "zwölf Städte die Lösung im Regelbetrieb nutzen."),
+    ("body", "3.2 Describe potential customers and how they are to be reached"),
+    ("body", "Stadtgärtnereien und Facility-Betreiber werden über bestehende"),
+    ("body", "Fachverbände und Pilotreferenzen erreicht."),
+    (
+        "body",
+        "3.3 Does the planned project have a particular relevance to energy "
+        "or ecological or social topics?",
+    ),
+    ("body", "Der reduzierte Wasserverbrauch entlastet städtische Ökosysteme."),
+    ("h1", "4 Solution"),
+    ("body", "4.1 Describe the state of the art that you intend to advance."),
+    ("body", "Bestehende Steuerungen bewässern nach festen Zeitplänen ohne"),
+    ("body", "Bodenfeuchtemodell."),
+    (
+        "body",
+        "4.2 Describe the novelty of your solution (technology, product, "
+        "business model or process, service)",
+    ),
+    ("body", "Neu ist die Kopplung eines Bodenfeuchtemodells mit selbstlernender"),
+    ("body", "Ventilsteuerung je Grünfläche."),
+    ("body", "4.3 Describe the quantifiable goals to reach."),
+    ("body", "Wasserverbrauch minus 25 Prozent in zwei Pilotstädten."),
+    ("body", "4.4 Describe the preliminary work already performed."),
+    ("body", "Ein Laborprüfstand mit zwölf Ventilen wurde aufgebaut und vermessen."),
+    (
+        "body",
+        "4.5 Describe how the selected partners are suited for the planned "
+        "project.",
+    ),
+    ("body", "Forschung, Sensorik und Betrieb ergänzen sich ohne Überschneidung."),
+    ("h1", "5 Project Setup"),
+    ("h2", "Planned Hours"),
+    ("noise", "Partner | Research | Implementation | Management"),
+    ("noise", "Nordlicht Institut | 2400 | 0 | 0"),
+    ("noise", "Voltaris AG | 0 | 1100 | 0"),
+    ("noise", "Brimatec GmbH | 0 | 500 | 0"),
+    ("label", "Explanation"),
+    ("h2", "Financial Overview"),
+    ("body", "Direct total project costs excluding overhead: CHF 200'000"),
+    ("body", "Implementation Partner Own Contribution: CHF 105'000"),
+    ("body", "Cash Contribution: CHF 13'000"),
+    ("body", "Requested Innosuisse Funding: CHF 82'000"),
+    ("body", "Requested Innosuisse Funding incl. Overhead: CHF 94'300"),
 ]
 
 PAGE_HEADER = "Innosuisse Innolink - Innovationsprojekt (Entwurf)"
@@ -194,6 +368,9 @@ def main() -> None:
     degraded = FIXTURES / "innolink_sample_degraded.pdf"
     degraded.write_bytes(build_pdf(degraded_lines(LINES)))
     print(f"wrote {degraded} ({degraded.stat().st_size} bytes)")
+    structured = FIXTURES / "innolink_structured.pdf"
+    structured.write_bytes(build_pdf(STRUCTURED_LINES))
+    print(f"wrote {structured} ({structured.stat().st_size} bytes)")
 
 
 if __name__ == "__main__":

@@ -106,7 +106,9 @@ export function mostRestrictiveDataClass(classes: DataClass[]): DataClass {
 export interface ServiceAvailability {
   ki: boolean
   web: boolean
-  generationMode?: "unavailable" | "fake_demo" | "real_eval"
+  // "live_unavailable": Live konfiguriert, Provider nicht verfügbar — nie
+  // stiller Abstieg auf den Demo-Generator (Ebene E).
+  generationMode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
   unavailableReason?: string | null
 }
 

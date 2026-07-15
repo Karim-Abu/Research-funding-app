@@ -239,8 +239,14 @@ describe("projects overview", () => {
 
     // Kebab → destruktiver Menüpunkt → Bestätigen.
     fireEvent.click(screen.getAllByRole("button", { name: "Aktionen" })[0])
-    fireEvent.click(await screen.findByText("Aus Übersicht entfernen"))
-    fireEvent.click(await screen.findByRole("button", { name: "Entfernen" }))
+    // Grosszügiges Fenster: unter voller Testparallelität (Gate) kann das
+    // Radix-Menü das 1s-Default-Timeout knapp verpassen.
+    fireEvent.click(
+      await screen.findByText("Aus Übersicht entfernen", undefined, { timeout: 5000 })
+    )
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Entfernen" }, { timeout: 5000 })
+    )
 
     // Karte verschwindet, Archivierung wird per PATCH persistiert.
     await waitFor(() =>

@@ -61,6 +61,33 @@ def test_get_agent_registry_is_cached():
     assert get_agent_registry() is get_agent_registry()
 
 
+def test_activated_profiles_carry_prompt_version():
+    """Ebene E: die Registry ist die eine Quelle der Wahrheit je Rolle —
+    aktivierte Profile tragen ihre Skill-/Prompt-Version aus den
+    versionierten Prompt-Assets (nie None)."""
+    reg = load_agent_registry()
+    pfe = reg.profile("A1.project_fact_extraction")
+    assert pfe.prompt_version is not None
+    assert pfe.prompt_version.startswith("a1_project_fact_extraction_v")
+
+
+def test_reasoning_effort_and_cost_limit_default_none_and_parse():
+    """Optionale Live-Konfiguration je Rolle (Ebene E): ohne YAML-Eintrag
+    None (keine Verhaltensänderung); gesetzte Werte werden typisiert."""
+    reg = _build(*_raws())
+    profile = reg.profile("A1.p")
+    assert profile.reasoning_effort is None
+    assert profile.max_cost_chf is None
+
+    agents, tools, controls, schemas = _raws()
+    agents["profiles"][0]["invocation_limits"].update(
+        {"reasoning_effort": "medium", "max_cost_chf": 0.5}
+    )
+    configured = _build(agents, tools, controls, schemas).profile("A1.p")
+    assert configured.reasoning_effort == "medium"
+    assert configured.max_cost_chf == 0.5
+
+
 def test_minimal_valid_build():
     assert _build(*_raws()).profile("A1.p").agent_id == "A1"
 

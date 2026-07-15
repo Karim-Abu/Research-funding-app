@@ -83,6 +83,9 @@ class ModelResponse:
     generation_kind: generation.GenerationKind
     actual_adapter_name: str
     prompt_version: str | None
+    # Ebene E: das vom Provider in der Antwort gemeldete Modell (None, wenn
+    # nicht gemeldet) — unterscheidet sich ggf. vom angefragten model_id.
+    actual_model_id: str | None = None
 
 
 @dataclass(frozen=True)
@@ -253,7 +256,9 @@ def _safe(db, inv, status, error_code, reason) -> SafeFailure:
 
 def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[BaseModel, object]:
     """Run a single route with at most ``retries`` retries on schema failure.
-    Provider timeout/error propagate (→ fallback). Returns (validated, usage)."""
+    Provider timeout/error propagate (→ fallback). Returns (validated, result)
+    — das volle ProviderResult trägt Usage UND das vom Provider gemeldete
+    Modell (Ebene E)."""
     last_code: str | None = None
     spent = ProviderUsage()
     for _ in range(1 + retries):
@@ -279,7 +284,7 @@ def _execute(adapter, preq, *, retries, output_schema, allowed_frags) -> tuple[B
             if violations:
                 last_code = "invalid_evidence_reference"
                 continue
-        return model, result.usage
+        return model, result
     raise _SchemaFailure(
         last_code or "schema_validation_failed", usage=spent
     )
@@ -353,8 +358,9 @@ def invoke(
 
 
 def _try_route(inv, profile, request, registry, resolver, route_key):
-    """Attempt one route. Returns (model_out, usage, route, adapter_name) on
-    success, or ``(None, status, reason, extra)`` on failure — ``extra`` ist
+    """Attempt one route. Returns (model_out, provider_result, route,
+    adapter_name) on success, or ``(None, status, reason, extra)`` on failure —
+    ``extra`` ist
     ``None`` ausser bei Schema-Failures, wo ein ``_FailedUsage`` die real
     konsumierten Tokens fürs Metering trägt (EVAL.2). Der Adapter-Name
     (Selbstauskunft) steuert die Kostensemantik: fake-served Calls dürfen
@@ -404,7 +410,7 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         output_json_schema=json_schema_for(output_schema),
     )
     try:
-        model_out, usage = _execute(
+        model_out, provider_result = _execute(
             adapter, preq, retries=cost_guard.max_retries(profile),
             output_schema=output_schema,
             allowed_frags=request.allowed_fragment_ids,
@@ -419,7 +425,7 @@ def _try_route(inv, profile, request, registry, resolver, route_key):
         return None, "failed", str(exc), _FailedUsage(
             exc.usage, adapter_name
         )
-    return model_out, usage, route, adapter_name
+    return model_out, provider_result, route, adapter_name
 
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
@@ -449,7 +455,8 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
                     usage=extra.usage, adapter_name=extra.adapter_name,
                 )
             continue
-        usage, route = second, third
+        provider_result, route = second, third
+        usage = provider_result.usage
         adapter_name = extra
         generation_kind = generation.for_adapter_name(adapter_name)
         if generation_kind is None:
@@ -470,6 +477,9 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             usage_record_id = rec.usage_record_id
         inv.output_hash = _hash(model_out.model_dump())
         inv.usage_record_id = usage_record_id
+        # Ebene E: das vom Provider GEMELDETE Modell (Alias-Auflösung) — nie
+        # still das angefragte model_id einsetzen. None = nicht gemeldet.
+        inv.actual_model_id = provider_result.model
         _control(db, inv, "CTRL.OUTPUT_SCHEMA", "passed", "output_validated")
         _control(db, inv, "CTRL.AUDIT_WRITE", "passed", "agent_invocation_recorded")
         _finalize(db, inv, "succeeded")
@@ -480,6 +490,7 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             output_tokens=usage.output_tokens, generation_kind=generation_kind,
             actual_adapter_name=adapter_name,
             prompt_version=inv.prompt_version,
+            actual_model_id=provider_result.model,
         )
 
     # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.

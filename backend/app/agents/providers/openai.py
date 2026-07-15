@@ -127,4 +127,6 @@ class OpenAIProvider:
                 input_tokens=int(usage.get("prompt_tokens", 0)),
                 output_tokens=int(usage.get("completion_tokens", 0)),
             ),
+            # Vom Provider gemeldetes Modell (Alias-Auflösung) — Ebene E.
+            model=body.get("model"),
         )
