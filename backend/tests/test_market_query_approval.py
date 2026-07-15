@@ -251,12 +251,14 @@ def test_edited_query_is_bound_to_brief_and_invalidates_old_approval(client, db,
     )
     assert blocked.status_code == 422, blocked.text
     assert blocked.json()["code"] == "query_not_derived_from_brief"
+    db.expire_all()
+    assert db.get(SearchQueryApproval, old["approval_id"]).status == "expired"
 
     res = client.post(
         f"/api/v1/research-briefs/{brief_id}/queries/preview",
         json={"query_text": "manufacturing quality assurance market growth Switzerland",
               "module": "market_growth", "planner_purpose": "market_size",
-              "supersedes_approval_id": old["approval_id"]},
+              "supersedes_approval_id": None},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 200, res.text

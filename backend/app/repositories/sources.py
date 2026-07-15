@@ -147,4 +147,5 @@ def to_contract(document: SourceDocument) -> SourceDocumentSchema:
         created_at=document.created_at,
         error_message=document.error_message,
         error_code=_current_error_code(document),
+        source_url=document.source_url,
     )

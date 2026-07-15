@@ -31,6 +31,7 @@ export interface ApprovalQuery extends QueryCandidateDto {
   decision: QueryDecision
   firewall_decision?: string
   risk_label?: "low" | "medium" | "high"
+  risk_score?: number
   redaction_summary?: Array<{ category?: string; label?: string; count?: number }>
 }
 
@@ -115,13 +116,14 @@ export function QueryApprovalList({
       const next = onPreview
         ? await onPreview(query, editText)
         : await previewMarketQuery(projectId, editText, query.purpose)
-      // Bearbeiten invalidiert die alte Freigabe explizit (die Hash-Bindung macht
-      // sie ohnehin unbrauchbar für den neuen Text).
-      if (query.approval_id) {
+      // Brief-bound previews expire the old approval transactionally on the server
+      // before screening. The legacy generic market preview has no supersedes field,
+      // so its adapter still needs the existing explicit rejection.
+      if (!onPreview && query.approval_id) {
         try {
           await rejectSearchQuery(query.approval_id)
         } catch {
-          // bereits entschieden/abgelaufen — die neue Freigabe zählt
+          // Already decided/expired: the new preview remains authoritative.
         }
       }
       update(index, {
@@ -129,6 +131,10 @@ export function QueryApprovalList({
         approval_id: next.approval_id,
         public_safe: next.public_safe,
         blocked_reason: next.blocked_reason,
+        firewall_decision: (next as ApprovalQuery).firewall_decision,
+        risk_label: (next as ApprovalQuery).risk_label,
+        risk_score: (next as ApprovalQuery).risk_score,
+        redaction_summary: (next as ApprovalQuery).redaction_summary,
         decision: next.public_safe && next.approval_id ? "pending" : "blocked",
       })
       setEditIndex(null)
@@ -205,7 +211,7 @@ export function QueryApprovalList({
                 {query.firewall_decision && (
                   <div className="mt-1 text-[11px] text-muted-foreground">
                     <span>Firewall: {query.firewall_decision === "allow" ? "freigegeben" : query.firewall_decision === "block" ? "blockiert" : "menschliche Freigabe nötig"}</span>
-                    {query.risk_label && <span> · Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}</span>}
+                    {query.risk_label && <span> · Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}{typeof query.risk_score === "number" ? ` (${query.risk_score}/10)` : ""}</span>}
                     {(query.redaction_summary?.length ?? 0) > 0 && (
                       <ul className="mt-1 flex flex-wrap gap-1" aria-label="Entfernte Kategorien">
                         {query.redaction_summary?.map((entry, redactionIndex) => (

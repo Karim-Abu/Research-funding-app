@@ -9,6 +9,7 @@ Import success does NOT depend on the advisory A1 synthesis (binding correction 
 from __future__ import annotations
 
 import logging
+from datetime import datetime, timezone
 
 from sqlalchemy.orm import Session
 
@@ -32,6 +33,16 @@ logger = logging.getLogger("app.research.import")
 
 _FETCH_TOOL = "fetch_validated_public_url"
 _FETCH_MAX_CALLS_PER_TASK = 10
+
+
+def _parse_provider_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
 
 
 class ImportBlocked(Exception):
@@ -179,6 +190,7 @@ def import_result(
         created_by=actor_user_id, name=name, source_type="url",
         classification=classification_out, status="uploaded",
     )
+    doc.source_url = fetched.final_url
     version = sources_repo.create_version(
         db, document=doc, original_content_hash=fetched.content_hash,
         classification=classification_out, storage_ref=ref,
@@ -200,7 +212,15 @@ def import_result(
 
     result.status = "imported"
     result.final_url = fetched.final_url
+    result.title = fetched.title or result.title
+    result.publisher = fetched.publisher or result.publisher
+    result.published_at = _parse_provider_date(fetched.published_at) or result.published_at
     result.source_document_id = doc.source_id
+    task.provider_usage = {
+        **(task.provider_usage or {}),
+        "last_fetch_credits_used": fetched.credits_used,
+        "last_fetch_latency_ms": fetched.latency_ms,
+    }
     recording.record_audit(
         db, workspace_id=task.workspace_id, actor_user_id=actor_user_id,
         action="research_result.imported", research_task_id=task.research_task_id,

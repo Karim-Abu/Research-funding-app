@@ -111,6 +111,39 @@ def _run_task(client, csrf, project_id, **over):
     return body, op.json()
 
 
+def test_manual_url_import_requires_pasted_content_and_never_fetches(client, db):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_research_project(client, csrf)
+    payload = {
+        "url": "https://www.bfs.admin.ch/public-report",
+        "name": "Public report",
+        "data_classification": {
+            **WEB_CLASSIFICATION, "origin": "public_source",
+            "processing_mode": "deterministic_only",
+        },
+        "user_confirmed_public": True,
+    }
+    unavailable = client.post(
+        f"/api/v1/projects/{project_id}/sources/url",
+        json=payload, headers=_headers(csrf),
+    )
+    assert unavailable.status_code == 503
+    assert unavailable.json()["code"] == "url_import_unavailable"
+
+    imported = client.post(
+        f"/api/v1/projects/{project_id}/sources/url",
+        json={**payload, "manual_content": "Public statistics and market growth data."},
+        headers=_headers(csrf),
+    )
+    assert imported.status_code == 201, imported.text
+    body = imported.json()
+    assert body["type"] == "url" and body["status"] == "processed"
+    assert body["source_url"] == payload["url"]
+    assert db.scalar(select(SourceFragment).where(
+        SourceFragment.source_version_id == body["current_source_version_id"]
+    )) is not None
+
+
 # --- URL / SSRF safety ------------------------------------------------------
 
 @pytest.mark.parametrize("url,reason", [
@@ -355,6 +388,37 @@ def test_import_creates_source_with_fragments_and_no_anchor(
     assert rr.status == "imported" and rr.source_document_id == doc["source_id"]
 
 
+def test_human_support_review_is_separate_from_coverage_and_keeps_source_audit(
+    client, db, web_enabled, monkeypatch
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_research_project(client, csrf)
+    _run_task(client, csrf, project_id)
+    result_id = _first_candidate(client, project_id)
+    _use_live_fetch_test_double(db, monkeypatch, result_id)
+    imported = client.post(
+        f"/api/v1/research-results/{result_id}/import", headers=_headers(csrf)
+    )
+    assert imported.status_code == 201, imported.text
+    source_id = imported.json()["source_id"]
+
+    before = client.get(f"/api/v1/projects/{project_id}/research-workspace").json()
+    row = next(item for item in before["results"] if item["result_id"] == result_id)
+    assert row["coverage_status"] == "not_checked"
+    assert row["support_status"] == "not_checked"
+
+    reviewed = client.post(
+        f"/api/v1/research-results/{result_id}/review",
+        json={"decision": "does_not_support"}, headers=unsafe_headers(csrf),
+    )
+    assert reviewed.status_code == 200, reviewed.text
+    assert reviewed.json()["status"] == "rejected"
+    assert reviewed.json()["support_status"] == "does_not_support"
+    db.expire_all()
+    assert db.get(SourceDocument, source_id) is not None
+    assert db.get(ResearchResult, result_id).coverage_status == "not_checked"
+
+
 def test_discard_persists_rejected_status(client, db, web_enabled):
     """R8 (Anforderung 9): «Verwerfen» ist persistiert — candidate → rejected; ein
     bereits verworfenes/importiertes Ergebnis kann nicht erneut verworfen werden."""
@@ -391,7 +455,7 @@ def test_discard_workspace_isolation(client, web_enabled):
     assert res.status_code == 404
 
 
-def test_import_runs_advisory_a1_synthesis(client, db, web_enabled, monkeypatch):
+def test_import_does_not_persist_fake_a1_synthesis(client, db, web_enabled, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
@@ -403,12 +467,9 @@ def test_import_runs_advisory_a1_synthesis(client, db, web_enabled, monkeypatch)
     db.expire_all()
     rr = db.scalar(select(ResearchResult).where(ResearchResult.result_id == result_id))
     task = db.get(ResearchTask, rr.research_task_id)
-    assert task.a1_synthesis_status == "succeeded"
-    assert len(rr.professional_evidence) >= 1
-    assert len(rr.partner_role_suggestions) >= 1
-    ev = rr.professional_evidence[0]
-    assert ev["source_url"] and ev["source_id"] == rr.source_document_id
-    assert rr.partner_role_suggestions[0]["human_review_required"] is True
+    assert task.a1_synthesis_status == "skipped"
+    assert rr.professional_evidence == []
+    assert rr.partner_role_suggestions == []
 
 
 def test_a1_failure_is_non_blocking(client, db, web_enabled, monkeypatch):

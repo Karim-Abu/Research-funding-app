@@ -160,6 +160,16 @@ def update_item_status(
     db: Session, item: MarketComparisonItem, status: str,
     support_status: str | None = None,
 ) -> None:
+    comparison = db.get(MarketComparison, item.comparison_id)
+    if (
+        status == "accepted" and comparison is not None
+        and comparison.generation_kind == "fake_demo"
+    ):
+        raise ComparisonBlocked(
+            "demo_comparison_not_acceptable",
+            "Demo-Ergebnisse können nicht als Live-Recherche übernommen werden.",
+            status=409,
+        )
     item.status = status
     if support_status is not None:
         item.support_status = support_status
@@ -190,6 +200,7 @@ def comparison_to_contract(
         status=comparison.status,
         comparison_version=comparison.comparison_version,
         generation_status=comparison.generation_status,
+        generation_kind=comparison.generation_kind,
         research_gaps=list(comparison.research_gaps or []),
         warnings=list(comparison.warnings or []),
         item_count=_item_count(db, comparison.comparison_id),

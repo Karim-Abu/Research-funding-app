@@ -105,7 +105,7 @@ def test_planner_produces_five_public_safe_queries():
     for q in queries:
         assert q.source == "deterministic_planner"
         assert q.public_safe and q.blocked_reason is None
-        assert q.approval_required is False
+        assert q.approval_required is True
 
 
 def test_planner_is_deterministic():

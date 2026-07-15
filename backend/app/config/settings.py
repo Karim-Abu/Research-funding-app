@@ -138,6 +138,9 @@ class Settings(BaseSettings):
     # OWN flag — it is NOT implied by agent_fake_provider (binding correction 5).
     web_research_enabled: bool = False
     firecrawl_api_key: str | None = None
+    # Optional account-gated privacy guarantee. Unsupported modes fail visibly;
+    # the adapter never silently retries with weaker settings.
+    firecrawl_privacy_mode: Literal["anon", "zdr"] | None = None
     web_research_fake_provider: bool = False
     # Milestone 9J: even an approved, firewall-sanitized D2 (confidential) query must not
     # reach a LIVE web provider unless this flag is explicitly enabled. Default off; the

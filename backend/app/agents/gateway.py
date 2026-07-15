@@ -527,13 +527,23 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
         ))
         inv.termination_reason = reason
         db.flush()
-    if requested_model_id is None:
-        route_failure("model_unavailable", "model_id_not_resolved")
-        return None, "failed", "model_unavailable", None
     adapter = resolver(route)
     if adapter is None:
         route_failure("model_unavailable", "provider_unavailable")
         return None, "failed", "provider_unavailable", None
+    # Hermetic injected fakes do not need a deploy-time real model id. Production
+    # adapters remain fail-closed when their configured model cannot be resolved.
+    hermetic_test_model_id = getattr(adapter, "_hermetic_test_model_id", None)
+    if requested_model_id is None and (
+        getattr(adapter, "name", None) == "fake" or hermetic_test_model_id
+    ):
+        requested_model_id = hermetic_test_model_id or "fake"
+        inv.model_id = requested_model_id
+        if inv.requested_model_id is None:
+            inv.requested_model_id = requested_model_id
+    if requested_model_id is None:
+        route_failure("model_unavailable", "model_id_not_resolved")
+        return None, "failed", "model_unavailable", None
     # R4.3 ProviderPolicy: provider × data_class (× origin/eval) — geprüft VOR
     # available(), damit gesetzte API-Keys nie eine blockierte Klasse öffnen.
     p_decision = provider_policy.decide_for_adapter(
@@ -743,7 +753,7 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
         return ModelResponse(
             invocation_id=inv.invocation_id, profile_id=profile.profile_id,
             status="succeeded", output=model_out, provider=route.provider,
-            model_id=route.requested_model_id(settings) or route.model_id,
+            model_id=inv.model_id,
             input_tokens=usage.input_tokens,
             output_tokens=usage.output_tokens, generation_kind=generation_kind,
             actual_adapter_name=adapter_name,

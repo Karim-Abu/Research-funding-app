@@ -11,6 +11,8 @@ from app.contracts.research_brief import (
     ResearchQueryEdit,
     ResearchQueryPlan,
     ResearchQueryView,
+    ResearchResultReviewInput,
+    ResearchResultReviewView,
     ResearchRunRequest,
     ResearchRunResponse,
     ResearchWorkspace,
@@ -136,14 +138,21 @@ def preview_research_query(
     db: Session = Depends(get_db),
 ) -> ResearchQueryView:
     try:
-        approval = brief_service.preview_query(
-            db, _brief(db, brief_id, context.user.workspace_id), context.user.id,
+        brief = _brief(db, brief_id, context.user.workspace_id)
+        if payload.supersedes_approval_id:
+            brief_service.expire_superseded_query(
+                db, brief, context.user.id, module=payload.module,
+                approval_id=payload.supersedes_approval_id,
+            )
+            # A blocked/invalid replacement must not make the old approval usable.
+            db.commit()
+        query = brief_service.preview_query(
+            db, brief, context.user.id,
             module=payload.module, planner_purpose=payload.planner_purpose,
             query_text=payload.query_text,
-            supersedes_approval_id=payload.supersedes_approval_id,
         )
         db.commit()
-        return brief_service._query_view(approval)
+        return query
     except brief_service.BriefError as exc:
         db.rollback()
         raise _problem(exc) from exc
@@ -168,3 +177,24 @@ def run_research_brief(
         raise ProblemException(
             status=exc.status, code=exc.code, title="Research request refused", detail=exc.detail
         ) from exc
+
+
+@router.post(
+    "/research-results/{result_id}/review", response_model=ResearchResultReviewView
+)
+def review_research_result(
+    result_id: str,
+    payload: ResearchResultReviewInput,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> ResearchResultReviewView:
+    try:
+        result = brief_service.review_result(
+            db, result_id=result_id, workspace_id=context.user.workspace_id,
+            actor_user_id=context.user.id, decision=payload.decision,
+        )
+        db.commit()
+        return result
+    except brief_service.BriefError as exc:
+        db.rollback()
+        raise _problem(exc) from exc

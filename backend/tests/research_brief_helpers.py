@@ -25,7 +25,7 @@ def approve_research_brief(
         "modules": modules or [
             "market_growth",
             "competition_alternatives",
-            "customer_problem",
+            "state_of_the_art",
         ],
     }
     saved = client.put(
@@ -41,4 +41,3 @@ def approve_research_brief(
     )
     assert approved.status_code == 200, approved.text
     return approved.json()
-

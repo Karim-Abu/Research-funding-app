@@ -38,15 +38,16 @@ class ResearchBriefState(BaseModel):
 
 
 class ResearchQueryView(BaseModel):
-    approval_id: str
+    approval_id: str | None = None
     research_brief_id: str
     module: ResearchModule
     planner_purpose: str
     query_text: str
     firewall_decision: str
+    risk_score: int = Field(ge=0, le=10)
     risk_label: Literal["low", "medium", "high"]
     redaction_summary: list[dict] = Field(default_factory=list)
-    status: Literal["pending", "approved", "rejected", "expired", "used"]
+    status: Literal["pending", "approved", "rejected", "expired", "used", "blocked"]
     task_id: str | None = None
     task_status: str | None = None
     execution_mode: Literal["fake_demo", "live"] | None = None
@@ -91,9 +92,12 @@ class ResearchPartnerCandidateView(BaseModel):
     possible_project_role: str
     why_potentially_relevant: str
     evidence_url: str
-    status: Literal["candidate_not_eligibility_confirmed"] = (
-        "candidate_not_eligibility_confirmed"
-    )
+    status: Literal[
+        "eligibility_verified", "likely_eligible", "needs_human_check"
+    ] = "needs_human_check"
+    competence_gap: str | None = None
+    track_record_links: list[str] = Field(default_factory=list)
+    eligibility_reference_date: str | None = None
 
 
 class ResearchResultView(BaseModel):
@@ -106,6 +110,15 @@ class ResearchResultView(BaseModel):
     final_url: str | None = None
     domain: str
     snippet: str | None = None
+    publisher: str | None = None
+    published_at: datetime | None = None
+    source_category: str | None = None
+    source_quality: str = "unassessed"
+    freshness_label: str = "unbekannt"
+    potential_sections: list[str] = Field(default_factory=list)
+    coverage_status: str = "not_checked"
+    support_status: str = "not_checked"
+    content_review_status: str = "unreviewed"
     retrieved_at: datetime
     relevance_reason: str
     status: Literal["candidate", "imported", "rejected", "failed"]
@@ -113,6 +126,17 @@ class ResearchResultView(BaseModel):
     source_document_id: str | None = None
     source_locations: list[ResearchSourceLocation] = Field(default_factory=list)
     partner_candidate: ResearchPartnerCandidateView | None = None
+
+
+class ResearchResultReviewInput(BaseModel):
+    decision: Literal["supports", "partially_supports", "does_not_support"]
+
+
+class ResearchResultReviewView(BaseModel):
+    result_id: str
+    status: Literal["imported", "rejected"]
+    content_review_status: str
+    support_status: str
 
 
 class ResearchWorkspace(BaseModel):

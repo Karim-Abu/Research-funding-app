@@ -215,8 +215,10 @@ def _forcing_resolver(provider: str, *, adapter=None):
         OpenAIProvider() if provider == "openai" else AnthropicProvider()
     )
     proxy = _CountingAdapter(
-        inner, limit=_max_calls(), adapter_name=target_route
+        inner, limit=_max_calls(), adapter_name=target_route,
     )
+    if adapter is not None:
+        proxy._hermetic_test_model_id = "fake"
     return (lambda route: proxy if route.provider == target_route else None), proxy
 
 

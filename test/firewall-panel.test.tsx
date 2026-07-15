@@ -83,7 +83,9 @@ describe("PublicResearchPanel — Search Query Firewall (D2)", () => {
     })
     fireEvent.click(screen.getByRole("button", { name: "Prüfen und übernehmen" }))
     expect(await screen.findByText("industrial quality market growth Switzerland")).toBeInTheDocument()
-    expect(rejected).toBe(true)
+    // The preview endpoint now expires the old approval transactionally before
+    // screening the edited query; the UI must not issue a second reject request.
+    expect(rejected).toBe(false)
   })
 
   it("shows a safe error when an edited query introduces unapproved terms", async () => {

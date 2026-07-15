@@ -11,6 +11,7 @@ import logging
 import threading
 import uuid
 from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from app.config.settings import get_settings
 from app.db.models import AsyncOperation, Project, ResearchResult, ResearchTask
@@ -34,9 +35,44 @@ _semaphore = threading.BoundedSemaphore(get_settings().max_run_concurrency)
 _SEARCH_TOOL = "search_public_professional_sources"
 _SEARCH_MAX_CALLS_PER_TASK = 5
 
+_POTENTIAL_SECTIONS = {
+    "market_growth": ["Marktgrösse und Wachstum"],
+    "competition_alternatives": ["Wettbewerb und Alternativlösungen"],
+    "customer_problem": ["Kundenproblem (historisch)"],
+    "state_of_the_art": ["State of the Art"],
+    "swiss_research_partners": ["Forschungspartner und Kompetenzträger"],
+}
+_DEMO_DOMAINS = {"example.org", "example.com", "example.net"}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
+
+
+def _parse_provider_date(value: str | None) -> datetime | None:
+    if not value:
+        return None
+    try:
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
+    except (TypeError, ValueError):
+        return None
+
+
+def _is_demo_url(url: str) -> bool:
+    host = (urlparse(url).hostname or "").casefold().rstrip(".")
+    return any(host == domain or host.endswith(f".{domain}") for domain in _DEMO_DOMAINS)
+
+
+def _preliminary_quality(url: str, category: str | None) -> str:
+    host = (urlparse(url).hostname or "").casefold()
+    if category == "research" or host.endswith(".edu") or host.endswith(".ac.uk"):
+        return "wissenschaftlich"
+    if host.endswith(".admin.ch") or host.endswith(".gov") or host.endswith(".gov.ch"):
+        return "offizielle_stelle"
+    if host.endswith(".ch"):
+        return "institutionell_ungeprüft"
+    return "unbewertet"
 
 
 def _problem(code: str, detail: str) -> dict:
@@ -187,6 +223,8 @@ def research_executor(task_id: str, operation_id: str) -> None:
                 query=task.query_text,
                 max_results=min(task.max_results, settings.web_search_max_results),
                 preferred_domains=tuple(task.preferred_domains or []),
+                excluded_domains=tuple(task.disallowed_domains or []),
+                categories=("research",) if task.research_module == "state_of_the_art" else (),
             )
             tool_invocation_id = recording.record_tool(
                 db, workspace_id=task.workspace_id, research_task_id=task.research_task_id,
@@ -208,6 +246,26 @@ def research_executor(task_id: str, operation_id: str) -> None:
                 db.commit()
                 return
 
+            if outcome.provider != "fake" and any(
+                _is_demo_url(candidate.url) for candidate in outcome.candidates
+            ):
+                _record_tool_failure(db, tool_invocation_id, "LiveDemoDomainRejected")
+                _fail_task(
+                    task, code="live_demo_domain_rejected",
+                    detail="Der Live-Dienst lieferte eine reservierte Demo-Domain.",
+                )
+                recording.record_audit(
+                    db, workspace_id=task.workspace_id, actor_user_id=None,
+                    action="research_task.failed", research_task_id=task.research_task_id,
+                    detail={"reason": "live_demo_domain_rejected"},
+                )
+                _finish_operation(
+                    db, operation_id, "failed", "live_demo_domain_rejected",
+                    "Live research returned a reserved demo domain.",
+                )
+                db.commit()
+                return
+
             kept = 0
             for cand in outcome.candidates:
                 check = validate_public_url(cand.url, resolver=dns_resolver)
@@ -226,6 +284,13 @@ def research_executor(task_id: str, operation_id: str) -> None:
                     source_url=cand.url,
                     title=cand.title,
                     snippet=cand.snippet,
+                    publisher=cand.publisher,
+                    published_at=_parse_provider_date(cand.published_at),
+                    source_category=cand.source_category,
+                    source_quality=_preliminary_quality(cand.url, cand.source_category),
+                    potential_sections=list(_POTENTIAL_SECTIONS.get(
+                        task.research_module or "", []
+                    )),
                     provider_rank=cand.rank,
                     retrieved_at=_now(),
                     status="candidate",

@@ -413,6 +413,8 @@ class ProfessionalEvidenceRecord(BaseModel):
     source_title: str
     accessed_at: str | None = None
     source_version_id: str | None = None
+    source_fragment_id: str | None = None
+    exact_quote: str | None = None
 
 
 class PartnerRoleSuggestionRecord(BaseModel):

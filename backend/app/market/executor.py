@@ -223,6 +223,7 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             persisted = _persist(db, comparison, candidates, result)
             comparison.status = "ready_for_review"
             comparison.generation_status = "succeeded"
+            comparison.generation_kind = result.generation_kind
             recording.record_audit(
                 db, workspace_id=comparison.workspace_id, actor_user_id=None,
                 action="market_comparison.succeeded", comparison_id=comparison.comparison_id,

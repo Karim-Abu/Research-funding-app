@@ -1,11 +1,8 @@
-"""Firecrawl web research provider (Milestone 9I-A).
+"""Firecrawl v2 provider for public-safe research.
 
-Real, env-gated. The API key is read from settings (backend env only) and is NEVER
-logged, audited or exported. Disabled (``available()`` is False) when no key is
-configured — the feature then simply reports unavailable; the backend never crashes.
-
-Not exercised by any mandatory test; the deterministic fake drives CI. The network
-calls below are guarded and only reached when a key is configured.
+Search only returns candidate metadata. Full markdown is fetched through ``fetch``
+after a user explicitly imports a candidate. API keys and page contents are never
+logged by this adapter.
 """
 from __future__ import annotations
 
@@ -23,15 +20,19 @@ from app.research.providers.base import (
     SearchRequest,
 )
 
-_BASE_URL = "https://api.firecrawl.dev/v1"
+_BASE_URL = "https://api.firecrawl.dev/v2"
 
 
 class FirecrawlProvider:
     name = "firecrawl"
 
-    def __init__(self, *, api_key: str | None, timeout_seconds: int) -> None:
+    def __init__(
+        self, *, api_key: str | None, timeout_seconds: int,
+        privacy_mode: str | None = None,
+    ) -> None:
         self._api_key = api_key
         self._timeout = timeout_seconds
+        self._privacy_mode = privacy_mode if privacy_mode in ("anon", "zdr") else None
 
     def available(self) -> bool:
         return bool(self._api_key)
@@ -40,64 +41,119 @@ class FirecrawlProvider:
         if not self._api_key:
             raise ProviderUnavailable("firecrawl api key not configured")
         try:
-            import httpx  # local import; optional dependency
-        except ImportError as exc:  # pragma: no cover — httpx is installed in this app
+            import httpx
+        except ImportError as exc:  # pragma: no cover
             raise ProviderUnavailable("httpx not available") from exc
-        # Authorization header carries the key; it must never be logged.
         return httpx.Client(
             base_url=_BASE_URL,
             timeout=self._timeout,
             headers={"Authorization": f"Bearer {self._api_key}"},
         )
 
-    def search(self, request: SearchRequest) -> SearchOutcome:  # pragma: no cover — network
-        start = time.monotonic()
-        try:
-            with self._client() as client:
-                resp = client.post(
-                    "/search",
-                    json={"query": request.query, "limit": request.max_results},
-                )
-        except Exception as exc:  # noqa: BLE001
-            raise ProviderTimeout("firecrawl search failed") from exc
+    @staticmethod
+    def _raise_for_status(resp, operation: str) -> None:
         if resp.status_code in (402, 429):
             raise CreditExceeded("firecrawl credit/budget limit")
         if resp.status_code >= 400:
-            raise ProviderError(f"firecrawl search status {resp.status_code}")
-        payload = resp.json()
-        candidates: list[SearchCandidate] = []
-        for i, item in enumerate(payload.get("data", []) or []):
-            url = item.get("url")
-            if not url:
-                continue
-            candidates.append(
-                SearchCandidate(
-                    url=url,
-                    title=item.get("title") or url,
-                    snippet=item.get("description"),
-                    rank=i + 1,
-                )
-            )
-        latency = int((time.monotonic() - start) * 1000)
-        return SearchOutcome(candidates=candidates, provider=self.name, latency_ms=latency)
+            raise ProviderError(f"firecrawl {operation} status {resp.status_code}")
 
-    def fetch(self, url: str, *, max_bytes: int) -> FetchOutcome:  # pragma: no cover — network
+    @staticmethod
+    def _payload(resp, operation: str) -> dict:
+        try:
+            payload = resp.json()
+        except (TypeError, ValueError) as exc:
+            raise ProviderError(f"firecrawl {operation} returned invalid json") from exc
+        if not isinstance(payload, dict):
+            raise ProviderError(f"firecrawl {operation} returned invalid payload")
+        return payload
+
+    def search(self, request: SearchRequest) -> SearchOutcome:  # pragma: no cover - network
         start = time.monotonic()
+        body: dict = {
+            "query": request.query,
+            "limit": request.max_results,
+            "sources": [{"type": "web"}],
+            "ignoreInvalidURLs": True,
+        }
+        if request.preferred_domains:
+            body["includeDomains"] = list(request.preferred_domains)
+        if request.excluded_domains:
+            body["excludeDomains"] = list(request.excluded_domains)
+        if request.categories:
+            body["categories"] = [{"type": value} for value in request.categories]
+        if self._privacy_mode:
+            body["privacy"] = self._privacy_mode
         try:
             with self._client() as client:
-                resp = client.post("/scrape", json={"url": url, "formats": ["markdown"]})
-        except Exception as exc:  # noqa: BLE001
+                resp = client.post("/search", json=body)
+        except (ProviderUnavailable, CreditExceeded, ProviderError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - httpx transport variants
+            raise ProviderTimeout("firecrawl search failed") from exc
+        self._raise_for_status(resp, "search")
+        payload = self._payload(resp, "search")
+        data = payload.get("data") or {}
+        if not isinstance(data, dict) or not isinstance(data.get("web", []), list):
+            raise ProviderError("firecrawl search returned invalid data.web")
+
+        candidates: list[SearchCandidate] = []
+        for index, item in enumerate(data.get("web", [])):
+            if not isinstance(item, dict) or not item.get("url"):
+                continue
+            candidates.append(SearchCandidate(
+                url=item["url"],
+                title=item.get("title") or item["url"],
+                snippet=item.get("description"),
+                rank=item.get("position") or index + 1,
+                publisher=item.get("publisher") or item.get("siteName"),
+                published_at=(
+                    item.get("publishedDate") or item.get("publishedTime")
+                    or item.get("date")
+                ),
+                source_category=item.get("category"),
+            ))
+        return SearchOutcome(
+            candidates=candidates,
+            provider=self.name,
+            latency_ms=int((time.monotonic() - start) * 1000),
+            credits_used=payload.get("creditsUsed"),
+            warnings=list(payload.get("warnings") or []),
+        )
+
+    def fetch(self, url: str, *, max_bytes: int) -> FetchOutcome:  # pragma: no cover - network
+        start = time.monotonic()
+        body: dict = {
+            "url": url,
+            "formats": ["markdown"],
+            "onlyMainContent": True,
+            "storeInCache": False,
+            "skipTlsVerification": False,
+            "removeBase64Images": True,
+        }
+        if self._privacy_mode == "zdr":
+            body["zeroDataRetention"] = True
+        elif self._privacy_mode == "anon":
+            body["privacy"] = "anon"
+        try:
+            with self._client() as client:
+                resp = client.post("/scrape", json=body)
+        except (ProviderUnavailable, CreditExceeded, ProviderError):
+            raise
+        except Exception as exc:  # noqa: BLE001 - httpx transport variants
             raise ProviderTimeout("firecrawl scrape failed") from exc
-        if resp.status_code in (402, 429):
-            raise CreditExceeded("firecrawl credit/budget limit")
-        if resp.status_code >= 400:
-            raise ProviderError(f"firecrawl scrape status {resp.status_code}")
-        payload = resp.json().get("data", {}) or {}
-        text = (payload.get("markdown") or payload.get("content") or "")[: max_bytes]
-        meta = payload.get("metadata", {}) or {}
+        self._raise_for_status(resp, "scrape")
+        response_payload = self._payload(resp, "scrape")
+        payload = response_payload.get("data") or {}
+        if not isinstance(payload, dict):
+            raise ProviderError("firecrawl scrape returned invalid data")
+        text = (payload.get("markdown") or payload.get("content") or "")[:max_bytes]
+        if not text.strip():
+            raise ProviderError("firecrawl scrape returned no content")
+        meta = payload.get("metadata") or {}
+        if not isinstance(meta, dict):
+            meta = {}
         final_url = meta.get("sourceURL") or meta.get("url") or url
         data = text.encode("utf-8")
-        latency = int((time.monotonic() - start) * 1000)
         return FetchOutcome(
             text=text,
             final_url=final_url,
@@ -106,5 +162,11 @@ class FirecrawlProvider:
             content_hash=hashlib.sha256(data).hexdigest(),
             provider=self.name,
             redirect_chain=[url, final_url],
-            latency_ms=latency,
+            latency_ms=int((time.monotonic() - start) * 1000),
+            credits_used=response_payload.get("creditsUsed"),
+            title=meta.get("title"),
+            publisher=meta.get("publisher") or meta.get("siteName"),
+            published_at=(
+                meta.get("publishedDate") or meta.get("publishedTime") or meta.get("date")
+            ),
         )

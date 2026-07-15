@@ -360,7 +360,8 @@ def test_item_status_update(client, db, web_enabled):
     item_id = view["items"][0]["item_id"]
     res = client.post(f"/api/v1/market-comparison-items/{item_id}/status",
                       json={"status": "accepted"}, headers=_headers(csrf))
-    assert res.status_code == 200 and res.json()["status"] == "accepted"
+    assert res.status_code == 409
+    assert res.json()["code"] == "demo_comparison_not_acceptable"
 
 
 def test_capability_reflects_market_comparison(client, web_enabled):

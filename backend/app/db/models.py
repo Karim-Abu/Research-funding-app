@@ -218,6 +218,7 @@ class SourceDocument(Base):
     )
     # Display name / original filename — metadata only, never used in a path.
     name: Mapped[str] = mapped_column(String, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # Contract enum: pdf | docx | txt | url
     type: Mapped[str] = mapped_column(String, nullable=False)
     # Contract enum: uploaded | processing | processed | needs_manual_input | failed
@@ -1738,6 +1739,27 @@ class ResearchResult(Base):
     final_url: Mapped[str | None] = mapped_column(String, nullable=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
     snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    publisher: Mapped[str | None] = mapped_column(String, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_category: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Preliminary metadata only; it is not an evidence or correctness decision.
+    source_quality: Mapped[str] = mapped_column(
+        String, nullable=False, default="unassessed"
+    )
+    potential_sections: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Coverage (located text), deterministic support and human content review are
+    # intentionally independent states.
+    coverage_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    support_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    content_review_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="unreviewed"
+    )
     provider_rank: Mapped[int | None] = mapped_column(nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -1789,6 +1811,9 @@ class MarketComparison(Base):
     source_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Once-per-comparison generation guard: null | succeeded | failed | skipped.
     generation_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # fake_demo | model_generated | deterministic; truthful provenance is required
+    # before a comparison can enter the A2 drafting context.
+    generation_kind: Mapped[str | None] = mapped_column(String, nullable=True)
     operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)

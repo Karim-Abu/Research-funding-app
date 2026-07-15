@@ -19,6 +19,7 @@ from app.contracts.research_brief import (
     ResearchQueryPlan,
     ResearchQueryView,
     ResearchPartnerCandidateView,
+    ResearchResultReviewView,
     ResearchResultView,
     ResearchRunResponse,
     ResearchSourceLocation,
@@ -36,6 +37,7 @@ from app.db.models import (
 from app.market_research.planner import MarketTopic, plan_market_queries
 from app.partner_research.planner import QUERY_PURPOSES, PartnerTopic, plan_partner_queries
 from app.partner_research.candidates import to_partner_candidates
+from app.partner_research.eligibility import match_eligibility
 from app.repositories import audit
 from app.research import service
 from app.research.executor import research_executor
@@ -46,7 +48,6 @@ from app.security.search_query_firewall import evaluate_query
 MODULE_PURPOSES = {
     "market_growth": {"market_size"},
     "competition_alternatives": {"competitors_alternatives"},
-    "customer_problem": {"customer_pain"},
     "state_of_the_art": {"state_of_the_art"},
 }
 PARTNER_MODULE = "swiss_research_partners"
@@ -183,6 +184,11 @@ def _validate_required(data: dict) -> None:
         )
     if not data["modules"]:
         raise BriefError("research_brief_incomplete", "Mindestens ein Recherchemodul ist erforderlich.")
+    if "customer_problem" in data["modules"]:
+        raise BriefError(
+            "legacy_research_module",
+            "Das historische Modul Kundenproblem kann angezeigt, aber nicht mehr neu geplant werden.",
+        )
     market_modules = set(data["modules"]) - {PARTNER_MODULE, "state_of_the_art"}
     if market_modules and not data["target_customer_segments"]:
         raise BriefError(
@@ -357,6 +363,7 @@ def _query_view(approval: SearchQueryApproval, task: ResearchTask | None = None)
         planner_purpose=approval.planner_purpose or "",
         query_text=approval.sanitized_query,
         firewall_decision=approval.decision,
+        risk_score=approval.risk_score,
         risk_label=_risk_label(approval.risk_score),
         redaction_summary=list(approval.redaction_summary or []),
         status=approval.status,
@@ -408,10 +415,52 @@ def _brief_terms(brief: ResearchBrief) -> set[str]:
     return {m.group(0).casefold() for m in _WORD.finditer(text)}
 
 
+def expire_superseded_query(
+    db: Session, brief: ResearchBrief, actor_user_id: str, *, module: str,
+    approval_id: str,
+) -> None:
+    old = db.get(SearchQueryApproval, approval_id)
+    if (
+        old is None
+        or old.workspace_id != brief.workspace_id
+        or old.research_brief_id != brief.research_brief_id
+        or old.research_module != module
+    ):
+        raise BriefError(
+            "superseded_query_mismatch",
+            "Die zu ersetzende Query gehört nicht zu diesem Brief und Modul.",
+            status=409,
+        )
+    if old.status in ("pending", "approved"):
+        old.status = "expired"
+        old.decided_at = _now()
+        audit.record(
+            db, workspace_id=brief.workspace_id, actor_user_id=actor_user_id,
+            action="search_query.approval_expired_on_edit",
+            target_type="search_query_approval", target_id=old.approval_id,
+            detail={"raw_query_hash": old.raw_query_hash, "module": module},
+        )
+
+
+def _blocked_query_view(brief: ResearchBrief, module: str, planner_purpose: str, result) -> ResearchQueryView:
+    return ResearchQueryView(
+        approval_id=None,
+        research_brief_id=brief.research_brief_id,
+        module=module,
+        planner_purpose=planner_purpose,
+        query_text=result.sanitized_query,
+        firewall_decision=result.decision,
+        risk_score=result.risk_score,
+        risk_label=_risk_label(result.risk_score),
+        redaction_summary=list(result.redaction_summary or []),
+        status="blocked",
+    )
+
+
 def preview_query(
     db: Session, brief: ResearchBrief, actor_user_id: str, *, module: str,
-    planner_purpose: str, query_text: str, supersedes_approval_id: str | None,
-) -> SearchQueryApproval:
+    planner_purpose: str, query_text: str,
+) -> ResearchQueryView:
     if brief.status != "approved" or module not in (brief.modules or []):
         raise BriefError("research_brief_not_approved", "Keine gültige Brief-Freigabe für dieses Modul.")
     allowed_purposes = (
@@ -436,28 +485,12 @@ def preview_query(
         force_approval=True, apply_project_lexicon=True,
     )
     if outcome.approval is None:
-        raise BriefError("query_blocked", "Die Suchanfrage wurde von der Firewall blockiert.")
-    if supersedes_approval_id:
-        old = db.get(SearchQueryApproval, supersedes_approval_id)
-        if (
-            old is None
-            or old.workspace_id != brief.workspace_id
-            or old.research_brief_id != brief.research_brief_id
-            or old.research_module != module
-        ):
-            raise BriefError(
-                "superseded_query_mismatch",
-                "Die zu ersetzende Query gehört nicht zu diesem Brief und Modul.",
-                status=409,
-            )
-        if old.status in ("pending", "approved"):
-            old.status = "expired"
-            old.decided_at = _now()
+        return _blocked_query_view(brief, module, planner_purpose, outcome.result)
     approval = outcome.approval
     approval.research_brief_id = brief.research_brief_id
     approval.research_module = module
     approval.planner_purpose = planner_purpose
-    return approval
+    return _query_view(approval)
 
 
 def run(
@@ -553,6 +586,49 @@ def _relevance(task: ResearchTask, brief: ResearchBrief | None) -> str:
     return f"Treffer zum freigegebenen Recherchemodul „{labels.get(module, 'Öffentliche Recherche')}“; Snippet und Fundstelle sind fachlich zu prüfen."
 
 
+def _freshness_label(published_at: datetime | None) -> str:
+    if published_at is None:
+        return "nicht verfügbar"
+    value = published_at if published_at.tzinfo else published_at.replace(tzinfo=timezone.utc)
+    age_days = max(0, (_now() - value).days)
+    if age_days < 366:
+        return "unter 1 Jahr"
+    years = age_days // 365
+    return f"ca. {years} Jahr" if years == 1 else f"ca. {years} Jahre"
+
+
+def review_result(
+    db: Session, *, result_id: str, workspace_id: str, actor_user_id: str,
+    decision: str,
+) -> ResearchResultReviewView:
+    result = db.get(ResearchResult, result_id)
+    if result is None or result.workspace_id != workspace_id:
+        raise BriefError("research_result_not_found", "Recherchequelle nicht gefunden.", status=404)
+    if result.status != "imported" or not result.source_document_id:
+        raise BriefError(
+            "research_result_not_imported",
+            "Nur übernommene Quellen können inhaltlich geprüft werden.",
+            status=409,
+        )
+    result.content_review_status = "reviewed"
+    result.support_status = decision
+    if decision == "does_not_support":
+        # Preserve the SourceDocument and audit trail, but exclude it from A2's
+        # imported-result query by changing only the research selection state.
+        result.status = "rejected"
+    audit.record(
+        db, workspace_id=workspace_id, actor_user_id=actor_user_id,
+        action="research_result.content_reviewed",
+        target_type="research_result", target_id=result.result_id,
+        detail={"decision": decision, "source_document_id": result.source_document_id},
+    )
+    return ResearchResultReviewView(
+        result_id=result.result_id, status=result.status,
+        content_review_status=result.content_review_status,
+        support_status=result.support_status,
+    )
+
+
 def workspace(db: Session, project: Project) -> ResearchWorkspace:
     latest_brief = latest(db, project)
     approved = active_approved(db, project)
@@ -607,20 +683,36 @@ def workspace(db: Session, project: Project) -> ResearchWorkspace:
         task = by_task[result.research_task_id]
         url = result.final_url or result.source_url
         partner_candidate = partner_candidate_by_result.get(result.result_id)
+        eligibility = (
+            match_eligibility(partner_candidate.organization, partner_candidate.evidence_url)
+            if partner_candidate else None
+        )
         result_views.append(ResearchResultView(
             result_id=result.result_id, task_id=task.research_task_id,
             module=task.research_module, planner_purpose=task.planner_purpose,
             title=result.title, source_url=result.source_url, final_url=result.final_url,
             domain=urlparse(url).hostname or url, snippet=result.snippet,
+            publisher=result.publisher, published_at=result.published_at,
+            source_category=result.source_category,
+            source_quality=result.source_quality,
+            freshness_label=_freshness_label(result.published_at),
+            potential_sections=list(result.potential_sections or []),
+            coverage_status=result.coverage_status,
+            support_status=result.support_status,
+            content_review_status=result.content_review_status,
             retrieved_at=result.retrieved_at, relevance_reason=_relevance(task, approved),
             status=result.status, execution_mode=task.execution_mode,
             source_document_id=result.source_document_id,
             source_locations=_locations(db, result),
             partner_candidate=(ResearchPartnerCandidateView(
                 organization_or_group=partner_candidate.organization,
-                location=partner_candidate.country_or_region,
+                location=(
+                    "Schweiz" if eligibility and eligibility.status != "needs_human_check"
+                    else partner_candidate.country_or_region
+                ),
                 location_status=(
-                    "verified" if partner_candidate.country_or_region else "unverified"
+                    "verified" if eligibility and eligibility.status != "needs_human_check"
+                    else "unverified"
                 ),
                 expertise_keywords=partner_candidate.expertise_keywords,
                 possible_project_role=partner_candidate.potential_project_role,
@@ -628,6 +720,16 @@ def workspace(db: Session, project: Project) -> ResearchWorkspace:
                     task, brief_by_id.get(task.research_brief_id or "")
                 ),
                 evidence_url=partner_candidate.evidence_url,
+                status=eligibility.status,
+                competence_gap=(
+                    ", ".join(brief_by_id[task.research_brief_id].competence_needs or [])
+                    if task.research_brief_id in brief_by_id else None
+                ),
+                track_record_links=(
+                    [partner_candidate.evidence_url]
+                    if task.planner_purpose == "research_group" else []
+                ),
+                eligibility_reference_date=eligibility.reference_date,
             ) if partner_candidate else None),
         ))
     return ResearchWorkspace(

@@ -94,7 +94,7 @@ describe("PublicResearchPanel", () => {
     expect(screen.queryByRole("button")).toBeNull()
   })
 
-  it("shows all five modules in a suggested draft", async () => {
+  it("shows the four active modules in a suggested draft", async () => {
     let workspace = emptyWorkspace()
     const draft = {
       ...brief,
@@ -116,7 +116,7 @@ describe("PublicResearchPanel", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Recherchebrief vorschlagen/ }))
     expect(await screen.findByTestId("research-brief-form")).toBeInTheDocument()
     for (const label of [
-      "Markt & Wachstum", "Wettbewerb & Alternativen", "Kundenproblem & Bedarf",
+      "Markt & Wachstum", "Wettbewerb & Alternativen",
       "State of the Art", "Mögliche Schweizer Forschungspartner",
     ]) expect(screen.getByText(label)).toBeInTheDocument()
   })
@@ -146,8 +146,8 @@ describe("PublicResearchPanel", () => {
     expect(screen.getByRole("link", { name: "https://research.example.edu/report" })).toHaveAttribute(
       "href", "https://research.example.edu/report",
     )
-    expect(screen.getByText(/Quellenkandidat – fachlich prüfen/)).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
+    expect(screen.getByText("Kandidat")).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: /Übernehmen und vollständig abrufen/ }))
     expect(await screen.findByText("Übernommen")).toBeInTheDocument()
     expect(screen.getByText("Fundstelle aus abgerufener Seite")).toBeInTheDocument()
   })
@@ -166,7 +166,7 @@ describe("PublicResearchPanel", () => {
       "Demo-Recherche – keine echten Webquellen",
     )
     expect(screen.getByText("Demo")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Übernehmen" })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Übernehmen und vollständig abrufen/ })).toBeNull()
   })
 
   it("keeps historical query status without blocking a new approved brief", async () => {
@@ -206,7 +206,7 @@ describe("PublicResearchPanel", () => {
     render(<PublicResearchPanel projectId={PROJECT} />)
     fireEvent.click(await screen.findByRole("button", { name: "Mögliche Schweizer Forschungspartner" }))
     expect((await screen.findAllByText("Applied Research Lab")).length).toBeGreaterThanOrEqual(2)
-    expect(screen.getByText(/Kandidat – keine Förderberechtigung bestätigt/)).toBeInTheDocument()
+    expect(screen.getByText(/Kein belastbarer Nachweis – menschlich prüfen/)).toBeInTheDocument()
     expect(screen.getByText("Standort").nextSibling).toHaveTextContent("unbestätigt")
     expect(screen.getByText(/anomaly detection, applied machine learning/)).toBeInTheDocument()
   })

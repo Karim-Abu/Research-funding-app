@@ -32,15 +32,16 @@ export interface ResearchBriefDto extends ResearchBriefInput {
 }
 
 export interface ResearchQueryDto {
-  approval_id: string
+  approval_id?: string | null
   research_brief_id: string
   module: ResearchModule
   planner_purpose: string
   query_text: string
   firewall_decision: string
+  risk_score?: number
   risk_label: "low" | "medium" | "high"
   redaction_summary: Array<{ category?: string; label?: string; count?: number }>
-  status: "pending" | "approved" | "rejected" | "expired" | "used"
+  status: "pending" | "approved" | "rejected" | "expired" | "used" | "blocked"
   task_id?: string | null
   task_status?: string | null
   execution_mode?: "fake_demo" | "live" | null
@@ -56,6 +57,15 @@ export interface ResearchResultDto {
   final_url?: string | null
   domain: string
   snippet?: string | null
+  publisher?: string | null
+  published_at?: string | null
+  source_category?: string | null
+  source_quality?: string
+  freshness_label?: string
+  potential_sections?: string[]
+  coverage_status?: string
+  support_status?: string
+  content_review_status?: string
   retrieved_at: string
   relevance_reason: string
   status: "candidate" | "imported" | "rejected" | "failed"
@@ -76,7 +86,10 @@ export interface ResearchResultDto {
     possible_project_role: string
     why_potentially_relevant: string
     evidence_url: string
-    status: "candidate_not_eligibility_confirmed"
+    status: "eligibility_verified" | "likely_eligible" | "needs_human_check" | "candidate_not_eligibility_confirmed"
+    competence_gap?: string | null
+    track_record_links?: string[]
+    eligibility_reference_date?: string | null
   } | null
 }
 
@@ -158,6 +171,15 @@ export function previewBriefQuery(
       supersedes_approval_id: query.approval_id,
     }),
   }).then((response) => checked<ResearchQueryDto>(response))
+}
+
+export function reviewResearchResult(
+  resultId: string,
+  decision: "supports" | "partially_supports" | "does_not_support"
+): Promise<{ result_id: string; status: "imported" | "rejected"; content_review_status: string; support_status: string }> {
+  return fetch(`/api/research-results/${encodeURIComponent(resultId)}/review`, {
+    method: "POST", headers: headers(), body: JSON.stringify({ decision }),
+  }).then((response) => checked(response))
 }
 
 export function runResearchBrief(

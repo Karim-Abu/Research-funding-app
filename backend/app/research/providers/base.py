@@ -26,6 +26,8 @@ class SearchRequest:
     query: str
     max_results: int
     preferred_domains: tuple[str, ...] = ()
+    excluded_domains: tuple[str, ...] = ()
+    categories: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -34,6 +36,9 @@ class SearchCandidate:
     title: str
     snippet: str | None = None
     rank: int | None = None
+    publisher: str | None = None
+    published_at: str | None = None
+    source_category: str | None = None
 
 
 @dataclass(frozen=True)
@@ -56,6 +61,9 @@ class FetchOutcome:
     redirect_chain: list[str] = field(default_factory=list)
     latency_ms: int = 0
     credits_used: float | None = None
+    title: str | None = None
+    publisher: str | None = None
+    published_at: str | None = None
 
 
 @runtime_checkable

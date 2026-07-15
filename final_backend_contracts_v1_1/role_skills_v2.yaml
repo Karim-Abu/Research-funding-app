@@ -126,6 +126,10 @@ skills:
     role_id: RESEARCH_EVIDENCE_SYNTHESIZER
     version: research_public_evidence_synthesis_skill_v2
     prompt_asset: skill_prompts/research_public_evidence_synthesis_skill_v2.md
+  - skill_id: research.market_comparison
+    role_id: RESEARCH_EVIDENCE_SYNTHESIZER
+    version: market_comparison_v2
+    prompt_asset: prompts/market_comparison_v2.md
   - skill_id: evidence.claim_support_verification
     role_id: EVIDENCE_SUPPORT_VERIFIER
     version: evidence_claim_support_verification_skill_v2
@@ -144,3 +148,4 @@ profile_defaults:
   A3.risk_review_readiness: a3.critical_review
   A3.innovation_challenge: a3.critical_review
   A3.final_quality_review: a3.critical_review
+  MC.market_comparison: research.market_comparison

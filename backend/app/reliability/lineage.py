@@ -224,13 +224,14 @@ def _market_quotes(db: Session, run: AnalysisRun):
         select(MarketComparison).where(MarketComparison.project_id == run.project_id)
         .order_by(MarketComparison.created_at.desc())
     )
-    if comparison is None:
+    if comparison is None or comparison.generation_kind == "fake_demo":
         return []
     pairs: list[tuple[MarketComparisonItem, str]] = []
     items = db.scalars(
         select(MarketComparisonItem).where(
             MarketComparisonItem.comparison_id == comparison.comparison_id,
             MarketComparisonItem.confidence_label == "source_backed",
+            MarketComparisonItem.status == "accepted",
         )
     )
     for item in items:

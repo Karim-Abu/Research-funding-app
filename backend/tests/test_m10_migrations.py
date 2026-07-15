@@ -24,7 +24,7 @@ _KEY_TABLES = {
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
 }
-_HEAD = "c9e5a7b1d3f4"  # ehrliches rollenbasiertes Live-Model-Routing.
+_HEAD = "e4a7c2f9b6d1"  # nachvollziehbare Firecrawl-Live-Recherche.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -82,6 +82,12 @@ _LIVE_INVOCATION_COLUMNS = {
 
 _LIVE_RUN_COLUMNS = {"live_execution_status", "live_status_reason"}
 
+_LIVE_RESEARCH_RESULT_COLUMNS = {
+    "publisher", "published_at", "source_category", "source_quality",
+    "potential_sections", "coverage_status", "support_status",
+    "content_review_status",
+}
+
 
 def _head_version(db_path: Path) -> str | None:
     con = sqlite3.connect(db_path)
@@ -100,6 +106,9 @@ def test_fresh_db_upgrade_head(tmp_path):
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
+    assert "source_url" in _columns(db, "source_documents")
+    assert _LIVE_RESEARCH_RESULT_COLUMNS <= _columns(db, "research_results")
+    assert "generation_kind" in _columns(db, "market_comparisons")
     assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
     assert {
         "requested_model_id", "actual_model_id", "retry_index",
@@ -223,10 +232,12 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
-    assert not (_LIVE_INVOCATION_COLUMNS & _columns(db, "agent_invocations"))
-    assert not (_LIVE_RUN_COLUMNS & _columns(db, "analysis_runs"))
-    assert "agent_invocation_attempts" not in _tables(db)
-    assert "provider_preflight_results" not in _tables(db)
+    assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
+    assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
+    assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
+    assert "source_url" not in _columns(db, "source_documents")
+    assert not (_LIVE_RESEARCH_RESULT_COLUMNS & _columns(db, "research_results"))
+    assert "generation_kind" not in _columns(db, "market_comparisons")
     assert "actual_model_id" in _columns(db, "agent_invocations")
     assert "research_briefs" in _tables(db)
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
@@ -272,6 +283,9 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
+    assert "source_url" in _columns(db, "source_documents")
+    assert _LIVE_RESEARCH_RESULT_COLUMNS <= _columns(db, "research_results")
+    assert "generation_kind" in _columns(db, "market_comparisons")
     assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
     assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")

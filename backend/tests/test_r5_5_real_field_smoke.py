@@ -21,7 +21,7 @@ ABSTRACT = "INTRO.APP.ABSTRACT"
 EXEC = "INTRO.APP.EXECUTIVE_SUMMARY"
 CANARY_TEXT = "R5_5_CANARY_ROHANTWORT_7Q"
 CANARY_KEY = "R5_5-CANARY-KEY-sk-000"
-ABSTRACT_TEXT = "Öffentliche synthetische Kurzfassung ohne vertrauliche Angaben."
+ABSTRACT_TEXT = "Öffentlicher synthetischer Projektkontext."
 
 
 @pytest.fixture
@@ -115,7 +115,8 @@ def test_field_case_schema_failure_still_meters(db):
     result = run_field_case(db, "anthropic", EXEC, adapter=FakeProvider(mode="malformed"))
     r = result["report"]
     assert r["status"] == "schema_failed"
-    assert r["usage_record_count"] == 1  # gemetert trotz Schema-Failure
+    # Ein UsageRecord je Schema-Versuch (max_retries=1 => zwei Versuche).
+    assert r["usage_record_count"] == 2
     assert r["usage_record_id"]  # aus dem UsageRecord (nicht inv — nur bei Erfolg gekoppelt)
     assert r["total_tokens"] > 0
     assert r["human_review_required"] is None

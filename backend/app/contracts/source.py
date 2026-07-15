@@ -28,6 +28,7 @@ class SourceDocument(BaseModel):
     # SOURCE_PDF_ENCRYPTED | SOURCE_NO_TEXT_LAYER | SOURCE_PARSE_FAILED —
     # erlaubt der UI ursachenspezifische Handlungshinweise ohne Textvergleich.
     error_code: str | None = None
+    source_url: str | None = None
 
 
 class TextSourceCreate(BaseModel):
@@ -42,3 +43,5 @@ class UrlSourceCreate(BaseModel):
     # Contract: const true — the user must explicitly confirm the URL is public.
     user_confirmed_public: Literal[True]
     name: str | None = None
+    # User-pasted public page text. When absent, no server-side fetch is attempted.
+    manual_content: str | None = None

@@ -60,12 +60,13 @@ def add_source_backed_market_item(db, run, *, name: str, quote: str) -> str:
         comparison_id=comparison_id, project_id=run.project_id,
         workspace_id=run.workspace_id, status="ready_for_review", research_gaps=[],
         warnings=[], comparison_version=1, created_by="user-anna",
+        generation_kind="model_generated",
     ))
     item_id = "item-" + uuid.uuid4().hex[:10]
     db.add(MarketComparisonItem(
         item_id=item_id, comparison_id=comparison_id, workspace_id=run.workspace_id,
         name=name, name_normalized=name.lower(), category="competitor",
-        confidence_label="source_backed", status="proposed", source_document_ids=[],
+        confidence_label="source_backed", status="accepted", source_document_ids=[],
         verified_quote_refs=[{"quote": quote, "source_document_id": "d",
                               "source_version_id": "v", "verification_method": "x"}],
     ))

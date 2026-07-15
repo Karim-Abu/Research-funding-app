@@ -120,6 +120,8 @@ def _build_resolver_for(provider: str, adapters: dict[str, object] | None = None
             OpenAIProvider() if provider == "openai" else AnthropicProvider()
         )
         proxy = _CountingAdapter(inner, limit=limit, adapter_name=target_route)
+        if injected is not None:
+            proxy._hermetic_test_model_id = "fake"
         proxies[field_id] = proxy
         return lambda route: proxy if route.provider == target_route else None
 

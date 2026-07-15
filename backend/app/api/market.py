@@ -138,6 +138,13 @@ def update_item_status(
             status=404, code="not_found", title="Resource not found",
             detail="Comparison item not found.",
         )
-    service.update_item_status(db, item, payload.status, payload.support_status)
+    try:
+        service.update_item_status(db, item, payload.status, payload.support_status)
+    except service.ComparisonBlocked as exc:
+        db.rollback()
+        raise ProblemException(
+            status=exc.status, code=exc.code, title="Comparison update refused",
+            detail=exc.detail,
+        ) from exc
     db.commit()
     return service.item_to_contract(item)

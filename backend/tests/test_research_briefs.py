@@ -87,14 +87,14 @@ def db():
         session.close()
 
 
-def test_all_five_modules_plan_bound_queries_and_reload_state(client, db, web_fake):
+def test_all_four_active_modules_plan_bound_queries_and_reload_state(client, db, web_fake):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _project(client, csrf)
     brief = approve_research_brief(
         client, csrf, project_id,
         modules=[
-            "market_growth", "competition_alternatives", "customer_problem",
-            "state_of_the_art", "swiss_research_partners",
+            "market_growth", "competition_alternatives", "state_of_the_art",
+            "swiss_research_partners",
         ],
         competence_needs=["applied machine learning", "industrial sensing"],
     )
@@ -186,7 +186,7 @@ def test_partner_result_is_advisory_and_location_is_not_inferred(client, web_fak
     assert all(candidate["location"] is None for candidate in candidates)
     assert all(candidate["location_status"] == "unverified" for candidate in candidates)
     assert all(
-        candidate["status"] == "candidate_not_eligibility_confirmed"
+        candidate["status"] == "needs_human_check"
         for candidate in candidates
     )
 

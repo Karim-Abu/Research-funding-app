@@ -31,6 +31,7 @@ export interface SourceDocumentDto {
   /** Maschinenlesbare Ursache bei failed/needs_manual_input, z. B.
    *  SOURCE_PDF_ENCRYPTED | SOURCE_NO_TEXT_LAYER | SOURCE_PARSE_FAILED. */
   error_code?: string | null
+  source_url?: string | null
 }
 
 // User-safe German copy per status (never exposes internals).
@@ -246,7 +247,8 @@ export async function createUrlSource(
   projectId: string,
   url: string,
   name: string | null,
-  classification: DataClassification
+  classification: DataClassification,
+  manualContent?: string
 ): Promise<SourceDocumentDto> {
   const res = await request(
     `/api/projects/${encodeURIComponent(projectId)}/sources/url`,
@@ -262,6 +264,7 @@ export async function createUrlSource(
         name,
         data_classification: classification,
         user_confirmed_public: true,
+        manual_content: manualContent,
       }),
     }
   )

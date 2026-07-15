@@ -8,6 +8,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { Textarea } from "@/components/ui/textarea"
 import { flatToPrivacyClass, isExternalBlocked } from "@/lib/data-class"
 import { type QueryCandidateDto } from "@/lib/market-research"
 import {
@@ -16,6 +17,7 @@ import {
   getResearchWorkspace,
   planResearchQueries,
   previewBriefQuery,
+  reviewResearchResult,
   runResearchBrief,
   saveResearchBrief,
   suggestResearchBrief,
@@ -26,9 +28,23 @@ import {
   type ResearchWorkspaceDto,
 } from "@/lib/research-brief"
 import { discardResearchResult, importResearchResult } from "@/lib/research"
+import { createUrlSource } from "@/lib/sources"
+import type { DataClassification } from "@/lib/data-classification"
 import type { DataClass } from "@/lib/types"
 
-const MODULES = Object.keys(RESEARCH_MODULE_LABELS) as ResearchModule[]
+const MODULES: ResearchModule[] = [
+  "market_growth",
+  "competition_alternatives",
+  "state_of_the_art",
+  "swiss_research_partners",
+]
+const PUBLIC_SOURCE_CLASSIFICATION: DataClassification = {
+  sensitivity: "public",
+  origin: "public_source",
+  processing_mode: "deterministic_only",
+  web_research_mode: "validated_public",
+  nda_applies: false,
+}
 
 function formOf(brief: ResearchBriefDto): ResearchBriefInput {
   return {
@@ -37,7 +53,7 @@ function formOf(brief: ResearchBriefDto): ResearchBriefInput {
     target_customer_segments: [...brief.target_customer_segments],
     region: brief.region,
     competence_needs: [...brief.competence_needs],
-    modules: [...brief.modules],
+    modules: brief.modules.filter((module) => MODULES.includes(module)),
   }
 }
 
@@ -51,6 +67,7 @@ function approvalsOf(rows: ResearchQueryDto[]): ApprovalQuery[] {
     decision: row.status,
     firewall_decision: row.firewall_decision,
     risk_label: row.risk_label,
+    risk_score: row.risk_score ?? 0,
     redaction_summary: row.redaction_summary,
   }))
 }
@@ -72,6 +89,9 @@ export function PublicResearchPanel({
   const [editingApproved, setEditingApproved] = React.useState(false)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
+  const [manualUrl, setManualUrl] = React.useState("")
+  const [manualTitle, setManualTitle] = React.useState("")
+  const [manualContent, setManualContent] = React.useState("")
 
   const refresh = React.useCallback(async () => {
     const next = await getResearchWorkspace(projectId)
@@ -182,7 +202,7 @@ export function PublicResearchPanel({
       {approved && (
         <div className="mt-5">
           <div className="flex gap-1 overflow-x-auto pb-2" aria-label="Recherchemodule">
-            {approved.modules.map((module) => <Button key={module} size="xs" variant={activeModule === module ? "default" : "outline"} onClick={() => setActiveModule(module)}>{RESEARCH_MODULE_LABELS[module]}</Button>)}
+            {approved.modules.filter((module) => MODULES.includes(module)).map((module) => <Button key={module} size="xs" variant={activeModule === module ? "default" : "outline"} onClick={() => setActiveModule(module)}>{RESEARCH_MODULE_LABELS[module]}</Button>)}
           </div>
 
           {visibleQueries.length > 0 && <div className="mt-3">
@@ -194,7 +214,18 @@ export function PublicResearchPanel({
                 const original = queryRows.find((row) => row.approval_id === query.approval_id)
                 if (!original) throw new Error("Query-Provenienz fehlt.")
                 const next = await previewBriefQuery(approved.research_brief_id, { ...original, query_text: editedText })
-                return { query_text: next.query_text, purpose: next.planner_purpose, public_safe: next.firewall_decision !== "block", approval_required: true, approval_id: next.approval_id }
+                return {
+                  query_text: next.query_text,
+                  purpose: next.planner_purpose,
+                  public_safe: next.firewall_decision !== "block",
+                  approval_required: true,
+                  approval_id: next.approval_id ?? undefined,
+                  blocked_reason: next.firewall_decision === "block" ? "query_blocked" : undefined,
+                  firewall_decision: next.firewall_decision,
+                  risk_label: next.risk_label,
+                  risk_score: next.risk_score,
+                  redaction_summary: next.redaction_summary,
+                } as ApprovalQuery
               }}
             />
             <Button className="mt-2" disabled={busy || approvedIds(visibleQueries).length === 0} onClick={() => void act(() => runResearchBrief(approved.research_brief_id, approvedIds(visibleQueries)))}>Freigegebene Queries ausführen</Button>
@@ -208,25 +239,52 @@ export function PublicResearchPanel({
           <div className="mt-4 space-y-3" data-testid="research-results">
             {visibleResults.length === 0 && <p className="text-sm text-muted-foreground">Noch keine Resultate für dieses Modul.</p>}
             {visibleResults.map((result) => <article key={result.result_id} className="rounded border p-3">
-              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="font-medium">{result.title}</h4><a href={result.final_url ?? result.source_url} target="_blank" rel="noreferrer" className="break-all text-xs text-primary hover:underline">{result.final_url ?? result.source_url}</a><p className="text-xs text-muted-foreground">{result.domain} · abgerufen {new Date(result.retrieved_at).toLocaleDateString("de-CH")}</p></div><Badge variant="outline">{result.execution_mode === "fake_demo" ? "Demo" : result.status === "imported" ? "Übernommen" : result.status === "rejected" ? "Verworfen" : "Quellenkandidat – fachlich prüfen"}</Badge></div>
+              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="font-medium">{result.title}</h4><a href={result.final_url ?? result.source_url} target="_blank" rel="noreferrer" className="break-all text-xs text-primary hover:underline">{result.final_url ?? result.source_url}</a><p className="text-xs text-muted-foreground">{result.publisher ?? result.domain} · {result.published_at ? new Date(result.published_at).toLocaleDateString("de-CH") : "Datum nicht verfügbar"} · Aktualität: {result.freshness_label ?? "unbekannt"}</p></div><Badge variant="outline">{result.execution_mode === "fake_demo" ? "Demo" : result.status === "imported" && result.content_review_status === "reviewed" ? "Inhaltlich geprüft" : result.status === "imported" ? "Übernommen" : result.status === "rejected" ? "Verworfen" : "Kandidat"}</Badge></div>
               {result.snippet && <p className="mt-2 text-sm">{result.snippet}</p>}
               <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>
+              <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
+                <div><dt className="font-medium">Potentieller Abschnitt</dt><dd>{(result.potential_sections ?? []).join(", ") || "noch offen"}</dd></div>
+                <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{(result.source_quality ?? "unbewertet").replaceAll("_", " ")}</dd></div>
+                <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{!result.coverage_status || result.coverage_status === "not_checked" ? "nicht geprüft" : result.coverage_status}</dd></div>
+                <div><dt className="font-medium">Inhaltliche Stützung</dt><dd>{supportLabel(result.support_status ?? "not_checked")}</dd></div>
+              </dl>
               {result.partner_candidate && <dl className="mt-2 grid gap-1 rounded bg-muted p-2 text-xs">
                 <div><dt className="font-medium">Organisation/Forschungsgruppe</dt><dd>{result.partner_candidate.organization_or_group}</dd></div>
                 <div><dt className="font-medium">Standort</dt><dd>{result.partner_candidate.location ?? "unbestätigt"}</dd></div>
                 <div><dt className="font-medium">Gesuchte Kompetenz</dt><dd>{result.partner_candidate.expertise_keywords.join(", ") || "nicht angegeben"}</dd></div>
                 <div><dt className="font-medium">Mögliche Projektrolle</dt><dd>{result.partner_candidate.possible_project_role}</dd></div>
                 <div><dt className="font-medium">Warum potenziell passend</dt><dd>{result.partner_candidate.why_potentially_relevant}</dd></div>
-                <div><dt className="font-medium">Status</dt><dd>Kandidat – keine Förderberechtigung bestätigt. Keine Kontaktaufnahme.</dd></div>
+                <div><dt className="font-medium">Eligibility-Referenz</dt><dd>{eligibilityLabel(result.partner_candidate.status)}{result.partner_candidate.eligibility_reference_date ? ` (Stand ${result.partner_candidate.eligibility_reference_date})` : ""}</dd></div>
+                <div><dt className="font-medium">Kompetenzlücke</dt><dd>{result.partner_candidate.competence_gap ?? "menschlich zu konkretisieren"}</dd></div>
+                <div><dt className="font-medium">Track Record</dt><dd>{(result.partner_candidate.track_record_links ?? []).length ? (result.partner_candidate.track_record_links ?? []).map((link) => <a key={link} href={link} target="_blank" rel="noreferrer" className="block break-all text-primary hover:underline">{link}</a>) : "noch nicht separat belegt"}</dd></div>
+                <div><dt className="font-medium">Grenze</dt><dd>Keine Aussage zu Verfügbarkeit oder Interesse. Endgültige Beitragsberechtigung menschlich prüfen.</dd></div>
               </dl>}
               {result.source_locations.map((location, index) => <details key={`${location.source_version_id}-${index}`} className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Fundstelle aus abgerufener Seite</summary><p className="mt-1 whitespace-pre-wrap rounded bg-muted p-2">{location.excerpt}</p><p className="text-muted-foreground">Fundstelle exakt abgerufen – fachliche Stützung nicht bestätigt.</p></details>)}
-              <div className="mt-3 flex gap-2"><Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>{result.status === "candidate" && result.execution_mode !== "fake_demo" && <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen</Button>}{result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}</div>
+              <div className="mt-3 flex flex-wrap gap-2"><Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>{result.status === "candidate" && result.execution_mode !== "fake_demo" && <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und vollständig abrufen</Button>}{result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}{result.status === "imported" && <><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports"))}>Stützt inhaltlich</Button><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "partially_supports"))}>Teilweise</Button><Button size="xs" variant="ghost" onClick={() => void act(() => reviewResearchResult(result.result_id, "does_not_support"))}>Stützt nicht</Button></>}</div>
+              <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Technische Details</summary><p>Ausführungsmodus: {result.execution_mode ?? "unbekannt"} · Task-ID: {result.task_id}</p></details>
             </article>)}
           </div>
+
+          {(workspace?.provider_mode === "unavailable" || error) && <div className="mt-4 rounded border p-3" data-testid="manual-research-fallback">
+            <h4 className="text-sm font-medium">Manueller Quellenimport</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Bei Netz- oder Recherchedienstfehlern: öffentliche URL und selbst kopierten Seiteninhalt einfügen. Der Server ruft die URL nicht ab. Alternativ steht der bestehende PDF-Upload auf dieser Seite zur Verfügung.</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-2"><BriefField label="Öffentliche HTTPS-URL" value={manualUrl} onChange={setManualUrl} disabled={busy} /><BriefField label="Titel" value={manualTitle} onChange={setManualTitle} disabled={busy} /></div>
+            <Label className="mt-2 block" htmlFor="manual-research-content">Kopierter Seiteninhalt</Label>
+            <Textarea id="manual-research-content" value={manualContent} disabled={busy} onChange={(event) => setManualContent(event.target.value)} rows={6} />
+            <Button className="mt-2" size="sm" variant="outline" disabled={busy || !manualUrl.trim() || !manualContent.trim()} onClick={() => void act(async () => { await createUrlSource(projectId, manualUrl, manualTitle || null, PUBLIC_SOURCE_CLASSIFICATION, manualContent); setManualUrl(""); setManualTitle(""); setManualContent(""); onImported?.() })}>Manuell als Quelle übernehmen</Button>
+          </div>}
         </div>
       )}
     </section>
   )
+}
+
+function supportLabel(value: string): string {
+  return ({ not_checked: "nicht geprüft", supports: "stützt", partially_supports: "stützt teilweise", does_not_support: "stützt nicht" } as Record<string, string>)[value] ?? value
+}
+
+function eligibilityLabel(value: string): string {
+  return ({ eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert", likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt", needs_human_check: "Kein belastbarer Nachweis – menschlich prüfen", candidate_not_eligibility_confirmed: "Kein belastbarer Nachweis – menschlich prüfen" } as Record<string, string>)[value] ?? "Kein belastbarer Nachweis – menschlich prüfen"
 }
 
 function split(value: string): string[] {

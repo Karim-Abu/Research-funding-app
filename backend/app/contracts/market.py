@@ -57,6 +57,7 @@ class MarketComparison(BaseModel):
     status: ComparisonStatus
     comparison_version: int
     generation_status: str | None = None
+    generation_kind: Literal["fake_demo", "model_generated", "rule_template"] | None = None
     research_gaps: list[str] = []
     warnings: list[str] = []
     item_count: int = 0
