@@ -196,6 +196,14 @@ def _run(db: Session, task: ResearchTask, project: Project, resolver) -> str:
         context_text=context_text,
         context_meta={"research_task_id": task.research_task_id,
                       "imported_version_count": len(version_ids)},
+        skill_id="a1.public_competence_research",
+        input_artifact_refs=(
+            {
+                "kind": "imported_public_research",
+                "research_task_id": task.research_task_id,
+                "source_version_ids": version_ids,
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver, registry=registry)
 

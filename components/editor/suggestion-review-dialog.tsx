@@ -24,6 +24,8 @@ const WARNING_LABELS: Record<string, string> = {
     "Der Vorschlag enthält Platzhalter für fehlende Angaben — bitte vor der Übernahme prüfen.",
   based_on_unconfirmed_facts:
     "Der Vorschlag stützt sich teilweise auf noch nicht bestätigte (vorgeschlagene) Fakten.",
+  application_language_needs_review:
+    "Die Antragssprache wurde aus dem vorhandenen Text abgeleitet. Bitte vor der Übernahme prüfen.",
 }
 
 // C2 — Badge-Text je Segmentart: die Klassifikation ist nie nur Farbe (a11y).

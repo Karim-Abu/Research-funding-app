@@ -10,6 +10,7 @@ from functools import lru_cache
 from pathlib import Path
 
 _PROMPT_DIR = Path(__file__).parent / "prompts"
+_AGENT_DIR = Path(__file__).parent
 
 
 def _parse_prompt(path: Path) -> tuple[str | None, str | None, str]:
@@ -56,3 +57,32 @@ def prompt_version_for(profile_id: str) -> str | None:
 
 def prompt_instructions_for(profile_id: str) -> str | None:
     return prompt_instructions().get(profile_id)
+
+
+@lru_cache
+def _contract_asset_body(relative_path: str) -> str:
+    """Read a role/skill asset without ever treating source data as prompt text."""
+    path = _AGENT_DIR / relative_path
+    _pid, _version, body = _parse_prompt(path)
+    return body
+
+
+def role_skill_instructions_for(profile_id: str, skill_id: str | None = None) -> str | None:
+    """Compose the versioned base role and the selected versioned skill.
+
+    The legacy profile prompt remains the compatibility fallback.  This keeps the
+    current Gateway as the sole prompt boundary while making the professional
+    contract explicit and independently versioned.
+    """
+    from app.agents.role_skills import RoleSkillRegistryError, get_role_skill_registry
+
+    try:
+        resolved = get_role_skill_registry().resolve(profile_id, skill_id)
+    except RoleSkillRegistryError:
+        return None
+    return "\n\n".join(
+        (
+            _contract_asset_body(resolved.role.prompt_asset),
+            _contract_asset_body(resolved.skill.prompt_asset),
+        )
+    )

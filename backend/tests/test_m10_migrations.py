@@ -2,8 +2,8 @@
 
 Runs the REAL Alembic migrations (subprocess `python -m alembic`) against a throwaway
 temp SQLite DB — distinct from the ``Base.metadata.create_all`` test DB used elsewhere —
-so a fresh production-style DB is exercised. Covers a fresh upgrade, an existing-DB no-op
-upgrade + row-preservation hardening check (M10 adds NO migration), and a latest-migration
+so a fresh production-style DB is exercised. Covers a fresh upgrade, an existing at-head
+no-op upgrade + row-preservation hardening check, and a latest-migration
 down/up roundtrip. Inspected with stdlib ``sqlite3`` to stay independent of app settings.
 """
 from __future__ import annotations
@@ -24,7 +24,7 @@ _KEY_TABLES = {
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
 }
-_HEAD = "a7e3c9f1b5d2"  # actual_model_id auf agent_invocations (Ebene E, Live-Readiness).
+_HEAD = "b8f4d6a2c9e1"  # versionierte Rollen-/Skill-Metadaten auf agent_invocations.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -69,6 +69,13 @@ _FINDING_V2_COLUMNS = {
 # EVAL.1 — die additiven Kostensemantik-Spalten der Head-Migration.
 _USAGE_COST_COLUMNS = {"cost_status", "price_version"}
 
+# v2-Vertragsmetadaten sind additiv und enthalten ausschliesslich sichere IDs,
+# Hashes und Zählwerte (nie Prompt-, Query- oder Entwurfstext).
+_ROLE_SKILL_COLUMNS = {
+    "role_id", "role_version", "skill_id", "skill_version",
+    "contract_version", "input_artifact_refs",
+}
+
 
 def _head_version(db_path: Path) -> str | None:
     con = sqlite3.connect(db_path)
@@ -84,6 +91,7 @@ def test_fresh_db_upgrade_head(tmp_path):
     result = _alembic(db, "upgrade", "head")
     assert result.returncode == 0, result.stderr
     assert _head_version(db) == _HEAD
+    assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
     missing = _KEY_TABLES - _tables(db)
     assert not missing, f"missing tables after fresh upgrade: {missing}"
     # App connectivity smoke: the migrated DB is a valid, queryable schema.
@@ -95,8 +103,7 @@ def test_fresh_db_upgrade_head(tmp_path):
 
 
 def test_existing_db_upgrade_is_noop_and_preserves_data(tmp_path):
-    """Hardening check (NOT a full historical production migration test): M10 adds no
-    migration, so upgrading an at-head DB is a no-op that must preserve existing rows."""
+    """An at-head upgrade is a no-op and must preserve existing rows."""
     db = tmp_path / "existing.db"
     assert _alembic(db, "upgrade", "head").returncode == 0
     con = sqlite3.connect(db)
@@ -198,11 +205,12 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive Ebene-E-Spalte ``actual_model_id`` auf
+    # Down one entfernt nur die additive v2-Vertragsebene auf
     # agent_invocations. Alle übrigen Strukturen (inkl. Recherchebrief- und
     # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
-    assert "actual_model_id" not in _columns(db, "agent_invocations")
+    assert not (_ROLE_SKILL_COLUMNS & _columns(db, "agent_invocations"))
+    assert "actual_model_id" in _columns(db, "agent_invocations")
     assert "research_briefs" in _tables(db)
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
         db, "research_tasks"
@@ -244,6 +252,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     )
     assert _alembic(db, "upgrade", "head").returncode == 0
     assert _head_version(db) == _HEAD
+    assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
     assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)

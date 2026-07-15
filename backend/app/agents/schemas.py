@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
 
 # Shared classification type (data_policy classification_dimensions).
 Sensitivity = Literal["public", "internal", "confidential"]
@@ -508,6 +508,128 @@ class MarketComparisonResult(BaseModel):
     warnings: list[str] = []
 
 
+# --- Versioned role/skill contracts (v2, additive) -------------------------
+
+
+class FactEvidenceRecordV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    fact_id: str
+    fact_text: str
+    fact_type: str
+    provenance_type: Literal["source_fragment", "versioned_user_input", "external_source"]
+    source_fragment_id: str | None = None
+    quote: str | None = None
+    confidence: Literal["high", "medium", "low"]
+
+
+class FactEvidenceAnalysisResultV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    facts: list[FactEvidenceRecordV2]
+    applicant_claims: list[FactEvidenceRecordV2] = []
+    external_evidence_claims: list[FactEvidenceRecordV2] = []
+    open_questions: list[str] = []
+    conflicts: list[str] = []
+    pii_redaction_status: Literal["not_required", "applied", "requires_human_review"]
+
+
+class MissingInputV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    label: str
+    reason: str
+
+
+class ProposalSectionSuggestionV2(BaseModel):
+    """Normalized A2 output contract; persistence still projects to DraftSuggestion."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    field_id: str
+    section_id: str | None = None
+    proposed_text: str
+    character_count: int = Field(ge=0)
+    character_limit: int = Field(gt=0)
+    change_summary: list[str] = []
+    preserved_facts: list[str] = []
+    evidence_refs: list[str] = []
+    applicant_claims_used: list[str] = []
+    unsupported_claims: list[str] = []
+    missing_inputs: list[MissingInputV2] = []
+    removed_non_final_content: list[str] = []
+    confidence: Literal["high", "medium", "low"]
+    requires_human_review: Literal[True] = True
+
+    @model_validator(mode="after")
+    def _within_declared_limit(self) -> "ProposalSectionSuggestionV2":
+        if self.character_count != len(self.proposed_text) or self.character_count > self.character_limit:
+            raise ValueError("character count/limit mismatch")
+        return self
+
+
+class CriticalFindingV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    check_id: str
+    severity: FindingSeverity
+    field_id: str | None = None
+    section_id: str | None = None
+    issue: str
+    rationale: str
+    evidence_refs: list[str] = []
+    suggested_fix: str
+    requires_human_review: Literal[True] = True
+    affected_count: int = Field(default=1, ge=1)
+    examples: list[str] = Field(default_factory=list, max_length=5)
+
+
+class CriticalReviewBundleV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[CriticalFindingV2]
+    cross_field_conflicts: list[str] = []
+    strengths: list[str] = []
+    overall_status: Literal["open", "review_required", "limited"]
+
+
+class ResearchSynthesisFindingV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim: str
+    category: str
+    source_refs: list[str] = []
+    support_status: Literal[
+        "location_found", "supports_partially", "supports_strongly",
+        "conflict_or_uncertain", "human_review_required",
+    ]
+    freshness: str | None = None
+    relevance: str | None = None
+    caveat: str | None = None
+
+
+class ResearchEvidenceSynthesisV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    findings: list[ResearchSynthesisFindingV2]
+    market_comparison_rows: list[dict] = []
+    partner_candidates: list[dict] = []
+    open_evidence_gaps: list[str] = []
+
+
+class EvidenceSupportVerificationV2(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim_ref: str
+    source_ref: str
+    support_status: Literal[
+        "supports_strongly", "supports_partially", "conflict_or_uncertain",
+        "human_review_required", "evidence_missing",
+    ]
+    rationale: str
+    exact_verified: bool
+
+
 SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "ProjectFactExtractionInput@v1": ProjectFactExtractionInput,
     "ProjectFactExtractionResult@v1": ProjectFactExtractionResult,
@@ -523,6 +645,11 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "PublicCompetenceResearchResult@v1": PublicCompetenceResearchResult,
     "MarketComparisonInput@v1": MarketComparisonInput,
     "MarketComparisonResult@v1": MarketComparisonResult,
+    "FactEvidenceAnalysisResult@v2": FactEvidenceAnalysisResultV2,
+    "ProposalSectionSuggestion@v2": ProposalSectionSuggestionV2,
+    "CriticalReviewBundle@v2": CriticalReviewBundleV2,
+    "ResearchEvidenceSynthesis@v2": ResearchEvidenceSynthesisV2,
+    "EvidenceSupportVerification@v2": EvidenceSupportVerificationV2,
 }
 
 

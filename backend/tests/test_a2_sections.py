@@ -186,6 +186,12 @@ def test_43_surfaces_complete_kpi_chain_as_open_inputs_without_values(db):
     assert [item["label"] for item in outcome.view["section_result"]["missing_inputs"]] == [
         item["label"] for item in missing
     ]
+    contract = outcome.view["section_result"]["role_skill_contract_v2"]
+    assert contract["section_id"] == "4.3"
+    assert contract["requires_human_review"] is True
+    assert [item["label"] for item in contract["missing_inputs"]] == [
+        item["label"] for item in missing
+    ]
 
 
 def test_merge_fails_closed_for_missing_or_duplicate_markers():

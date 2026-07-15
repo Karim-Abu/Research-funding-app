@@ -68,6 +68,16 @@ def test_successful_structured_call(db):
     inv = db.get(AgentInvocation, resp.invocation_id)
     assert inv.status == "succeeded" and inv.input_hash and inv.output_hash
     assert inv.provider == "anthropic_direct" and inv.prompt_version
+    assert (inv.role_id, inv.role_version) == (
+        "A1_FACT_EVIDENCE_ANALYST", "a1_fact_evidence_analyst_v2"
+    )
+    assert (inv.skill_id, inv.skill_version, inv.contract_version) == (
+        "a1.fact_extraction", "a1_fact_extraction_skill_v2", "2.0.0"
+    )
+    assert inv.input_artifact_refs == [
+        {"kind": "run_input_snapshot", "fragment_ids": ["frag-1"]}
+    ]
+    assert resp.role_id == inv.role_id and resp.skill_id == inv.skill_id
     assert resp.generation_kind == "fake_demo"
     assert inv.context_meta["model_call_attempted"] is False
 

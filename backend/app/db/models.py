@@ -1318,6 +1318,13 @@ class AgentInvocation(Base):
     input_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     output_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Versioned professional contract. Historic rows remain nullable because
+    # their role/skill split cannot be reconstructed safely.
+    role_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    role_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    skill_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    skill_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_version: Mapped[str | None] = mapped_column(String, nullable=True)
     # Ebene E (Live-Readiness): das vom Provider in der Antwort gemeldete
     # Modell (Alias-Auflösung). model_id bleibt das ANGEFRAGTE Modell.
     actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1338,6 +1345,8 @@ class AgentInvocation(Base):
     # Milestone 9B: non-sensitive context metadata (selected/skipped fragment
     # counts, char budget, context_hash) — never raw context or prompt text.
     context_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # IDs, hashes and safe counts only; never raw source/query/prompt/draft text.
+    input_artifact_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_by_system: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False

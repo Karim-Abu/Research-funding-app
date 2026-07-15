@@ -433,6 +433,27 @@ def application_language_conflicts(text: str, expected: str) -> bool:
     return ("en" if en > de else "de") != expected
 
 
+def _selected_portal_language(structured: dict) -> str | None:
+    """Read the explicit portal choice from the frozen structured input.
+
+    Older snapshots may not carry this value.  In that case callers retain the
+    established draft-language heuristic but mark it for human confirmation.
+    """
+    project = structured.get("project") or {}
+    values = project.get("portal_field_values") or (
+        (project.get("application_structure") or {}).get("portal_field_values")
+    ) or {}
+    value = values.get("INTRO.APP.COMMUNICATION_LANGUAGE") if isinstance(values, dict) else None
+    if isinstance(value, dict):
+        value = value.get("value") or value.get("selected")
+    normalized = str(value or "").strip().casefold()
+    if normalized in {"de", "deutsch", "german", "deutsch (de)"}:
+        return "de"
+    if normalized in {"en", "englisch", "english", "english (en)"}:
+        return "en"
+    return None
+
+
 def _json(value: object) -> str:
     return json.dumps(value, ensure_ascii=False, sort_keys=True, default=str)
 
@@ -537,6 +558,9 @@ def assemble_a2_context(
         if item.get("context_kind") == "research_candidate"
     ]
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
+    portal_language = _selected_portal_language(ctx.structured_project_data)
+    if language is None and portal_language is not None:
+        ctx.language = portal_language
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
     # R5.7: advisory research context (VC/SOL only) — never added to allowed_anchor_ids.
@@ -569,6 +593,10 @@ def assemble_a2_context(
     portal_requirement = _json({
         "field_profile": ctx.field_profile,
         "requirement_assessments": ctx.requirement_assessments,
+        "allowed_evidence_types": [
+            "external_evidence",
+            "applicant_claim_with_provenance",
+        ],
     })
     research_candidates = {
         "location_only_or_unconfirmed_anchors": ctx.research_candidates,
@@ -609,6 +637,12 @@ def assemble_a2_context(
         "total_chars": len(ctx.context_text),
         "target_section": target_section,
         "language": ctx.language,
+        "language_source": (
+            "explicit_argument" if language is not None
+            else "portal_communication_language" if portal_language is not None
+            else "draft_language_detection_requires_human_review"
+        ),
+        "language_needs_review": language is None and portal_language is None,
         "components": ctx.context_components,
     }
     return ctx

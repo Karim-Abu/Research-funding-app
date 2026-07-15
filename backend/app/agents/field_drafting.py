@@ -211,6 +211,48 @@ class _Validated:
     section_result: dict | None = None
 
 
+def _proposal_contract_v2(
+    validated: _Validated,
+    config: A2FieldConfig,
+    target_section: str | None,
+) -> dict:
+    """Project the existing advisory A2 result to the additive v2 contract.
+
+    The provider-facing v1 bundles stay in place for route compatibility.  This
+    normalized representation is stored alongside the existing section result,
+    so suggestion and review views do not need a second pipeline or a breaking
+    API change.
+    """
+    candidate = validated.candidate
+    missing = [
+        {"label": str(item.get("label") or "Eingabe fehlt"),
+         "reason": str(item.get("reason") or "Menschliche Klärung erforderlich")}
+        for item in validated.placeholders
+        if isinstance(item, dict)
+    ]
+    payload = {
+        "field_id": config.field_id,
+        "section_id": target_section,
+        "proposed_text": candidate.suggested_text,
+        "character_count": char_count(candidate.suggested_text),
+        "character_limit": config.char_limit,
+        "change_summary": [candidate.rationale] if candidate.rationale else [],
+        "preserved_facts": list(getattr(candidate, "preserved_facts", []) or []),
+        "evidence_refs": list(getattr(candidate, "evidence_anchor_ids", []) or []),
+        # Only explicit candidate labels are represented here; no inferred
+        # semantic support is manufactured from an exact source location.
+        "applicant_claims_used": list(getattr(candidate, "preserved_facts", []) or []),
+        "unsupported_claims": list(getattr(candidate, "new_claims", []) or []),
+        "missing_inputs": missing,
+        "removed_non_final_content": list(
+            getattr(candidate, "removed_or_reframed_claims", []) or []
+        ),
+        "confidence": "low" if missing else "medium",
+        "requires_human_review": True,
+    }
+    return validate_payload("ProposalSectionSuggestion@v2", payload).model_dump(mode="json")
+
+
 _NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,'’]\d+)*(?:\s?%)?")
 _PATENT_RE = re.compile(r"\b(?:EP|WO|US|CH)\s?\d{4,}(?:[/.-]\d+)*\b", re.I)
 _ORG_RE = re.compile(
@@ -280,6 +322,8 @@ def _validate_candidate(
         warnings = list(bundle.warnings or [])
         if placeholders:
             warnings.append("contains_placeholders")
+        if ctx.meta.get("language_needs_review"):
+            warnings.append("application_language_needs_review")
         return _Validated(
             candidate=cand,
             warnings=warnings,
@@ -310,6 +354,8 @@ def _validate_candidate(
         warnings.append("contains_placeholders")
     if ctx.advisory_facts:
         warnings.append("based_on_unconfirmed_facts")
+    if ctx.meta.get("language_needs_review"):
+        warnings.append("application_language_needs_review")
     unsafe = _unsupported_generated_tokens(cand.suggested_text, ctx.context_text)
     if unsafe:
         return None, unsafe
@@ -378,6 +424,9 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         return A2Outcome(status="failed", reason="target_section_unknown")
     if not is_composite and target_section is not None:
         return A2Outcome(status="failed", reason="target_section_not_supported")
+    skill_id = a2_fields.skill_id_for(field_id, target_section)
+    if skill_id is None:
+        return A2Outcome(status="failed", reason="skill_not_configured")
     # Replay/idempotency: reuse an existing proposed suggestion for this base.
     existing = suggestions_repo.get_proposed_for(
         db, run.run_id, draft_id, base_version_id, target_section
@@ -430,6 +479,18 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         output_schema_id=(
             SECTION_OUTPUT_SCHEMA if target_section is not None else FIELD_OUTPUT_SCHEMA
         ),
+        skill_id=skill_id,
+        input_artifact_refs=(
+            {
+                "kind": "a2_field_context",
+                "run_id": run.run_id,
+                "field_id": field_id,
+                "target_section": target_section or "",
+                "context_hash": ctx.context_hash,
+                "evidence_anchor_ids": sorted(ctx.allowed_anchor_ids),
+                "open_issue_ids": sorted(ctx.allowed_issue_ids),
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver)
 
@@ -461,6 +522,13 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
                          invocation_id=result.invocation_id)
 
     cand = validated.candidate
+    # Keep the established v1 result shape readable for existing views while
+    # persisting the normalized v2 professional contract under a namespaced
+    # key.  Nothing consumes this data as an automatic draft update.
+    section_result = dict(validated.section_result or {})
+    section_result["role_skill_contract_v2"] = _proposal_contract_v2(
+        validated, config, target_section
+    )
     suggestion = suggestions_repo.create(
         db, run, draft_id=draft_id, base_version_id=base_version_id, field_id=field_id,
         profile_id=config.profile_id, operation_id=operation_id,
@@ -479,7 +547,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         ),
         generation_kind=result.generation_kind,
         target_section=target_section,
-        section_result_json=validated.section_result,
+        section_result_json=section_result,
         suggested_text=cand.suggested_text,
         rationale=cand.rationale,
         evidence_anchor_ids=list(cand.evidence_anchor_ids),

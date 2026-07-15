@@ -65,6 +65,12 @@ class AgentProfileDef:
     # Prompt-Assets befüllt (eine Quelle der Wahrheit; None nur für
     # Platzhalter-Profile ohne aktivierten Prompt).
     prompt_version: str | None = None
+    # Additive v2 role/skill identity. Legacy profile_id remains stable for
+    # existing API reads and historical invocations.
+    role_id: str | None = None
+    role_version: str | None = None
+    default_skill_id: str | None = None
+    skill_version: str | None = None
 
     @property
     def reasoning_effort(self) -> str | None:
@@ -199,6 +205,13 @@ def _build(
         # kein Zyklus zwischen registry und prompt_assets entsteht.
         from app.agents.prompt_assets import prompt_version_for
 
+        from app.agents.role_skills import get_role_skill_registry
+
+        role_skill = None
+        role_registry = get_role_skill_registry()
+        if pid in role_registry.profile_defaults:
+            role_skill = role_registry.resolve(pid)
+
         profiles[pid] = AgentProfileDef(
             profile_id=pid,
             agent_id=raw["agent_id"],
@@ -216,6 +229,10 @@ def _build(
             invocation_limits=dict(raw.get("invocation_limits", {})),
             failure_policy=dict(raw.get("failure_policy", {})),
             prompt_version=prompt_version_for(pid),
+            role_id=role_skill.role.role_id if role_skill else None,
+            role_version=role_skill.role.version if role_skill else None,
+            default_skill_id=role_skill.skill.skill_id if role_skill else None,
+            skill_version=role_skill.skill.version if role_skill else None,
         )
 
     # Agents -----------------------------------------------------------------

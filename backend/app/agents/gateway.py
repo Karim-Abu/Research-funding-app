@@ -31,6 +31,7 @@ from app.agents.providers.base import (
     ProviderUsage,
 )
 from app.agents.registry import AgentRegistry, ModelRoute, get_agent_registry
+from app.agents.role_skills import get_role_skill_registry
 from app.agents.schemas import (
     ProjectFactExtractionResult,
     SchemaNotImplementedError,
@@ -68,6 +69,12 @@ class ModelRequest:
     context_meta: dict | None = None
     input_schema_id: str | None = None
     output_schema_id: str | None = None
+    # v2 contract identity. A profile selects a default skill; callers set a
+    # field-specific skill for A2 subsection drafting.
+    skill_id: str | None = None
+    # Persisted only after whitelist filtering (IDs, hashes and counts). Never
+    # pass prompt, source, query or draft text here.
+    input_artifact_refs: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -86,6 +93,10 @@ class ModelResponse:
     # Ebene E: das vom Provider in der Antwort gemeldete Modell (None, wenn
     # nicht gemeldet) — unterscheidet sich ggf. vom angefragten model_id.
     actual_model_id: str | None = None
+    role_id: str | None = None
+    role_version: str | None = None
+    skill_id: str | None = None
+    skill_version: str | None = None
 
 
 @dataclass(frozen=True)
@@ -133,6 +144,7 @@ _SAFE_META_STRING_KEYS = {
     "actual_adapter", "generation_kind", "kind", "language", "target_section",
 }
 _SAFE_META_NUMBER_TOKENS = ("count", "chars", "budget", "max", "latency")
+_SAFE_ARTIFACT_STRING_KEYS = {"kind", "artifact_type"}
 
 
 def _safe_context_meta(meta: dict | None) -> dict:
@@ -159,6 +171,40 @@ def _safe_context_meta(meta: dict | None) -> dict:
     return safe
 
 
+def _safe_input_artifact_refs(request: ModelRequest) -> list[dict]:
+    """Persist reproducible input references without persisting raw content."""
+    safe: list[dict] = []
+    for raw in request.input_artifact_refs:
+        if not isinstance(raw, dict):
+            continue
+        item: dict = {}
+        for key, value in raw.items():
+            key = str(key)
+            if isinstance(value, str) and (
+                key in _SAFE_ARTIFACT_STRING_KEYS
+                or key.endswith("_id")
+                or key.endswith("_hash")
+            ):
+                item[key] = value
+            elif isinstance(value, int) and "count" in key:
+                item[key] = value
+            elif key.endswith("_ids") and isinstance(value, (list, tuple)):
+                item[key] = [str(entry) for entry in value if isinstance(entry, str)]
+        if item:
+            safe.append(item)
+    snapshot = {
+        "kind": "run_input_snapshot",
+        "run_id": request.run_id,
+        "project_id": request.project_id,
+        "context_hash": request.context_hash,
+        "fragment_ids": sorted(request.allowed_fragment_ids),
+    }
+    safe_snapshot = {key: value for key, value in snapshot.items() if value not in (None, [], "")}
+    if safe_snapshot:
+        safe.append(safe_snapshot)
+    return safe
+
+
 def default_provider_resolver(route: ModelRoute) -> ProviderAdapter | None:
     """Map a model route to its real adapter (None when unavailable). No real key
     in normal dev ⇒ returns an adapter whose ``available()`` is False."""
@@ -172,12 +218,16 @@ def default_provider_resolver(route: ModelRoute) -> ProviderAdapter | None:
     return None
 
 
-def _instruction_header(profile) -> str:
+def _instruction_header(profile, request: ModelRequest) -> str:
     """Profile instructions from the activated prompt asset (falls back to a
     minimal safety header). Never contains API keys or source content."""
     from app.agents.prompt_assets import prompt_instructions_for
 
-    body = prompt_instructions_for(profile.profile_id)
+    from app.agents.prompt_assets import role_skill_instructions_for
+
+    body = role_skill_instructions_for(profile.profile_id, request.skill_id)
+    if body is None:
+        body = prompt_instructions_for(profile.profile_id)
     if body:
         return body
     return (
@@ -191,7 +241,7 @@ def _assemble_prompt(profile, request: ModelRequest) -> str:
     # Instructions + structured input + clearly-delimited untrusted source data.
     # Any instruction embedded in source content is ignored (data, not commands).
     parts = [
-        _instruction_header(profile),
+        _instruction_header(profile, request),
         "INPUT:\n" + json.dumps(request.input_payload, sort_keys=True, ensure_ascii=False),
     ]
     if request.context_text:
@@ -214,6 +264,8 @@ def _composite_input_hash(profile, request: ModelRequest) -> str:
             "input_payload_hash": _hash(request.input_payload),
             "selected_fragment_ids": sorted(request.allowed_fragment_ids),
             "context_hash": request.context_hash,
+            "skill_id": request.skill_id,
+            "input_artifact_refs": _safe_input_artifact_refs(request),
         }
     )
 
@@ -302,6 +354,7 @@ def invoke(
     resolver = provider_resolver or default_provider_resolver
     profile = registry.profile(request.profile_id)
     primary = registry.route(profile.primary_model)
+    role_skill = get_role_skill_registry().resolve(profile.profile_id, request.skill_id)
 
     inv = AgentInvocation(
         invocation_id=str(uuid.uuid4()),
@@ -316,9 +369,15 @@ def invoke(
         input_schema_id=request.input_schema_id or profile.input_schema,
         output_schema_id=request.output_schema_id or profile.output_schema,
         prompt_version=request.prompt_version or prompt_version_for(profile.profile_id),
+        role_id=role_skill.role.role_id,
+        role_version=role_skill.role.version,
+        skill_id=role_skill.skill.skill_id,
+        skill_version=role_skill.skill.version,
+        contract_version="2.0.0",
         status="running",
         input_hash=_composite_input_hash(profile, request),
         context_meta=_safe_context_meta(request.context_meta),
+        input_artifact_refs=_safe_input_artifact_refs(request),
         created_by_system=request.created_by_system,
         started_at=_now(),
     )
@@ -491,6 +550,10 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
             actual_adapter_name=adapter_name,
             prompt_version=inv.prompt_version,
             actual_model_id=provider_result.model,
+            role_id=inv.role_id,
+            role_version=inv.role_version,
+            skill_id=inv.skill_id,
+            skill_version=inv.skill_version,
         )
 
     # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.

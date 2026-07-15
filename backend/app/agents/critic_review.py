@@ -10,6 +10,7 @@ schema-valid bundle).
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass, field
 
 from sqlalchemy.orm import Session
@@ -160,7 +161,53 @@ def _validate_findings(bundle, ctx: a3_context.CriticContext) -> list[A3Finding]
             suggested_improvement=rec.suggested_improvement,
             recommended_next_action=rec.recommended_next_action,
         ))
-    return out
+    return _group_similar_findings(out)
+
+
+_GROUP_NUMBER_RE = re.compile(r"\b\d+(?:[.,]\d+)?\b")
+
+
+def _finding_family(text: str) -> str:
+    """Stable, conservative grouping key for repeated A3 symptoms.
+
+    A3 may identify many affected claims, but the user needs one actionable task.
+    We only collapse findings that share target, severity, action and a normalized
+    issue family; unrelated problems are never hidden.
+    """
+    normalized = _GROUP_NUMBER_RE.sub("#", " ".join((text or "").lower().split()))
+    return normalized[:180]
+
+
+def _group_similar_findings(findings: list[A3Finding]) -> list[A3Finding]:
+    grouped: dict[tuple[str | None, str | None, str | None, str, str, str], A3Finding] = {}
+    counts: dict[tuple[str | None, str | None, str | None, str, str, str], int] = {}
+    for finding in findings:
+        key = (
+            finding.field_id, finding.target_section, finding.requirement_id,
+            finding.severity, _finding_family(finding.description),
+            _finding_family(finding.recommended_next_action or ""),
+        )
+        if key not in grouped:
+            grouped[key] = finding
+            counts[key] = 1
+            continue
+        counts[key] += 1
+        # Keep the first concrete source/action: it remains traceable and avoids
+        # turning a grouped task into an unbounded raw-claim collection.
+    result: list[A3Finding] = []
+    for key, finding in grouped.items():
+        count = counts[key]
+        if count > 1:
+            finding = A3Finding(
+                **{
+                    **finding.__dict__,
+                    "description": (
+                        f"{finding.description} (betrifft {count} ähnliche Hinweise)"
+                    ),
+                }
+            )
+        result.append(finding)
+    return result
 
 
 def run_a3_evidence_consistency(
@@ -207,6 +254,16 @@ def _run(db, run, *, provider_resolver) -> A3Outcome:
         run_confirmation=real_eval_confirmed(run),
         prompt_version=prompt_version_for(A3_PROFILE_ID), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
+        skill_id="a3.critical_review",
+        input_artifact_refs=(
+            {
+                "kind": "review_scope",
+                "run_id": run.run_id,
+                "field_ids": sorted(ctx.allowed_field_ids),
+                "evidence_anchor_ids": sorted(ctx.allowed_anchor_ids),
+                "context_hash": ctx.context_hash,
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=_resolver(ctx, provider_resolver))
 

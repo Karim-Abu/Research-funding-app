@@ -159,6 +159,15 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1Outcome:
         context_text=ctx.context_text,
         context_hash=ctx.context_hash,
         context_meta=ctx.meta,
+        skill_id="a1.fact_extraction",
+        input_artifact_refs=(
+            {
+                "kind": "run_source_snapshot",
+                "run_id": run.run_id,
+                "fragment_ids": ctx.selected_fragment_ids,
+                "context_hash": ctx.context_hash,
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver, registry=registry)
 
