@@ -32,9 +32,12 @@ def fake_provider(monkeypatch):
 
 
 def _get_suggestion(client, run_id, field_id=SOL):
-    res = client.get(f"/api/v1/runs/{run_id}/fields/{field_id}/suggestion")
+    res = client.get(f"/api/v1/runs/{run_id}/fields/{field_id}/suggestions")
     assert res.status_code == 200, res.text
-    return res.json()["suggestion"]
+    suggestions = res.json()["suggestions"]
+    if field_id == SOL:
+        return next((s for s in suggestions if s["target_section"] == "4.2"), None)
+    return suggestions[0] if suggestions else None
 
 
 def test_in_run_suggestion_is_readable(client, fake_provider):
@@ -48,8 +51,10 @@ def test_in_run_suggestion_is_readable(client, fake_provider):
     assert suggestion["operation_id"]
     assert suggestion["base_version_id"]
     assert suggestion["suggested_text"]
-    # Nie Auto-Übernahme: das AIProposal pinnt die menschliche Prüfung.
-    assert suggestion["ai_proposal"]["human_review_required"] is True
+    # Nie Auto-Übernahme; Fake-Demo bleibt explizit außerhalb des AIProposal-Felds.
+    assert suggestion["proposal"]["human_review_required"] is True
+    assert suggestion["generation_kind"] == "fake_demo"
+    assert suggestion["ai_proposal"] is None
 
     # Kein Leak: weder Prompt- noch Key-Material im Response.
     raw = json.dumps(suggestion).lower()
@@ -92,5 +97,5 @@ def test_suggestion_read_workspace_isolation(client, fake_provider):
     run_id = cloud_run(client, csrf, project_id, svid)
 
     login(client, OUTSIDER_EMAIL, OUTSIDER_PASSWORD)
-    res = client.get(f"/api/v1/runs/{run_id}/fields/{SOL}/suggestion")
+    res = client.get(f"/api/v1/runs/{run_id}/fields/{SOL}/suggestions")
     assert res.status_code == 404

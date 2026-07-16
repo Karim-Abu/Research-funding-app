@@ -31,6 +31,38 @@ RUN_CONTROLS = (
 )
 
 
+def _agent_config_versions() -> dict:
+    """Ebene E — Prompt-/Skill-Versionen und Modellrouten je Agentprofil.
+
+    Wird bei Run-Erstellung in ``snapshot_versions`` eingefroren und erreicht
+    über ``config_versions`` das Technical-Evidence-Artefakt. Nur Versionen
+    und Modell-IDs — nie Prompt-Inhalte.
+    """
+    from app.agents.registry import get_agent_registry  # lazy, kein Zyklus
+
+    agent_registry = get_agent_registry()
+    return {
+        "prompt_versions": {
+            profile_id: profile.prompt_version
+            for profile_id, profile in sorted(agent_registry.profiles.items())
+            if profile.prompt_version
+        },
+        "model_routes": {
+            profile_id: agent_registry.route(profile.primary_model).model_id
+            for profile_id, profile in sorted(agent_registry.profiles.items())
+        },
+        "role_routes": {
+            role_id: {
+                "execution_kind": route.execution_kind,
+                "primary": route.primary,
+                "fallback": route.fallback,
+                "comparison": route.comparison,
+            }
+            for role_id, route in sorted((agent_registry.role_routes or {}).items())
+        },
+    }
+
+
 def _assert_non_relaxing_classification(
     *, project_classification: dict, source_classifications: list[dict | None], effective: dict
 ) -> None:
@@ -62,6 +94,18 @@ def _effective_run_classification(project_classification: dict, versions: list[S
             version.data_classification for version in versions],
         effective=effective,
     )
+    project_origin = (project_classification or {}).get("origin")
+    source_origins = {
+        (version.data_classification or {}).get("origin") for version in versions
+    }
+    # An evaluation project may use public evidence without losing its explicit
+    # synthetic/anonymized provenance. Any real/unknown source origin prevents
+    # this preservation and therefore blocks the real-provider eval path later.
+    if (
+        project_origin in ("synthetic", "anonymized")
+        and source_origins.issubset({"synthetic", "anonymized", "public_source"})
+    ):
+        effective["origin"] = project_origin
     return effective
 
 
@@ -148,6 +192,10 @@ def prepare_run(
             "source_version_ids": [v.source_version_id for v in versions],
             "requirement_registry_version": registry.requirement_registry_version,
             "rule_registry_version": registry.rule_registry_version,
+            # Ebene E: Prompt-/Skill-Versionen und Modellrouten je Agentrolle
+            # werden im Run eingefroren (→ config_versions im Technical
+            # Evidence). Nur Versionen/IDs — nie Prompt-Inhalte.
+            **_agent_config_versions(),
         },
         recheck_required=False,
         semantic_findings_stale=False,

@@ -33,9 +33,9 @@ class ResearchTaskCreate(BaseModel):
     internal_public_confirmation_id: str | None = None
     competence_needs: list[str] = Field(default_factory=list)
     requested_partner_roles: list[str] = Field(default_factory=list)
-    # Milestone 9J: for confidential (D1/D2) projects the raw query never reaches the
-    # provider — the caller must first obtain a firewall-sanitized, human-approved query
-    # (Search Query Firewall) and pass its ``approval_id`` here. Ignored for D0.
+    # Normal product use requires a firewall-approved query linked to an approved public
+    # research brief for D0/D1/D2. ``query_preview`` is never trusted as the execution
+    # query; the server loads the sanitized text by this approval id.
     approval_id: str | None = None
 
 

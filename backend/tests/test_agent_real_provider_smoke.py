@@ -1,40 +1,64 @@
-"""Optional, env-gated real-provider smoke test (Milestone 9A).
-
-Never runs in CI. Skips cleanly without ``RUN_REAL_PROVIDER_SMOKE=true`` or a key.
-Public/synthetic text only; no sensitive prompt/output recorded.
-"""
+"""Optional strict A1 real-provider smoke using only synthetic public data."""
 from __future__ import annotations
 
 import os
 
 import pytest
 
-from app.agents.gateway import ModelResponse, SafeFailure, default_provider_resolver, invoke
+from app.agents.gateway import ModelResponse, default_provider_resolver, invoke
+from app.agents.registry import get_agent_registry
 from app.config.settings import get_settings
+from app.db.models import RunPolicySnapshot
 from app.db.session import SessionLocal
+from app.evaluation.preflight import persist_route_preflight, preflight_route
+from app.evaluation.pricing import resolve_cost
 from tests.agent_helpers import base_request, make_run
 
 pytestmark = pytest.mark.skipif(
-    os.environ.get("RUN_REAL_PROVIDER_SMOKE") != "true",
-    reason="set RUN_REAL_PROVIDER_SMOKE=true to run the optional real-provider smoke",
+    bool(os.environ.get("CI")) or os.environ.get("RUN_REAL_PROVIDER_SMOKE") != "true",
+    reason="manual only: RUN_REAL_PROVIDER_SMOKE=true outside CI",
 )
 
 
 def test_real_provider_smoke():
     settings = get_settings()
-    if not (settings.anthropic_api_key or settings.openai_api_key):
-        pytest.skip("no real provider API key configured")
+    if settings.ai_eval_mode != "real" or settings.agent_fake_provider:
+        pytest.skip("requires AI_EVAL_MODE=real and AGENT_FAKE_PROVIDER=false")
+    registry = get_agent_registry()
+    role = registry.role_routes["A1_FACT_EVIDENCE_ANALYST"]
+    route_key = next((key for key in (role.primary, role.fallback) if key and (
+        registry.route(key).requested_model_id(settings)
+        and ((registry.route(key).provider == "openai_direct" and settings.openai_api_key)
+             or (registry.route(key).provider == "anthropic_direct" and settings.anthropic_api_key))
+    )), None)
+    if route_key is None:
+        pytest.skip("no configured A1 provider route")
+    route = registry.route(route_key)
+    requested = route.requested_model_id(settings)
+    if resolve_cost(
+        provider=route.provider, model_id=requested, input_tokens=0, output_tokens=0
+    ).cost_status != "priced":
+        pytest.skip("no versioned CHF price evidence for selected route")
+
     db = SessionLocal()
     try:
         run_id = make_run(db, sensitivity="public", processing_mode="cloud_assisted")
-        # Public/synthetic only; the default resolver uses the real adapters.
+        db.add(RunPolicySnapshot(
+            run_id=run_id, processing_mode="cloud_assisted", max_cost_chf=5,
+            max_llm_calls=2, max_web_calls=0, max_retries=1, max_redrafts=0,
+            timeout_seconds=300, allowed_routes=[], policy_version="1.1.0",
+        ))
+        preflight = preflight_route(route_key, settings=settings, execute_live=True)
+        assert preflight.status == "pass"
+        persist_route_preflight(db, preflight, settings=settings)
+        db.flush()
         result = invoke(
-            db, base_request(run_id=run_id), provider_resolver=default_provider_resolver
+            db, base_request(run_id=run_id, run_confirmation=True),
+            provider_resolver=default_provider_resolver,
         )
-        # A real model rarely returns the exact A1 schema without a tuned prompt,
-        # so a safe failure is an acceptable outcome — the point is no crash and
-        # no leak. Record only provider/model/latency metadata.
-        assert isinstance(result, (ModelResponse, SafeFailure))
+        # A SafeFailure is a failed smoke, never a successful live proof.
+        assert isinstance(result, ModelResponse)
+        assert result.actual_model_id and result.skill_version
     finally:
         db.rollback()
         db.close()

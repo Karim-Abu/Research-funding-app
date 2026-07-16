@@ -21,6 +21,9 @@ export interface ProjectDto {
   project_id: string
   workspace_id: string
   title: string
+  title_en?: string | null
+  start_date?: string | null
+  end_date?: string | null
   description: string
   innovation_field?: string | null
   funding_instrument_profile_id: string
@@ -31,6 +34,7 @@ export interface ProjectDto {
   implementation_own_contribution?: number | null
   cash_contribution?: number | null
   total_requested_funding?: number | null
+  total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
   duration_months?: number | null
   status: ProjectStatus
@@ -46,8 +50,16 @@ export interface ProjectBudgetPatch {
   implementation_own_contribution?: number | null
   cash_contribution?: number | null
   total_requested_funding?: number | null
+  total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
   duration_months?: number | null
+}
+
+export interface ProjectMetadataPatch extends ProjectBudgetPatch {
+  title?: string
+  title_en?: string | null
+  start_date?: string | null
+  end_date?: string | null
 }
 
 interface ProjectListDto {
@@ -146,7 +158,7 @@ export async function getProject(projectId: string): Promise<ProjectDto> {
 
 export async function patchProject(
   projectId: string,
-  patch: ProjectBudgetPatch
+  patch: ProjectMetadataPatch
 ): Promise<ProjectDto> {
   const csrf = getCsrfToken()
   const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
@@ -159,6 +171,24 @@ export async function patchProject(
   })
   if (!res.ok) throw new Error("project_update_failed")
   return (await res.json()) as ProjectDto
+}
+
+/** Archiviert ein Projekt (status="archived"). Das Projekt wird danach aus der
+ *  Übersicht ausgeblendet, bleibt aber in der Datenbank (umkehrbar). Nutzt den
+ *  bestehenden PATCH-Endpunkt; kein Idempotency-Key (wie andere Mutationen ohne
+ *  Erzeugung). Im Mock-Modus ein No-Op — die Übersicht entfernt die Karte lokal. */
+export async function archiveProject(projectId: string): Promise<void> {
+  if (!isLive("projects")) return
+  const csrf = getCsrfToken()
+  const res = await fetch(`/api/projects/${encodeURIComponent(projectId)}`, {
+    method: "PATCH",
+    headers: {
+      "Content-Type": "application/json",
+      ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+    },
+    body: JSON.stringify({ status: "archived" }),
+  })
+  if (!res.ok) throw new Error("project_archive_failed")
 }
 
 // --- Budget-Vorprüfung (read-only, run-unabhängig) ---------------------------

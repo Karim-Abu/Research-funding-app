@@ -19,14 +19,20 @@ _CLAIMS = (
 )
 
 
-def _add_reliability_finding(db, run, claim_text: str, index: int) -> None:
+_FIELD = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+_QUANT_KEY = f"evidence_risk|reliability:quantified|{_FIELD.lower()}"
+
+
+def _add_reliability_finding(
+    db, run, claim_text: str, index: int, field_id: str = _FIELD
+) -> None:
     db.add(
         ReviewFinding(
             finding_id=str(uuid.uuid4()),
             run_id=run.run_id,
             workspace_id=run.workspace_id,
             profile_id="M9K.reliability_assurance",
-            field_id="VC.BUSINESS_TARGETS_MODEL.EDITOR",
+            field_id=field_id,
             requirement_id=None,
             severity="warning",
             description=(
@@ -43,7 +49,7 @@ def _add_reliability_finding(db, run, claim_text: str, index: int) -> None:
             recommended_next_action=None,
             fingerprint=compute_finding_fingerprint(
                 "reliability:quantified",
-                "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+                field_id,
                 claim_core=claim_text,
             ),
             severity_class="evidence_risk",
@@ -69,13 +75,15 @@ class TestGrouping:
 
         view = _build(run_id)
         quant = [
-            g for g in view.grouped_findings
-            if g.group_key == "evidence_risk|reliability:quantified"
+            g for g in view.grouped_findings if g.group_key == _QUANT_KEY
         ]
         assert len(quant) == 1, "vier gleichartige Findings ⇒ genau EINE Gruppe"
         group = quant[0]
         assert group.count == 4
-        assert group.title == "Quantifizierte Aussage ohne passenden Zahlenbeleg"
+        # Feldbewusster Titel: «<Feld-Label>: <Familientitel>».
+        assert group.title.endswith("Quantifizierte Aussage ohne passenden Zahlenbeleg")
+        assert group.target_field_id == _FIELD
+        assert group.area == "evidenz_suffizienz"
         # Die Einzel-Claims bleiben als Beispiele sichtbar (max 5).
         assert len(group.examples) == 4
         assert {e.target_id for e in group.examples} == {
@@ -120,11 +128,9 @@ class TestPriorities:
         view = _build(run_id)
         keys = [g.group_key for g in view.next_actions]
         placeholder = next(
-            i for i, k in enumerate(keys) if k.endswith("|draft_placeholder")
+            i for i, k in enumerate(keys) if "|draft_placeholder" in k
         )
-        evidence = next(
-            i for i, k in enumerate(keys) if k == "evidence_risk|reliability:quantified"
-        )
+        evidence = next(i for i, k in enumerate(keys) if k == _QUANT_KEY)
         assert placeholder < evidence, "export_blocker (Platzhalter) vor evidence_risk"
 
     def test_research_partner_blocker_before_reviewer_risk(self, client) -> None:
@@ -155,6 +161,80 @@ class TestPriorities:
         assert eligibility < reviewer, "Research-Partner-Blocker vor Reviewer-Risk"
 
 
+class TestAggregation:
+    def test_hundred_similar_claim_findings_one_task(self, client) -> None:
+        """B2/B3 — 100 gleichartige claimweise Probleme im selben Feld sind
+        EINE gruppierte Aufgabe (count 100, max 5 Beispiele), kein Blocker-Berg."""
+        _csrf, _project_id, run_id = setup_completed_run(client)
+        get_review(client, run_id)
+        with SessionLocal() as db:
+            run = db.get(AnalysisRun, run_id)
+            for i in range(100):
+                _add_reliability_finding(db, run, f"Aussage {i} mit Zahl {i}.", i)
+            db.commit()
+
+        view = _build(run_id)
+        quant = [g for g in view.grouped_findings if g.group_key == _QUANT_KEY]
+        assert len(quant) == 1
+        assert quant[0].count == 100
+        assert len(quant[0].examples) == 5
+        # Die 100 Claim-Warnings erzeugen KEINE blockierende Aufgabe — die
+        # blockierenden Aufgaben stammen nur aus den formalen Blocker-Gruppen
+        # (Template-Platzhalter der Fixture); die technische Claim-Zahl bleibt
+        # getrennt sichtbar.
+        blocker_groups = [g for g in view.grouped_findings if g.severity == "blocker"]
+        assert view.blocking_task_count == len(blocker_groups)
+        assert all("reliability" not in g.group_key for g in blocker_groups)
+        assert view.evidence_note_count == 100
+
+    def test_same_family_different_fields_split_into_groups(self, client) -> None:
+        _csrf, _project_id, run_id = setup_completed_run(client)
+        get_review(client, run_id)
+        with SessionLocal() as db:
+            run = db.get(AnalysisRun, run_id)
+            _add_reliability_finding(db, run, _CLAIMS[0], 0)
+            _add_reliability_finding(
+                db, run, _CLAIMS[1], 1, field_id="SOL.INNOVATION_SOLUTION.EDITOR"
+            )
+            db.commit()
+        view = _build(run_id)
+        quant = [
+            g for g in view.grouped_findings
+            if "|reliability:quantified|" in g.group_key
+        ]
+        assert len(quant) == 2, "verschiedene Felder ⇒ getrennte Aufgaben"
+        assert {g.target_field_id for g in quant} == {
+            _FIELD, "SOL.INNOVATION_SOLUTION.EDITOR",
+        }
+
+    def test_teil_d_family_rank_within_reviewer_risk(self, client) -> None:
+        """Teil D — KPI-Kette vor Risiko-Framing innerhalb reviewer_risk."""
+        _csrf, _project_id, run_id = setup_completed_run(client)
+        get_review(client, run_id)
+        with SessionLocal() as db:
+            run = db.get(AnalysisRun, run_id)
+            for code, field in (
+                ("rubric:risk_scope:f1", "SOL.INNOVATION_SOLUTION.EDITOR"),
+                ("rubric:kpi_chain:f2", "VC.BUSINESS_TARGETS_MODEL.EDITOR"),
+            ):
+                db.add(ReviewFinding(
+                    finding_id=str(uuid.uuid4()), run_id=run.run_id,
+                    workspace_id=run.workspace_id, profile_id="R6.rubric_v0",
+                    field_id=field, requirement_id=None, severity="warning",
+                    description="Rubric-Hinweis.", suggested_improvement=None,
+                    status="open", advisory=True, source="deterministic_review",
+                    finding_code=code, target_type="portal_field_draft",
+                    target_id=field, recommended_next_action=None,
+                    severity_class="reviewer_risk",
+                ))
+            db.commit()
+        view = _build(run_id)
+        keys = [g.group_key for g in view.next_actions]
+        kpi = next(i for i, k in enumerate(keys) if "rubric:kpi_chain" in k)
+        risk = next(i for i, k in enumerate(keys) if "rubric:risk_scope" in k)
+        assert kpi < risk
+
+
 class TestApi:
     def test_endpoint_returns_view(self, client) -> None:
         _csrf, _project_id, run_id = setup_completed_run(client)
@@ -170,6 +250,11 @@ class TestApi:
         assert sum(g["count"] for g in body["grouped_findings"]) == body[
             "total_open_findings"
         ]
+        # B7 — additive Zähler sind vorhanden und konsistent zur Gruppierung.
+        assert body["blocking_task_count"] == sum(
+            1 for g in body["grouped_findings"] if g["severity"] == "blocker"
+        )
+        assert body["evidence_note_count"] >= 0
 
     def test_endpoint_view_is_read_only(self, client) -> None:
         _csrf, _project_id, run_id = setup_completed_run(client)

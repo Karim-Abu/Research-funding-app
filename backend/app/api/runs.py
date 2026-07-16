@@ -10,13 +10,18 @@ from app.config.settings import Settings
 from app.contracts.run import AnalysisRun as AnalysisRunSchema
 from app.contracts.run import AsyncAccepted, RunCreate, RunList, ResumeRequest
 from app.contracts.run_phases import RunPhases
-from app.db.models import AsyncOperation
+from app.contracts.transfer_snapshot import (
+    TransferCopyEvent, TransferCopyEventCreate, TransferSnapshot,
+)
+from app.db.models import AsyncOperation, RunProjectSnapshot
 from app.db.session import get_db
 from app.repositories import audit, controls, idempotency
+from app.repositories import copy_events as copy_events_repo
 from app.repositories import projects as projects_repo
 from app.repositories import runs as runs_repo
 from app.runs import phases as run_phases
 from app.runs import service as run_service
+from app.exports.snapshot import _sha256, build_transfer_snapshot, canonical_json
 from app.runs.constants import TERMINAL_OPERATION_STATUSES, TERMINAL_RUN_STATUSES
 from app.runs.executor import run_executor
 from app.runs.transitions import transition_operation, transition_run
@@ -125,6 +130,95 @@ def get_run(
     return runs_repo.to_contract(run)
 
 
+@router.get("/runs/{run_id}/transfer-snapshot", response_model=TransferSnapshot)
+def get_transfer_snapshot(
+    run_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> TransferSnapshot:
+    """Snapshot-only values for the manual copy view. No current Project fallback."""
+    run = runs_repo.get_scoped(db, run_id, context.user.workspace_id)
+    if run is None:
+        raise ProblemException(
+            status=404, code="not_found", title="Resource not found", detail="Run not found."
+        )
+    data = build_transfer_snapshot(db, run)
+    data.pop("snapshot_hash", None)  # hash belongs in technical artifacts only.
+    return TransferSnapshot(**data)
+
+
+def _structured_copy_value(snap: RunProjectSnapshot, target_type: str, target_key: str):
+    """Resolve a structured target from one immutable snapshot, fail closed."""
+    project = snap.project_json or {}
+    if target_type == "duration" and target_key == "duration":
+        return project.get("duration_months")
+    if target_type == "budget_value" and target_key.startswith("budget:"):
+        key = target_key.removeprefix("budget:")
+        allowed = {
+            "direct_total_project_costs_excluding_overhead", "implementation_own_contribution",
+            "cash_contribution", "total_requested_funding",
+            "total_requested_funding_including_overhead",
+        }
+        if key in allowed:
+            return project.get(key)
+    if target_type in {"partner_row", "partner_cell"} and target_key.startswith("partner:"):
+        parts = target_key.split(":")
+        try:
+            partner = (snap.partners_json or [])[int(parts[1])]
+        except (ValueError, IndexError):
+            partner = None
+        if partner is not None and target_type == "partner_row" and len(parts) == 2:
+            return partner
+        allowed_cells = {
+            "name", "partner_type", "project_role", "country", "swiss_value_creation",
+            "research_partner_eligibility_status",
+        }
+        if partner is not None and target_type == "partner_cell" and len(parts) == 3 and parts[2] in allowed_cells:
+            return partner.get(parts[2])
+    raise ProblemException(
+        status=422, code="invalid_transfer_target", title="Unprocessable Entity",
+        detail="Der angegebene Übertragungswert ist im Run-Snapshot nicht vorhanden.",
+    )
+
+
+@router.post("/runs/{run_id}/transfer-copy-events", response_model=TransferCopyEvent, status_code=201)
+def create_transfer_copy_event(
+    run_id: str,
+    payload: TransferCopyEventCreate,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> TransferCopyEvent:
+    """Record a structured copy attempt. The browser can never post raw values."""
+    run = runs_repo.get_scoped(db, run_id, context.user.workspace_id)
+    if run is None:
+        raise ProblemException(status=404, code="not_found", title="Resource not found", detail="Run not found.")
+    snap = db.get(RunProjectSnapshot, run.run_id)
+    if snap is None:
+        raise ProblemException(
+            status=409, code="transfer_snapshot_missing", title="Conflict",
+            detail="Für diesen Lauf fehlt der strukturierte Snapshot.",
+        )
+    value = _structured_copy_value(snap, payload.target_type, payload.target_key)
+    content_hash = _sha256(canonical_json({
+        "run_snapshot_hash": snap.content_hash, "target_type": payload.target_type,
+        "target_key": payload.target_key, "value": value,
+    }))
+    event = copy_events_repo.create_structured(
+        db, run=run, target_type=payload.target_type, target_key=payload.target_key,
+        content_hash=content_hash, actor_user_id=context.user.id,
+    )
+    audit.record(
+        db, workspace_id=run.workspace_id, actor_user_id=context.user.id,
+        action="copy.requested", target_type="copy_event", target_id=event.copy_event_id,
+        detail={"target_type": payload.target_type, "target_key": payload.target_key, "content_hash": content_hash},
+    )
+    db.commit()
+    return TransferCopyEvent(
+        copy_event_id=event.copy_event_id, target_type=payload.target_type,
+        target_key=payload.target_key, created_at=event.created_at,
+    )
+
+
 @router.get("/runs/{run_id}/phases", response_model=RunPhases)
 def get_run_phases(
     run_id: str,
@@ -144,6 +238,8 @@ def get_run_phases(
     return RunPhases(
         run_id=run.run_id,
         run_status=run.status,
+        live_execution_status=run.live_execution_status,
+        live_status_reason=run.live_status_reason,
         phases=[
             {
                 "phase_key": row.phase_key,

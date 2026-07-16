@@ -146,6 +146,9 @@ def test_import_path_never_logs_marker_content(client, caplog):
     assert MARKER_PARTNER in by_field[ABSTRACT]["extracted_text"]
     assert MARKER_BUDGET in by_field[ABSTRACT]["extracted_text"]
     assert MARKER_PROJECT in by_field[NAME]["extracted_text"]
+    assert MARKER_PARTNER in by_field[ABSTRACT]["section_metadata"][0][
+        "original_excerpt"
+    ]
 
     # Entscheidungen inkl. Fehlerpfade:
     # 1) Übernahme (Happy Path).

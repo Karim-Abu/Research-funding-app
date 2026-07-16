@@ -1,0 +1,151 @@
+schema_version: 2.0.0
+registry_id: innolink-check-role-skill-contracts
+roles:
+  - role_id: A1_FACT_EVIDENCE_ANALYST
+    version: a1_fact_evidence_analyst_v2
+    prompt_asset: role_prompts/a1_fact_evidence_analyst_v2.md
+    execution_kind: model_gateway
+  - role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_innosuisse_proposal_writer_v2
+    prompt_asset: role_prompts/a2_innosuisse_proposal_writer_v2.md
+    execution_kind: model_gateway
+  - role_id: A3_INNOSUISSE_CRITICAL_REVIEWER
+    version: a3_innosuisse_critical_reviewer_v2
+    prompt_asset: role_prompts/a3_innosuisse_critical_reviewer_v2.md
+    execution_kind: model_gateway
+  - role_id: RESEARCH_QUERY_PLANNER
+    version: research_query_planner_v2
+    prompt_asset: role_prompts/research_query_planner_v2.md
+    execution_kind: deterministic
+  - role_id: RESEARCH_EVIDENCE_SYNTHESIZER
+    version: research_evidence_synthesizer_v2
+    prompt_asset: role_prompts/research_evidence_synthesizer_v2.md
+    execution_kind: model_gateway
+  - role_id: EVIDENCE_SUPPORT_VERIFIER
+    version: evidence_support_verifier_v2
+    prompt_asset: role_prompts/evidence_support_verifier_v2.md
+    execution_kind: deterministic
+skills:
+  - skill_id: a1.fact_extraction
+    role_id: A1_FACT_EVIDENCE_ANALYST
+    version: a1_fact_extraction_skill_v2
+    prompt_asset: skill_prompts/a1_fact_extraction_skill_v2.md
+  - skill_id: a1.evidence_candidate_mapping
+    role_id: A1_FACT_EVIDENCE_ANALYST
+    version: a1_evidence_candidate_mapping_skill_v2
+    prompt_asset: skill_prompts/a1_evidence_candidate_mapping_skill_v2.md
+  - skill_id: a1.public_competence_research
+    role_id: A1_FACT_EVIDENCE_ANALYST
+    version: a1_public_competence_research_skill_v2
+    prompt_asset: skill_prompts/a1_public_competence_research_skill_v2.md
+  - skill_id: a2.executive_summary
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_executive_summary_skill_v2
+    prompt_asset: skill_prompts/a2_executive_summary_skill_v2.md
+    bindings:
+      - field_id: INTRO.APP.ABSTRACT
+      - field_id: INTRO.APP.EXECUTIVE_SUMMARY
+  - skill_id: a2.value_creation_3_1
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_value_creation_3_1_skill_v2
+    prompt_asset: skill_prompts/a2_value_creation_3_1_skill_v2.md
+    bindings: [{field_id: VC.BUSINESS_TARGETS_MODEL.EDITOR, section_id: '3.1'}]
+  - skill_id: a2.market_access_3_2
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_market_access_3_2_skill_v2
+    prompt_asset: skill_prompts/a2_market_access_3_2_skill_v2.md
+    bindings: [{field_id: VC.BUSINESS_TARGETS_MODEL.EDITOR, section_id: '3.2'}]
+  - skill_id: a2.impact_3_3
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_impact_3_3_skill_v2
+    prompt_asset: skill_prompts/a2_impact_3_3_skill_v2.md
+    bindings: [{field_id: VC.BUSINESS_TARGETS_MODEL.EDITOR, section_id: '3.3'}]
+  - skill_id: a2.state_of_the_art_4_1
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_state_of_the_art_4_1_skill_v2
+    prompt_asset: skill_prompts/a2_state_of_the_art_4_1_skill_v2.md
+    bindings: [{field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.1'}]
+  - skill_id: a2.novelty_4_2
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_novelty_4_2_skill_v2
+    prompt_asset: skill_prompts/a2_novelty_4_2_skill_v2.md
+    bindings: [{field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.2'}]
+  - skill_id: a2.quantifiable_goals_4_3
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_quantifiable_goals_4_3_skill_v2
+    prompt_asset: skill_prompts/a2_quantifiable_goals_4_3_skill_v2.md
+    bindings: [{field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.3'}]
+  - skill_id: a2.preliminary_work_4_4
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_preliminary_work_4_4_skill_v2
+    prompt_asset: skill_prompts/a2_preliminary_work_4_4_skill_v2.md
+    bindings: [{field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.4'}]
+  - skill_id: a2.ipr_4_5_1_to_4_5_4
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_ipr_4_5_skill_v2
+    prompt_asset: skill_prompts/a2_ipr_4_5_skill_v2.md
+    bindings:
+      - {field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.5.1'}
+      - {field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.5.2'}
+      - {field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.5.3'}
+      - {field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.5.4'}
+  - skill_id: a2.partner_suitability_4_6
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_partner_suitability_4_6_skill_v2
+    prompt_asset: skill_prompts/a2_partner_suitability_4_6_skill_v2.md
+    bindings: [{field_id: SOL.INNOVATION_SOLUTION.EDITOR, section_id: '4.6'}]
+  # Compatibility bridge for the existing v1 endpoint that redrafts a whole
+  # composite editor at once. New UI runs select one of the subsection skills
+  # above; this binding prevents a silent route break during the transition.
+  - skill_id: a2.legacy_full_field_bundle
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_legacy_full_field_bundle_skill_v2
+    prompt_asset: skill_prompts/a2_legacy_full_field_bundle_skill_v2.md
+    bindings:
+      - {field_id: VC.BUSINESS_TARGETS_MODEL.EDITOR}
+      - {field_id: SOL.INNOVATION_SOLUTION.EDITOR}
+  - skill_id: a2.organisations_governance
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_organisations_governance_skill_v2
+    prompt_asset: skill_prompts/a2_organisations_governance_skill_v2.md
+    bindings: [{field_id: ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS}]
+  - skill_id: a2.project_setup_workplan
+    role_id: A2_INNOSUISSE_PROPOSAL_WRITER
+    version: a2_project_setup_workplan_skill_v2
+    prompt_asset: skill_prompts/a2_project_setup_workplan_skill_v2.md
+    bindings: [{field_id: PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION}]
+  - skill_id: a3.critical_review
+    role_id: A3_INNOSUISSE_CRITICAL_REVIEWER
+    version: a3_critical_review_skill_v2
+    prompt_asset: skill_prompts/a3_critical_review_skill_v2.md
+  - skill_id: research.public_safe_query_planning
+    role_id: RESEARCH_QUERY_PLANNER
+    version: research_public_safe_query_planning_skill_v2
+    prompt_asset: skill_prompts/research_public_safe_query_planning_skill_v2.md
+  - skill_id: research.public_evidence_synthesis
+    role_id: RESEARCH_EVIDENCE_SYNTHESIZER
+    version: research_public_evidence_synthesis_skill_v2
+    prompt_asset: skill_prompts/research_public_evidence_synthesis_skill_v2.md
+  - skill_id: research.market_comparison
+    role_id: RESEARCH_EVIDENCE_SYNTHESIZER
+    version: market_comparison_v2
+    prompt_asset: prompts/market_comparison_v2.md
+  - skill_id: evidence.claim_support_verification
+    role_id: EVIDENCE_SUPPORT_VERIFIER
+    version: evidence_claim_support_verification_skill_v2
+    prompt_asset: skill_prompts/evidence_claim_support_verification_skill_v2.md
+profile_defaults:
+  A1.project_fact_extraction: a1.fact_extraction
+  A1.evidence_candidate_mapping: a1.evidence_candidate_mapping
+  A1.public_competence_research: research.public_evidence_synthesis
+  A2.introduction_public_summary: a2.executive_summary
+  A2.organisations_governance: a2.organisations_governance
+  A2.value_creation_market_logic: a2.value_creation_3_1
+  A2.solution_innovation: a2.state_of_the_art_4_1
+  A2.project_setup_workplan: a2.project_setup_workplan
+  A3.evidence_consistency: a3.critical_review
+  A3.fit_gap_partner_plausibility: a3.critical_review
+  A3.risk_review_readiness: a3.critical_review
+  A3.innovation_challenge: a3.critical_review
+  A3.final_quality_review: a3.critical_review
+  MC.market_comparison: research.market_comparison

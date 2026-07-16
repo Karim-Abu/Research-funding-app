@@ -17,6 +17,7 @@ QUERY_PURPOSES = (
     "market_size",
     "competitors_alternatives",
     "customer_pain",
+    "state_of_the_art",
     "go_to_market_channels",
     "pricing_willingness_to_pay",
 )
@@ -78,13 +79,17 @@ def _templates(topic: MarketTopic) -> dict[str, str]:
         "market_size": f"{domain} {tech} market size{reg}",
         "competitors_alternatives": f"{tech} {domain} competitors alternatives",
         "customer_pain": f"{domain} {customers} quality challenges pain points",
+        "state_of_the_art": f"{domain} {tech} state of the art research review{reg}",
         "go_to_market_channels": f"{domain} {tech} go to market sales channels{reg}",
         "pricing_willingness_to_pay": f"{tech} {domain} pricing willingness to pay",
     }
 
 
 def plan_market_queries(
-    topic: MarketTopic, *, data_mode: str = "synthetic_eval"
+    topic: MarketTopic,
+    *,
+    data_mode: str = "synthetic_eval",
+    include_state_of_the_art: bool = False,
 ) -> list[QueryCandidate]:
     """Deterministically plan 3–5 public-safe market-research queries (D0-only).
 
@@ -95,6 +100,10 @@ def plan_market_queries(
     """
     candidates: list[QueryCandidate] = []
     for purpose, query in _templates(topic).items():
+        # Keep the long-standing generic planner contract at five queries.  The
+        # research-brief workflow opts into the additional SOTA module explicitly.
+        if purpose == "state_of_the_art" and not include_state_of_the_art:
+            continue
         query = _clean(query)
         if not query:
             continue

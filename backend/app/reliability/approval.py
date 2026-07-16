@@ -18,6 +18,19 @@ from app.db.models import AnalysisRun, DraftClaim, ReviewFinding, RunQualitySumm
 from app.reliability import RELIABILITY_PROFILE_ID
 from app.reliability.scope import compute_reliability_scope_hash
 from app.repositories import audit
+from app.review.copy_readiness import fields_with_valid_approval
+from app.review.fingerprint import finding_code_family
+
+# B5 — «unsupported strong claim» wird erst blockierend, wenn der Nutzer das
+# betroffene Feld als bereit freigegeben hat. Diese Familien sind Varianten
+# einer unbelegten Aussage; reliability:conflict ist ohnehin Blocker,
+# reliability:weak/market bleiben Reviewer-Risiko.
+_ESCALATION_FAMILIES = {
+    "reliability:unsupported",
+    "reliability:quantified",
+    "reliability:proposed_fact",
+    "reliability:false_consensus",
+}
 
 
 def latest_summary(db: Session, run: AnalysisRun) -> RunQualitySummary | None:
@@ -47,22 +60,28 @@ def is_stale(db: Session, run: AnalysisRun) -> bool:
 def reliability_blocker_reasons(
     db: Session, run: AnalysisRun, field_ids: set[str] | None = None
 ) -> list[str]:
-    """Approval-blocking reasons from OPEN reliability blocker findings whose target claim
-    belongs to the current non-stale summary (corr 13), plus — M10.1 (F3) — a run-level
+    """Approval-blocking reasons from OPEN reliability findings whose target claim belongs
+    to the current non-stale summary (corr 13), plus — M10.1 (F3) — a run-level
     ``reliability_stale`` reason whenever a pass ran but its summary no longer reflects the
-    current inputs. The stale reason applies to run AND field approvals (fail closed)."""
+    current inputs. The stale reason applies to run AND field approvals (fail closed).
+
+    Blockierend sind (B5): persistierte Blocker-Findings (``reliability:conflict``)
+    sowie — Eskalation — offene Warning-Findings der ``_ESCALATION_FAMILIES``,
+    wenn der Ziel-Claim stark formuliert ist UND sein Feld vom Nutzer bereits
+    als bereit freigegeben wurde. Bei der Feld-Freigabe selbst ist das Feld noch
+    nicht freigegeben — die Eskalation greift erst danach (Run-Freigabe)."""
     reasons: list[str] = []
     if is_stale(db, run):
         reasons.append(f"reliability_stale:{run.run_id}")
     summary = current_summary(db, run)
     if summary is None:
         return reasons
+    approved_fields = fields_with_valid_approval(db, run.run_id)
     findings = db.scalars(
         select(ReviewFinding).where(
             ReviewFinding.run_id == run.run_id,
             ReviewFinding.source == "agent",
             ReviewFinding.profile_id == RELIABILITY_PROFILE_ID,
-            ReviewFinding.severity == "blocker",
             ReviewFinding.status == "open",
             ReviewFinding.target_type == "draft_claim",
         )
@@ -73,7 +92,15 @@ def reliability_blocker_reasons(
             continue
         if field_ids is not None and claim.field_id not in field_ids:
             continue
-        reasons.append(f"reliability_blocker:{finding.target_id}")
+        if finding.severity == "blocker":
+            reasons.append(f"reliability_blocker:{finding.target_id}")
+        elif (
+            finding.severity == "warning"
+            and claim.strength == "strong"
+            and claim.field_id in approved_fields
+            and finding_code_family(finding.finding_code) in _ESCALATION_FAMILIES
+        ):
+            reasons.append(f"reliability_blocker:{finding.target_id}")
     return reasons
 
 

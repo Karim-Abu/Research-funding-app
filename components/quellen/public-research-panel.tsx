@@ -1,55 +1,75 @@
 "use client"
 
-// "Öffentliche Recherche" — user-initiated public web research (M9I-A) with the M9J
-// Search Query Firewall for confidential projects. For a public (D0) project the query
-// runs directly. For an internal/confidential (D1/D2) project the query is first screened
-// and sanitized; only a human-approved, sanitized query is ever searched. For D3 (NDA)
-// and UNKNOWN the panel is fully blocked (R4.1) — the backend matrix enforces the same.
-// No provider/Firecrawl/API terminology and no raw confidential query is surfaced.
-
 import * as React from "react"
-import { Globe, Loader2, ShieldAlert, Sparkles } from "lucide-react"
+import { ExternalLink, Globe, Loader2, ShieldAlert } from "lucide-react"
 
+import { QueryApprovalList, approvedIds, type ApprovalQuery } from "@/components/research/query-approval-list"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { pollOperation } from "@/lib/operations"
+import { Textarea } from "@/components/ui/textarea"
+import { flatToPrivacyClass, isExternalBlocked } from "@/lib/data-class"
+import { type QueryCandidateDto } from "@/lib/market-research"
 import {
-  createResearchTask,
-  importResearchResult,
-  listResearchResults,
-  ResearchError,
-  type ResearchResultDto,
-} from "@/lib/research"
-import {
-  approveSearchQuery,
-  previewSearchQuery,
-  FirewallError,
-  type FirewallPreview,
-} from "@/lib/firewall"
-import {
-  flatToPrivacyClass,
-  isExternalBlocked,
-  requiresSanitizedApproval,
-} from "@/lib/data-class"
+  RESEARCH_MODULE_LABELS,
+  approveResearchBrief,
+  getResearchWorkspace,
+  planResearchQueries,
+  previewBriefQuery,
+  reviewResearchResult,
+  runResearchBrief,
+  saveResearchBrief,
+  suggestResearchBrief,
+  type ResearchBriefDto,
+  type ResearchBriefInput,
+  type ResearchModule,
+  type ResearchQueryDto,
+  type ResearchWorkspaceDto,
+} from "@/lib/research-brief"
+import { discardResearchResult, importResearchResult } from "@/lib/research"
+import { createUrlSource } from "@/lib/sources"
+import type { DataClassification } from "@/lib/data-classification"
 import type { DataClass } from "@/lib/types"
 
-type PanelState =
-  | "idle"
-  | "previewing"
-  | "preview"
-  | "blocked"
-  | "searching"
-  | "results"
-  | "error"
+const MODULES: ResearchModule[] = [
+  "market_growth",
+  "competition_alternatives",
+  "state_of_the_art",
+  "swiss_research_partners",
+]
+const PUBLIC_SOURCE_CLASSIFICATION: DataClassification = {
+  sensitivity: "public",
+  origin: "public_source",
+  processing_mode: "deterministic_only",
+  web_research_mode: "validated_public",
+  nda_applies: false,
+}
 
-function hostOf(url: string): string {
-  try {
-    return new URL(url).hostname
-  } catch {
-    return url
+function formOf(brief: ResearchBriefDto): ResearchBriefInput {
+  return {
+    application_domain: brief.application_domain,
+    technology_class: brief.technology_class,
+    target_customer_segments: [...brief.target_customer_segments],
+    region: brief.region,
+    competence_needs: [...brief.competence_needs],
+    modules: brief.modules.filter((module) => MODULES.includes(module)),
   }
+}
+
+function approvalsOf(rows: ResearchQueryDto[]): ApprovalQuery[] {
+  return rows.map((row) => ({
+    query_text: row.query_text,
+    purpose: row.planner_purpose,
+    public_safe: row.firewall_decision !== "block",
+    approval_required: true,
+    approval_id: row.approval_id,
+    decision: row.status,
+    firewall_decision: row.firewall_decision,
+    risk_label: row.risk_label,
+    risk_score: row.risk_score ?? 0,
+    redaction_summary: row.redaction_summary,
+  }))
 }
 
 export function PublicResearchPanel({
@@ -61,330 +81,217 @@ export function PublicResearchPanel({
   dataClass?: DataClass
   onImported?: () => void
 }) {
-  const privacyClass = flatToPrivacyClass(dataClass)
-  const researchBlocked = isExternalBlocked(privacyClass)
-  const needsFirewall = requiresSanitizedApproval(privacyClass)
-
-  const [query, setQuery] = React.useState("")
-  const [state, setState] = React.useState<PanelState>("idle")
+  const blocked = isExternalBlocked(flatToPrivacyClass(dataClass))
+  const [workspace, setWorkspace] = React.useState<ResearchWorkspaceDto | null>(null)
+  const [form, setForm] = React.useState<ResearchBriefInput | null>(null)
+  const [queries, setQueries] = React.useState<ApprovalQuery[]>([])
+  const [activeModule, setActiveModule] = React.useState<ResearchModule>("market_growth")
+  const [editingApproved, setEditingApproved] = React.useState(false)
+  const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
-  const [preview, setPreview] = React.useState<FirewallPreview | null>(null)
-  const [results, setResults] = React.useState<ResearchResultDto[]>([])
-  const [importing, setImporting] = React.useState<Record<string, boolean>>({})
-  const [imported, setImported] = React.useState<Record<string, boolean>>({})
-  const pollRef = React.useRef<{ stop: () => void } | null>(null)
+  const [manualUrl, setManualUrl] = React.useState("")
+  const [manualTitle, setManualTitle] = React.useState("")
+  const [manualContent, setManualContent] = React.useState("")
 
-  React.useEffect(() => () => pollRef.current?.stop(), [])
+  const refresh = React.useCallback(async () => {
+    const next = await getResearchWorkspace(projectId)
+    setWorkspace(next)
+    if (next.brief.latest) setForm(formOf(next.brief.latest))
+    setQueries(approvalsOf(next.queries))
+  }, [projectId])
 
-  const busy = state === "searching" || state === "previewing"
-  const submitLabel = needsFirewall ? "Vor Webrecherche prüfen" : "Suchen"
+  React.useEffect(() => {
+    if (!blocked) void refresh().catch(() => setError("Der Recherchestatus konnte nicht geladen werden."))
+  }, [blocked, refresh])
 
-  // Run the actual research task (public query, or an approved sanitized query).
-  const runTask = React.useCallback(
-    async (queryPreview: string, approvalId?: string) => {
-      setState("searching")
-      setError(null)
-      setResults([])
-      try {
-        const accepted = await createResearchTask(projectId, {
-          purpose: "partner_role_suggestion",
-          subject_type: "topic",
-          query_preview: queryPreview,
-          max_results: 5,
-          ...(approvalId ? { approval_id: approvalId } : {}),
-        })
-        pollRef.current = pollOperation(accepted.operation_id, {
-          onTerminal: async (op) => {
-            if (op.status !== "succeeded") {
-              setState("error")
-              setError(
-                "Die Recherche konnte nicht abgeschlossen werden. Bitte versuchen Sie es später erneut."
-              )
-              return
-            }
-            try {
-              const rows = await listResearchResults(projectId)
-              setResults(rows.filter((r) => r.task_id === accepted.resource_id))
-              setState("results")
-            } catch {
-              setState("error")
-              setError("Die Ergebnisse konnten nicht geladen werden.")
-            }
-          },
-        })
-      } catch (err) {
-        setState("error")
-        setError(
-          err instanceof ResearchError ? err.message : "Es ist ein Fehler aufgetreten."
-        )
-      }
-    },
-    [projectId]
-  )
-
-  const onSubmit = React.useCallback(
-    async (event: React.FormEvent) => {
-      event.preventDefault()
-      const trimmed = query.trim()
-      if (!trimmed || busy) return
-      setError(null)
-      setPreview(null)
-      if (!needsFirewall) {
-        await runTask(trimmed)
-        return
-      }
-      // Confidential: screen + sanitize before anything is searched.
-      setState("previewing")
-      try {
-        const result = await previewSearchQuery(projectId, trimmed)
-        setPreview(result)
-        setState(result.decision === "block" ? "blocked" : "preview")
-      } catch (err) {
-        setState("error")
-        setError(
-          err instanceof FirewallError ? err.message : "Es ist ein Fehler aufgetreten."
-        )
-      }
-    },
-    [query, busy, needsFirewall, projectId, runTask]
-  )
-
-  const approveAndSearch = React.useCallback(async () => {
-    if (!preview?.approval_id) return
-    setState("searching")
+  const act = async (operation: () => Promise<unknown>) => {
+    setBusy(true)
+    setError(null)
     try {
-      await approveSearchQuery(preview.approval_id)
-      await runTask(query.trim(), preview.approval_id)
+      await operation()
+      await refresh()
     } catch (err) {
-      setState("error")
-      setError(
-        err instanceof FirewallError ? err.message : "Es ist ein Fehler aufgetreten."
-      )
+      setError(err instanceof Error ? err.message : "Die Rechercheaktion ist fehlgeschlagen.")
+    } finally {
+      setBusy(false)
     }
-  }, [preview, query, runTask])
+  }
 
-  const importOne = React.useCallback(
-    async (resultId: string) => {
-      setImporting((m) => ({ ...m, [resultId]: true }))
-      try {
-        await importResearchResult(resultId)
-        setImported((m) => ({ ...m, [resultId]: true }))
-        onImported?.()
-      } catch (err) {
-        setError(
-          err instanceof ResearchError
-            ? err.message
-            : "Die Quelle konnte nicht importiert werden."
-        )
-      } finally {
-        setImporting((m) => ({ ...m, [resultId]: false }))
-      }
-    },
-    [onImported]
-  )
-
-  // R4.1: D3 (NDA) / unklassifiziert — keine Webrecherche, auch nicht sanitisiert.
-  if (researchBlocked) {
+  if (blocked) {
     return (
-      <section
-        data-testid="public-research-panel"
-        className="rounded-lg border border-border bg-card p-5"
-      >
-        <div className="mb-1 flex items-center gap-2">
-          <ShieldAlert className="size-4 text-status-partial" />
-          <h3 className="text-sm font-semibold text-foreground">
-            Öffentliche Recherche
-          </h3>
-        </div>
-        <p data-testid="research-blocked" className="text-xs text-muted-foreground">
-          Für NDA-geschützte, gesperrte oder noch nicht eingestufte Inhalte ist
-          keine Webrecherche möglich. Es werden keine externen Dienste aufgerufen.
-        </p>
+      <section className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
+        <div className="flex items-center gap-2"><ShieldAlert className="size-4" /><h3 className="font-semibold">Öffentliche Recherche</h3></div>
+        <p className="mt-1 text-xs text-muted-foreground">Für NDA-geschützte oder unklare Datenklassen werden keine externen Dienste aufgerufen.</p>
       </section>
     )
   }
 
+  const brief = workspace?.brief.latest ?? null
+  const approved = workspace?.brief.active_approved ?? null
+  const queryRows = workspace?.queries ?? []
+  const visibleQueryIndexes = queryRows
+    .map((row, index) => ({ row, index }))
+    .filter(({ row }) => (
+      row.module === activeModule
+      && row.research_brief_id === approved?.research_brief_id
+    ))
+  const visibleQueries = visibleQueryIndexes.map(({ index }) => queries[index]).filter(Boolean)
+  const historicalQueries = queryRows
+    .map((row, index) => ({ row, query: queries[index] }))
+    .filter(({ row, query }) => (
+      Boolean(query)
+      && row.module === activeModule
+      && row.research_brief_id !== approved?.research_brief_id
+    ))
+    .map(({ query }) => query)
+  const visibleResults = (workspace?.results ?? []).filter((row) => row.module === activeModule)
+  const demo = workspace?.provider_mode === "fake_demo"
+  const briefFieldsDisabled = brief?.status === "approved" && !editingApproved
+
   return (
-    <section
-      data-testid="public-research-panel"
-      className="rounded-lg border border-border bg-card p-5"
-    >
-      <div className="mb-1 flex items-center gap-2">
-        <Globe className="size-4 text-muted-foreground" />
-        <h3 className="text-sm font-semibold text-foreground">Öffentliche Recherche</h3>
-      </div>
-      <p className="mb-3 text-xs text-muted-foreground">
-        {needsFirewall
-          ? "Diese Anfrage enthält möglicherweise vertrauliche Angaben. Sie wird vor der Websuche geprüft und bereinigt."
-          : "Nur öffentliche Suchbegriffe verwenden. Keine vertraulichen oder personenbezogenen Informationen eingeben."}
-      </p>
-
-      <form onSubmit={onSubmit} className="flex flex-col gap-2 sm:flex-row">
-        <div className="flex-1">
-          <Label htmlFor="research-query" className="sr-only">
-            Öffentlicher Suchbegriff
-          </Label>
-          <Input
-            id="research-query"
-            value={query}
-            onChange={(e) => {
-              setQuery(e.target.value)
-              if (state === "preview" || state === "blocked") setState("idle")
-            }}
-            placeholder="z. B. öffentliche Forschungskompetenz Photonik"
-            disabled={busy}
-          />
+    <section className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2"><Globe className="size-4" /><h3 className="font-semibold">Öffentliche Recherche</h3></div>
+          <p className="mt-1 text-xs text-muted-foreground">Queries entstehen nur aus dem geprüften öffentlichen Recherchebrief.</p>
+          <p className="mt-1 text-xs text-muted-foreground">Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben eintragen.</p>
         </div>
-        <Button type="submit" disabled={busy || !query.trim()}>
-          {busy ? (
-            <>
-              <Loader2 className="size-4 animate-spin" />{" "}
-              {state === "previewing" ? "Prüfung läuft …" : "Suche läuft …"}
-            </>
-          ) : (
-            submitLabel
-          )}
-        </Button>
-      </form>
+        {workspace && <Badge variant="outline">{workspace.provider_mode === "live" ? "Live-Recherche" : workspace.provider_mode === "fake_demo" ? "Demo-Recherche" : "Nicht verfügbar"}</Badge>}
+      </div>
 
-      {/* Firewall preview — sanitized query + approval (D1/D2, require_human_approval) */}
-      {state === "preview" && preview && (
-        <div
-          data-testid="firewall-preview"
-          className="mt-4 rounded-md border border-status-partial/40 bg-status-partial/8 p-3"
-        >
-          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <ShieldAlert className="size-4 text-status-partial" />
-            Bereinigte Suchanfrage
-          </p>
-          <p
-            data-testid="sanitized-query"
-            className="mt-2 rounded bg-background px-2 py-1.5 text-sm text-foreground"
-          >
-            {preview.sanitized_query || "—"}
-          </p>
-          {preview.redaction_summary.length > 0 && (
-            <div className="mt-2">
-              <p className="text-xs text-muted-foreground">
-                Entfernte oder verallgemeinerte Angaben:
-              </p>
-              <ul className="mt-1 flex flex-wrap gap-1.5">
-                {preview.redaction_summary.map((r) => (
-                  <li key={r.category}>
-                    <Badge variant="secondary">
-                      {r.label}
-                      {r.count > 1 ? ` ×${r.count}` : ""}
-                    </Badge>
-                  </li>
-                ))}
-              </ul>
+      {demo && <p className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" data-testid="research-demo-banner">Demo-Recherche – keine echten Webquellen. Ergebnisse können nicht übernommen werden.</p>}
+      {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
+
+      {!brief && (
+        <Button className="mt-4" variant="outline" disabled={busy} onClick={() => void act(() => suggestResearchBrief(projectId))}>
+          {busy && <Loader2 className="size-4 animate-spin" />} Recherchebrief vorschlagen
+        </Button>
+      )}
+
+      {brief && form && (
+        <div className="mt-4 space-y-3" data-testid="research-brief-form">
+          <div className="grid gap-3 md:grid-cols-2">
+            <BriefField label="Anwendungsdomäne" value={form.application_domain} onChange={(value) => setForm({ ...form, application_domain: value })} disabled={briefFieldsDisabled} />
+            <BriefField label="Technologieklasse" value={form.technology_class} onChange={(value) => setForm({ ...form, technology_class: value })} disabled={briefFieldsDisabled} />
+            <BriefField label="Zielkundensegmente (kommagetrennt)" value={form.target_customer_segments.join(", ")} onChange={(value) => setForm({ ...form, target_customer_segments: split(value) })} disabled={briefFieldsDisabled} />
+            <BriefField label="Region" value={form.region} onChange={(value) => setForm({ ...form, region: value })} disabled={briefFieldsDisabled} />
+            <BriefField label="Gesuchte Forschungs-/Partnerkompetenzen (kommagetrennt)" value={form.competence_needs.join(", ")} onChange={(value) => setForm({ ...form, competence_needs: split(value) })} disabled={briefFieldsDisabled} />
+          </div>
+          <fieldset disabled={briefFieldsDisabled}>
+            <legend className="text-xs font-medium">Recherchemodule</legend>
+            <div className="mt-1 flex flex-wrap gap-2">
+              {MODULES.map((module) => <label key={module} className="flex items-center gap-1 rounded border px-2 py-1 text-xs"><input type="checkbox" checked={form.modules.includes(module)} onChange={(event) => setForm({ ...form, modules: event.target.checked ? [...form.modules, module] : form.modules.filter((item) => item !== module) })} />{RESEARCH_MODULE_LABELS[module]}</label>)}
             </div>
-          )}
-          <p className="mt-2 text-xs text-muted-foreground">
-            Die Websuche erhält nur die bereinigte Anfrage.
-          </p>
-          <div className="mt-3 flex gap-2">
-            <Button type="button" size="sm" onClick={approveAndSearch}>
-              Bereinigte Anfrage freigeben und suchen
-            </Button>
-            <Button
-              type="button"
-              size="sm"
-              variant="outline"
-              onClick={() => setState("idle")}
-            >
-              Anfrage anpassen
-            </Button>
+          </fieldset>
+          <div className="flex flex-wrap gap-2">
+            {brief.status === "draft" ? <>
+              <Button variant="outline" disabled={busy} onClick={() => void act(() => saveResearchBrief(projectId, form))}>Entwurf speichern</Button>
+              <Button disabled={busy} onClick={() => void act(async () => { const saved = await saveResearchBrief(projectId, form); await approveResearchBrief(saved.research_brief_id) })}>Public-safe Brief freigeben</Button>
+            </> : editingApproved ? <>
+              <Button variant="outline" disabled={busy} onClick={() => { setForm(formOf(brief)); setEditingApproved(false) }}>Abbrechen</Button>
+              <Button disabled={busy} onClick={() => void act(async () => { await saveResearchBrief(projectId, form); setEditingApproved(false) })}>Neue Briefversion speichern</Button>
+            </> : <>
+              <Badge>Brief v{brief.version} freigegeben</Badge>
+              <Button variant="outline" disabled={busy} onClick={() => setEditingApproved(true)}>Brief ändern</Button>
+              <Button variant="outline" disabled={busy || queryRows.some((row) => row.research_brief_id === brief.research_brief_id)} onClick={() => void act(() => planResearchQueries(brief.research_brief_id))}>Queries erzeugen</Button>
+            </>}
           </div>
         </div>
       )}
 
-      {/* Firewall block — cannot be safely sanitized */}
-      {state === "blocked" && preview && (
-        <div
-          data-testid="firewall-blocked"
-          role="alert"
-          className="mt-4 rounded-md border border-destructive/30 bg-destructive/5 p-3"
-        >
-          <p className="flex items-center gap-1.5 text-sm font-medium text-foreground">
-            <ShieldAlert className="size-4 text-destructive" />
-            Diese Suchanfrage kann nicht sicher bereinigt werden.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Bitte formulieren Sie die Anfrage allgemeiner (ohne Partner-, Projekt- oder
-            Budgetangaben).
-          </p>
+      {approved && (
+        <div className="mt-5">
+          <div className="flex gap-1 overflow-x-auto pb-2" aria-label="Recherchemodule">
+            {approved.modules.filter((module) => MODULES.includes(module)).map((module) => <Button key={module} size="xs" variant={activeModule === module ? "default" : "outline"} onClick={() => setActiveModule(module)}>{RESEARCH_MODULE_LABELS[module]}</Button>)}
+          </div>
+
+          {visibleQueries.length > 0 && <div className="mt-3">
+            <QueryApprovalList
+              projectId={projectId}
+              queries={visibleQueries}
+              onChange={(next) => setQueries((all) => { const copy = [...all]; visibleQueryIndexes.forEach(({ index }, offset) => { copy[index] = next[offset] }); return copy })}
+              onPreview={async (query, editedText): Promise<QueryCandidateDto> => {
+                const original = queryRows.find((row) => row.approval_id === query.approval_id)
+                if (!original) throw new Error("Query-Provenienz fehlt.")
+                const next = await previewBriefQuery(approved.research_brief_id, { ...original, query_text: editedText })
+                return {
+                  query_text: next.query_text,
+                  purpose: next.planner_purpose,
+                  public_safe: next.firewall_decision !== "block",
+                  approval_required: true,
+                  approval_id: next.approval_id ?? undefined,
+                  blocked_reason: next.firewall_decision === "block" ? "query_blocked" : undefined,
+                  firewall_decision: next.firewall_decision,
+                  risk_label: next.risk_label,
+                  risk_score: next.risk_score,
+                  redaction_summary: next.redaction_summary,
+                } as ApprovalQuery
+              }}
+            />
+            <Button className="mt-2" disabled={busy || approvedIds(visibleQueries).length === 0} onClick={() => void act(() => runResearchBrief(approved.research_brief_id, approvedIds(visibleQueries)))}>Freigegebene Queries ausführen</Button>
+          </div>}
+
+          {historicalQueries.length > 0 && <details className="mt-3 rounded border p-2 text-xs">
+            <summary className="cursor-pointer font-medium">Frühere Query-Stände</summary>
+            <div className="mt-2"><QueryApprovalList projectId={projectId} queries={historicalQueries} onChange={() => undefined} /></div>
+          </details>}
+
+          <div className="mt-4 space-y-3" data-testid="research-results">
+            {visibleResults.length === 0 && <p className="text-sm text-muted-foreground">Noch keine Resultate für dieses Modul.</p>}
+            {visibleResults.map((result) => <article key={result.result_id} className="rounded border p-3">
+              <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="font-medium">{result.title}</h4><a href={result.final_url ?? result.source_url} target="_blank" rel="noreferrer" className="break-all text-xs text-primary hover:underline">{result.final_url ?? result.source_url}</a><p className="text-xs text-muted-foreground">{result.publisher ?? result.domain} · {result.published_at ? new Date(result.published_at).toLocaleDateString("de-CH") : "Datum nicht verfügbar"} · Aktualität: {result.freshness_label ?? "unbekannt"}</p></div><Badge variant="outline">{result.execution_mode === "fake_demo" ? "Demo" : result.status === "imported" && result.content_review_status === "reviewed" ? "Inhaltlich geprüft" : result.status === "imported" ? "Übernommen" : result.status === "rejected" ? "Verworfen" : "Kandidat"}</Badge></div>
+              {result.snippet && <p className="mt-2 text-sm">{result.snippet}</p>}
+              <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>
+              <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
+                <div><dt className="font-medium">Potentieller Abschnitt</dt><dd>{(result.potential_sections ?? []).join(", ") || "noch offen"}</dd></div>
+                <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{(result.source_quality ?? "unbewertet").replaceAll("_", " ")}</dd></div>
+                <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{!result.coverage_status || result.coverage_status === "not_checked" ? "nicht geprüft" : result.coverage_status}</dd></div>
+                <div><dt className="font-medium">Inhaltliche Stützung</dt><dd>{supportLabel(result.support_status ?? "not_checked")}</dd></div>
+              </dl>
+              {result.partner_candidate && <dl className="mt-2 grid gap-1 rounded bg-muted p-2 text-xs">
+                <div><dt className="font-medium">Organisation/Forschungsgruppe</dt><dd>{result.partner_candidate.organization_or_group}</dd></div>
+                <div><dt className="font-medium">Standort</dt><dd>{result.partner_candidate.location ?? "unbestätigt"}</dd></div>
+                <div><dt className="font-medium">Gesuchte Kompetenz</dt><dd>{result.partner_candidate.expertise_keywords.join(", ") || "nicht angegeben"}</dd></div>
+                <div><dt className="font-medium">Mögliche Projektrolle</dt><dd>{result.partner_candidate.possible_project_role}</dd></div>
+                <div><dt className="font-medium">Warum potenziell passend</dt><dd>{result.partner_candidate.why_potentially_relevant}</dd></div>
+                <div><dt className="font-medium">Eligibility-Referenz</dt><dd>{eligibilityLabel(result.partner_candidate.status)}{result.partner_candidate.eligibility_reference_date ? ` (Stand ${result.partner_candidate.eligibility_reference_date})` : ""}</dd></div>
+                <div><dt className="font-medium">Kompetenzlücke</dt><dd>{result.partner_candidate.competence_gap ?? "menschlich zu konkretisieren"}</dd></div>
+                <div><dt className="font-medium">Track Record</dt><dd>{(result.partner_candidate.track_record_links ?? []).length ? (result.partner_candidate.track_record_links ?? []).map((link) => <a key={link} href={link} target="_blank" rel="noreferrer" className="block break-all text-primary hover:underline">{link}</a>) : "noch nicht separat belegt"}</dd></div>
+                <div><dt className="font-medium">Grenze</dt><dd>Keine Aussage zu Verfügbarkeit oder Interesse. Endgültige Beitragsberechtigung menschlich prüfen.</dd></div>
+              </dl>}
+              {result.source_locations.map((location, index) => <details key={`${location.source_version_id}-${index}`} className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Fundstelle aus abgerufener Seite</summary><p className="mt-1 whitespace-pre-wrap rounded bg-muted p-2">{location.excerpt}</p><p className="text-muted-foreground">Fundstelle exakt abgerufen – fachliche Stützung nicht bestätigt.</p></details>)}
+              <div className="mt-3 flex flex-wrap gap-2"><Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>{result.status === "candidate" && result.execution_mode !== "fake_demo" && <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und vollständig abrufen</Button>}{result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}{result.status === "imported" && <><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports"))}>Stützt inhaltlich</Button><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "partially_supports"))}>Teilweise</Button><Button size="xs" variant="ghost" onClick={() => void act(() => reviewResearchResult(result.result_id, "does_not_support"))}>Stützt nicht</Button></>}</div>
+              <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Technische Details</summary><p>Ausführungsmodus: {result.execution_mode ?? "unbekannt"} · Task-ID: {result.task_id}</p></details>
+            </article>)}
+          </div>
+
+          {(workspace?.provider_mode === "unavailable" || error) && <div className="mt-4 rounded border p-3" data-testid="manual-research-fallback">
+            <h4 className="text-sm font-medium">Manueller Quellenimport</h4>
+            <p className="mt-1 text-xs text-muted-foreground">Bei Netz- oder Recherchedienstfehlern: öffentliche URL und selbst kopierten Seiteninhalt einfügen. Der Server ruft die URL nicht ab. Alternativ steht der bestehende PDF-Upload auf dieser Seite zur Verfügung.</p>
+            <div className="mt-2 grid gap-2 md:grid-cols-2"><BriefField label="Öffentliche HTTPS-URL" value={manualUrl} onChange={setManualUrl} disabled={busy} /><BriefField label="Titel" value={manualTitle} onChange={setManualTitle} disabled={busy} /></div>
+            <Label className="mt-2 block" htmlFor="manual-research-content">Kopierter Seiteninhalt</Label>
+            <Textarea id="manual-research-content" value={manualContent} disabled={busy} onChange={(event) => setManualContent(event.target.value)} rows={6} />
+            <Button className="mt-2" size="sm" variant="outline" disabled={busy || !manualUrl.trim() || !manualContent.trim()} onClick={() => void act(async () => { await createUrlSource(projectId, manualUrl, manualTitle || null, PUBLIC_SOURCE_CLASSIFICATION, manualContent); setManualUrl(""); setManualTitle(""); setManualContent(""); onImported?.() })}>Manuell als Quelle übernehmen</Button>
+          </div>}
         </div>
       )}
-
-      {error && (
-        <p role="alert" className="mt-3 text-sm text-status-incomplete">
-          {error}
-        </p>
-      )}
-
-      {state === "results" && results.length === 0 && (
-        <p className="mt-4 text-sm text-muted-foreground">
-          Keine öffentlichen Ergebnisse gefunden.
-        </p>
-      )}
-
-      {results.length > 0 && (
-        <ul className="mt-4 flex flex-col gap-3" data-testid="research-results">
-          {results.map((r) => (
-            <li
-              key={r.result_id}
-              className="rounded-md border border-border bg-background p-3"
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="min-w-0">
-                  <p className="truncate text-sm font-medium text-foreground">
-                    {r.title}
-                  </p>
-                  <p className="truncate text-xs text-muted-foreground">
-                    {hostOf(r.source_url)}
-                  </p>
-                  {r.snippet && (
-                    <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">
-                      {r.snippet}
-                    </p>
-                  )}
-                </div>
-                {imported[r.result_id] || r.status === "imported" ? (
-                  <Badge variant="secondary" className="shrink-0">
-                    Als Quelle gespeichert
-                  </Badge>
-                ) : (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    className="shrink-0"
-                    disabled={importing[r.result_id]}
-                    onClick={() => importOne(r.result_id)}
-                  >
-                    {importing[r.result_id] ? (
-                      <Loader2 className="size-3.5 animate-spin" />
-                    ) : (
-                      "Quelle importieren"
-                    )}
-                  </Button>
-                )}
-              </div>
-              {r.partner_role_suggestions.length > 0 && (
-                <p className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                  <Sparkles className="size-3" />
-                  KI-gestützte Vorschläge — fachlich zu prüfen.
-                </p>
-              )}
-            </li>
-          ))}
-        </ul>
-      )}
-
-      <p className="mt-4 text-xs text-muted-foreground">
-        Webquellen müssen fachlich geprüft werden.
-      </p>
     </section>
   )
+}
+
+function supportLabel(value: string): string {
+  return ({ not_checked: "nicht geprüft", supports: "stützt", partially_supports: "stützt teilweise", does_not_support: "stützt nicht" } as Record<string, string>)[value] ?? value
+}
+
+function eligibilityLabel(value: string): string {
+  return ({ eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert", likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt", needs_human_check: "Kein belastbarer Nachweis – menschlich prüfen", candidate_not_eligibility_confirmed: "Kein belastbarer Nachweis – menschlich prüfen" } as Record<string, string>)[value] ?? "Kein belastbarer Nachweis – menschlich prüfen"
+}
+
+function split(value: string): string[] {
+  return value.split(",").map((item) => item.trim()).filter(Boolean)
+}
+
+function BriefField({ label, value, onChange, disabled }: { label: string; value: string; onChange: (value: string) => void; disabled: boolean }) {
+  const id = React.useId()
+  return <div><Label htmlFor={id}>{label}</Label><Input id={id} value={value} disabled={disabled} onChange={(event) => onChange(event.target.value)} /></div>
 }

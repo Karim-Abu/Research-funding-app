@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import json
+import ipaddress
+from urllib.parse import urlparse
 
 from fastapi import (
     APIRouter,
@@ -248,31 +250,91 @@ def create_text_source(
     return result
 
 
-@router.post("/projects/{project_id}/sources/url", status_code=202)
+def _validate_manual_source_url(value: str) -> str:
+    parsed = urlparse(value.strip())
+    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password:
+        raise ProblemException(
+            status=422, code="invalid_public_url", title="Unprocessable Entity",
+            detail="Bitte eine öffentliche HTTPS-URL ohne Zugangsdaten angeben.",
+        )
+    host = parsed.hostname.casefold().rstrip(".")
+    if host == "localhost" or host.endswith(".localhost"):
+        raise ProblemException(
+            status=422, code="invalid_public_url", title="Unprocessable Entity",
+            detail="Lokale URLs können nicht als öffentliche Quelle importiert werden.",
+        )
+    try:
+        if not ipaddress.ip_address(host).is_global:
+            raise ProblemException(
+                status=422, code="invalid_public_url", title="Unprocessable Entity",
+                detail="Private Netzwerkadressen sind nicht zulässig.",
+            )
+    except ValueError:
+        pass
+    return value.strip()
+
+
+@router.post(
+    "/projects/{project_id}/sources/url", response_model=SourceDocument, status_code=201
+)
 def import_url_source(
     project_id: str,
     payload: UrlSourceCreate,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
-    settings: Settings = Depends(settings_dep),
     idempotency_key: str = Header(
         ..., alias="Idempotency-Key", min_length=8, max_length=128
     ),
-) -> Response:
-    _require_project(db, project_id, context.user.workspace_id)
-    # URL import requires validated public fetching (Firecrawl/SSRF checks),
-    # which is out of scope this milestone. Report truthfully as unavailable.
-    if not settings.url_import_enabled:
+) -> SourceDocument:
+    project = _require_project(db, project_id, context.user.workspace_id)
+    if not payload.manual_content or not payload.manual_content.strip():
         raise ProblemException(
             status=503,
             code="url_import_unavailable",
             title="Service Unavailable",
-            detail="URL import is not available in this deployment.",
+            detail=(
+                "Ein automatischer URL-Abruf ist nicht verfügbar. Bitte den öffentlichen "
+                "Seiteninhalt manuell einfügen oder ein PDF hochladen."
+            ),
         )
-    raise ProblemException(  # pragma: no cover — unreachable while disabled
-        status=503, code="url_import_unavailable",
-        title="Service Unavailable", detail="URL import is not available.",
+    source_url = _validate_manual_source_url(payload.url)
+    fingerprint = idempotency.fingerprint(
+        "POST", f"/projects/{project_id}/sources/url", payload.model_dump_json()
     )
+    scope = _idempotency_scope(context, "/sources/url")
+    existing = idempotency.get(db, scope, idempotency_key)
+    if existing is not None:
+        if existing.request_fingerprint != fingerprint:
+            raise ProblemException(
+                status=409, code="idempotency_conflict", title="Conflict",
+                detail="Idempotency-Key reused with a different request.",
+            )
+        return SourceDocument(**existing.response_body)
+
+    doc, version = source_service.prepare_text_source(
+        db,
+        project=project,
+        payload=TextSourceCreate(
+            name=payload.name or (urlparse(source_url).hostname or "Webquelle"),
+            text=payload.manual_content,
+            data_classification=payload.data_classification,
+        ),
+        actor_user_id=context.user.id,
+    )
+    doc.type = "url"
+    doc.source_url = source_url
+    db.commit()
+    process_source_version(version.source_version_id)
+    db.expire_all()
+    doc = sources_repo.get_scoped(db, doc.source_id, context.user.workspace_id)
+    result = sources_repo.to_contract(doc)
+    idempotency.save(
+        db, scope=scope, key=idempotency_key, request_fingerprint=fingerprint,
+        response_status=201, response_body=result.model_dump(mode="json"),
+        resource_id=doc.source_id,
+    )
+    db.commit()
+    return result
 
 
 @router.get("/sources/{source_id}", response_model=SourceDocument)

@@ -119,7 +119,8 @@ test("A2 solution-innovation: safe unavailable + field scope (API context)", asy
   // never an auto-applied draft change.
   const redraft = await page.request.post(
     `/api/runs/${runId}/fields/${SOL}/redrafts`,
-    { headers: mut(), data: { base_version_id: base } }
+    // Composite-Felder verlangen einen gewählten Zielabschnitt (Editor-UX).
+    { headers: mut(), data: { base_version_id: base, target_section: "4.1" } }
   )
   expect(redraft.status()).toBe(503)
   expect((await redraft.json()).code).toBe("ai_unavailable")
@@ -244,7 +245,8 @@ test("M9E Value Creation: cloud A2 suggestion → accept → agent draft + reche
 
   const redraft = await page.request.post(
     `/api/runs/${runId}/fields/${VC}/redrafts`,
-    { headers: mut(), data: { base_version_id: base } }
+    // Composite-Felder verlangen einen gewählten Zielabschnitt (Editor-UX).
+    { headers: mut(), data: { base_version_id: base, target_section: "3.1" } }
   )
   expect(redraft.status()).toBe(202)
   const redraftOp = (await redraft.json()).operation_id
@@ -395,7 +397,8 @@ test("Flow A: cloud confirmation enables A2 → accept → agent draft + recheck
   // createRedraft is now AVAILABLE (202) — not the deterministic 503.
   const redraft = await page.request.post(
     `/api/runs/${runId}/fields/${SOL}/redrafts`,
-    { headers: mut(), data: { base_version_id: base } }
+    // Composite-Felder verlangen einen gewählten Zielabschnitt (Editor-UX).
+    { headers: mut(), data: { base_version_id: base, target_section: "4.1" } }
   )
   expect(redraft.status()).toBe(202)
   const redraftOp = (await redraft.json()).operation_id

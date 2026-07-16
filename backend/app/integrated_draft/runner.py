@@ -27,14 +27,16 @@ from app.db.models import (
     AgentInvocation,
     AnalysisRun,
     DraftVersion,
+    ProcessingConfirmation,
     PortalFieldDraft,
     Project,
     UsageRecord,
 )
 from app.drafts.templates import build_template
-from app.evaluation.usage import run_usage_totals, usage_by_agent_task
+from app.evaluation.usage import usage_by_agent_task
 from app.integrated_draft.package import DraftPackage, FieldDraftItem, classify_status
 from app.registry.loader import get_registry
+from app.runs.cloud_policy import REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION
 
 _MARKET_PROFILE = "A2.value_creation_market_logic"   # VC — consumes market research context
 _PARTNER_PROFILE = "A2.solution_innovation"          # SOL — consumes partner research context
@@ -67,7 +69,13 @@ def _clone_project(db: Session, base: Project, field_id: str) -> Project:
     return child
 
 
-def _new_run(db: Session, project: Project, actor_user_id: str) -> AnalysisRun:
+def _new_run(
+    db: Session,
+    project: Project,
+    actor_user_id: str,
+    *,
+    real_eval_confirmation: bool = False,
+) -> AnalysisRun:
     run = AnalysisRun(
         run_id="irun-" + uuid.uuid4().hex[:8], project_id=project.project_id,
         workspace_id=project.workspace_id, created_by=actor_user_id, status="running",
@@ -76,6 +84,24 @@ def _new_run(db: Session, project: Project, actor_user_id: str) -> AnalysisRun:
         snapshot_versions={},
     )
     db.add(run)
+    if real_eval_confirmation:
+        db.add(ProcessingConfirmation(
+            confirmation_id="eval-confirm-" + uuid.uuid4().hex[:8],
+            project_id=project.project_id,
+            workspace_id=project.workspace_id,
+            created_by=actor_user_id,
+            status="used",
+            processing_mode="cloud_assisted",
+            source_version_ids=[],
+            accepted_policy_version="1.1.0",
+            purpose="Explizit freigegebener synthetischer Evaluationslauf",
+            provider_route_class="direct_eval",
+            confirmation_text_version=REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION,
+            data_classification_shown=dict(project.data_classification or {}),
+            expires_after_one_run=True,
+            used_by_run_id=run.run_id,
+            decided_at=datetime.now(timezone.utc),
+        ))
     db.flush()
     return run
 
@@ -144,7 +170,7 @@ def _a2_item(
         operation_id="iop-" + uuid.uuid4().hex[:8], provider_resolver=resolver,
     )
     view = outcome.view or {}
-    proposal = view.get("ai_proposal") or {}
+    proposal = view.get("proposal") or view.get("ai_proposal") or {}
     missing = list(proposal.get("missing_inputs") or [])
     status, avail_note = classify_status(
         outcome.status, outcome.reason, has_missing_inputs=bool(missing),
@@ -152,7 +178,11 @@ def _a2_item(
     item = FieldDraftItem(
         field_id=field.field_id, field_label=field.label_or_question, status=status,
         suggestion_text=view.get("suggested_text"),
-        ai_proposal=proposal or None, missing_inputs=missing,
+        generation_kind=proposal.get("generation_kind"),
+        draft_proposal=proposal or None,
+        ai_proposal=(proposal or None)
+        if proposal.get("generation_kind") == "model_generated" else None,
+        missing_inputs=missing,
         provider=proposal.get("provider"), model=proposal.get("model"),
         usage_record_id=proposal.get("usage_record_id"),
     )
@@ -169,7 +199,7 @@ def _a2_item(
             item.cost_status = rec.cost_status
     if outcome.invocation_id:
         inv = db.get(AgentInvocation, outcome.invocation_id)
-        if inv is not None:
+        if inv is not None and bool((inv.context_meta or {}).get("model_call_attempted")):
             item.latency_ms = inv.latency_ms
     return item
 
@@ -193,6 +223,7 @@ def run_integrated_draft(
     resolver_for: ResolverFor = None,
     seed_context: SeedContext = None,
     title_en: str | None = None,
+    real_eval_confirmation: bool = False,
 ) -> DraftPackage:
     """Run all 8 supported draft fields for the F1 case and return a DraftPackage.
 
@@ -214,7 +245,10 @@ def run_integrated_draft(
         config = a2_fields.resolve_field_config(field.field_id)
         if config is not None:
             child = _clone_project(db, base_project, field.field_id)
-            run = _new_run(db, child, actor_user_id)
+            run = _new_run(
+                db, child, actor_user_id,
+                real_eval_confirmation=real_eval_confirmation,
+            )
             if seed_context is not None:
                 seed_context(db, field.field_id, child)
             a2_runs.append(run)
@@ -257,13 +291,24 @@ def _usage_summary(db: Session, runs: list[AnalysisRun]) -> dict:
     status_counts: dict[str, int] = {}
     by_profile: list[dict] = []
     for run in runs:
-        totals = run_usage_totals(db, run.run_id)
-        input_t += totals["input_tokens"]
-        output_t += totals["output_tokens"]
-        urc += totals["usage_record_count"]
-        for k, v in totals["cost_status_counts"].items():
-            status_counts[k] = status_counts.get(k, 0) + v
-        by_profile.extend(usage_by_agent_task(db, run.run_id))
+        invocations = list(db.query(AgentInvocation).filter(
+            AgentInvocation.run_id == run.run_id
+        ))
+        for invocation in invocations:
+            if not bool((invocation.context_meta or {}).get("model_call_attempted")):
+                continue
+            record = (
+                db.get(UsageRecord, invocation.usage_record_id)
+                if invocation.usage_record_id else None
+            )
+            if record is None:
+                continue
+            input_t += record.input_tokens or 0
+            output_t += record.output_tokens or 0
+            urc += 1
+            status_counts[record.cost_status] = status_counts.get(record.cost_status, 0) + 1
+        if any(bool((inv.context_meta or {}).get("model_call_attempted")) for inv in invocations):
+            by_profile.extend(usage_by_agent_task(db, run.run_id))
     by_profile.sort(key=lambda r: r["agent_task"])
     return {
         "input_tokens": input_t, "output_tokens": output_t,

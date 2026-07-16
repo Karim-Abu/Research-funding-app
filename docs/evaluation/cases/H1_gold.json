@@ -1,0 +1,263 @@
+{
+  "_comment": "H1 VOLTRACK — A1-Goldstandard (HOLDOUT — nie für Prompt-Tuning). Match-Strategie wie F2 (role_model_scoring.py): Wertgleichheit ODER ≥0.5-Keyword-Trefferquote; target_ref-Gleichheit zählt zusätzlich für field_accuracy; boundary = Fragment-Provenienz + exakter Wert.",
+  "case_id": "H1",
+  "holdout": true,
+  "title_de": "VOLTRACK - Zustandsüberwachung für Batterie-Logistik",
+  "title_en": "VOLTRACK - Condition Monitoring for Battery Logistics",
+  "required_terms": ["VOLTRACK"],
+  "entities": [
+    "VOLTRACK",
+    "Rheintal Institut für Energiesysteme",
+    "Batterion Logistik AG",
+    "CargoTherm GmbH"
+  ],
+  "portal_boilerplate": [
+    "Characters:",
+    "Open Editor",
+    "Innosuisse Innolink - Innovationsprojekt",
+    "Seite ",
+    "Describe the",
+    "wird in Aramis publiziert",
+    "wird nicht in Aramis publiziert"
+  ],
+  "gold_facts": [
+    {
+      "gold_id": "H1-A1-001",
+      "fact_type": "project_title",
+      "target_ref": "INTRO.APP.NAME",
+      "normalized_value": "VOLTRACK - Zustandsüberwachung für Batterie-Logistik",
+      "keywords": ["VOLTRACK", "Zustandsüberwachung", "Batterie-Logistik"],
+      "fragment_ids": ["H1-frag-02"]
+    },
+    {
+      "gold_id": "H1-A1-002",
+      "fact_type": "project_title_en",
+      "target_ref": "INTRO.APP.NAME_EN",
+      "normalized_value": "VOLTRACK - Condition Monitoring for Battery Logistics",
+      "keywords": ["VOLTRACK", "Condition Monitoring", "Battery"],
+      "fragment_ids": ["H1-frag-02"]
+    },
+    {
+      "gold_id": "H1-A1-003",
+      "fact_type": "project_duration",
+      "target_ref": null,
+      "normalized_value": "30",
+      "keywords": ["Projektdauer", "duration", "Monate", "months"],
+      "fragment_ids": ["H1-frag-01"]
+    },
+    {
+      "gold_id": "H1-A1-004",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "30",
+      "keywords": ["Transportschäden", "30", "Prozent"],
+      "fragment_ids": ["H1-frag-02", "H1-frag-03", "H1-frag-11"]
+    },
+    {
+      "gold_id": "H1-A1-005",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "95",
+      "keywords": ["Erkennungsrate", "95", "kritischer Ereignisse"],
+      "fragment_ids": ["H1-frag-03", "H1-frag-11"]
+    },
+    {
+      "gold_id": "H1-A1-006",
+      "fact_type": "unsupported_savings_claim",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "normalized_value": "340000",
+      "keywords": ["340'000", "Einsparung", "interne Annahmen", "nicht", "Marktevidenz"],
+      "fragment_ids": ["H1-frag-10"]
+    },
+    {
+      "gold_id": "H1-A1-007",
+      "fact_type": "ip_patent_search",
+      "target_ref": "INTRO.IP.PATENT_SEARCH",
+      "normalized_value": "no",
+      "keywords": ["Patentrecherche", "noch nicht", "Freedom-to-Operate"],
+      "fragment_ids": ["H1-frag-05"]
+    },
+    {
+      "gold_id": "H1-A1-008",
+      "fact_type": "partner_research",
+      "target_ref": null,
+      "normalized_value": "Rheintal Institut für Energiesysteme",
+      "keywords": ["Rheintal", "Forschungspartner", "research partner", "Sensorfusion"],
+      "fragment_ids": ["H1-frag-06"]
+    },
+    {
+      "gold_id": "H1-A1-009",
+      "fact_type": "partner_implementation",
+      "target_ref": null,
+      "normalized_value": "Batterion Logistik AG",
+      "keywords": ["Batterion", "Umsetzungspartner", "implementation", "Pilotflotte"],
+      "fragment_ids": ["H1-frag-07"]
+    },
+    {
+      "gold_id": "H1-A1-010",
+      "fact_type": "partner_implementation",
+      "target_ref": null,
+      "normalized_value": "CargoTherm GmbH",
+      "keywords": ["CargoTherm", "Umsetzungspartner", "implementation", "Kühltransporte"],
+      "fragment_ids": ["H1-frag-08"]
+    },
+    {
+      "gold_id": "H1-A1-011",
+      "fact_type": "budget_direct_costs",
+      "target_ref": null,
+      "normalized_value": "500000",
+      "keywords": ["Projektkosten", "direct", "costs", "overhead"],
+      "fragment_ids": ["H1-frag-13"]
+    },
+    {
+      "gold_id": "H1-A1-012",
+      "fact_type": "budget_own_contribution",
+      "target_ref": null,
+      "normalized_value": "200000",
+      "keywords": ["Eigenleistung", "own contribution"],
+      "fragment_ids": ["H1-frag-13"]
+    },
+    {
+      "gold_id": "H1-A1-013",
+      "fact_type": "budget_cash_contribution",
+      "target_ref": null,
+      "normalized_value": "20000",
+      "keywords": ["Barbeitrag", "cash contribution"],
+      "fragment_ids": ["H1-frag-13"]
+    },
+    {
+      "gold_id": "H1-A1-014",
+      "fact_type": "budget_requested_funding",
+      "target_ref": null,
+      "normalized_value": "280000",
+      "keywords": ["Requested", "Förderung", "funding"],
+      "fragment_ids": ["H1-frag-13"]
+    },
+    {
+      "gold_id": "H1-A1-015",
+      "fact_type": "budget_requested_funding_overhead",
+      "target_ref": null,
+      "normalized_value": "322000",
+      "keywords": ["Overhead", "incl", "Förderung"],
+      "fragment_ids": ["H1-frag-13"]
+    },
+    {
+      "gold_id": "H1-A1-016",
+      "fact_type": "pilot_scope",
+      "target_ref": null,
+      "normalized_value": "12",
+      "keywords": ["Pilotflotte", "Fahrzeuge", "Routen"],
+      "fragment_ids": ["H1-frag-03"]
+    },
+    {
+      "gold_id": "H1-A1-017",
+      "fact_type": "business_model",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "normalized_value": null,
+      "keywords": ["Abo", "Sendung", "Geschäftsmodell"],
+      "fragment_ids": ["H1-frag-10"]
+    },
+    {
+      "gold_id": "H1-A1-018",
+      "fact_type": "preliminary_work",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "40",
+      "keywords": ["Messkampagne", "Sendungen", "40"],
+      "fragment_ids": ["H1-frag-11"]
+    }
+  ],
+  "gold_missing": [
+    {
+      "gold_id": "H1-M-001",
+      "target_ref": "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS",
+      "keywords": ["Unabhängigkeit", "independence", "Kommentar", "Erläuterung", "leer", "offen"]
+    },
+    {
+      "gold_id": "H1-M-002",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "keywords": ["Marktgrösse", "market size", "Wettbewerb", "competitors", "fehlt"]
+    }
+  ],
+  "gold_findings": [
+    {
+      "finding_id": "H1-F-004",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Marktgrösse", "market size", "fehlt", "erhoben"]
+    },
+    {
+      "finding_id": "H1-F-005",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "evidence_risk",
+      "a3_scope": true,
+      "keywords": ["340'000", "340000", "Einsparung", "Annahme", "Beleg", "Marktevidenz"]
+    },
+    {
+      "finding_id": "H1-F-006",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Wettbewerb", "USP", "Wettbewerber", "Differenzierung", "substanziert"]
+    },
+    {
+      "finding_id": "H1-F-007",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.2",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Go-to-Market", "Kundenzugang", "unvollständig", "Pilotreferenzen", "konkret"]
+    },
+    {
+      "finding_id": "H1-F-008",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["ökologisch", "Zweitleben", "quantifiziert", "Nutzen"]
+    },
+    {
+      "finding_id": "H1-F-009",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["State of the art", "SOTA", "Stand der Technik", "generisch", "Differenzierung"]
+    },
+    {
+      "finding_id": "H1-F-010",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Baseline", "Messmethode", "30", "95", "Ziel"]
+    },
+    {
+      "finding_id": "H1-F-011",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.4",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Datenqualität", "Annotation", "Messkampagne", "dokumentieren"]
+    },
+    {
+      "finding_id": "H1-F-012",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.6",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Partner", "Eignung", "Track Record", "Infrastruktur", "Beleg"]
+    },
+    {
+      "finding_id": "H1-F-013",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.5",
+      "severity": "human_review_required",
+      "a3_scope": true,
+      "keywords": ["IPR", "FTO", "Patent", "Freedom-to-Operate", "ungeklärt", "Eigentum"]
+    }
+  ]
+}

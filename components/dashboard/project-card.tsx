@@ -1,8 +1,9 @@
 "use client"
 
-import { Loader2, CalendarClock } from "lucide-react"
+import * as React from "react"
+import { Loader2, CalendarClock, MoreVertical, Trash2 } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
+import { Button, buttonVariants } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Progress } from "@/components/ui/progress"
 import {
@@ -16,6 +17,20 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { NotYetReviewedBadge } from "@/components/status/canonical-status"
 import {
@@ -37,12 +52,15 @@ import {
 interface ProjectCardProps {
   project: DashboardProject
   onAction: (projectId: string, action: NextAction | "view_progress") => void
+  /** Entfernt die Karte aus der Übersicht (archiviert das Projekt). */
+  onRemove: (projectId: string) => void
 }
 
 // Up to this many avatars are shown before collapsing into a "+N" count.
 const MAX_AVATARS = 3
 
-export function ProjectCard({ project, onAction }: ProjectCardProps) {
+export function ProjectCard({ project, onAction, onRemove }: ProjectCardProps) {
+  const [confirmOpen, setConfirmOpen] = React.useState(false)
   const {
     id,
     title,
@@ -76,44 +94,77 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
       onClick={() => onAction(id, cardAction)}
     >
       <CardHeader className="pb-3">
-        <div className="mb-2 flex flex-wrap items-center gap-2">
-          <Badge
-            variant="outline"
-            className={cn(
-              "text-xs font-medium",
-              PROJECT_STATUS_BADGE[status].className
+        <div className="mb-2 flex items-start justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={cn(
+                "text-xs font-medium",
+                PROJECT_STATUS_BADGE[status].className
+              )}
+            >
+              {PROJECT_STATUS_LABELS[status]}
+            </Badge>
+            {isDemo && (
+              <Badge variant="secondary" className="text-xs font-medium">
+                Demo
+              </Badge>
             )}
-          >
-            {PROJECT_STATUS_LABELS[status]}
-          </Badge>
-          {isDemo && (
-            <Badge variant="secondary" className="text-xs font-medium">
-              Demo
-            </Badge>
-          )}
-          {warningBadge && (
-            <Badge
-              variant="outline"
-              className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+            {warningBadge && (
+              <Badge
+                variant="outline"
+                className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+              >
+                {WARNING_BADGE_LABELS[warningBadge]}
+              </Badge>
+            )}
+            {/* R1.3/B7 — kanonische Zahl «Blockierende Aufgaben»
+                (ReviewStatusView); dieselbe Zahl wie in Anforderungen,
+                Qualitätsprüfung und Export. Ohne durchgeführte Prüfung
+                erscheint nie eine 0, sondern «Noch nicht geprüft» (Regel 7). */}
+            {typeof openBlockerCount === "number" && openBlockerCount > 0 && (
+              <Badge
+                variant="outline"
+                data-testid="card-blocker-count"
+                data-blocker-count={openBlockerCount}
+                className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+              >
+                {`${openBlockerCount} blockierende ${openBlockerCount === 1 ? "Aufgabe" : "Aufgaben"}`}
+              </Badge>
+            )}
+            {typeof openBlockerCount !== "number" && <NotYetReviewedBadge />}
+          </div>
+
+          {/* Kartenaktionen — Kebab-Menü. stopPropagation, damit ein Klick nicht
+              die Karten-Navigation auslöst (die ganze Karte ist klickbar). */}
+          <DropdownMenu>
+            <DropdownMenuTrigger
+              aria-label="Aktionen"
+              onClick={(e) => e.stopPropagation()}
+              className={cn(
+                buttonVariants({ variant: "ghost", size: "icon-sm" }),
+                "-mr-1 shrink-0 text-muted-foreground"
+              )}
             >
-              {WARNING_BADGE_LABELS[warningBadge]}
-            </Badge>
-          )}
-          {/* R1.3 — kanonische Blocker-Zahl (ReviewStatusView); dieselbe Zahl
-              wie in Anforderungen, Qualitätsprüfung und Export. Ohne
-              durchgeführte Prüfung erscheint nie eine 0, sondern der
-              ehrliche Zustand «Noch nicht geprüft» (Regel 7). */}
-          {typeof openBlockerCount === "number" && openBlockerCount > 0 && (
-            <Badge
-              variant="outline"
-              data-testid="card-blocker-count"
-              data-blocker-count={openBlockerCount}
-              className="border-destructive/20 bg-destructive/10 text-xs font-medium text-destructive"
+              <MoreVertical className="size-4" />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent
+              align="end"
+              className="w-56"
+              onClick={(e) => e.stopPropagation()}
             >
-              {`${openBlockerCount} Blocker offen`}
-            </Badge>
-          )}
-          {typeof openBlockerCount !== "number" && <NotYetReviewedBadge />}
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  setConfirmOpen(true)
+                }}
+              >
+                <Trash2 className="size-4" />
+                Aus Übersicht entfernen
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
 
         <h2 className="text-balance text-base font-semibold leading-snug text-foreground">
@@ -206,6 +257,33 @@ export function ProjectCard({ project, onAction }: ProjectCardProps) {
           Weiterarbeiten
         </Button>
       </CardContent>
+
+      {/* Bestätigung vor dem Entfernen (Human-in-the-loop). Dialog liegt im
+          Portal → stopPropagation verhindert die Karten-Navigation. */}
+      <Dialog open={confirmOpen} onOpenChange={setConfirmOpen}>
+        <DialogContent onClick={(e) => e.stopPropagation()}>
+          <DialogHeader>
+            <DialogTitle>Projekt aus Übersicht entfernen?</DialogTitle>
+            <DialogDescription>
+              {`„${title}“ wird archiviert und aus der Übersicht ausgeblendet. Die Daten bleiben erhalten.`}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmOpen(false)}>
+              Abbrechen
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={() => {
+                setConfirmOpen(false)
+                onRemove(id)
+              }}
+            >
+              Entfernen
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </Card>
   )
 }

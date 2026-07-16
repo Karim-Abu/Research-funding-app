@@ -1,122 +1,124 @@
-# PDF-Import-Gate-Report (R3.GATE — ausgefüllt)
+# PDF-Import-Gate-Report (R3.GATE — korrigiert und nachgetestet)
 
-Status: **Gate-Test durchgeführt am 2026-07-07. Entscheid E-01: R3 bauen.**
-Referenzen: `docs/repair/decision-log-needed.md` (E-01), `spike/REPORT.md`, `docs/evaluation/testdata-policy.md`.
+Status: **Gate-Test korrigiert; Narrative-Mapping v2 lokal nachgetestet am
+2026-07-13.** Entscheid E-01 («R3 bauen») bleibt nach der Reparatur tragfähig.
 
-## Zweck
+Referenzen: `docs/repair/decision-log-needed.md` (E-01), `spike/REPORT.md`,
+`docs/evaluation/testdata-policy.md`.
 
-Dieser Report dokumentiert den Gate-Test, der entscheidet, ob der Innolink-PDF-Import
-(Milestone R3) gebaut wird oder ob der Fallback R3' («Aus Notizen/Quellen starten»
-stärken, kein Antrags-Upload) greift.
+## Zweck und Datensicherheit
 
-## Eingang
+Der Gate-Test bewertet, ob ein digitaler Innolink-PDF-Export deterministisch auf
+die acht unterstützten Draft-Felder abgebildet werden kann. Das private
+Testobjekt umfasst 26 Seiten. Dieser Report enthält keine Antragstexte,
+Projektkennungen, Namen oder Antragsnummern, sondern nur Status und sichere
+Zählwerte.
 
-- Testobjekt: ein **echter Innolink-Portal-Export** eines abgeschlossenen Antrags
-  (26 Seiten, 1216 extrahierte Zeilen), lokal unter `private_inputs/` abgelegt und
-  per `.gitignore` von der Versionskontrolle ausgeschlossen.
-- Gemäss Testdaten-Policy / E-12 enthält dieser Report **keine Textauszüge, keine
-  Projektkennungen und keine Antragsnummern** aus dem Dokument — nur Struktur- und
-  Zählwerte. Eine anonymisierte Fassung als Repo-Fixture erfordert eine menschliche
-  Review (E-12, offen).
-- Reproduktion (lokal): `backend\.venv\Scripts\python.exe spike\map_pdf.py <pfad-zum-pdf>`.
+Eine exakte Textfundstelle belegt nur, dass ein Ausschnitt im PDF existiert. Sie
+belegt weder die inhaltliche Richtigkeit noch die fachliche oder rechtliche
+Tragfähigkeit einer Aussage. Deshalb werden Struktur-Coverage und
+Zuordnungs-Correctness getrennt bewertet.
 
-## Methode
+## Messungen
 
-`spike/map_pdf.py` wurde in zwei Zuständen gegen das Test-PDF ausgeführt:
+1. **Messung 1 — ursprünglicher Spike:** synthetisch entwickelte Anchor-Logik.
+2. **Messung 2 — Portal-Vokabular:** zusätzliche Labels und globale Stopper,
+   weiterhin «bis zum nächsten unterstützten Anker».
+3. **Messung 3 — `innolink-narrative-v2`:** explizite Start-/Stop-Headings je
+   Feld und Unterabschnitt, bereinigter Antragstellertext, sichtbare
+   Altstruktur-Migration. Kein LLM und kein OCR.
 
-1. **Messung 1 — Spike unverändert** (Stand `repair-r2-done`): misst, wie das rein
-   auf dem synthetischen Fixture entwickelte Mapping auf einen echten Export trifft.
-2. **Messung 2 — Spike mit Portal-Vokabular** (dieser Commit): additive
-   Pattern-Erweiterung (Title-Kurzlabels, `Management summary`, Kapitel-Format
-   `N. Name`, nummerierte Hauptfragen 3.1/4.1 als Editor-Anker, `Please note`-
-   und Seitenkopf-Rauschen, Stop-Anker für Folge-Sektionen). Weiterhin rein
-   deterministisch, kein LLM. Die synthetische Regression bleibt Pflicht und
-   besteht mit **8/8**; das degradierte Fixture bleibt bei **0/8** (Worst-Case-
-   Messlatte unverändert).
-
-Bewertungsskala je Feld (genau eine Kategorie):
+Bewertungsskala:
 
 | Kategorie | Bedeutung |
 |---|---|
-| `correct` | Feld korrekt erkannt und Inhalt korrekt zugeordnet |
-| `partial` | Feld erkannt, Inhalt unvollständig oder mit Randfehlern |
-| `uncertain` | Zuordnung unsicher markiert (kein automatisch übernehmbares Ergebnis) |
-| `missed` | Feld nicht gefunden, obwohl im PDF vorhanden |
-| `false-positive` | Falscher Inhalt einem Feld zugeordnet |
+| `correct` | Antwortbereich korrekt begrenzt und korrekt zugeordnet |
+| `partial` | Nutzbarer Antragstellerinhalt vorhanden, aber Zuordnung verlangt fachliche Prüfung |
+| `uncertain` | Kein direkt nutzbarer Text oder bewusst mehrdeutige Zuordnung |
+| `missed` | Vorhandener Bereich nicht erkannt |
+| `false-positive` | Fremdinhalt wurde dem Feld zugeordnet |
 
-Als **usable** zählen `correct` und `partial`. `uncertain` zählt nicht als usable,
-ist aber kein Ausschlusskriterium für das Feature (HITL-Review fängt es ab).
+Als `usable` zählen nur `correct` und `partial`. `uncertain` bleibt sichtbar und
+wird nie automatisch übernommen.
 
-## Ergebnis je Feld
+## Korrigierter Befund
 
-Labels gemäss `backend/app/exports/generators/common.py::EXPORT_FIELD_LABELS`.
+Die frühere Messung 2 hatte Management Summary sowie die langen Composite-Blöcke
+zu positiv bewertet. Die korrigierte und die reparierte Bewertung lautet:
 
-| # | Feld-ID | Messung 1 (Spike as-is) | Messung 2 (Portal-Vokabular) | Bemerkung |
-|---|---------|------------------------|------------------------------|-----------|
-| 1 | `INTRO.APP.NAME` | missed | **missed** | Der Export führt für den Haupttitel kein erkennbares Label; Titel steht als blankes Dokumentkopf-Element. Dokumentierte Limitation — bleibt manuell. |
-| 2 | `INTRO.APP.NAME_EN` | missed | **correct** | Label-Variante `Title in English:`; Wert (6 Zeichen) durch Folge-Label sauber begrenzt. |
-| 3 | `INTRO.APP.ABSTRACT` | partial (Anker ok, Übererfassung 3005 Z. inkl. Folgesektion) | **correct** | 297 Z., durch Folge-Anker sauber begrenzt. |
-| 4 | `INTRO.APP.EXECUTIVE_SUMMARY` | missed | **correct** | Label-Variante `Management summary`; 1586 Z. bis Kapitel-2-Stop. |
-| 5 | `ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS` | false-positive (44 787 Z. Fremdinhalt bis Dokumentende-nahe) | **uncertain** | Feld ist im Test-PDF leer; Mapping erkennt «leer» statt Fremdinhalt zu übernehmen. |
-| 6 | `VC.BUSINESS_TARGETS_MODEL.EDITOR` | missed | **correct** | Kein Editor-Heading im Export; Anker über Hauptfrage 3.1, Block (22 283 Z.) bis Kapitel-4-Stop. |
-| 7 | `SOL.INNOVATION_SOLUTION.EDITOR` | missed | **correct** | Anker über Hauptfrage 4.1, Block (20 738 Z.) bis Kapitel-5-Stop. |
-| 8 | `PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION` | false-positive (4013 Z. bis Dokumentende inkl. Budget-Tabellen) | **uncertain** | Feld ist im Test-PDF leer; Folge-Sektion (Budget) wird sauber gestoppt. |
+| # | Feld-ID | Messung 2 korrigiert | Messung 3 | Begründung ohne Rohtext |
+|---|---|---|---|---|
+| 1 | `INTRO.APP.NAME` | missed | uncertain | v2 erkennt genau einen Dokumentkopf-Kandidaten und verlangt Prüfung. |
+| 2 | `INTRO.APP.NAME_EN` | correct | correct | Explizites Label und expliziter Folgestopper. |
+| 3 | `INTRO.APP.ABSTRACT` | correct | correct | 297 Zeichen, Ende vor Management Summary. |
+| 4 | `INTRO.APP.EXECUTIVE_SUMMARY` | **false-positive** | correct | Antwortbereich ist leer; v2 liefert 0 Zeichen und stoppt vor Context. |
+| 5 | `ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS` | uncertain | correct | Leerer Bereich bleibt leer und endet vor Value Creation. |
+| 6 | `VC.BUSINESS_TARGETS_MODEL.EDITOR` | **partial** | correct | Vorher Portalfragen/Hilfetext im Großblock; v2 liefert 3 getrennte Abschnitte. |
+| 7 | `SOL.INNOVATION_SOLUTION.EDITOR` | **partial** | partial | v2 liefert 8 Zielmetadaten; alte Lizenz-/Background-IP-Antwort bleibt bewusst gemeinsam unsicher für 4.5.2/4.5.3. |
+| 8 | `PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION` | uncertain | correct | Leerer Bereich bleibt leer und stoppt vor Budget-/Kostenbereichen. |
 
-Bewertungsbasis Messung 2: Anker-Position, Blockgrenzen und Zeichenumfänge wurden
-gegen die Dokumentstruktur verifiziert (Kapitel-/Sektions-Stopper); ein
-Wort-für-Wort-Abgleich der langen Editor-Blöcke ist Teil der manuellen
-Owner-Stichprobe und ändert die usable-Einstufung (correct→partial) nicht.
+Die frühere Messung-2-Quote war somit nicht 5/8, sondern **4/8 = 50 %**. Sie
+durfte den Gate-Entscheid allein nicht tragen. Nach der expliziten
+Grenzenreparatur erreicht Messung 3 **7/8 usable**; der verbleibende Titel ist
+absichtlich `uncertain`.
 
-## Gate-Regel (aus decision-log E-01)
+## Coverage und Correctness
 
-- usable-Quote **≥ ~60 %** (≥ 5 von 8 Feldern) → **R3 bauen** (Import-First MVP).
-- darunter → **R3'-Fallback** (kein PDF-Antragsimport; Begründung mit Quote in
-  Thesis dokumentieren).
+- **Struktur-Coverage:** acht unterstützte Feldkandidaten; Composite-Metadaten
+  3 Abschnitte für Value Creation und 8 Einträge für Solution inklusive der
+  gemeinsamen 4.5.2/4.5.3-Prüfzuordnung.
+- **Zuordnungs-Correctness:** Abstract exakt begrenzt; Management Summary 0
+  Zeichen; keine geprüfte Portalfrage und kein bekannter Hilfetext im
+  Übernahmetext; leere Bereiche übernehmen keine Folgeabschnitte.
+- **Nicht bewertet:** Förderfähigkeit, Belegqualität, FTO, IP-Schutzfähigkeit,
+  Vertragswirkung und materielle Richtigkeit der Antragstellerangaben.
 
-## Ergebnis
+## Regression und Fail-closed
 
-### Quote
+- Strukturgleiches synthetisches Mehrseiten-PDF deckt leere Bereiche,
+  3.1–3.3, 4.1–4.6 und die Alt-IP-Migration ab.
+- Degradierte PDFs bleiben `uncertain` beziehungsweise nicht gemappt.
+- Verschlüsselte, gescannte und korrupte PDFs bleiben ohne OCR fail-closed.
+- Audit und Logs enthalten nur IDs, Versionen, Status und sichere Zählwerte;
+  weder bereinigte Kandidatentexte noch Originalausschnitte.
 
-- Messung 1 (Spike unverändert): usable **1/8 = 12.5 %** (unter Gate).
-- Messung 2 (Portal-Vokabular, deterministisch): usable **5/8 = 62.5 %** (über Gate).
+## Strukturierter Folgetest (`innolink-structured-v1`)
 
-### Entscheid
+Der additive strukturierte Import wurde am selben privaten, 26-seitigen
+Digital-PDF ausschließlich lesend geprüft. Es wurden keine Werte automatisch
+in Project, Partner oder Budget persistiert. Der inhaltsfreie Befund:
 
-**R3 bauen** — auf Basis von Messung 2.
+| Kandidatengruppe | Anzahl | Befund |
+|---|---:|---|
+| Projektmetadaten | 5 | Titel, englischer Titel, Start, Ende und Dauer vorhanden |
+| Partner | 3 | 1 Research- und 2 Implementation-Partner; alle prüfpflichtig |
+| Budget | 5 | direkte Kosten, Own, Cash sowie Förderung ohne/mit Overhead getrennt |
+| Strukturierte Antworten | 2 | Scientific Integrity und Management-Stunden vorhanden |
 
-Begründung der Doppelmessung: Messung 1 misst das Instrument im Zustand des
-ursprünglichen Spikes; ihr schlechtes Ergebnis ist eine **Vokabular-Lücke**
-(anderes Label-Wording im echten Export), kein strukturelles Versagen. Die vom
-Spike-Report (§3.1) als dominant erwartete Fehlklasse **Zeilenverschmelzung liegt
-im echten Export nicht vor**: die Extraktion ist zeilenerhaltend (600 von 881
-nicht-leeren Zeilen < 90 Zeichen, keine Zeile > 200 Zeichen). Die eigentliche
-Gate-Frage — trägt deterministisches Mapping auf echten Portal-Exporten? — wird
-von Messung 2 beantwortet.
+Alle drei Partner bleiben im privaten Gate bewusst `uncertain`, weil das
+ältere Tabellenformat kein explizites Land ausweist. Adress- oder Namensdaten
+werden nicht als Schweiz-Bezug, Wertschöpfung oder Eignung interpretiert. Die
+beiden personellen und finanziellen Unabhängigkeitsgruppen sind als
+Antragstellerangabe erkannt; daraus entsteht keine rechtliche Schlussfolgerung.
 
-### Begründung
+Der vollständig synthetische Golden-Import bestätigt zusätzlich den
+HITL-Persistenzpfad: drei Partner und fünf Budgetangaben werden erst nach
+Einzelbestätigung gespeichert; die vorhandene Budget-Vorprüfung berechnet
+52,52 % Umsetzungspartneranteil und 6,46 % Cash-Anteil als erfüllt. Ein danach
+erzeugter Lauf friert Projekt, drei Partner, Scientific Integrity und
+Management-Stunden in einem unveränderlichen Snapshot ein. Eine spätere
+Annahme markiert den alten Lauf als `recheck_required`, ohne dessen Snapshot zu
+ändern.
 
-Siehe Entscheid; zusätzlich: die zwei `uncertain`-Felder sind im Test-PDF
-tatsächlich leer (begonnener Antrag) — das Mapping meldet «leer/unsicher» statt
-falschen Inhalt, genau das vom HITL-Review erwartete Verhalten. Das eine
-`missed`-Feld (Haupttitel) hat im Export kein Label und bleibt eine dokumentierte
-Limitation (manuelle Eingabe).
+## Verbleibende Risiken und manuelle Prüfung
 
-### Risiken
+- **n = 1 privates reales PDF:** weitere Portalexport-Varianten müssen bei
+  Verfügbarkeit strukturell nachgetestet werden.
+- Der Dokumentkopftitel bleibt prüfpflichtig, auch wenn das Muster eindeutig ist.
+- Die alte Lizenz-/Background-IP-Antwort darf nicht automatisch auf 4.5.2 oder
+  4.5.3 festgelegt werden. Eine menschlich bearbeitete Fassung ist erforderlich.
+- Lange Antragstellerantworten werden deterministisch begrenzt, aber nicht als
+  fachlich richtig oder ausreichend bewertet.
 
-- **n = 1:** Es wurde genau ein echter Export gemessen. Varianz über andere
-  Portal-Versionen/Exporte ist unbekannt; weitere Nachtests bei Verfügbarkeit.
-- Haupttitel ohne Label → immer manuell (kein Import-Kandidat).
-- Zeilenverschmelzung bleibt als Worst Case möglich (anderes Druck-/Exportwerkzeug);
-  das degradierte Fixture hält diese Messlatte im Regressionstest fest — dort ist
-  das Sollverhalten `uncertain`/nicht gefunden, nie Falsch-Zuordnung.
-- Editor-Blöcke sind lang (> 20 000 Z.); Feld-Zeichenlimits können beim Übernehmen
-  greifen (bestehende Limit-Prüfung im Draft-Mechanismus, HITL entscheidet).
-
-### Datum
-
-2026-07-07.
-
-### Owner-Signatur
-
-Entscheid E-01 durch den Owner im Chat am 2026-07-07 gefällt
-(«R3 bauen», auf Basis der oben dokumentierten Doppelmessung).
+Owner-Signatur für den ursprünglichen Entscheid: 2026-07-07. Technischer
+Reparatur-Nachtest: 2026-07-13.

@@ -8,6 +8,12 @@ export interface Capabilities {
   max_upload_bytes?: number | null
   supported_source_types: string[]
   features: Record<string, boolean>
+  // "live_unavailable": Live-Betrieb konfiguriert, Provider nicht verfügbar —
+  // nie ein stiller Abstieg auf den Demo-Generator (Ebene E).
+  generation_mode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
+  generation_unavailable_reason?: string | null
+  ai_available?: boolean
+  ai_unavailable_reason?: string | null
 }
 
 export const MOCK_CAPABILITIES: Capabilities = {
@@ -33,15 +39,27 @@ export const MOCK_CAPABILITIES: Capabilities = {
     // Mock mode never talks to the network — copy events stay off.
     copy_events: false,
   },
+  generation_mode: "fake_demo",
+  generation_unavailable_reason: null,
+  ai_available: false,
+  ai_unavailable_reason: "demo_only",
+}
+
+const UNAVAILABLE_CAPABILITIES: Capabilities = {
+  ...MOCK_CAPABILITIES,
+  generation_mode: "unavailable",
+  generation_unavailable_reason: "capabilities_unavailable",
+  ai_available: false,
+  ai_unavailable_reason: "capabilities_unavailable",
 }
 
 export async function getCapabilities(): Promise<Capabilities> {
   if (!isLive("capabilities")) return MOCK_CAPABILITIES
   try {
     const res = await fetch("/api/capabilities")
-    if (!res.ok) return MOCK_CAPABILITIES
+    if (!res.ok) return UNAVAILABLE_CAPABILITIES
     return (await res.json()) as Capabilities
   } catch {
-    return MOCK_CAPABILITIES
+    return UNAVAILABLE_CAPABILITIES
   }
 }

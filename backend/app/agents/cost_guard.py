@@ -16,7 +16,9 @@ from sqlalchemy.orm import Session
 
 from app.agents.registry import AgentProfileDef
 from app.agents.providers.base import ProviderUsage
-from app.db.models import AgentInvocation, UsageRecord
+from app.db.models import (
+    AgentInvocation, AgentInvocationAttempt, RunPolicySnapshot, UsageRecord,
+)
 from app.evaluation.pricing import resolve_cost
 
 # Statuses that count as an accepted (non-idempotent) call against the run limit.
@@ -72,6 +74,66 @@ def timeout_seconds(profile: AgentProfileDef) -> int:
 def output_within_limit(profile: AgentProfileDef, usage: ProviderUsage) -> bool:
     cap = profile.invocation_limits.get("max_output_tokens")
     return cap is None or usage.output_tokens <= int(cap)
+
+
+def estimated_upper_cost(
+    *, provider: str, model_id: str, prompt: str, max_output_tokens: int
+):
+    """Conservative pre-call bound: one UTF-8 character counts as one token."""
+    return resolve_cost(
+        provider=provider, model_id=model_id,
+        input_tokens=len(prompt), output_tokens=max_output_tokens,
+        adapter_name=None,
+    )
+
+
+def attempt_budget_check(
+    db: Session,
+    *,
+    run_id: str | None,
+    invocation_id: str,
+    estimated_cost_chf: float,
+    role_max_cost_chf: float | None,
+) -> CostDecision:
+    """Enforce run call/cost and role cost budgets before every real attempt."""
+    if run_id is None:
+        return CostDecision(True, "")
+    policy = db.get(RunPolicySnapshot, run_id)
+    if policy is None:
+        return CostDecision(False, "run_policy_missing")
+    calls = int(db.scalar(
+        select(func.count(AgentInvocationAttempt.attempt_id))
+        .join(AgentInvocation, AgentInvocation.invocation_id == AgentInvocationAttempt.invocation_id)
+        .where(
+            AgentInvocation.run_id == run_id,
+            AgentInvocationAttempt.status.in_(("succeeded", "failed", "timed_out")),
+        )
+    ) or 0)
+    if calls >= policy.max_llm_calls:
+        return CostDecision(False, "run_llm_call_limit_exceeded")
+    run_spent = float(db.scalar(
+        select(func.coalesce(func.sum(UsageRecord.cost_chf), 0.0)).where(
+            UsageRecord.run_id == run_id,
+            UsageRecord.cost_status == "priced",
+        )
+    ) or 0.0)
+    if run_spent + estimated_cost_chf > policy.max_cost_chf:
+        return CostDecision(False, "run_cost_limit_exceeded")
+    if role_max_cost_chf is not None:
+        role_spent = float(db.scalar(
+            select(func.coalesce(func.sum(UsageRecord.cost_chf), 0.0))
+            .join(
+                AgentInvocationAttempt,
+                AgentInvocationAttempt.usage_record_id == UsageRecord.usage_record_id,
+            )
+            .where(
+                AgentInvocationAttempt.invocation_id == invocation_id,
+                UsageRecord.cost_status == "priced",
+            )
+        ) or 0.0)
+        if role_spent + estimated_cost_chf > role_max_cost_chf:
+            return CostDecision(False, "role_cost_limit_exceeded")
+    return CostDecision(True, "")
 
 
 def record_usage(

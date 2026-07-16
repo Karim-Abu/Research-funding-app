@@ -13,6 +13,7 @@ import pytest
 
 from app.config.settings import get_settings
 from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, login, unsafe_headers
+from tests.research_brief_helpers import approve_research_brief
 
 _D0 = {
     "sensitivity": "public", "origin": "synthetic", "processing_mode": "cloud_assisted",
@@ -65,6 +66,9 @@ def _login(client) -> str:
 def test_plan_suggests_topic_from_innovation_field_and_returns_queries(client, web_fake):
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0, innovation_field="ICT / Industrial AI")
+    approve_research_brief(
+        client, csrf, pid, application_domain="ICT", technology_class="Industrial AI"
+    )
     res = client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
                        headers=unsafe_headers(csrf))
     assert res.status_code == 200, res.text
@@ -82,6 +86,7 @@ def test_plan_creates_no_research_tasks_only_pending_approvals(client, web_fake)
     # aber weiterhin keine ResearchTasks und keinen Provider-Call.
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
+    approve_research_brief(client, csrf, pid)
     from app.db.models import ResearchTask, SearchQueryApproval
     from app.db.session import SessionLocal
 
@@ -102,6 +107,7 @@ def test_plan_creates_no_research_tasks_only_pending_approvals(client, web_fake)
 
 
 def _plan_and_approve_all(client, csrf, pid) -> list[str]:
+    approve_research_brief(client, csrf, pid)
     res = client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
                       headers=unsafe_headers(csrf))
     assert res.status_code == 200, res.text
@@ -113,12 +119,15 @@ def _plan_and_approve_all(client, csrf, pid) -> list[str]:
     return approval_ids
 
 
-def test_plan_applies_topic_override(client, web_fake):
+def test_plan_uses_only_the_approved_brief(client, web_fake):
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
+    approve_research_brief(
+        client, csrf, pid, application_domain="Photonik", technology_class="Sensorik"
+    )
     res = client.post(
         f"/api/v1/projects/{pid}/market-research/plan",
-        json={"application_domain": "Photonik", "technology_area": "Sensorik"},
+        json={"application_domain": "Andere Domäne", "technology_area": "Andere Technik"},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 200, res.text
@@ -131,6 +140,7 @@ def test_plan_applies_topic_override(client, web_fake):
 def test_plan_unavailable_when_web_research_disabled(client):
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
+    approve_research_brief(client, csrf, pid)
     res = client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
                        headers=unsafe_headers(csrf))
     assert res.status_code == 200, res.text
@@ -161,8 +171,8 @@ def test_run_d0_persists_and_returns_candidates(client, web_fake):
                        headers=_headers(csrf))
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["result_count"] == 15  # 5 freigegebene Queries × 3 fake results
-    assert len(body["candidates"]) == 15
+    assert body["result_count"] == 9  # 3 Briefmodule × 3 Demo-Treffer
+    assert len(body["candidates"]) == 9
     assert all(c["human_review_required"] is True for c in body["candidates"])
     assert all(c["confidence"] in ("low", "medium") for c in body["candidates"])
     assert body["provider"] == "fake"
@@ -171,6 +181,7 @@ def test_run_d0_persists_and_returns_candidates(client, web_fake):
 def test_run_d2_without_approval_blocked(client, web_fake):
     csrf = _login(client)
     pid = _create_project(client, csrf, _D2)
+    approve_research_brief(client, csrf, pid)
     res = client.post(f"/api/v1/projects/{pid}/market-research/run",
                        json=_topic_payload(), headers=_headers(csrf))
     assert res.status_code == 422, res.text

@@ -27,10 +27,10 @@ _PROMPT_SNAPSHOTS: dict[str, str] = {
     "a2_introduction_public_summary_v2.md": "1552c8170804e89b885d26965f3178de49989723270264b5a91135fad9fccadc",
     "a2_organisations_governance_v1.md": "b1962a3eb54210aaebbe7cba9e3957e5f66de3ffd67399808b84e3bd6d78b215",
     "a2_project_setup_workplan_v1.md": "36e51956b2aab8fce9946d3e81e56477ac92e55d889db6f2f4b297dd57928e79",
-    "a2_solution_innovation_v2.md": "7fc50d11e5872b6d2ee01266f29fad49234917fe3f2f579904875975f502cf22",
-    "a2_value_creation_market_logic_v2.md": "d88399bcb22d8f5624817e87bf4328d4db61f947a04a445b0dd53352762e30cf",
-    "a3_evidence_consistency_v1.md": "d93cfa13190fd4fad20e2a5a5a2a987b7461df9e6bc95195c3b4feaac69f4d31",
-    "market_comparison_v2.md": "a90bdfc6ac676e181a6b386333bf30c97d91286e2d32abd8bd4ee1441431bf71",
+    "a2_solution_innovation_v3.md": "0b0cb392b7e59b0e0b275925b79d91f157b7957d51a67008554bbde64db75d4d",
+    "a2_value_creation_market_logic_v3.md": "d59759421bf6068a6b0d06c9d87eebbb119e8216a9a57db65691e07079ed1442",
+    "a3_evidence_consistency_v2.md": "cfa771ce56018f71093357e7128a25ab5318ecfa9dc715f8710f8353cf1266b3",
+    "market_comparison_v2.md": "d9f309a310dac77220642273b3ac9ff40219b36602609fd9f643e33bfc028538",
 }
 
 
@@ -90,12 +90,12 @@ def test_silent_change_is_detected(tmp_path):
     """Manipulationstest: geänderter Inhalt ohne Snapshot-Update ⇒ rot."""
     _copy_prompts(tmp_path)
     assert _check(tmp_path, _PROMPT_SNAPSHOTS) == []  # Kopie ist zunächst sauber
-    target = tmp_path / "a2_solution_innovation_v2.md"
+    target = tmp_path / "a2_solution_innovation_v3.md"
     target.write_text(
         target.read_text(encoding="utf-8") + "\nStille Änderung.\n", encoding="utf-8"
     )
     problems = _check(tmp_path, _PROMPT_SNAPSHOTS)
-    assert any("a2_solution_innovation_v2.md" in p for p in problems), problems
+    assert any("a2_solution_innovation_v3.md" in p for p in problems), problems
 
 
 def test_new_prompt_requires_snapshot(tmp_path):

@@ -156,10 +156,11 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
     }
     try:
         validate_payload(INPUT_SCHEMA, input_payload)
-    except (ValidationError, SchemaNotImplementedError) as exc:
+    except (ValidationError, SchemaNotImplementedError):
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
-            control_id="CTRL.INPUT_SCHEMA", status="failed", detail=str(exc)[:200],
+            control_id="CTRL.INPUT_SCHEMA", status="failed",
+            detail="evidence_mapping_input_schema_invalid",
             run_id=run.run_id,
         )
         _audit(db, run, "agent.evidence_mapping.skipped", {"reason": "input_schema"})
@@ -175,6 +176,15 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
         allowed_fragment_ids=frozenset(ctx.selected_fragment_ids), run_confirmation=False,
         prompt_version=prompt_version_for(PROFILE_ID), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
+        skill_id="a1.evidence_candidate_mapping",
+        input_artifact_refs=(
+            {
+                "kind": "run_source_snapshot",
+                "run_id": run.run_id,
+                "fragment_ids": ctx.selected_fragment_ids,
+                "context_hash": ctx.context_hash,
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver, registry=registry)
 

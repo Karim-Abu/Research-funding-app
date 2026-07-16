@@ -4,6 +4,14 @@ Versionsprotokoll für die Prompt-Dateien in diesem Ordner (`*_vN.md`). Jede
 inhaltliche Änderung an einer aktiven Prompt-Datei muss hier sichtbar werden —
 `tests/test_prompt_snapshots.py` erzwingt das über einen Content-Hash pro Datei.
 
+## 2026-07-14 — Research-Provenienz in A2 v3
+
+- A2-Sektionsausgaben weisen verwendete öffentliche Research-Quellen separat über
+  `research_source_ids` aus; Evidence Anchors und fachliche Stützung bleiben getrennt.
+- Der bestehende Marktvergleich-v2-Prompt verbietet generische Ersatzidentitäten und
+  strukturiert nur belegte Vergleichsdimensionen; der deterministische Validator bleibt
+  die durchsetzende Instanz.
+
 ## Wie ändere ich einen Prompt?
 
 Eine Änderung an einem aktiven Prompt lässt `test_prompt_snapshots.py` rot werden.
@@ -24,6 +32,9 @@ stille Prompt-Änderungen.
 
 | Prompt-ID (profile_id) | Version (Slug) | Zweck | Änderungsdatum | Grund |
 |---|---|---|---|---|
+| A2.solution_innovation | a2_solution_innovation_v3 | Abschnittsweise Solution-&-Innovation-Ueberarbeitung | 2026-07-13 | Kontextarten, Baseline-Ueberarbeitung, 4.1-4.6-Einzelausgabe und Claims-/Missing-Input-Trail; ersetzt v2 |
+| A2.value_creation_market_logic | a2_value_creation_market_logic_v3 | Abschnittsweise Value-Creation-Ueberarbeitung | 2026-07-13 | 3.1-3.3-Einzelausgabe; Antragstellerangaben bleiben mit Beleg-Pruefhinweis erhalten; ersetzt v2 |
+| A3.evidence_consistency | a3_evidence_consistency_v2 | Fachlicher Kritiker (advisory ReviewFindings) | 2026-07-13 | KPI-Kette, Methodik, SOTA, Zahlenkonsistenz, Partner-Fit, Quellenalter, Risikobreite und Floskeln; ersetzt v1 |
 | A1.project_fact_extraction | a1_project_fact_extraction_v1 | A1 — Projekt-Fakten als advisory Vorschläge extrahieren | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A1.evidence_candidate_mapping | a1_evidence_candidate_mapping_v1 | A1 — Kandidaten-Zitate/Ziele vorschlagen (advisory) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
 | A1.public_competence_research | a1_public_competence_research_v1 | A1 — öffentliche Kompetenz-Evidenz strukturieren (advisory) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |

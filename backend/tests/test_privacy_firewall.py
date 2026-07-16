@@ -18,6 +18,9 @@ from app.config.logging import RedactingFilter
 from app.db.models import (
     AuditEvent,
     ControlResult,
+    Project,
+    ResearchBrief,
+    ResearchResult,
     ResearchTask,
     SearchQueryApproval,
     SourceDocument,
@@ -123,6 +126,8 @@ def _approve(client, csrf, approval_id, *, reject=False):
 
 
 def _create_task(client, csrf, project_id, query, approval_id=None):
+    if approval_id:
+        _bind_approval_to_brief(project_id, approval_id)
     payload = {
         "purpose": "partner_role_suggestion", "subject_type": "topic",
         "query_preview": query, "max_results": 3,
@@ -135,6 +140,43 @@ def _create_task(client, csrf, project_id, query, approval_id=None):
     )
 
 
+def _bind_approval_to_brief(project_id: str, approval_id: str) -> None:
+    """Make a legacy firewall fixture satisfy mandatory brief provenance."""
+    session = SessionLocal()
+    try:
+        project = session.get(Project, project_id)
+        approval = session.get(SearchQueryApproval, approval_id)
+        brief = session.scalar(select(ResearchBrief).where(
+            ResearchBrief.project_id == project_id,
+            ResearchBrief.status == "approved",
+        ))
+        if brief is None:
+            brief = ResearchBrief(
+                research_brief_id=str(uuid.uuid4()),
+                project_id=project_id,
+                workspace_id=project.workspace_id,
+                version=1,
+                status="approved",
+                application_domain="public industrial research",
+                technology_class="robotics",
+                target_customer_segments=["industrial organisations"],
+                region="Switzerland",
+                competence_needs=[],
+                modules=["market_growth"],
+                content_hash=uuid.uuid4().hex,
+                created_by="test-user",
+                approved_by="test-user",
+            )
+            session.add(brief)
+            session.flush()
+        approval.research_brief_id = brief.research_brief_id
+        approval.research_module = "market_growth"
+        approval.planner_purpose = "market_size"
+        session.commit()
+    finally:
+        session.close()
+
+
 def _poll(client, operation_id):
     op = client.get(f"/api/v1/operations/{operation_id}").json()
     return op["status"]
@@ -142,12 +184,13 @@ def _poll(client, operation_id):
 
 # --- D0 unchanged -----------------------------------------------------------
 
-def test_d0_public_flow_unchanged(client, web_enabled, spy_provider):
+def test_d0_direct_task_without_brief_is_rejected(client, web_enabled, spy_provider):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid = _project(client, csrf, sensitivity="public", origin="synthetic")
     res = _create_task(client, csrf, pid, "öffentliche Wettbewerbsanalyse Robotik")
-    assert res.status_code == 202, res.text
-    assert _poll(client, res.json()["operation_id"]) == "succeeded"
+    assert res.status_code == 422, res.text
+    assert res.json()["code"] == "research_brief_approval_required"
+    assert spy_provider.seen == []
 
 
 # --- D2 requires a sanitized + approved query -------------------------------
@@ -157,7 +200,7 @@ def test_d2_requires_approval(client, web_enabled):
     pid = _project(client, csrf, sensitivity="confidential", origin="real_project")
     res = _create_task(client, csrf, pid, "Wettbewerber für unser Projekt")
     assert res.status_code == 422
-    assert res.json()["code"] == "approval_required"
+    assert res.json()["code"] == "research_brief_approval_required"
 
 
 def test_d2_full_sanitized_flow(client, db, web_enabled, spy_provider):
@@ -273,15 +316,21 @@ def test_approval_single_use(client, web_enabled, spy_provider):
     assert second.json()["code"] == "approval_already_used"
 
 
-def test_changed_query_invalidates_approval(client, web_enabled):
+def test_client_query_change_cannot_replace_server_approved_query(
+    client, db, web_enabled, spy_provider
+):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid = _project(client, csrf, sensitivity="confidential", origin="real_project", budget=BUDGET)
     _partner(client, csrf, pid)
     approval_id = _preview(client, csrf, pid, D2_QUERY).json()["approval_id"]
     _approve(client, csrf, approval_id)
     changed = _create_task(client, csrf, pid, D2_QUERY + " zusätzlich", approval_id=approval_id)
-    assert changed.status_code == 409
-    assert changed.json()["code"] == "approval_query_changed"
+    assert changed.status_code == 202, changed.text
+    assert _poll(client, changed.json()["operation_id"]) == "succeeded"
+    task = db.get(ResearchTask, changed.json()["resource_id"])
+    approval = db.get(SearchQueryApproval, approval_id)
+    assert task.query_text == approval.sanitized_query
+    assert "zusätzlich" not in task.query_text
 
 
 def test_rejected_approval_blocks(client, web_enabled):
@@ -384,6 +433,9 @@ def test_provider_boundary_only_reached_via_research_modules():
         ("research", "executor.py"),
         ("research", "import_service.py"),
         ("research", "providers", "resolver.py"),
+        # Ebene E: der opt-in Provider-Preflight ruft den Provider bewusst
+        # direkt — mit konstantem D0-Ping ohne Antragsinhalt, nie im Run-Pfad.
+        ("evaluation", "preflight.py"),
     }
     offenders = []
     for path in root.rglob("*.py"):
@@ -396,7 +448,9 @@ def test_provider_boundary_only_reached_via_research_modules():
     assert not offenders, f"web provider reached outside the research boundary: {offenders}"
 
 
-def test_import_from_d2_task_creates_public_source(client, db, web_enabled, spy_provider):
+def test_import_from_d2_task_creates_public_source(
+    client, db, web_enabled, spy_provider, monkeypatch
+):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid = _project(client, csrf, sensitivity="confidential", origin="real_project", budget=BUDGET)
     _partner(client, csrf, pid)
@@ -405,6 +459,21 @@ def test_import_from_d2_task_creates_public_source(client, db, web_enabled, spy_
     created = _create_task(client, csrf, pid, D2_QUERY, approval_id=approval_id)
     assert _poll(client, created.json()["operation_id"]) == "succeeded"
     result_id = client.get(f"/api/v1/projects/{pid}/research-results").json()[0]["result_id"]
+    # Exercise the live import contract with the deterministic fake transport as a
+    # test double. The persisted provenance remains live and the D2 feature flag is on.
+    from app.research import import_service
+
+    result = db.get(ResearchResult, result_id)
+    task = db.get(ResearchTask, result.research_task_id)
+    task.provider = "firecrawl"
+    task.execution_mode = "live"
+    web_enabled.d2_web_research_enabled = True
+    db.commit()
+    monkeypatch.setattr(
+        import_service,
+        "get_web_provider",
+        lambda settings: (FakeWebProvider(result_count=1), fake_dns_resolver),
+    )
     imported = client.post(
         f"/api/v1/research-results/{result_id}/import", headers=_headers(csrf)
     )

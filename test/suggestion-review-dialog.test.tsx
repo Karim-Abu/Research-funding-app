@@ -24,6 +24,7 @@ function suggestion(overrides: Partial<A2Suggestion> = {}): A2Suggestion {
     character_count: 46,
     character_limit: 25000,
     warnings: ["contains_placeholders", "based_on_unconfirmed_facts"],
+    research_sources: [],
     ...overrides,
   }
 }
@@ -50,7 +51,7 @@ describe("SuggestionReviewDialog", () => {
     expect(screen.getByTestId("open-issues").textContent).toContain("1")
   })
 
-  it("calls onAccept and onDismiss", () => {
+  it("calls onAccept; Ablehnen verlangt eine ausdrückliche Bestätigung", () => {
     const onAccept = vi.fn()
     const onDismiss = vi.fn()
     render(
@@ -65,8 +66,100 @@ describe("SuggestionReviewDialog", () => {
     )
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     expect(onAccept).toHaveBeenCalledOnce()
-    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ausblenden" }))
+    // Ablehnen öffnet das Begründungs-Formular — erst Bestätigen ruft onDismiss.
+    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ablehnen" }))
+    expect(onDismiss).not.toHaveBeenCalled()
+    fireEvent.click(screen.getByRole("button", { name: "Fachlich unzutreffend" }))
+    fireEvent.change(screen.getByLabelText("Eigener Ablehnungsgrund"), {
+      target: { value: "Kernzahl stimmt nicht." },
+    })
+    fireEvent.click(screen.getByRole("button", { name: "Ablehnen bestätigen" }))
     expect(onDismiss).toHaveBeenCalledOnce()
+    expect(onDismiss).toHaveBeenCalledWith(
+      "Fachlich unzutreffend — Kernzahl stimmt nicht."
+    )
+  })
+
+  it("zeigt echten Diff mit Text-Badges und übernimmt einzelne Änderungen", () => {
+    const onAcceptPartial = vi.fn()
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText={"4.2 Neuheit\nSatz eins bleibt. Satz zwei fliegt raus."}
+        suggestion={suggestion({
+          suggested_text:
+            "4.2 Neuheit\nSatz eins bleibt. Ganz neuer Schlusssatz.",
+        })}
+        onAccept={() => {}}
+        onAcceptPartial={onAcceptPartial}
+        onDismiss={() => {}}
+      />
+    )
+    // Klassifikation als Text-Badge, nicht nur Farbe (a11y).
+    expect(screen.getByText("Entfernt")).toBeInTheDocument()
+    expect(screen.getByText("Neu")).toBeInTheDocument()
+    // Nur den neuen Schlusssatz übernehmen (Checkbox + Aktion).
+    fireEvent.click(
+      screen.getByLabelText("Änderung übernehmen: Ganz neuer Schlusssatz.")
+    )
+    fireEvent.click(
+      screen.getByRole("button", { name: "Ausgewählte übernehmen (1)" })
+    )
+    expect(onAcceptPartial).toHaveBeenCalledOnce()
+    const merged = onAcceptPartial.mock.calls[0][0] as string
+    expect(merged).toContain("Ganz neuer Schlusssatz.")
+    expect(merged).toContain("Satz zwei fliegt raus.") // nicht gewählt ⇒ bleibt
+    expect(merged.startsWith("4.2 Neuheit\n")).toBe(true)
+  })
+
+  it("«Eigene Bearbeitung öffnen» ruft onEdit ohne Ablehnung", () => {
+    const onEdit = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion()}
+        onAccept={() => {}}
+        onEdit={onEdit}
+        onDismiss={onDismiss}
+      />
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Eigene Bearbeitung öffnen" }))
+    expect(onEdit).toHaveBeenCalledOnce()
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
+  it("zeigt konkrete Begründungs-Chips aus dem section_result (C5)", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({
+          section_result: {
+            field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+            target_section: "4.2",
+            suggested_text: "…",
+            rationale: "ok",
+            preserved_facts: [],
+            removed_or_reframed_claims: ["Wiederholte Marktbehauptung"],
+            new_claims: ["Neue Effizienzaussage"],
+            missing_inputs: [{ label: "KPI-Baseline", reason: "fehlt" }],
+            evidence_anchor_ids: [],
+            open_issue_ids: [],
+          },
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const chips = screen.getByTestId("rationale-chips")
+    expect(chips).toHaveTextContent("Entfernt/Umformuliert: Wiederholte Marktbehauptung")
+    expect(chips).toHaveTextContent("Neue Aussage (ungeprüft): Neue Effizienzaussage")
+    expect(chips).toHaveTextContent("Offen gelassen: KPI-Baseline — fehlt")
   })
 
   it("disables accept when over the character limit", () => {
@@ -83,5 +176,31 @@ describe("SuggestionReviewDialog", () => {
     )
     const accept = screen.getByRole("button", { name: "Übernehmen" })
     expect(accept).toBeDisabled()
+  })
+
+  it("shows actually used research sources separately from evidence", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({
+          research_sources: [{
+            source_id: "research-1",
+            title: "Swiss market report",
+            url: "https://research.example.edu/report",
+            research_module: "market_growth",
+            support_status: "research_candidate",
+          }],
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByText("Verwendete Research-Quellen")).toBeInTheDocument()
+    expect(screen.getByRole("link", { name: "Swiss market report" })).toHaveAttribute(
+      "href", "https://research.example.edu/report",
+    )
+    expect(screen.getByText(/nicht automatisch eine fachliche Stützung/)).toBeInTheDocument()
   })
 })

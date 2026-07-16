@@ -5,6 +5,7 @@
 import { getCsrfToken } from "./session"
 import type { EvidenceLinkDto } from "./evidence"
 import type { OpenIssueDto } from "./requirements"
+import type { GenerationKind } from "./generation-kind"
 
 export type DraftStatus = "draft" | "needs_review" | "reviewed" | "blocked" | "stale"
 
@@ -31,6 +32,7 @@ export interface DraftVersionDto {
   created_by: CreatedBy
   created_at: string
   content_hash: string
+  generation_kind?: GenerationKind | null
 }
 
 export interface PortalFieldDraftDto {

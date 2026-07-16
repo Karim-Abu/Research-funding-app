@@ -33,6 +33,28 @@ def test_status_view_matches_review_package(client):
     assert status["review_package_version"] == pkg["review_package_version"]
 
 
+def test_status_view_task_counts_match_fix_queue_and_check_status(client):
+    """B7/B8 — «Blockierende Aufgaben»/«Unterliegende Evidenzhinweise» sind auf
+    Status-View, Fix Queue und Check-Status-View identisch (eine Quelle)."""
+    _csrf, _pid, run_id = setup_completed_run(client)
+    status = get_status(client, run_id)
+    queue = client.get(f"/api/v1/runs/{run_id}/review/fix-queue").json()
+    checks = client.get(f"/api/v1/runs/{run_id}/review/check-status").json()
+    assert (
+        status["blocking_task_count"]
+        == queue["blocking_task_count"]
+        == checks["blocking_task_count"]
+    )
+    assert (
+        status["evidence_note_count"]
+        == queue["evidence_note_count"]
+        == checks["evidence_note_count"]
+    )
+    assert status["blocking_task_count"] == sum(
+        1 for g in queue["grouped_findings"] if g["severity"] == "blocker"
+    )
+
+
 def test_placeholder_blocker_counts_once(client):
     """Ein Feld mit Platzhalter erzeugt genau einen Platzhalter-Blocker, der im
     Status-View mitzählt (Vergleich vor/nach dem Auflösen des Platzhalters)."""

@@ -48,6 +48,10 @@ export interface RichTextEditorHandle {
   /** Select the first occurrence of a text (best effort; may no-op) — used
    * for subsection-marker jumps ("3.1", "4.5.1"). */
   selectMatch: (query: string) => void
+  /** Plain text of the current selection ("" when collapsed) — B5 Notizen. */
+  getSelectedText: () => string
+  /** Delete the current selection (fires onChange via the editor update). */
+  deleteSelection: () => void
   clearFormatCache: () => void
 }
 
@@ -298,6 +302,16 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
             .setTextSelection({ from: target.from, to: target.to })
             .scrollIntoView()
             .run()
+        },
+        getSelectedText: () => {
+          if (!editor) return ""
+          const { from, to } = editor.state.selection
+          if (from === to) return ""
+          return editor.state.doc.textBetween(from, to, "\n")
+        },
+        deleteSelection: () => {
+          if (!editor || editor.state.selection.empty) return
+          editor.chain().focus().deleteSelection().run()
         },
         selectMatch: (query: string) => {
           if (!editor || !query) return

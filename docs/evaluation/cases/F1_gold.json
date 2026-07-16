@@ -1,0 +1,246 @@
+{
+  "_comment": "F1 QUALIMON — maschinenlesbarer Goldstandard für die Rollen-Modell-Evaluation, wörtlich abgeleitet aus F1_synthetic_case.md (Expected Fields / Expected Findings). Match-Strategie wie F2/H1 (role_model_scoring.py).",
+  "case_id": "F1",
+  "holdout": false,
+  "title_de": "QUALIMON — KI-gestützte Qualitätsüberwachung für Produktionslinien",
+  "title_en": "QUALIMON — AI-based Quality Monitoring for Production Lines",
+  "required_terms": ["QUALIMON"],
+  "entities": [
+    "QUALIMON",
+    "Swiss Applied AI Lab",
+    "Alpine Monitoring Systems AG",
+    "Helvetic Components Factory"
+  ],
+  "portal_boilerplate": [
+    "Characters:",
+    "Open Editor",
+    "Innosuisse Innolink - Innovationsprojekt",
+    "Seite ",
+    "wird in Aramis publiziert",
+    "wird nicht in Aramis publiziert"
+  ],
+  "gold_facts": [
+    {
+      "gold_id": "F1-A1-001",
+      "fact_type": "project_title",
+      "target_ref": "INTRO.APP.NAME",
+      "normalized_value": "QUALIMON — KI-gestützte Qualitätsüberwachung für Produktionslinien",
+      "keywords": ["QUALIMON", "Qualitätsüberwachung", "Produktionslinien"],
+      "fragment_ids": ["F1-frag-02"]
+    },
+    {
+      "gold_id": "F1-A1-002",
+      "fact_type": "project_title_en",
+      "target_ref": "INTRO.APP.NAME_EN",
+      "normalized_value": "QUALIMON — AI-based Quality Monitoring for Production Lines",
+      "keywords": ["QUALIMON", "Quality Monitoring", "Production Lines"],
+      "fragment_ids": ["F1-frag-02"]
+    },
+    {
+      "gold_id": "F1-A1-003",
+      "fact_type": "project_duration",
+      "target_ref": null,
+      "normalized_value": "24",
+      "keywords": ["Duration", "Projektdauer", "months", "Monate"],
+      "fragment_ids": ["F1-frag-01", "F1-frag-09"]
+    },
+    {
+      "gold_id": "F1-A1-004",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "20",
+      "keywords": ["scrap", "reduction", "20", "percent"],
+      "fragment_ids": ["F1-frag-03", "F1-frag-06", "F1-frag-07"]
+    },
+    {
+      "gold_id": "F1-A1-005",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "30",
+      "keywords": ["detection", "faster", "30", "percent"],
+      "fragment_ids": ["F1-frag-03", "F1-frag-06", "F1-frag-07"]
+    },
+    {
+      "gold_id": "F1-A1-006",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "85",
+      "keywords": ["precision", "85", "percent", "deviation events"],
+      "fragment_ids": ["F1-frag-07"]
+    },
+    {
+      "gold_id": "F1-A1-007",
+      "fact_type": "unsupported_savings_claim",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "normalized_value": "300000",
+      "keywords": ["300'000", "save", "internal assumptions", "not yet supported", "market evidence"],
+      "fragment_ids": ["F1-frag-06"]
+    },
+    {
+      "gold_id": "F1-A1-008",
+      "fact_type": "ip_patent_search",
+      "target_ref": "INTRO.IP.PATENT_SEARCH",
+      "normalized_value": "no",
+      "keywords": ["patent search", "Freedom-to-Operate", "not", "completed"],
+      "fragment_ids": ["F1-frag-07"]
+    },
+    {
+      "gold_id": "F1-A1-009",
+      "fact_type": "partner_research",
+      "target_ref": null,
+      "normalized_value": "Swiss Applied AI Lab",
+      "keywords": ["Swiss Applied AI Lab", "Forschungspartner", "research partner"],
+      "fragment_ids": ["F1-frag-05"]
+    },
+    {
+      "gold_id": "F1-A1-010",
+      "fact_type": "partner_implementation",
+      "target_ref": null,
+      "normalized_value": "Alpine Monitoring Systems AG",
+      "keywords": ["Alpine Monitoring", "Umsetzungspartner", "implementation"],
+      "fragment_ids": ["F1-frag-05"]
+    },
+    {
+      "gold_id": "F1-A1-011",
+      "fact_type": "partner_pilot",
+      "target_ref": null,
+      "normalized_value": "Helvetic Components Factory",
+      "keywords": ["Helvetic Components", "Pilot"],
+      "fragment_ids": ["F1-frag-05"]
+    },
+    {
+      "gold_id": "F1-A1-012",
+      "fact_type": "budget_direct_costs",
+      "target_ref": null,
+      "normalized_value": "420000",
+      "keywords": ["Direct project costs", "without overhead"],
+      "fragment_ids": ["F1-frag-09"]
+    },
+    {
+      "gold_id": "F1-A1-013",
+      "fact_type": "budget_own_contribution",
+      "target_ref": null,
+      "normalized_value": "150000",
+      "keywords": ["Own contribution", "implementation partner"],
+      "fragment_ids": ["F1-frag-09"]
+    },
+    {
+      "gold_id": "F1-A1-014",
+      "fact_type": "budget_cash_contribution",
+      "target_ref": null,
+      "normalized_value": "12000",
+      "keywords": ["Cash contribution"],
+      "fragment_ids": ["F1-frag-09"]
+    },
+    {
+      "gold_id": "F1-A1-015",
+      "fact_type": "budget_requested_funding",
+      "target_ref": null,
+      "normalized_value": "258000",
+      "keywords": ["Requested funding"],
+      "fragment_ids": ["F1-frag-01", "F1-frag-09"]
+    }
+  ],
+  "gold_missing": [
+    {
+      "gold_id": "F1-M-001",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "keywords": ["baseline", "measurement method", "validation", "Messmethode"]
+    },
+    {
+      "gold_id": "F1-M-002",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "keywords": ["Marktgrösse", "market size", "Wettbewerber", "Quelle", "belastbar"]
+    }
+  ],
+  "gold_findings": [
+    {
+      "finding_id": "F1-F-004",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Marktgrösse", "market size", "missing", "fehlt"]
+    },
+    {
+      "finding_id": "F1-F-005",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "evidence_risk",
+      "a3_scope": true,
+      "keywords": ["300'000", "300000", "savings", "Einsparung", "assumption", "evidence", "Beleg"]
+    },
+    {
+      "finding_id": "F1-F-006",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.2",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Wettbewerb", "competition", "USP", "substanziert", "substantiated"]
+    },
+    {
+      "finding_id": "F1-F-007",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.2",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Go-to-market", "incomplete", "unvollständig", "Kundenzugang"]
+    },
+    {
+      "finding_id": "F1-F-008",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Impact", "quantifiziert", "quantified", "Messmethode", "measurement"]
+    },
+    {
+      "finding_id": "F1-F-009",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["State-of-the-art", "SOTA", "generic", "generisch", "Differenzierung", "differentiation"]
+    },
+    {
+      "finding_id": "F1-F-010",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["KPI", "baseline", "missing", "fehlt"]
+    },
+    {
+      "finding_id": "F1-F-011",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.4",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Datenquelle", "data source", "training data", "Trainingsdaten", "unclear", "unklar"]
+    },
+    {
+      "finding_id": "F1-F-012",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Validierung", "validation design", "incomplete", "unvollständig"]
+    },
+    {
+      "finding_id": "F1-F-013",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.5",
+      "severity": "human_review_required",
+      "a3_scope": true,
+      "keywords": ["IPR", "FTO", "Patent", "strategy", "incomplete", "ungeklärt"]
+    },
+    {
+      "finding_id": "F1-F-015",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.6",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Partner", "expertise", "infrastructure", "evidence", "Beleg", "Track Record"]
+    }
+  ]
+}

@@ -10,6 +10,7 @@ from sqlalchemy import text
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from app.api import (
+    admin,
     auth,
     capabilities,
     evidence,
@@ -20,6 +21,7 @@ from app.api import (
     imports,
     integrated_draft,
     market_research,
+    research_briefs,
     me,
     operations,
     market,
@@ -105,8 +107,8 @@ app.add_exception_handler(StarletteHTTPException, http_exception_handler)
 app.add_exception_handler(Exception, unhandled_exception_handler)
 
 for module in (
-    health, auth, me, capabilities, projects, sources, runs, operations,
+    health, auth, me, capabilities, admin, projects, sources, runs, operations,
     partners, requirements, evidence, fields, review, exports, research, market,
-    firewall, reliability, imports, market_research, integrated_draft,
+    firewall, reliability, imports, market_research, research_briefs, integrated_draft,
 ):
     app.include_router(module.router, prefix=API_PREFIX)

@@ -4,9 +4,11 @@ from __future__ import annotations
 import pytest
 from sqlalchemy import select
 
+from app.agents import gateway
 from app.agents.gateway import ModelResponse, SafeFailure, invoke
+from app.config.settings import get_settings
 from app.agents.providers import FakeProvider
-from app.agents.providers.base import ProviderUsage
+from app.agents.providers.base import ProviderError, ProviderUsage
 from app.agents.registry import (
     AgentDef,
     AgentProfileDef,
@@ -15,7 +17,9 @@ from app.agents.registry import (
     ModelRoute,
 )
 from app.agents.schemas import ProjectFactExtractionResult
-from app.db.models import AgentInvocation, AuditEvent, ControlResult, UsageRecord
+from app.db.models import (
+    AgentInvocation, AgentInvocationAttempt, AuditEvent, ControlResult, UsageRecord,
+)
 from app.db.session import SessionLocal
 from tests.agent_helpers import (
     base_request,
@@ -25,6 +29,12 @@ from tests.agent_helpers import (
 )
 
 PROFILE = "A1.project_fact_extraction"
+
+
+class _RealEvalStub(FakeProvider):
+    """Network-free adapter double classified exactly like the direct OpenAI route."""
+
+    name = "openai_direct"
 
 
 @pytest.fixture
@@ -60,6 +70,96 @@ def test_successful_structured_call(db):
     inv = db.get(AgentInvocation, resp.invocation_id)
     assert inv.status == "succeeded" and inv.input_hash and inv.output_hash
     assert inv.provider == "anthropic_direct" and inv.prompt_version
+    assert (inv.role_id, inv.role_version) == (
+        "A1_FACT_EVIDENCE_ANALYST", "a1_fact_evidence_analyst_v2"
+    )
+    assert (inv.skill_id, inv.skill_version, inv.contract_version) == (
+        "a1.fact_extraction", "a1_fact_extraction_skill_v2", "2.0.0"
+    )
+    assert inv.input_artifact_refs == [
+        {"kind": "run_input_snapshot", "fragment_ids": ["frag-1"]}
+    ]
+    assert resp.role_id == inv.role_id and resp.skill_id == inv.skill_id
+    assert resp.generation_kind == "fake_demo"
+    assert inv.context_meta["model_call_attempted"] is False
+
+
+def test_fake_provider_never_unlocks_local_only(db):
+    adapter = FakeProvider()
+    response = invoke(
+        db,
+        base_request(
+            processing_mode="local_only",
+            classification={
+                "sensitivity": "internal",
+                "origin": "real_project",
+                "nda_applies": False,
+            },
+            run_confirmation=True,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, SafeFailure)
+    assert response.status == "blocked"
+    assert response.safe_detail == "processing_mode_local_only"
+    assert adapter.calls == 0
+
+
+def test_real_eval_adapter_sets_model_metadata_only_after_confirmed_call(db, monkeypatch):
+    settings = get_settings().model_copy(update={
+        "ai_eval_mode": "real",
+        "agent_model_gpt_56_luna_id": "hermetic-openai-model",
+    })
+    monkeypatch.setattr(gateway, "get_settings", lambda: settings)
+    adapter = _RealEvalStub()
+    response = invoke(
+        db,
+        base_request(run_confirmation=True),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, ModelResponse)
+    assert response.generation_kind == "model_generated"
+    assert response.actual_adapter_name == "openai_direct"
+    assert response.prompt_version
+    assert adapter.calls == 1
+    invocation = db.get(AgentInvocation, response.invocation_id)
+    assert invocation.context_meta["model_call_attempted"] is True
+    assert invocation.context_meta["generation_kind"] == "model_generated"
+    assert invocation.requested_model_id == "hermetic-openai-model"
+    attempts = db.scalars(select(AgentInvocationAttempt).where(
+        AgentInvocationAttempt.invocation_id == invocation.invocation_id
+    )).all()
+    assert len(attempts) == 1
+    assert attempts[0].requested_model_id == "hermetic-openai-model"
+    assert attempts[0].actual_model_id == "fake"
+
+
+@pytest.mark.parametrize(
+    ("origin", "confirmed"),
+    [("synthetic", False), ("real_project", True)],
+)
+def test_real_eval_gate_blocks_before_adapter_call(db, monkeypatch, origin, confirmed):
+    settings = get_settings().model_copy(update={
+        "ai_eval_mode": "real",
+        "agent_model_gpt_56_luna_id": "hermetic-openai-model",
+    })
+    monkeypatch.setattr(gateway, "get_settings", lambda: settings)
+    adapter = _RealEvalStub()
+    response = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "public",
+                "origin": origin,
+                "nda_applies": False,
+            },
+            run_confirmation=confirmed,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(response, SafeFailure)
+    assert response.status == "blocked"
+    assert adapter.calls == 0
 
 
 def test_malformed_output_is_safe_failure(db):
@@ -90,6 +190,26 @@ def test_fallback_used_when_primary_fails(db):
     resp = invoke(db, base_request(), provider_resolver=per_route_resolver(fakes))
     assert isinstance(resp, ModelResponse)
     assert resp.provider == "openai_direct"  # served by the fallback route
+    attempts = db.scalars(select(AgentInvocationAttempt).where(
+        AgentInvocationAttempt.invocation_id == resp.invocation_id
+    ).order_by(AgentInvocationAttempt.attempt_index)).all()
+    assert [attempt.status for attempt in attempts] == ["failed", "succeeded"]
+    assert [attempt.provider for attempt in attempts] == [
+        "anthropic_direct", "openai_direct",
+    ]
+
+
+def test_refusal_stops_without_fallback(db):
+    class Refusing(FakeProvider):
+        def generate(self, request):
+            self.calls += 1
+            raise ProviderError("refusal", code="refusal")
+
+    adapter = Refusing()
+    response = invoke(db, base_request(), provider_resolver=fake_resolver(adapter))
+    assert isinstance(response, SafeFailure)
+    assert response.safe_detail == "refusal"
+    assert adapter.calls == 1
 
 
 def test_fallback_not_allowed_blocks(db):
@@ -112,6 +232,8 @@ def test_retry_once_only_on_schema_failure(db):
     resp = invoke(db, base_request(), provider_resolver=per_route_resolver(fakes))
     assert isinstance(resp, SafeFailure)
     assert primary.calls == 2  # one attempt + exactly one retry
+    invocation = db.get(AgentInvocation, resp.invocation_id)
+    assert invocation.retry_count == 2  # je ein Retry auf zwei sichtbaren Routen
 
 
 def test_timeout_is_timed_out(db):

@@ -122,7 +122,8 @@ def test_instruction_override_does_not_grant_approval(db):
                success_fake(bundle(suggested_text=claim, evidence_anchor_ids=[anchor])))
     assert out.status == "succeeded"
     # No-Auto-Accept: das typisierte Proposal bleibt review-pflichtig.
-    assert out.view["ai_proposal"]["human_review_required"] is True
+    assert out.view["proposal"]["human_review_required"] is True
+    assert out.view["ai_proposal"] is None
     # Suggestion bleibt advisory; nichts wird genehmigt/übernommen.
     suggestion = db.scalars(
         select(DraftSuggestion).where(DraftSuggestion.run_id == run.run_id)
@@ -208,7 +209,8 @@ def test_research_snippet_injection_is_inert(db, caplog):
     )
     out = _run(db, run, draft, base, success_fake(bundle(evidence_anchor_ids=[anchor])))
     assert out.status == "succeeded"
-    proposal = out.view["ai_proposal"]
+    proposal = out.view["proposal"]
+    assert out.view["ai_proposal"] is None
     assert proposal["human_review_required"] is True          # (i) kein Auto-Accept
     assert proposal["used_anchor_ids"] == [anchor]            # (ii) nie die Candidate-ID
     assert CANARY not in _metering_blob(db)                   # (iii) kein Leak in Metering

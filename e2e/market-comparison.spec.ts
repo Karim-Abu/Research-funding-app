@@ -4,7 +4,10 @@ type Mut = () => Record<string, string>
 
 // M9I-B market/competitor comparison smoke (fake provider). Requires the backend started
 // with WEB_RESEARCH_ENABLED=true, WEB_RESEARCH_FAKE_PROVIDER=true, AGENT_FAKE_PROVIDER=true.
-// Built only from imported public sources; no real Firecrawl, no draft mutation.
+// EHRLICHER Fake-Modus: Demo-Recherche liefert keine echten Webquellen — der
+// Vergleich wird bewusst LEER abgeschlossen (Evidenzlücke ausgewiesen), nie
+// aus Fake-Inhalten fabriziert. Source-backed Items sind ein Live-Thema
+// (Ebene D / Supervised live E2E).
 const EMAIL = process.env.E2E_EMAIL ?? "anna.keller@example.test"
 const PASSWORD = process.env.E2E_PASSWORD ?? "changeme-dev-lead"
 const ORIGIN = "http://localhost:3000"
@@ -52,42 +55,23 @@ async function createProject(request: APIRequestContext, mut: Mut): Promise<stri
   })).json()).project_id
 }
 
-async function importTwoPublicSources(request: APIRequestContext, mut: Mut, projectId: string) {
-  const accepted = await (await request.post(
-    `/api/projects/${projectId}/research-tasks`,
-    { headers: mut(), data: {
-      purpose: "partner_role_suggestion", subject_type: "topic",
-      query_preview: "öffentliche Markt- und Wettbewerbsquellen", max_results: 3,
-      user_confirms_public_professional_purpose: true } },
-  )).json()
-  expect(await waitForOperation(request, accepted.operation_id)).toBe("succeeded")
-  const results = await (await request.get(
-    `/api/projects/${projectId}/research-results`)).json() as { result_id: string }[]
-  expect(results.length).toBeGreaterThanOrEqual(2)
-  for (const r of results.slice(0, 2)) {
-    const res = await request.post(`/api/research-results/${r.result_id}/import`, { headers: mut() })
-    expect(res.status()).toBe(201)
-  }
-}
-
-test("market comparison: built from imported public sources, source-backed item with quote", async ({ page }) => {
+test("market comparison: fake mode completes honestly empty with gap note", async ({ page }) => {
   const mut = await login(page)
   const projectId = await createProject(page.request, mut)
-  await importTwoPublicSources(page.request, mut, projectId)
 
-  // Generate the comparison.
+  // Generate the comparison (fake web mode).
   const accepted = await (await page.request.post(
     `/api/projects/${projectId}/market-comparisons`, { headers: mut() })).json()
   expect(await waitForOperation(page.request, accepted.operation_id)).toBe("succeeded")
 
   const view = await (await page.request.get(
     `/api/market-comparisons/${accepted.resource_id}`)).json()
+  // Ehrlicher Leerzustand: bereit zur Prüfung, aber 0 Items + klare Lücke.
   expect(view.status).toBe("ready_for_review")
-  expect(view.item_count).toBeGreaterThanOrEqual(1)
-  const backed = (view.items as Array<{ confidence_label: string; evidence_quotes: unknown[] }>)
-    .find((i) => i.confidence_label === "source_backed")
-  expect(backed).toBeTruthy()
-  expect(backed!.evidence_quotes.length).toBeGreaterThanOrEqual(1)
+  expect(view.item_count ?? (view.items ?? []).length).toBe(0)
+  expect(JSON.stringify(view.research_gaps)).toContain(
+    "Demo-Recherche enthält keine echten Webquellen"
+  )
 
   // No drafts were created by the comparison (no automatic draft mutation).
   const sources = await (await page.request.get(`/api/projects/${projectId}/sources`)).json()
@@ -98,10 +82,9 @@ test("market comparison: built from imported public sources, source-backed item 
   await expect(page).toHaveURL(/\/login/, { timeout: 20_000 })
 })
 
-test("market comparison UI: Quellen section renders a source-backed item", async ({ page }) => {
+test("market comparison UI: Quellen section shows the honest empty state", async ({ page }) => {
   const mut = await login(page)
   const projectId = await createProject(page.request, mut)
-  await importTwoPublicSources(page.request, mut, projectId)
 
   await page.evaluate((id) => sessionStorage.setItem("rf_active_project_id", id), projectId)
   await page.goto("/quellen")
@@ -111,8 +94,10 @@ test("market comparison UI: Quellen section renders a source-backed item", async
   await expect(section).toContainText("Markt- und Konkurrenzvergleich")
 
   await page.getByRole("button", { name: "Vergleich erstellen" }).click()
-  await expect(page.getByTestId("market-comparison-table")).toBeVisible({ timeout: 20_000 })
-  await expect(page.getByText("Textstelle gefunden").first()).toBeVisible()
+  await expect(
+    section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
+  ).toBeVisible({ timeout: 20_000 })
+  await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   // No provider/model branding anywhere on the page.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)
 

@@ -21,3 +21,7 @@ langgraph-checkpoint-sqlite==2.0.11
 PyYAML==6.0.3
 httpx==0.28.1
 pytest==8.3.4
+# Explicit DOCX render smoke: Word automation converts to PDF, PyMuPDF checks
+# every resulting page image/word box. The test fails loudly when Word is absent.
+PyMuPDF==1.26.0
+pywin32==310; sys_platform == "win32"

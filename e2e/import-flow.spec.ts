@@ -83,7 +83,9 @@ test("Import-Flow: PDF-only-Start → Übernahme VOR dem Run → Baseline → Fi
   // --- Review-Tabelle: 8 Kandidaten, Unsicher markiert, nichts vorentschieden
   await expect(page.getByTestId("import-review")).toBeVisible({ timeout: 60_000 })
   await expect(page.getByTestId("import-candidate")).toHaveCount(8)
-  await expect(page.getByText("Unsicher — Prüfung nötig").first()).toBeVisible()
+  // Saubere Fixture: alle Kandidaten tragen das ehrliche Badge «Inhalt
+  // erkannt» (unsichere Kandidaten deckt import-functional.spec.ts ab).
+  await expect(page.getByText("Inhalt erkannt").first()).toBeVisible()
   await expect(page.getByText("Übernommen", { exact: true })).toHaveCount(0)
 
   // --- Fachliche Korrektur: KEIN «Analyse starten»-Gate mehr -----------------
@@ -179,6 +181,8 @@ async function waitForImportUploadReady(page: Page) {
 }
 
 test("Import-Upload zeigt nachvollziehbare Phasen bis zum Review", async ({ page }) => {
+  // Unter Suite-Last (OneDrive/SQLite) kann die Verarbeitung länger dauern.
+  test.setTimeout(120_000)
   await login(page)
   await createIdeaProject(page, "E2E Import-Phasen")
 
@@ -197,6 +201,8 @@ test("Import-Upload zeigt nachvollziehbare Phasen bis zum Review", async ({ page
 })
 
 test("Import-Upload-Fehler: Ursache, Erneut versuchen und Technische Details", async ({ page }) => {
+  // Unter Suite-Last (OneDrive/SQLite) kann der Upload-Roundtrip länger dauern.
+  test.setTimeout(120_000)
   await login(page)
   await createIdeaProject(page, "E2E Import-Fehler")
 
@@ -209,10 +215,11 @@ test("Import-Upload-Fehler: Ursache, Erneut versuchen und Technische Details", a
   })
 
   // Ursachen-spezifische Meldung (Signatur passt nicht zur Endung) statt
-  // einer generischen Sammel-Fehlermeldung.
+  // einer generischen Sammel-Fehlermeldung. Grosszügiges Fenster: unter
+  // Suite-Last kann der Upload-Roundtrip die 20s knapp überschreiten.
   await expect(
     page.getByText(/wird nicht unterstützt oder der Inhalt passt nicht zur Dateiendung/)
-  ).toBeVisible({ timeout: 20_000 })
+  ).toBeVisible({ timeout: 45_000 })
   await expect(
     page.getByRole("button", { name: "Erneut versuchen" })
   ).toBeVisible()

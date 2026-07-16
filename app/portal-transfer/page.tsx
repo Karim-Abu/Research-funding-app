@@ -16,6 +16,7 @@ import { getCapabilities } from "@/lib/capabilities"
 import { charCount, listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { listPortalFields, type PortalFieldInfoDto } from "@/lib/portal-fields"
 import { getReview, type ReviewPackageDto } from "@/lib/review"
+import { getTransferSnapshot, type TransferSnapshotDto } from "@/lib/portal-transfer"
 import { getRunFields, ApiError, BRIDGE_UNREACHABLE_MESSAGE } from "@/lib/api"
 import type { PortalFieldDraftDto as MockFieldDto } from "@/lib/backend-contract"
 
@@ -57,6 +58,7 @@ function LivePortalTransfer({ runId }: { runId: string }) {
   const [portalFields, setPortalFields] = React.useState<
     PortalFieldInfoDto[] | null
   >(null)
+  const [transferSnapshot, setTransferSnapshot] = React.useState<TransferSnapshotDto | null>(null)
   const [error, setError] = React.useState<string | null>(null)
   // Slice 3: whether copies are logged server-side. On a capabilities failure
   // we still attempt logging (the endpoint is active; errors go the fail-open
@@ -66,6 +68,7 @@ function LivePortalTransfer({ runId }: { runId: string }) {
   const load = React.useCallback(() => {
     setError(null)
     setFields(null)
+    setTransferSnapshot(null)
     listFields(runId)
       .then((f) => {
         setFields(f)
@@ -74,6 +77,9 @@ function LivePortalTransfer({ runId }: { runId: string }) {
         listPortalFields(runId)
           .then(setPortalFields)
           .catch(() => setPortalFields(null))
+        getTransferSnapshot(runId)
+          .then(setTransferSnapshot)
+          .catch(() => setTransferSnapshot(null))
       })
       .catch((e) =>
         setError(e instanceof Error ? e.message : "Feldtexte konnten nicht geladen werden.")
@@ -113,6 +119,7 @@ function LivePortalTransfer({ runId }: { runId: string }) {
       fields={fields}
       review={review}
       portalFields={portalFields}
+      transferSnapshot={transferSnapshot}
       confidentialReminder={isConfidential()}
       runId={runId}
       copyEventsEnabled={copyEventsEnabled}

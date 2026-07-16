@@ -6,8 +6,8 @@ provider / network / cloud / portal submission.
 """
 from __future__ import annotations
 
-TECHNICAL_EVIDENCE_SCHEMA = "technical-evidence-1"
-EXPORT_SNAPSHOT_SCHEMA = "export-snapshot-1"
+TECHNICAL_EVIDENCE_SCHEMA = "technical-evidence-2"
+EXPORT_SNAPSHOT_SCHEMA = "export-snapshot-2"
 
 # Public file extension + MIME per export type (download is always octet-stream;
 # the type lives in the filename extension).

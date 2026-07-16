@@ -11,12 +11,20 @@ export type ResearchEligibility =
   | "needs_verification"
 export type IndependenceStatus = "confirmed" | "exception" | "needs_input"
 
+export interface PartnerRepresentative {
+  display_name: string
+  person_id?: string | null
+  email?: string | null
+  organisation_id?: string | null
+}
+
 export interface PartnerInput {
   name: string
   partner_type: PartnerType
   project_role?: string | null
   country?: string | null
   location?: string | null
+  department?: string | null
   contribution?: string | null
   uid?: string | null
   industry?: string | null
@@ -24,6 +32,7 @@ export interface PartnerInput {
   startup_status?: boolean | null
   swiss_value_creation?: boolean | null
   research_partner_eligibility_status?: ResearchEligibility | null
+  official_representative?: PartnerRepresentative | null
   personnel_independence_status?: IndependenceStatus | null
   financial_independence_status?: IndependenceStatus | null
   /** Kurze Begründung; Pflicht bei explizit unklar/nicht bestätigt

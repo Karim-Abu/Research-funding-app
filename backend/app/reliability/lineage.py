@@ -26,7 +26,7 @@ from app.db.models import (
     PortalFieldDraft,
     ReviewFinding,
 )
-from app.evidence.tokenize import content_terms
+from app.evidence.tokenize import content_terms, is_trivial_quote
 from app.reliability import RELIABILITY_PROFILE_ID
 from app.reliability.extract import ExtractedClaim, is_quantified
 from app.reliability import sufficiency as suff
@@ -91,6 +91,10 @@ def build_lineage(
 
     has_field_anchor = False
     for anchor in _anchors(db, run, anchor_ids):
+        # Teil C4 — triviale Kurz-Zitate («Overhead», «18/26») tragen keinen
+        # Kontext: sie zählen weder als Coverage noch als Claim-Stützung.
+        if is_trivial_quote(anchor.quote or ""):
+            continue
         has_field_anchor = True
         # Coverage: the anchor is LINKED to the field regardless of whether it supports the
         # claim (coverage is presence; sufficiency below is correctness).
@@ -220,13 +224,14 @@ def _market_quotes(db: Session, run: AnalysisRun):
         select(MarketComparison).where(MarketComparison.project_id == run.project_id)
         .order_by(MarketComparison.created_at.desc())
     )
-    if comparison is None:
+    if comparison is None or comparison.generation_kind == "fake_demo":
         return []
     pairs: list[tuple[MarketComparisonItem, str]] = []
     items = db.scalars(
         select(MarketComparisonItem).where(
             MarketComparisonItem.comparison_id == comparison.comparison_id,
             MarketComparisonItem.confidence_label == "source_backed",
+            MarketComparisonItem.status == "accepted",
         )
     )
     for item in items:

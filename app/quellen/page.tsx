@@ -67,6 +67,7 @@ import {
   cancelRun,
   createRun,
   getRunPhases,
+  liveStatusNotice,
   RunError,
   type RunSettings,
   type RunStatus,
@@ -82,6 +83,7 @@ import { createProcessingConfirmation } from "@/lib/processing-confirmations"
 import {
   dataClassificationFromFlat,
   flatFromDataClassification,
+  type Origin,
 } from "@/lib/data-classification"
 import { getProject } from "@/lib/projects"
 import {
@@ -305,6 +307,8 @@ function QuellenPageContent() {
   const [runTechnical, setRunTechnical] =
     React.useState<RunTechnicalSummaryDto | null>(null)
   const [partialLabel, setPartialLabel] = React.useState<string | null>(null)
+  // Ehrlicher Live-Status (partial_live etc.) — nie ein stiller Fallback.
+  const [liveNotice, setLiveNotice] = React.useState<string | null>(null)
   const [runCost, setRunCost] = React.useState<RunCostDto | undefined>(undefined)
   const [canResume, setCanResume] = React.useState(false)
   const [apiError, setApiError] = React.useState<string | null>(null)
@@ -325,6 +329,8 @@ function QuellenPageContent() {
   // Projekte ohne Intake-Session ab (z. B. API-erstellt oder frischer Browser).
   const [projectDataClass, setProjectDataClass] =
     React.useState<DataClass | null>(null)
+  const [projectOrigin, setProjectOrigin] =
+    React.useState<Origin>("real_project")
 
   // Restriktivste bekannte Einstufung gewinnt (nie Downgrade); ohne jedes
   // Signal bleibt null und die Konsumenten fallen fail-closed auf
@@ -365,6 +371,7 @@ function QuellenPageContent() {
         setRunPhases(phasesToView(data.phases))
         setRunTechnical(data.technical)
         setPartialLabel(failedPhaseLabel(data.phases))
+        setLiveNotice(liveStatusNotice(data.live_execution_status))
         return data.run_status
       } catch {
         // letzte bekannte Phasen behalten; der Watcher versucht es erneut.
@@ -446,24 +453,15 @@ function QuellenPageContent() {
     setRunCost(undefined)
     try {
       if (liveMode && projectId) {
-        // Derive the processing mode from the run-settings opt-in. Cloud-KI is
-        // only used when the user enabled it AND explicitly confirmed for a
-        // public/synthetic project. R4.3: intern/vertraulich erhalten nach
-        // Opt-in + verstandener Warnung den LOKALEN KI-Pfad (local_only +
-        // Bestätigung); NDA/unklassifiziert bleiben regelbasiert.
+        // Modell- oder Demo-Läufe verwenden den kontrollierten cloud_assisted-
+        // Runmodus. Herkunft, Quellen, Bestätigung und ProviderPolicy werden im
+        // Backend erneut fail-closed geprüft. Ein lokaler Adapter existiert nicht.
         const processedVersionIds = liveSources
           .filter((s) => s.status === "processed" && s.current_source_version_id)
           .map((s) => s.current_source_version_id as string)
         const useCloud =
           settings.ki &&
           settings.cloudConfirmed === true &&
-          !isLocalOnly &&
-          processedVersionIds.length > 0
-        const useLocalAi =
-          settings.ki &&
-          settings.cloudConfirmed === true &&
-          (effectiveDataClass === "internal" ||
-            effectiveDataClass === "confidential") &&
           processedVersionIds.length > 0
 
         // Run-Budgets aus dem Dialog: KI-Aufrufe (Default 25) und — nur für
@@ -487,22 +485,6 @@ function QuellenPageContent() {
             max_cost_chf: settings.costLimit,
             max_llm_calls: maxLlmCalls,
             max_web_calls: maxWebCalls,
-            source_version_ids: processedVersionIds,
-            internal_cloud_confirmation_id: confirmation.confirmation_id,
-          }
-        } else if (useLocalAi) {
-          const confirmation = await createProcessingConfirmation(
-            projectId,
-            processedVersionIds,
-            "KI-Vorschläge für Textentwürfe vorbereiten (lokaler Pfad)",
-            "local_only"
-          )
-          runSettings = {
-            processing_mode: "local_only",
-            max_cost_chf: settings.costLimit,
-            max_llm_calls: maxLlmCalls,
-            // Webrecherche ist auf den öffentlichen Cloud-Pfad beschränkt.
-            max_web_calls: 0,
             source_version_ids: processedVersionIds,
             internal_cloud_confirmation_id: confirmation.confirmation_id,
           }
@@ -614,6 +596,7 @@ function QuellenPageContent() {
       .then((p) => {
         if (active)
           setProjectDataClass(flatFromDataClassification(p.data_classification))
+        if (active) setProjectOrigin(p.data_classification.origin)
       })
       .catch(() => {})
     return () => {
@@ -947,6 +930,7 @@ function QuellenPageContent() {
           <div className="mb-4 flex flex-col gap-3">
             <CompletedAnalysisBanner
               partialPhaseLabel={partialLabel}
+              liveNotice={liveNotice}
               onGoToRequirements={() => router.push("/anforderungen")}
               onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
             />
@@ -1100,11 +1084,26 @@ function QuellenPageContent() {
         dataClass={dialogDataClass}
         variant={activeScenario.variant}
         serviceAvailability={{
-          ki: activeScenario.kiAvailable,
+          ki: liveMode
+            ? Boolean(
+                capabilities?.generation_mode &&
+                  capabilities.generation_mode !== "unavailable" &&
+                  // Live konfiguriert, aber Provider fehlt ⇒ KI ist NICHT
+                  // verfügbar — es erscheint kein Demo-Ergebnis als Ersatz.
+                  capabilities.generation_mode !== "live_unavailable"
+              )
+            : activeScenario.kiAvailable,
           web: activeScenario.webAvailable,
+          generationMode: liveMode
+            ? (capabilities?.generation_mode ?? "unavailable")
+            : activeScenario.kiAvailable
+              ? "fake_demo"
+              : "unavailable",
+          unavailableReason: capabilities?.generation_unavailable_reason ?? undefined,
         }}
         hasActiveRun={activeScenario.hasActiveRun}
         projectId={liveMode ? (projectId ?? undefined) : undefined}
+        projectOrigin={liveMode ? projectOrigin : "synthetic"}
         onStart={handleAnalysisStart}
         onCancel={() => setDialogOpen(false)}
       />

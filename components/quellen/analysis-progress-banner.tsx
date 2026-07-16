@@ -215,12 +215,16 @@ interface CompletedAnalysisBannerProps {
   /** Label der fehlgeschlagenen Phase — macht aus «abgeschlossen» ehrlich
    *  «teilweise abgeschlossen» (z. B. Kritik fehlgeschlagen). */
   partialPhaseLabel?: string | null
+  /** Ruhiger Hinweis zum Live-Ausführungsstatus (z. B. partial_live) —
+   *  siehe lib/runs.ts::liveStatusNotice; null = kein Hinweis nötig. */
+  liveNotice?: string | null
 }
 
 export function CompletedAnalysisBanner({
   onGoToRequirements,
   onShowEvidence,
   partialPhaseLabel,
+  liveNotice,
 }: CompletedAnalysisBannerProps) {
   return (
     <div
@@ -229,16 +233,21 @@ export function CompletedAnalysisBanner({
       className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border bg-muted/40 px-5 py-4"
     >
       <div className="flex items-start gap-2">
-        {partialPhaseLabel ? (
+        {partialPhaseLabel || liveNotice ? (
           <AlertTriangle className="mt-0.5 size-4 shrink-0 text-status-partial" />
         ) : (
           <CheckCircle2 className="mt-0.5 size-4 shrink-0 text-status-fulfilled" />
         )}
-        <p className="text-sm text-foreground">
-          {partialPhaseLabel
-            ? `Analyse teilweise abgeschlossen — «${partialPhaseLabel}» ist fehlgeschlagen. Die erstellten Prüfergebnisse und Feldvorschläge bleiben erhalten.`
-            : "Analyse abgeschlossen. Öffnen Sie Anforderungen und Evidenz für die Ergebnisse."}
-        </p>
+        <div className="flex flex-col gap-1">
+          <p className="text-sm text-foreground">
+            {partialPhaseLabel
+              ? `Analyse teilweise abgeschlossen — «${partialPhaseLabel}» ist fehlgeschlagen. Die erstellten Prüfergebnisse und Feldvorschläge bleiben erhalten.`
+              : "Analyse abgeschlossen. Öffnen Sie Anforderungen und Evidenz für die Ergebnisse."}
+          </p>
+          {liveNotice && (
+            <p className="text-sm text-foreground">{liveNotice}</p>
+          )}
+        </div>
       </div>
       <div className="flex items-center gap-2">
         {onShowEvidence && (
@@ -268,7 +277,8 @@ export function LocalOnlyBanner() {
     >
       <AlertTriangle className="size-4 shrink-0 text-muted-foreground" />
       <p className="text-xs text-muted-foreground">
-        Nur lokale Verarbeitung: Inhalte verlassen Ihre Umgebung nicht.
+        Für diese Datenklasse ist kein freigegebener KI-Provider konfiguriert.
+        Die Analyse bleibt regelbasiert; Inhalte verlassen Ihre Umgebung nicht.
       </p>
     </div>
   )

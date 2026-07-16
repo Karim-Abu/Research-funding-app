@@ -376,7 +376,7 @@ def test_a2_availability_provider_unavailable_without_fake(client, monkeypatch):
     ok, reason = field_drafting.availability(
         _fake_run("cloud_assisted"), "SOL.INNOVATION_SOLUTION.EDITOR")
     assert ok is False
-    assert reason == "provider_unavailable"
+    assert reason == "real_eval_confirmation_required"
 
 
 def test_a2_availability_blocked_for_confidential(client, monkeypatch):
@@ -399,46 +399,40 @@ def _confirm_local(client, project_id, csrf, svids, policy=POLICY):
     )
 
 
-def test_local_confirmation_allowed_for_internal_and_confidential(client):
+def test_local_confirmation_unavailable_for_internal_and_confidential(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     for sensitivity in ("internal", "confidential"):
         cls = _classification(sensitivity, "real_project", mode="local_only")
         pid = _make_project(client, csrf, cls, title=f"Local {sensitivity}")
         svid = _text_source(client, pid, csrf, cls)
         res = _confirm_local(client, pid, csrf, [svid])
-        assert res.status_code == 201, res.text
+        assert res.status_code == 403, res.text
+        assert res.json()["code"] == "local_ai_provider_unavailable"
 
 
-def test_local_confirmation_blocked_for_public_and_nda(client):
+def test_local_confirmation_unavailable_for_public_and_nda(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid_public = _make_project(client, csrf, _classification(), title="Local pub")
     res = _confirm_local(client, pid_public, csrf, ["any"])
     assert res.status_code == 403
-    assert res.json()["code"] == "local_ai_not_eligible_for_classification"
+    assert res.json()["code"] == "local_ai_provider_unavailable"
     pid_nda = _make_project(
         client, csrf,
         _classification("internal", "real_project", nda=True, mode="local_only"),
         title="Local nda")
-    assert _confirm_local(client, pid_nda, csrf, ["any"]).status_code == 403
+    nda_response = _confirm_local(client, pid_nda, csrf, ["any"])
+    assert nda_response.status_code == 403
+    assert nda_response.json()["code"] == "local_ai_provider_unavailable"
 
 
-def test_local_run_with_confirmation_consumes_it(client):
+def test_local_run_cannot_obtain_a_fake_provider_confirmation(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     cls = _classification("internal", "real_project", mode="local_only")
     pid = _make_project(client, csrf, cls, title="Local run")
     svid = _text_source(client, pid, csrf, cls)
-    cid = _confirm_local(client, pid, csrf, [svid]).json()["confirmation_id"]
-    run = _create_run(client, pid, csrf, _run_body("local_only", [svid], cid))
-    assert run.status_code == 202, run.text
-    db = SessionLocal()
-    try:
-        confirmation = db.get(ProcessingConfirmation, cid)
-        assert confirmation.status == "used"
-        assert confirmation.used_by_run_id
-        snapshot = db.get(RunPolicySnapshot, confirmation.used_by_run_id)
-        assert snapshot.provider_route_class == "fake_local"
-    finally:
-        db.close()
+    confirmation = _confirm_local(client, pid, csrf, [svid])
+    assert confirmation.status_code == 403
+    assert confirmation.json()["code"] == "local_ai_provider_unavailable"
 
 
 def test_local_run_without_confirmation_stays_rule_based(client):
@@ -458,4 +452,4 @@ def test_local_run_blocked_for_public_project(client):
     cid = _confirm(client, pid, csrf, [svid]).json()["confirmation_id"]
     res = _create_run(client, pid, csrf, _run_body("local_only", [svid], cid))
     assert res.status_code == 403
-    assert res.json()["code"] == "local_ai_not_eligible_for_classification"
+    assert res.json()["code"] == "local_ai_provider_unavailable"

@@ -1,0 +1,231 @@
+{
+  "_comment": "F2 TERRAFLUX — A1-Goldstandard für die Rollen-Modell-Evaluation. Match-Strategie (backend/app/evaluation/role_model_scoring.py): Wertgleichheit (normalized_value bzw. Wert im Statement) ODER ≥0.5-Keyword-Trefferquote; target_ref-Gleichheit zählt zusätzlich für field_accuracy. boundary = Fragment-Provenienz (source_fragment_ids ⊆ fragment_ids) + exakter Wert.",
+  "case_id": "F2",
+  "holdout": false,
+  "title_de": "TERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün",
+  "title_en": "TERRAFLUX - Adaptive Irrigation Control for Urban Green",
+  "required_terms": ["TERRAFLUX"],
+  "entities": [
+    "TERRAFLUX",
+    "Nordlicht Institut für Angewandte Forschung",
+    "Voltaris AG",
+    "Brimatec GmbH"
+  ],
+  "portal_boilerplate": [
+    "Characters:",
+    "Open Editor",
+    "Innosuisse Innolink - Innovationsprojekt",
+    "Seite ",
+    "Describe the",
+    "wird in Aramis publiziert",
+    "wird nicht in Aramis publiziert"
+  ],
+  "gold_facts": [
+    {
+      "gold_id": "F2-A1-001",
+      "fact_type": "project_title",
+      "target_ref": "INTRO.APP.NAME",
+      "normalized_value": "TERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün",
+      "keywords": ["TERRAFLUX", "Bewässerungssteuerung", "Stadtgrün"],
+      "fragment_ids": ["F2-frag-02"]
+    },
+    {
+      "gold_id": "F2-A1-002",
+      "fact_type": "project_title_en",
+      "target_ref": "INTRO.APP.NAME_EN",
+      "normalized_value": "TERRAFLUX - Adaptive Irrigation Control for Urban Green",
+      "keywords": ["TERRAFLUX", "Irrigation", "Urban Green"],
+      "fragment_ids": ["F2-frag-02"]
+    },
+    {
+      "gold_id": "F2-A1-003",
+      "fact_type": "project_duration",
+      "target_ref": null,
+      "normalized_value": "18",
+      "keywords": ["Projektdauer", "duration", "Monate", "months"],
+      "fragment_ids": ["F2-frag-01"]
+    },
+    {
+      "gold_id": "F2-A1-004",
+      "fact_type": "quantified_goal",
+      "target_ref": "INTRO.APP.ABSTRACT",
+      "normalized_value": "25",
+      "keywords": ["Wasserverbrauch", "25", "Prozent"],
+      "fragment_ids": ["F2-frag-02", "F2-frag-11"]
+    },
+    {
+      "gold_id": "F2-A1-006",
+      "fact_type": "ip_patent_search",
+      "target_ref": "INTRO.IP.PATENT_SEARCH",
+      "normalized_value": "yes",
+      "keywords": ["Patent", "search", "Recherche", "IPI"],
+      "fragment_ids": ["F2-frag-05"]
+    },
+    {
+      "gold_id": "F2-A1-007",
+      "fact_type": "ip_licences",
+      "target_ref": "INTRO.IP.PATENT_LICENCES",
+      "normalized_value": "no",
+      "keywords": ["Lizenz", "licence", "license", "background IP"],
+      "fragment_ids": ["F2-frag-05"]
+    },
+    {
+      "gold_id": "F2-A1-008",
+      "fact_type": "ip_prior_agreement",
+      "target_ref": "INTRO.IP.PRIOR_WRITTEN_AGREEMENT",
+      "normalized_value": "yes",
+      "keywords": ["Konsortialvertrag", "agreement", "Verwertung"],
+      "fragment_ids": ["F2-frag-05"]
+    },
+    {
+      "gold_id": "F2-A1-009",
+      "fact_type": "partner_research",
+      "target_ref": null,
+      "normalized_value": "Nordlicht Institut für Angewandte Forschung",
+      "keywords": ["Nordlicht", "Forschungspartner", "research partner"],
+      "fragment_ids": ["F2-frag-06"]
+    },
+    {
+      "gold_id": "F2-A1-010",
+      "fact_type": "partner_implementation",
+      "target_ref": null,
+      "normalized_value": "Voltaris AG",
+      "keywords": ["Voltaris", "Umsetzungspartner", "implementation", "Sensorik"],
+      "fragment_ids": ["F2-frag-07"]
+    },
+    {
+      "gold_id": "F2-A1-011",
+      "fact_type": "partner_implementation",
+      "target_ref": null,
+      "normalized_value": "Brimatec GmbH",
+      "keywords": ["Brimatec", "Umsetzungspartner", "implementation", "Gartenbau"],
+      "fragment_ids": ["F2-frag-08"]
+    },
+    {
+      "gold_id": "F2-A1-012",
+      "fact_type": "budget_direct_costs",
+      "target_ref": null,
+      "normalized_value": "200000",
+      "keywords": ["Projektkosten", "direct", "costs", "overhead"],
+      "fragment_ids": ["F2-frag-13"]
+    },
+    {
+      "gold_id": "F2-A1-013",
+      "fact_type": "budget_own_contribution",
+      "target_ref": null,
+      "normalized_value": "105000",
+      "keywords": ["Eigenleistung", "own contribution"],
+      "fragment_ids": ["F2-frag-13"]
+    },
+    {
+      "gold_id": "F2-A1-014",
+      "fact_type": "budget_cash_contribution",
+      "target_ref": null,
+      "normalized_value": "13000",
+      "keywords": ["Barbeitrag", "cash contribution"],
+      "fragment_ids": ["F2-frag-13"]
+    },
+    {
+      "gold_id": "F2-A1-015",
+      "fact_type": "budget_requested_funding",
+      "target_ref": null,
+      "normalized_value": "82000",
+      "keywords": ["Requested", "Förderung", "funding"],
+      "fragment_ids": ["F2-frag-13"]
+    },
+    {
+      "gold_id": "F2-A1-016",
+      "fact_type": "budget_requested_funding_overhead",
+      "target_ref": null,
+      "normalized_value": "94300",
+      "keywords": ["Overhead", "incl", "Förderung"],
+      "fragment_ids": ["F2-frag-13"]
+    },
+    {
+      "gold_id": "F2-A1-018",
+      "fact_type": "quantified_goal",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": "25",
+      "keywords": ["Wasserverbrauch", "Pilotstädte", "25"],
+      "fragment_ids": ["F2-frag-11"]
+    },
+    {
+      "gold_id": "F2-A1-019",
+      "fact_type": "business_model",
+      "target_ref": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "normalized_value": null,
+      "keywords": ["Abo", "Grünfläche", "zwölf Städte", "Regelbetrieb"],
+      "fragment_ids": ["F2-frag-10"]
+    },
+    {
+      "gold_id": "F2-A1-020",
+      "fact_type": "preliminary_work",
+      "target_ref": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "normalized_value": null,
+      "keywords": ["Laborprüfstand", "Ventilen", "vermessen"],
+      "fragment_ids": ["F2-frag-11"]
+    }
+  ],
+  "gold_missing": [
+    {
+      "gold_id": "F2-M-001",
+      "target_ref": "INTRO.APP.EXECUTIVE_SUMMARY",
+      "keywords": ["Executive", "Summary", "leer", "fehlt", "empty", "missing"]
+    },
+    {
+      "gold_id": "F2-M-002",
+      "target_ref": "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION",
+      "keywords": ["Management", "Stunden", "hours", "Erklärung", "explanation"]
+    }
+  ],
+  "gold_findings": [
+    {
+      "finding_id": "F2-F-002",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.1",
+      "severity": "evidence_risk",
+      "a3_scope": true,
+      "keywords": ["zwölf Städte", "Marktziel", "Quelle", "Beleg", "Evidenz", "unbelegt", "Annahme"]
+    },
+    {
+      "finding_id": "F2-F-003",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.2",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Kunden", "Kanal", "Zugang", "Fachverbände", "konkret", "Go-to-Market"]
+    },
+    {
+      "finding_id": "F2-F-004",
+      "field_id": "VC.BUSINESS_TARGETS_MODEL.EDITOR",
+      "target_section": "3.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["ökologisch", "quantifiziert", "Messmethode", "Nutzen", "Wirkung"]
+    },
+    {
+      "finding_id": "F2-F-005",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.1",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["State of the art", "SOTA", "Stand der Technik", "generisch", "knapp", "Differenzierung"]
+    },
+    {
+      "finding_id": "F2-F-006",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.3",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Baseline", "Messmethode", "25", "Ziel", "Validierung"]
+    },
+    {
+      "finding_id": "F2-F-007",
+      "field_id": "SOL.INNOVATION_SOLUTION.EDITOR",
+      "target_section": "4.6",
+      "severity": "reviewer_risk",
+      "a3_scope": true,
+      "keywords": ["Partner", "Eignung", "Beleg", "Track Record", "Evidenz"]
+    }
+  ]
+}

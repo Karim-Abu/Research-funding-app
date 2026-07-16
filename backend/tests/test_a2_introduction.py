@@ -13,7 +13,7 @@ import pytest
 from sqlalchemy import select
 
 from app.agents import a2_fields, field_drafting
-from app.agents.proposal import AIProposal
+from app.agents.proposal import DraftProposal
 from app.db.models import AgentInvocation, DraftSuggestion
 from app.db.session import SessionLocal
 from tests.a2_helpers import (
@@ -105,12 +105,14 @@ def test_abstract_proposal_valid_and_advisory(db):
     assert sug.status == "proposed" and sug.field_id == ABSTRACT_FIELD_ID
     assert sug.profile_id == PROFILE_ID
     assert out.view["character_limit"] == 300
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
+    assert out.view["ai_proposal"] is None
+    assert proposal.generation_kind == "fake_demo"
     assert proposal.suggestion_text == ABSTRACT_TEXT
     assert proposal.human_review_required is True  # Regel 5: kein Auto-Accept
     assert proposal.used_anchor_ids == [anchor]
     assert proposal.profile_id == PROFILE_ID
-    assert proposal.prompt_version == "a2_introduction_public_summary_v2"
+    assert proposal.prompt_version is None  # kein Modellaufruf: technische Modellmetadaten verborgen
 
 
 def test_exec_summary_proposal_valid(db):
@@ -119,7 +121,8 @@ def test_exec_summary_proposal_valid(db):
                      success_fake(bundle(field_id=EXEC_FIELD_ID, suggested_text=EXEC_TEXT)))
     assert out.status == "succeeded"
     assert out.view["character_limit"] == 2000
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
+    assert out.view["ai_proposal"] is None
     assert proposal.suggestion_text == EXEC_TEXT
     assert proposal.human_review_required is True
     assert proposal.used_anchor_ids == []
@@ -148,7 +151,7 @@ def test_missing_inputs_from_placeholders(db):
                                          placeholders=[{"label": "[Marktgrösse fehlt]",
                                                         "reason": "missing_market_data"}])))
     assert out.status == "succeeded"
-    proposal = AIProposal.model_validate(out.view["ai_proposal"])
+    proposal = DraftProposal.model_validate(out.view["proposal"])
     assert proposal.missing_inputs[0].label == "[Marktgrösse fehlt]"
     assert proposal.missing_inputs[0].reason == "missing_market_data"
     assert "contains_placeholders" in proposal.safety_notes
@@ -176,7 +179,8 @@ def test_usage_record_linkage(db):
     assert out.status == "succeeded"
     inv = db.get(AgentInvocation, out.invocation_id)
     assert inv.usage_record_id  # EVAL.1 metering fired for the fake model call
-    assert out.view["ai_proposal"]["usage_record_id"] == inv.usage_record_id
+    assert out.view["proposal"]["usage_record_id"] is None
+    assert out.view["ai_proposal"] is None
 
 
 def test_only_introduction_profile_invoked(db):
@@ -236,4 +240,6 @@ def test_create_redraft_intro_async_then_result(client, monkeypatch, field_id, t
     assert op["status"] == "succeeded"
     assert op["result"]["field_id"] == field_id
     assert op["result"]["character_limit"] == limit
-    assert op["result"]["ai_proposal"]["human_review_required"] is True
+    assert op["result"]["proposal"]["human_review_required"] is True
+    assert op["result"]["proposal"]["generation_kind"] == "fake_demo"
+    assert op["result"]["ai_proposal"] is None

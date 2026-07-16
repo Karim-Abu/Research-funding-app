@@ -4,14 +4,17 @@ from __future__ import annotations
 import re
 import unicodedata
 
+from app.drafts import has_placeholder
+from app.drafts.sections import SectionStructureError, section_spans
 from app.exports import EXPORT_EXTENSIONS
+from app.registry import get_registry
 
 # Fixed wording (truthful; never implies submission/funding approval).
 NO_SUBMISSION = (
     "Dies ist keine Einreichfreigabe. Die Einreichung erfolgt durch die "
     "verantwortlichen Personen im Innosuisse-Portal."
 )
-DRAFT_HEADER = "ENTWURF – Nicht zur Einreichung"
+DRAFT_HEADER = "ENTWURF – Arbeitskopie – Nicht zur Einreichung"
 DRAFT_BODY = (
     "Dieser Export ist nicht review-freigegeben oder wurde ausdrücklich als "
     "Entwurf erzeugt."
@@ -53,6 +56,50 @@ def field_label(field: dict) -> str:
     return EXPORT_FIELD_LABELS.get(
         field.get("field_id", ""), field.get("field_name", "")
     )
+
+
+def field_is_structure_template(field: dict) -> bool:
+    return field.get("created_by") == "template" or has_placeholder(field.get("text", ""))
+
+
+def _rule(snapshot: dict, rule_id: str) -> dict | None:
+    return next((r for r in snapshot.get("rule_results", []) if r["rule_id"] == rule_id), None)
+
+
+def field_working_text(snapshot: dict, field: dict) -> tuple[str, str | None]:
+    """Return work-copy text plus an honest template/not-required notice."""
+    field_id = field.get("field_id")
+    if field_id == "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS":
+        rule = _rule(snapshot, "INNO.PARTNER.INDEPENDENCE.FINANCIAL_20")
+        if rule and rule.get("outcome_label") == "below_threshold_and_confirmed":
+            return "Nicht erforderlich gemäss bestätigten Eingaben.", None
+    if field_id == "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION":
+        answers = snapshot.get("structured", {}).get("project", {}).get("structured_answers", {})
+        hours = answers.get("management_hours") or {}
+        if hours.get("management_hours") == 0 and (hours.get("total_project_hours") or 0) > 0:
+            return "Nicht erforderlich gemäss bestätigten Eingaben.", None
+    notice = "Strukturvorlage – Angaben ergänzen" if field_is_structure_template(field) else None
+    return field.get("text", ""), notice
+
+
+def composite_parts(field: dict) -> tuple[list[tuple[str, str, str]], str | None]:
+    """Split only a valid registry-marked composite; never modify source text."""
+    try:
+        portal = get_registry().portal_fields[field["field_id"]]
+    except KeyError:
+        return [], None
+    if portal.field_kind != "composite_editor":
+        return [], None
+    questions = get_registry().mandatory_questions(field["field_id"])
+    markers = tuple(q.field_id.rsplit("MANDATORY_", 1)[-1].replace("_", ".") for q in questions)
+    try:
+        spans = section_spans(field.get("text", ""), markers)
+    except SectionStructureError as exc:
+        return [], f"Gliederung bitte prüfen ({exc.code.replace('section_', '')})."
+    return [
+        (span.marker, question.label_or_question, field["text"][span.start:span.end].strip())
+        for span, question in zip(spans, questions, strict=True)
+    ], None
 
 
 def grouped_open_points(snapshot: dict) -> list[tuple[str, list[str]]]:

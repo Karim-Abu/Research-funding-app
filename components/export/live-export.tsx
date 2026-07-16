@@ -24,6 +24,7 @@ import {
 import { getReview, type ApprovalStatus, type ReviewPackageDto } from "@/lib/review"
 import { listFields, type PortalFieldDraftDto } from "@/lib/fields"
 import { getCapabilities } from "@/lib/capabilities"
+import { useReviewStatus } from "@/lib/status"
 import { CanonicalStatusBadge } from "@/components/status/canonical-status"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import {
@@ -41,6 +42,7 @@ import {
   type FieldReadiness,
 } from "@/lib/export-view"
 import { UNSUPPORTED_AREAS } from "@/lib/portal-transfer"
+import { getTransferSnapshot, type TransferSnapshotDto } from "@/lib/portal-transfer"
 
 const PAGE_DISCLAIMER =
   "Dies ist keine Einreichfreigabe. Die Einreichung erfolgt durch Sie im " +
@@ -98,6 +100,7 @@ export function LiveExport({ runId }: { runId: string }) {
   const [errors, setErrors] = React.useState<Record<string, string>>({})
   const [tab, setTab] = React.useState<"optionen" | "innolink">("optionen")
   const [fields, setFields] = React.useState<PortalFieldDraftDto[] | null>(null)
+  const [transferSnapshot, setTransferSnapshot] = React.useState<TransferSnapshotDto | null>(null)
   const [readinessFilter, setReadinessFilter] = React.useState<FieldReadiness | "all">("all")
   // Slice 3: only an explicit `false` disables server-side copy logging.
   const [copyEventsEnabled, setCopyEventsEnabled] = React.useState(true)
@@ -120,6 +123,7 @@ export function LiveExport({ runId }: { runId: string }) {
         setApproval(null)
       })
     loadFields()
+    getTransferSnapshot(runId).then(setTransferSnapshot).catch(() => setTransferSnapshot(null))
   }, [runId, loadFields])
   React.useEffect(() => {
     getCapabilities()
@@ -154,6 +158,11 @@ export function LiveExport({ runId }: { runId: string }) {
   // Never present anything as submission-ready while approval is missing or
   // blockers exist ("Nicht zur Einreichung", M10.2 / correction 2).
   const notForSubmission = advisoryDraft || readiness.blockerCount > 0
+  // B7 — Headline-Zahl «Blockierende Aufgaben» aus dem kanonischen
+  // Status-View: identisch mit Review, Dashboard und Kopieransicht.
+  const { status: reviewStatus } = useReviewStatus(runId)
+  const blockingTasks =
+    reviewStatus?.blocking_task_count ?? readiness.blockerCount
   const hint =
     readiness.reviewStatus === "nicht_durchgefuehrt"
       ? "Es wurde noch keine Qualitätsprüfung durchgeführt. Exporte werden als Entwurf gekennzeichnet."
@@ -220,14 +229,14 @@ export function LiveExport({ runId }: { runId: string }) {
                     —
                   </dd>
                 ) : (
-                  <dd className={cn("text-lg font-semibold", readiness.blockerCount > 0 && "text-destructive")}>
-                    {readiness.blockerCount}
+                  <dd className={cn("text-lg font-semibold", blockingTasks > 0 && "text-destructive")}>
+                    {blockingTasks}
                   </dd>
                 )}
                 <dt className="text-[11px] text-muted-foreground">
                   {readiness.reviewStatus === "nicht_durchgefuehrt"
-                    ? "Blocker — noch nicht geprüft"
-                    : "Blocker"}
+                    ? "Blockierende Aufgaben — noch nicht geprüft"
+                    : "Blockierende Aufgaben"}
                 </dt>
               </div>
               <div className="rounded-md border border-border px-2 py-2">
@@ -470,6 +479,7 @@ export function LiveExport({ runId }: { runId: string }) {
               embedded
               runId={runId}
               copyEventsEnabled={copyEventsEnabled}
+              transferSnapshot={transferSnapshot}
               onReload={loadFields}
             />
           )}

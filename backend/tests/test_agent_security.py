@@ -110,3 +110,35 @@ def test_no_source_text_in_audit_events(db):
     ).all()
     for event in events:
         assert SOURCE_MARKER not in str(event.detail)
+
+
+def test_raw_markers_never_enter_context_meta_or_schema_failure_records(db):
+    payload = {
+        "facts": [],
+        "conflicts": [],
+        "missing_information": [],
+        "unexpected_raw_value": SOURCE_MARKER,
+    }
+    response = invoke(
+        db,
+        base_request(context_meta={
+            "raw_text": SOURCE_MARKER,
+            "selected_fragment_count": 1,
+            "context_hash": "a" * 64,
+        }),
+        provider_resolver=fake_resolver(FakeProvider(payload=payload)),
+    )
+    assert isinstance(response, SafeFailure)
+    invocation = db.get(AgentInvocation, response.invocation_id)
+    rows = [
+        invocation,
+        *db.scalars(select(ControlResult).where(
+            ControlResult.agent_invocation_id == response.invocation_id
+        )).all(),
+        *db.scalars(select(AuditEvent).where(
+            AuditEvent.target_id == response.invocation_id
+        )).all(),
+    ]
+    assert invocation.context_meta["selected_fragment_count"] == 1
+    assert "raw_text" not in invocation.context_meta
+    assert all(SOURCE_MARKER not in str(row.__dict__) for row in rows)

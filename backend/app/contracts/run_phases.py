@@ -43,6 +43,14 @@ class AgentUsageSummary(BaseModel):
     priced_cost_chf: float
     has_unpriced_usage: bool
     latency_ms_total: int
+    generation_kinds: list[str] = []
+    model_calls: int = 0
+    prompt_versions: list[str] = []
+    actual_models: list[str] = []
+    skill_versions: list[str] = []
+    retry_count: int = 0
+    termination_reasons: list[str] = []
+    attempts: list[dict[str, Any]] = []
 
 
 class RunTechnicalSummary(BaseModel):
@@ -53,6 +61,7 @@ class RunTechnicalSummary(BaseModel):
     # True/False nur wenn A2 UND A3 gelaufen sind; sonst null. Bei True darf
     # die UI keine «unabhängige Zweitmeinung» darstellen.
     same_provider_a2_a3: bool | None = None
+    model_called: bool = False
 
 
 class RunPhases(BaseModel):
@@ -60,3 +69,5 @@ class RunPhases(BaseModel):
     run_status: str
     phases: list[RunPhaseOut]
     technical: RunTechnicalSummary
+    live_execution_status: str | None = None
+    live_status_reason: str | None = None

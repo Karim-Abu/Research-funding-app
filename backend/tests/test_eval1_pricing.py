@@ -19,6 +19,7 @@ from app.evaluation.pricing import (
     resolve_cost,
     sum_priced_chf,
 )
+from app.config.settings import get_settings
 
 
 def test_missing_price_is_unknown_price():
@@ -89,6 +90,35 @@ def test_price_table_rows_carry_source_and_date():
 def test_price_table_initially_empty_no_real_prices():
     # EVAL.1 Owner-Entscheid: noch keine Realpreise eingetragen.
     assert pricing.PRICE_TABLE == {}
+
+
+def test_deployment_price_requires_version_and_evidence(monkeypatch):
+    settings = get_settings()
+    monkeypatch.setattr(settings, "agent_model_pricing_chf_per_million", {
+        "evidenced-model": {
+            "input_chf_per_million": 2.0,
+            "output_chf_per_million": 8.0,
+            "price_version": "2026-07-15.v1",
+            "source_url": "https://provider.example.test/pricing",
+            "checked_at": "2026-07-15",
+        },
+        "unversioned-model": {
+            "input_chf_per_million": 2.0,
+            "output_chf_per_million": 8.0,
+        },
+    })
+    priced = resolve_cost(
+        provider="openai_direct", model_id="evidenced-model",
+        input_tokens=1_000_000, output_tokens=1_000_000,
+    )
+    assert priced.cost_status == COST_STATUS_PRICED
+    assert priced.cost_chf == pytest.approx(10.0)
+    assert priced.price_version == "2026-07-15.v1"
+    unknown = resolve_cost(
+        provider="openai_direct", model_id="unversioned-model",
+        input_tokens=1, output_tokens=1,
+    )
+    assert unknown.cost_status == COST_STATUS_UNKNOWN
 
 
 def test_sum_only_priced():

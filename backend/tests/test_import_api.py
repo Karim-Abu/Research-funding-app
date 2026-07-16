@@ -108,6 +108,14 @@ class TestCreateCandidates:
         assert abstract["extracted_text"].startswith("Das Projekt entwickelt")
         assert abstract["confidence"] == "found"
         assert abstract["source_location"].startswith("Seite ")
+        assert abstract["mapping_version"] == "innolink-narrative-v2"
+        assert abstract["mapping_status"] == "content_detected"
+        assert abstract["section_metadata"][0]["candidate_text"].startswith(
+            "Das Projekt entwickelt"
+        )
+        assert abstract["section_metadata"][0]["original_excerpt"].startswith(
+            "Abstract"
+        )
 
     def test_recreate_is_idempotent_no_duplicate_rows(self, client):
         csrf, project_id, _, source_id, by_field = _setup_with_candidates(client)
@@ -121,6 +129,46 @@ class TestCreateCandidates:
                 )
             ).all()
         assert len(rows) == len(by_field)
+
+    def test_open_legacy_candidates_are_remapped_to_current_version(self, client):
+        csrf, project_id, _, source_id, by_field = _setup_with_candidates(client)
+        old_ids = {candidate["import_candidate_id"] for candidate in by_field.values()}
+        with SessionLocal() as db:
+            rows = db.scalars(
+                select(ImportCandidate).where(ImportCandidate.project_id == project_id)
+            ).all()
+            for row in rows:
+                row.mapping_version = "legacy-anchor-v1"
+            db.commit()
+
+        res = _create_candidates(client, csrf, project_id, source_id)
+        assert res.status_code == 201, res.text
+        assert {item["mapping_version"] for item in res.json()} == {
+            "innolink-narrative-v2"
+        }
+        assert not old_ids.intersection(
+            item["import_candidate_id"] for item in res.json()
+        )
+
+    def test_decided_legacy_candidates_are_never_silently_remapped(self, client):
+        csrf, project_id, _, source_id, by_field = _setup_with_candidates(client)
+        assert _decide(
+            client,
+            csrf,
+            by_field[ABSTRACT]["import_candidate_id"],
+            decision="ignored",
+        ).status_code == 200
+        with SessionLocal() as db:
+            rows = db.scalars(
+                select(ImportCandidate).where(ImportCandidate.project_id == project_id)
+            ).all()
+            for row in rows:
+                row.mapping_version = "legacy-anchor-v1"
+            db.commit()
+
+        res = _create_candidates(client, csrf, project_id, source_id)
+        assert res.status_code == 409
+        assert res.json()["code"] == "import_mapping_outdated_decided"
 
     def test_listing_is_read_only_and_scoped(self, client):
         csrf, project_id, _, _, by_field = _setup_with_candidates(client)
@@ -197,6 +245,41 @@ class TestDecisions:
                       decision="accepted", run_id=run_id)
         assert res.status_code == 422
         assert res.json()["code"] == "import_candidate_empty"
+
+    def test_ambiguous_legacy_section_requires_edited_text(self, client):
+        csrf, _, by_field = _setup_without_run(client)
+        candidate = by_field["SOL.INNOVATION_SOLUTION.EDITOR"]
+        with SessionLocal() as db:
+            row = db.get(ImportCandidate, candidate["import_candidate_id"])
+            row.section_metadata = [
+                {
+                    "target_sections": ["4.5.2", "4.5.3"],
+                    "source_location": "Seite 3",
+                    "status": "uncertain",
+                    "candidate_text": "Synthetische Altangabe",
+                    "original_excerpt": "Synthetische Portalfrage und Antwort",
+                    "migration_version": "innolink-intro-ip-to-solution-v1",
+                    "requires_manual_assignment": True,
+                    "review_note": "Fachlich zuordnen.",
+                }
+            ]
+            db.commit()
+
+        res = _decide(
+            client, csrf, candidate["import_candidate_id"], decision="accepted"
+        )
+        assert res.status_code == 422
+        assert res.json()["code"] == "import_manual_assignment_required"
+        edited = candidate["extracted_text"] + "\n4.5.3\nSynthetisch eingeordnet."
+        res = _decide(
+            client,
+            csrf,
+            candidate["import_candidate_id"],
+            decision="accepted",
+            edited_text=edited,
+        )
+        assert res.status_code == 200, res.text
+        assert res.json()["edited_text"] == edited
 
     def test_unknown_candidate_is_404(self, client):
         csrf, _, _, _, _ = _setup_with_candidates(client)

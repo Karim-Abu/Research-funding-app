@@ -3,13 +3,13 @@
 import * as React from "react"
 import { CheckCircle2, Loader2, Lock } from "lucide-react"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
+  Sheet,
+  SheetContent,
+  SheetDescription,
+  SheetFooter,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
@@ -27,6 +27,8 @@ import {
   type ApprovalQuery,
 } from "@/components/research/query-approval-list"
 import { planMarketResearch } from "@/lib/market-research"
+import { AI_REASON_INFO, FALLBACK_AI_REASON } from "@/lib/redraft"
+import { expectedPhases } from "@/lib/run-steps"
 import { LLMToggle, WebSearchToggle } from "./service-toggles"
 import {
   isCloudAllowed,
@@ -36,6 +38,7 @@ import {
   type Role,
   type ServiceAvailability,
 } from "@/lib/types"
+import type { Origin } from "@/lib/data-classification"
 
 interface AnalyseEinstellungenDialogProps {
   open: boolean
@@ -48,6 +51,7 @@ interface AnalyseEinstellungenDialogProps {
   // R8 Query-Freigabe: nur mit Projekt kann der Dialog die geplanten Suchanfragen
   // laden und freigeben lassen (öffentliche Projekte, Web-Toggle an).
   projectId?: string
+  projectOrigin?: Origin
   onStart?: (settings: AnalyseSettings) => void
   onCancel?: () => void
 }
@@ -65,35 +69,77 @@ export function AnalyseEinstellungenDialog({
   role,
   dataClass,
   variant = "full",
-  serviceAvailability = { ki: true, web: true },
+  serviceAvailability = { ki: true, web: true, generationMode: "real_eval" },
   hasActiveRun = false,
   projectId,
+  projectOrigin = "synthetic",
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  // Beta-Policy: public darf validierte externe Dienste nutzen. R4.3 (Owner-
-  // Entscheid 2026-07-08): intern/vertraulich erhalten KI nur über den lokalen
-  // Verarbeitungspfad nach manuellem Opt-in + verstandener Warnung; NDA und
-  // unklassifiziert bleiben vollständig blockiert.
+  // Ein realer Modelllauf ist ausschließlich für explizite synthetische oder
+  // anonymisierte Evaluationsfälle verfügbar. FakeProvider ist ein Demo-Pfad,
+  // kein lokaler/institutioneller Modelladapter.
   const isLocalOnlyClass = !isCloudAllowed(dataClass)
-  const localOptInClass = dataClass === "internal" || dataClass === "confidential"
-
-  const [ki, setKi] = React.useState(!isLocalOnlyClass)
+  const evaluationOrigin = projectOrigin === "synthetic" || projectOrigin === "anonymized"
+  const realEvaluation =
+    serviceAvailability.generationMode === "real_eval" && evaluationOrigin
+  const demoMode =
+    serviceAvailability.generationMode === "fake_demo" && evaluationOrigin
+  const aiAvailable = serviceAvailability.ki && (realEvaluation || demoMode)
+  const [ki, setKi] = React.useState(aiAvailable)
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [costLimit, setCostLimit] = React.useState("2.00")
   // Erweiterte Einstellungen (nur lead_admin) — echte, gesendete Limits.
   const [maxLlmCalls, setMaxLlmCalls] = React.useState("25")
   const [maxWebCalls, setMaxWebCalls] = React.useState("5")
-  // KI requires an explicit one-run acknowledgement (cloud: public/synthetic;
-  // lokal: D1/D2 mit Warnung).
+  // Reale Modellaufrufe erfordern eine einmalige Bestätigung pro Run.
   const [cloudConfirmed, setCloudConfirmed] = React.useState(false)
 
   const webDisabled = !isWebAllowed(dataClass)
   const effectiveWeb = web && !webDisabled
-  const cloudOptIn = ki && !isLocalOnlyClass
-  const localOptIn = ki && localOptInClass
+
+  // A4 — jeder deaktivierte Schalter erklärt exakt warum. Reihenfolge: die
+  // speziellste Ursache gewinnt (NDA → Datenklasse → Provider → Projektherkunft).
+  // Die Texte unterscheiden sich bewusst vom Datenklassen-Banner, damit beide
+  // gleichzeitig lesbar bleiben.
+  let kiUnavailableReason: string | undefined
+  if (!aiAvailable) {
+    if (dataClass === "nda") {
+      kiUnavailableReason = AI_REASON_INFO.nda_locked.text
+    } else if (isLocalOnlyClass) {
+      kiUnavailableReason = `Für die Vertraulichkeitsstufe «${dataClassLabel[dataClass]}» ist kein KI-Provider freigegeben — es laufen nur regelbasierte Prüfungen.`
+    } else if (serviceAvailability.generationMode === "live_unavailable") {
+      // Ebene E: Live ist konfiguriert, der Provider aber nicht verfügbar —
+      // ausdrücklich benennen; es erscheint NIE ein Demo-Ergebnis als Ersatz.
+      kiUnavailableReason =
+        "Live-KI ist konfiguriert, aber der Provider ist derzeit nicht " +
+        "verfügbar (z. B. fehlender API-Schlüssel). Es wird kein " +
+        "Demo-Ergebnis als KI-Ergebnis angezeigt."
+    } else if (
+      !serviceAvailability.ki ||
+      serviceAvailability.generationMode === "unavailable" ||
+      !serviceAvailability.generationMode
+    ) {
+      const reasonCode = serviceAvailability.unavailableReason
+      kiUnavailableReason =
+        (reasonCode ? AI_REASON_INFO[reasonCode]?.text : undefined) ??
+        AI_REASON_INFO[FALLBACK_AI_REASON].text
+    } else if (!evaluationOrigin) {
+      kiUnavailableReason =
+        "Nur für synthetische oder anonymisierte Evaluationsfälle verfügbar — dieses Projekt enthält echte Projektdaten."
+    }
+  }
+  let webUnavailableReason: string | undefined
+  if (webDisabled) {
+    webUnavailableReason = `Nur bei Vertraulichkeitsstufe «Öffentlich» verfügbar — aktuelle Stufe: ${dataClassLabel[dataClass]}.`
+  } else if (!serviceAvailability.web) {
+    webUnavailableReason = "Die öffentliche Websuche ist serverseitig deaktiviert."
+  }
+  // Der Demo-Pfad nutzt aus Kompatibilitätsgründen denselben Run-Modus, ruft
+  // aber keinen Provider auf. Die Bestätigung benennt das ausdrücklich.
+  const cloudOptIn = ki && (realEvaluation || demoMode)
   // Block the start until the user confirms AI processing for this run.
-  const cloudConfirmationMissing = (cloudOptIn || localOptIn) && !cloudConfirmed
+  const cloudConfirmationMissing = cloudOptIn && !cloudConfirmed
 
   // R8 Query-Freigabe: geplante Suchanfragen laden, sobald die Webrecherche für ein
   // öffentliches Projekt aktiviert wird. Ohne Freigaben wird die Recherche-Phase im
@@ -135,7 +181,7 @@ export function AnalyseEinstellungenDialog({
 
   function handleStart() {
     onStart?.({
-      ki: cloudOptIn || localOptIn,
+      ki: ki && aiAvailable,
       web: effectiveWeb,
       localSourcesOnly: false,
       costLimit: Number.parseFloat(costLimit) || 0,
@@ -144,7 +190,7 @@ export function AnalyseEinstellungenDialog({
       model: "auto",
       maxLlmCalls: Number.parseInt(maxLlmCalls, 10) || 25,
       maxWebCalls: Number.parseInt(maxWebCalls, 10) || 5,
-      cloudConfirmed: (cloudOptIn || localOptIn) && cloudConfirmed,
+      cloudConfirmed: cloudOptIn && cloudConfirmed,
     })
   }
 
@@ -153,22 +199,35 @@ export function AnalyseEinstellungenDialog({
     onOpenChange(false)
   }
 
+  // Volle Konfiguration als breites Side-Sheet (Desktop ≥880 px, 85 vw, Cap
+  // 1000 px); Aktiv-Lauf- und Kompaktansicht bleiben schmal. Die Overrides
+  // sind varianten-identisch zu den Sheet-Defaults (data-[side=right]:…),
+  // damit tailwind-merge die eingebauten w-3/4 / sm:max-w-sm sicher ersetzt.
+  const fullConfig = !hasActiveRun && variant !== "compact"
+  const widthClasses = fullConfig
+    ? "data-[side=right]:w-full data-[side=right]:sm:w-[85vw] data-[side=right]:sm:min-w-[880px] data-[side=right]:sm:max-w-[1000px]"
+    : "data-[side=right]:w-full data-[side=right]:sm:max-w-md"
+
   return (
-    <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="flex max-h-[90dvh] max-w-[560px] flex-col overflow-hidden">
-        <DialogHeader className="shrink-0">
-          <DialogTitle>Analyse starten</DialogTitle>
-          <DialogDescription>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent
+        side="right"
+        className={`flex flex-col gap-0 overflow-hidden p-0 ${widthClasses}`}
+      >
+        <SheetHeader className="shrink-0 border-b border-border px-6 py-4">
+          <SheetTitle>Analyse starten</SheetTitle>
+          <SheetDescription>
             Prüfen Sie kurz die Einstellungen für diesen Durchlauf.
-          </DialogDescription>
-        </DialogHeader>
+          </SheetDescription>
+        </SheetHeader>
 
         {hasActiveRun ? (
           <ActiveRunBody onClose={handleCancel} />
         ) : variant === "compact" ? (
           <CompactBody available={serviceAvailability.ki} />
         ) : (
-          <div className="flex flex-col gap-5 overflow-y-auto py-1 pr-1">
+          <div className="flex min-w-0 flex-1 flex-col gap-5 overflow-y-auto px-6 py-5 lg:grid lg:grid-cols-2 lg:content-start lg:gap-x-10">
+            <div className="flex min-w-0 flex-col gap-5">
             {/* Immer Teil des Durchlaufs: die Analyse der Projektunterlagen. */}
             <div className="flex items-start justify-between gap-4">
               <div className="flex flex-col gap-1">
@@ -188,12 +247,13 @@ export function AnalyseEinstellungenDialog({
             </div>
 
             {/* Local-only class banner */}
-            {isLocalOnlyClass && (
+            {isLocalOnlyClass && !realEvaluation && !demoMode && (
               <div className="flex items-start gap-2 rounded-md border border-border bg-muted/50 p-3 text-sm text-muted-foreground">
                 <Lock className="mt-0.5 size-4 shrink-0" />
-                {localOptInClass
-                  ? "Externe KI- und Webdienste sind für diese Vertraulichkeitsstufe deaktiviert. KI-Unterstützung ist nur über den freigegebenen lokalen Verarbeitungspfad möglich und muss unten bewusst freigegeben werden."
-                  : "Für NDA-geschützte oder gesperrte Inhalte werden keine KI- oder Webdienste verwendet."}
+                <span>
+                  Für diese Datenklasse ist aktuell kein freigegebener KI-Provider
+                  konfiguriert. Die App führt nur regelbasierte Prüfungen aus.
+                </span>
               </div>
             )}
 
@@ -202,76 +262,53 @@ export function AnalyseEinstellungenDialog({
               checked={ki}
               onCheckedChange={setKi}
               available={
-                serviceAvailability.ki && (!isLocalOnlyClass || localOptInClass)
+                aiAvailable
               }
+              generationMode={serviceAvailability.generationMode}
+              unavailableReason={kiUnavailableReason}
             />
 
             {/* Cloud-KI one-run confirmation (public/synthetic only) */}
             {cloudOptIn && (
               <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
-                <p className="text-muted-foreground">
-                  Cloud-KI kann für diesen Durchlauf bewusst freigegeben werden,
-                  sofern die Daten öffentlich oder synthetisch sind.
-                </p>
-                <p className="text-muted-foreground">
-                  Cloud-KI kann ausgewählte Inhalte an den konfigurierten
-                  KI-Dienst übermitteln. Diese Beta erlaubt Cloud-KI nur für
-                  öffentliche oder synthetische Inhalte. Interne, vertrauliche
-                  oder NDA-Inhalte werden blockiert.
-                </p>
-                <label className="flex items-start gap-2">
-                  <Checkbox
-                    checked={cloudConfirmed}
-                    onCheckedChange={(c) => setCloudConfirmed(c === true)}
-                    className="mt-0.5"
-                    aria-label="Cloud-KI für diesen Durchlauf erlauben"
-                  />
-                  <span className="flex flex-col gap-0.5">
-                    <span className="font-medium text-foreground">
-                      Cloud-KI für diesen Durchlauf erlauben
-                    </span>
-                    <span className="text-xs text-muted-foreground">
-                      Ich bestätige, dass die ausgewählten Inhalte öffentlich
-                      oder synthetisch sind und für diesen Durchlauf an den
-                      konfigurierten KI-Dienst übermittelt werden dürfen.
-                    </span>
-                  </span>
-                </label>
-              </div>
-            )}
-
-            {/* R4.3 — lokaler KI-Opt-in für intern/vertraulich: deutliche
-                Warnung + Verstanden-Bestätigung (Owner-Entscheid 2026-07-08) */}
-            {localOptIn && (
-              <div
-                data-testid="local-ai-warning"
-                className="flex flex-col gap-2 rounded-md border border-status-partial/40 bg-status-partial/8 p-3 text-sm"
-              >
                 <p className="font-medium text-foreground">
-                  Warnung: KI-Unterstützung für{" "}
-                  {dataClass === "internal" ? "interne" : "vertrauliche"} Inhalte
+                  {realEvaluation
+                    ? "Evaluationsfall – keine echten vertraulichen Daten"
+                    : "Demo-Vorschlag (kein echtes KI-Modell)"}
                 </p>
                 <p className="text-muted-foreground">
-                  Die Verarbeitung erfolgt ausschliesslich über den freigegebenen
-                  lokalen Verarbeitungspfad — Inhalte werden nicht an externe
-                  KI-Dienste übermittelt. KI-Vorschläge werden nie automatisch
-                  übernommen; prüfen Sie Ergebnisse immer fachlich, bevor Sie sie
-                  verwenden.
+                  {realEvaluation
+                    ? "Ein reales Modell darf nur für diesen ausdrücklich bestätigten synthetischen oder anonymisierten Evaluationsfall aufgerufen werden."
+                    : "Der Demo-Generator erstellt klar gekennzeichnete Testausgaben und ruft keinen KI-Provider auf."}
                 </p>
+                {realEvaluation && (
+                  <p className="text-muted-foreground">
+                    Ausgewählte Inhalte können an den konfigurierten KI-Dienst
+                    übermittelt werden. ProviderPolicy und Datenklassifikation werden
+                    zusätzlich im Backend geprüft.
+                  </p>
+                )}
                 <label className="flex items-start gap-2">
                   <Checkbox
                     checked={cloudConfirmed}
                     onCheckedChange={(c) => setCloudConfirmed(c === true)}
                     className="mt-0.5"
-                    aria-label="KI-Unterstützung für diesen Durchlauf freigeben"
+                    aria-label={
+                      realEvaluation
+                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                        : "Demo-Generator für diesen Durchlauf aktivieren"
+                    }
                   />
                   <span className="flex flex-col gap-0.5">
                     <span className="font-medium text-foreground">
-                      Ich habe die Warnung verstanden
+                      {realEvaluation
+                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                        : "Demo-Generator für diesen Durchlauf aktivieren"}
                     </span>
                     <span className="text-xs text-muted-foreground">
-                      Ich gebe die KI-Unterstützung über den lokalen
-                      Verarbeitungspfad für diesen Durchlauf bewusst frei.
+                      {realEvaluation
+                        ? "Ich bestätige, dass dieser Fall ausschließlich synthetische, anonymisierte oder öffentliche Inhalte enthält und für diesen Durchlauf an den konfigurierten KI-Dienst übermittelt werden darf."
+                        : "Ich bestätige, dass dieser Demo-Lauf keine reale KI-Leistung darstellt."}
                     </span>
                   </span>
                 </label>
@@ -284,6 +321,7 @@ export function AnalyseEinstellungenDialog({
               onCheckedChange={setWeb}
               available={serviceAvailability.web && isWebAllowed(dataClass)}
               disabled={webDisabled}
+              unavailableReason={webUnavailableReason}
             />
 
             {/* R8 — jede ausgehende Suchanfrage wird gesehen und freigegeben. */}
@@ -337,8 +375,11 @@ export function AnalyseEinstellungenDialog({
               </div>
             )}
 
-            <Separator />
+            </div>
 
+            <Separator className="lg:hidden" />
+
+            <div className="flex min-w-0 flex-col gap-5">
             <div className="flex flex-col gap-1.5">
               <label
                 htmlFor="cost-limit"
@@ -377,14 +418,42 @@ export function AnalyseEinstellungenDialog({
               </div>
             </div>
 
-            {/* Ehrliche Erwartung statt erfundener Schätzung: es gibt keine
-                belastbaren Dauer-/Kostenprognosen; der Fortschritt ist während
-                der Analyse je Phase sichtbar. */}
-            <p className="text-xs text-muted-foreground">
-              Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt ist
-              während der Analyse Schritt für Schritt sichtbar. Die Kosten sind
-              durch das Limit oben begrenzt.
-            </p>
+            {/* A2 — erwartete Phasen aus dem echten Phasenkatalog, mit ehrlich
+                angekündigten Skips. Keine Dauer-/Kostenprognose. */}
+            <div className="flex flex-col gap-1.5">
+              <span className="text-sm font-medium text-foreground">
+                Erwartete Phasen
+              </span>
+              <ol className="flex flex-col gap-1" data-testid="expected-phases">
+                {expectedPhases({
+                  ki: ki && aiAvailable,
+                  web: effectiveWeb,
+                  approvedQueryCount: webQueries
+                    ? approvedIds(webQueries).length
+                    : null,
+                }).map((phase, index) => (
+                  <li
+                    key={phase.key}
+                    className="flex items-baseline gap-2 text-xs"
+                  >
+                    <span className="tabular-nums text-muted-foreground/70">
+                      {index + 1}.
+                    </span>
+                    <span className="text-foreground">{phase.label}</span>
+                    {phase.note && (
+                      <span className="text-muted-foreground">
+                        — {phase.note}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ol>
+              <p className="text-xs text-muted-foreground">
+                Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt
+                ist während der Analyse Schritt für Schritt sichtbar. Die Kosten
+                sind durch das Limit oben begrenzt.
+              </p>
+            </div>
 
             {/* Tier 2 — only for lead_admin */}
             {role === "lead_admin" && (
@@ -444,41 +513,47 @@ export function AnalyseEinstellungenDialog({
                 </AccordionItem>
               </Accordion>
             )}
+            </div>
           </div>
         )}
 
         {!hasActiveRun && (
-          <DialogFooter className="shrink-0">
+          <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border px-6 py-4">
+            {cloudConfirmationMissing && (
+              <p className="mr-auto text-xs text-muted-foreground">
+                Bitte bestätigen Sie die Verarbeitung für diesen Durchlauf.
+              </p>
+            )}
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
             <Button onClick={handleStart} disabled={cloudConfirmationMissing}>
               Analyse starten
             </Button>
-          </DialogFooter>
+          </SheetFooter>
         )}
-      </DialogContent>
-    </Dialog>
+      </SheetContent>
+    </Sheet>
   )
 }
 
 function ActiveRunBody({ onClose }: { onClose: () => void }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 px-6 py-5">
       <p className="text-sm text-muted-foreground">
         Eine Analyse läuft bereits. Pro Antrag ist ein Durchlauf gleichzeitig
         möglich.
       </p>
-      <DialogFooter>
+      <SheetFooter className="p-0">
         <Button onClick={onClose}>Schließen</Button>
-      </DialogFooter>
+      </SheetFooter>
     </div>
   )
 }
 
 function CompactBody({ available }: { available: boolean }) {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-4 px-6 py-5">
       <span className="flex items-center gap-1.5 text-sm">
         <span
           className={`size-2 rounded-full ${available ? "bg-status-fulfilled" : "bg-muted-foreground/40"}`}

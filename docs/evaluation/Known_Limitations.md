@@ -38,5 +38,24 @@ guarantee anything. Known limitations at the M10 feature freeze:
 - **No provider vector stores for confidential data.** Stateful provider features are not used
   for D1/D2/D3.
 
+Rollen-Modell-Evaluation (Model Selection, `scripts/run_role_model_eval.py`):
+
+- **Boundary Accuracy ist ein Provenienz-Proxy.** Das A1-Schema
+  (`ExtractedFactRecord@v1`) kennt keine Zeichen-Offsets; gemessen wird
+  Fragment-Provenienz + exakte Wertgrenze. Eine Offset-Boundary wäre eine
+  Contract-Änderung und ist bewusst nicht Teil der Evaluation.
+- **Sprachkonsistenz-Gate ist eine Stopwort-Heuristik**; das
+  Human-Bestätigungsfeld im Blindbogen bleibt massgeblich.
+- **Regex-Detektoren (Partner/TRL/Rechtsaussagen) können false-positiv sein** —
+  ein Fatal-Ausschluss erfolgt erst nach menschlicher Adjudikation.
+- **Ein einzelner Blind-Rater** (keine Inter-Rater-Reliabilität); Review-Zeit
+  und Rework werden je Einheit miterfasst.
+- **Kosten nur bei verifizierten Preisen** (`AGENT_MODEL_PRICING_CHF_PER_MILLION`);
+  ohne Preis werden ehrlich Tokens pro akzeptablem Output berichtet — und das
+  Gateway blockiert Live-Routen (`price_unknown_for_cost_guard`). Preisfenster
+  (z. B. Intro-Pricing) über `price_version`/`checked_at` gepinnt.
+- **`--fake`-Dry-Run-Samples sind nie eine Live-Aussage** (Status
+  `dry_run`/`fake_dryrun` im Summary).
+
 See also [M10_Feature_Freeze_Audit.md](M10_Feature_Freeze_Audit.md) and
 [Provider_Mode_Matrix.md](Provider_Mode_Matrix.md).

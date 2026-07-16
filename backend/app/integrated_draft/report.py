@@ -81,7 +81,7 @@ def render_report(package: DraftPackage, *, generated_at: str) -> str:
         f"· total={us.get('total_tokens', 0)} tokens · UsageRecords="
         f"{us.get('usage_record_count', 0)}",
         f"- cost_status counts: {us.get('cost_status_counts', {})} "
-        "(Fake-Provider ⇒ keine Preiswerte).",
+        "(Demo-Generator ⇒ kein Modellaufruf und keine Modellkosten).",
         "",
         "## 5. Research Usage",
         "",
@@ -101,7 +101,7 @@ def render_report(package: DraftPackage, *, generated_at: str) -> str:
         "",
         "## 6. Quality Notes",
         "",
-        "- Jeder LLM-Feldvorschlag erfordert **menschliche Prüfung**; nichts ist automatisch "
+        "- Jeder Demo-Vorschlag erfordert **menschliche Prüfung**; nichts ist automatisch "
         "übernommen, freigegeben oder copy-ready.",
         "- Fehlende Markt-/SOTA-/Baseline-/Partner-/Budgetangaben erscheinen als "
         "`missing_inputs`/Platzhalter — keine erfundenen Werte.",

@@ -3,6 +3,7 @@
 import Link from "next/link"
 import { AppShell } from "@/components/shell/app-shell"
 import { currentUser, projects, activeProjectId } from "@/lib/mock-data"
+import { LiveSystemStatus } from "@/components/admin/live-system-status"
 
 // Evaluation & Technik — Hub für technische Demo-/Evaluationsansichten
 // (Provider, Modelle, Tokens, Kosten, synthetische Läufe, missing_inputs).
@@ -43,6 +44,7 @@ export default function Page() {
             unter «Technische Details».
           </p>
         </div>
+        <LiveSystemStatus />
         <ul className="flex flex-col gap-3">
           {EVAL_VIEWS.map((view) => (
             <li key={view.href}>

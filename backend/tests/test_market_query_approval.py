@@ -23,6 +23,7 @@ from app.market_research.planner import MarketTopic
 from app.market_research.runner import run_market_research
 from app.research.service import ResearchBlocked
 from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, login, unsafe_headers
+from tests.research_brief_helpers import approve_research_brief
 
 _D0 = {
     "sensitivity": "public", "origin": "synthetic", "processing_mode": "cloud_assisted",
@@ -74,6 +75,10 @@ def _project(client, csrf, *, title="Market Approval Project") -> str:
 
 
 def _plan(client, csrf, project_id) -> dict:
+    workspace = client.get(f"/api/v1/projects/{project_id}/research-workspace")
+    assert workspace.status_code == 200, workspace.text
+    if workspace.json()["brief"]["active_approved"] is None:
+        approve_research_brief(client, csrf, project_id)
     res = client.post(f"/api/v1/projects/{project_id}/market-research/plan",
                       json={}, headers=unsafe_headers(csrf))
     assert res.status_code == 200, res.text
@@ -89,6 +94,10 @@ def _approve(client, csrf, approval_id, *, reject=False):
 
 
 def _run(client, csrf, project_id, approval_ids):
+    workspace = client.get(f"/api/v1/projects/{project_id}/research-workspace")
+    assert workspace.status_code == 200, workspace.text
+    if workspace.json()["brief"]["active_approved"] is None:
+        approve_research_brief(client, csrf, project_id)
     return client.post(
         f"/api/v1/projects/{project_id}/market-research/run",
         json={**TOPIC_PAYLOAD, "approval_ids": approval_ids},
@@ -111,7 +120,9 @@ def test_plan_creates_pending_approvals_per_query(client, db, web_fake):
         assert appr is not None and appr.status == "pending"
         assert appr.project_id == pid
         # Feingranularer Planner-Zweck bleibt auf der Freigabe erhalten.
-        assert appr.purpose == f"market_comparison:{q['purpose']}"
+        assert appr.purpose == f"research:{appr.research_module}:{q['purpose']}"
+        assert appr.research_brief_id
+        assert appr.planner_purpose == q["purpose"]
         # Es wird exakt der angezeigte Text freigegeben.
         assert appr.sanitized_query == q["query_text"]
 
@@ -171,11 +182,17 @@ def test_only_approved_queries_execute_and_are_consumed(client, db, web_fake):
     for approval_id in approval_ids[:2]:
         assert _approve(client, csrf, approval_id).status_code == 200
 
-    res = _run(client, csrf, pid, approval_ids)
+    # Ein gemischter Batch wird fail-closed abgelehnt; pending Queries werden
+    # weder still uebersprungen noch als teilweise ausgefuehrt dargestellt.
+    mixed_res = _run(client, csrf, pid, approval_ids)
+    assert mixed_res.status_code == 422, mixed_res.text
+    assert mixed_res.json()["code"] == "approval_required"
+
+    res = _run(client, csrf, pid, approval_ids[:2])
     assert res.status_code == 200, res.text
     body = res.json()
     assert len(body["task_ids"]) == 2
-    assert body["blocked_queries"] == len(approval_ids) - 2
+    assert body["blocked_queries"] == 0
 
     db.expire_all()
     approved_texts = {q["query_text"] for q in queries[:2]}
@@ -199,10 +216,8 @@ def test_rejected_approvals_never_execute(client, db, web_fake):
         assert _approve(client, csrf, approval_id, reject=True).status_code == 200
 
     res = _run(client, csrf, pid, approval_ids)
-    assert res.status_code == 200, res.text
-    body = res.json()
-    assert body["task_ids"] == [] and body["result_count"] == 0
-    assert body["blocked_queries"] == len(approval_ids)
+    assert res.status_code == 422, res.text
+    assert res.json()["code"] == "approval_required"
     db.expire_all()
     assert db.scalar(
         select(ResearchTask).where(ResearchTask.project_id == pid)
@@ -214,7 +229,7 @@ def test_rejected_approvals_never_execute(client, db, web_fake):
 # --- Bearbeiten: neue Prüfung + neue Freigabe; Lexikon auch für D0 -------------
 
 
-def test_edited_query_gets_new_approval_with_project_lexicon(client, db, web_fake):
+def test_edited_query_is_bound_to_brief_and_invalidates_old_approval(client, db, web_fake):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     pid = _project(client, csrf, title="QuantumFoam")
     res = client.post(
@@ -225,22 +240,33 @@ def test_edited_query_gets_new_approval_with_project_lexicon(client, db, web_fak
     assert res.status_code == 201, res.text
 
     old = _plan(client, csrf, pid)["queries"][0]
+    workspace = client.get(f"/api/v1/projects/{pid}/research-workspace").json()
+    brief_id = workspace["brief"]["active_approved"]["research_brief_id"]
+    blocked = client.post(
+        f"/api/v1/research-briefs/{brief_id}/queries/preview",
+        json={"query_text": "QuantumFoam Acme-Robotics market size Switzerland",
+              "module": "market_growth", "planner_purpose": "market_size",
+              "supersedes_approval_id": old["approval_id"]},
+        headers=unsafe_headers(csrf),
+    )
+    assert blocked.status_code == 422, blocked.text
+    assert blocked.json()["code"] == "query_not_derived_from_brief"
+    db.expire_all()
+    assert db.get(SearchQueryApproval, old["approval_id"]).status == "expired"
+
     res = client.post(
-        f"/api/v1/projects/{pid}/market-research/queries/preview",
-        json={"query_text": "QuantumFoam Acme-Robotics Marktgrösse Schweiz",
-              "purpose": "market_size"},
+        f"/api/v1/research-briefs/{brief_id}/queries/preview",
+        json={"query_text": "manufacturing quality assurance market growth Switzerland",
+              "module": "market_growth", "planner_purpose": "market_size",
+              "supersedes_approval_id": None},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 200, res.text
     body = res.json()
-    # Projekt-Lexikon greift auch für D0: Codename + Partnername sind entfernt.
-    low = body["query_text"].lower()
-    assert "quantumfoam" not in low and "acme" not in low and "robotics" not in low
-    assert body["approval_id"] and body["approval_id"] != old["approval_id"]
+    assert body["approval_id"] != old["approval_id"]
     assert db.get(SearchQueryApproval, body["approval_id"]).status == "pending"
-    # Die alte Freigabe wird explizit abgelehnt (Bearbeiten invalidiert sie).
-    assert _approve(client, csrf, old["approval_id"], reject=True).status_code == 200
-    assert db.get(SearchQueryApproval, old["approval_id"]).status == "rejected"
+    db.expire_all()
+    assert db.get(SearchQueryApproval, old["approval_id"]).status == "expired"
 
 
 # --- Guard: keine zweite Planner-/Runner-Implementierung -----------------------

@@ -5,6 +5,7 @@
 import type { CopyReadiness, PortalFieldDraftDto } from "./fields"
 import { hasPlaceholder } from "./placeholders"
 import type { ReviewPackageDto } from "./review"
+import { getCsrfToken } from "./session"
 
 export { countPlaceholders, hasPlaceholder } from "./placeholders"
 
@@ -179,3 +180,65 @@ export const COVERAGE_STATEMENT =
 export const CLIPBOARD_PRIVACY_NOTE =
   "Hinweis: Kopierte Inhalte liegen in der Zwischenablage Ihres Geräts und " +
   "können dort von anderen lokalen Anwendungen gelesen werden."
+
+export type StructuredCopyTarget =
+  | "partner_row"
+  | "partner_cell"
+  | "budget_value"
+  | "duration"
+
+export interface TransferPartnerDto {
+  index: number
+  name: string
+  partner_type: string
+  partner_type_label?: string
+  project_role: string
+  country: string
+  swiss_value_creation: boolean | null
+  eligibility_status: string
+  eligibility_status_label?: string
+  provenance: string
+  copy_target_row: string
+}
+
+export interface TransferSnapshotDto {
+  snapshot_available: boolean
+  stale: boolean
+  stale_message: string | null
+  project: {
+    title?: string
+    instrument?: string
+    duration_months?: number | null
+    duration_copy_target?: string
+    application_language?: null
+  }
+  partners: TransferPartnerDto[]
+  budget: {
+    values: Array<{ key: string; label: string; value: number | null; copy_target: string; provenance: string }>
+    ratios: Array<{ label: string; value: number }>
+    rules: Array<{ rule_id: string; status: string; status_label?: string; outcome_label: string; severity: string }>
+  }
+  sources: Array<{ source_id: string; title: string; url: string | null }>
+  manual_portal_tasks: string[]
+}
+
+export async function getTransferSnapshot(runId: string): Promise<TransferSnapshotDto> {
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/transfer-snapshot`)
+  if (!res.ok) throw new Error("Strukturierte Übernahmedaten konnten nicht geladen werden.")
+  return (await res.json()) as TransferSnapshotDto
+}
+
+export async function recordStructuredCopyEvent(
+  runId: string,
+  targetType: StructuredCopyTarget,
+  targetKey: string
+): Promise<void> {
+  const csrf = getCsrfToken()
+  const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/transfer-copy-events`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...(csrf ? { "X-CSRF-Token": csrf } : {}) },
+    // No structured text/value is sent. The backend resolves it from the frozen snapshot.
+    body: JSON.stringify({ target_type: targetType, target_key: targetKey }),
+  })
+  if (!res.ok) throw new Error("Kopierversuch konnte nicht protokolliert werden.")
+}

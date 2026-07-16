@@ -17,6 +17,7 @@ _MUTABLE_FIELDS = (
     "project_role",
     "country",
     "location",
+    "department",
     "contribution",
     "uid",
     "industry",
@@ -28,6 +29,20 @@ _MUTABLE_FIELDS = (
     "financial_independence_status",
     "review_comment",
 )
+
+_COMMENT_REQUIRING_INDEPENDENCE = ("exception", "needs_input")
+_COMMENT_REQUIRING_ELIGIBILITY = ("not_eligible", "needs_verification")
+
+
+def review_comment_required(data: PartnerCreate) -> bool:
+    """Gemeinsame Konsistenzregel für normale und importierte Partner."""
+    return bool(
+        data.personnel_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or data.financial_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
+        or data.research_partner_eligibility_status
+        in _COMMENT_REQUIRING_ELIGIBILITY
+        or data.swiss_value_creation is False
+    )
 
 
 def _payload_values(data: PartnerCreate) -> dict:
@@ -105,6 +120,7 @@ def to_contract(partner: Partner) -> PartnerSchema:
         project_role=partner.project_role,
         country=partner.country,
         location=partner.location,
+        department=partner.department,
         contribution=partner.contribution,
         uid=partner.uid,
         industry=partner.industry,
@@ -119,10 +135,10 @@ def to_contract(partner: Partner) -> PartnerSchema:
     )
 
 
-def snapshot_dict(partner: Partner) -> dict:
+def snapshot_dict(partner: Partner, *, schema_version: str = "run-project-v2") -> dict:
     """Deterministic structured copy for the immutable run snapshot (no PII text
     beyond the structured fields the rules consume)."""
-    return {
+    base = {
         "partner_id": partner.partner_id,
         "partner_type": partner.partner_type,
         "country": partner.country,
@@ -133,3 +149,15 @@ def snapshot_dict(partner: Partner) -> dict:
         "personnel_independence_status": partner.personnel_independence_status,
         "financial_independence_status": partner.financial_independence_status,
     }
+    if schema_version == "run-project-v2":
+        # Organisation data needed for section 4.6. Contact/representative PII is
+        # deliberately excluded from the model-facing immutable snapshot.
+        base.update({
+            "name": partner.name,
+            "project_role": partner.project_role,
+            "department": partner.department,
+            "contribution": partner.contribution,
+            "industry": partner.industry,
+            "fte": partner.fte,
+        })
+    return base

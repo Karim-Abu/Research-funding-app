@@ -38,19 +38,10 @@ def _require_partner(db, partner_id, workspace_id):
 # Konsistenzregel (kein Urteil): Wer einen Status EXPLIZIT als unklar oder
 # nicht bestätigt erfasst, muss das kurz begründen. Nicht erfasste Angaben
 # (None) bleiben gültig — die Regeln melden dafür ehrlich «Angabe fehlt».
-_COMMENT_REQUIRING_INDEPENDENCE = ("exception", "needs_input")
-_COMMENT_REQUIRING_ELIGIBILITY = ("not_eligible", "needs_verification")
-
-
 def _require_review_comment_consistency(payload: PartnerCreate) -> None:
-    needs_comment = (
-        payload.personnel_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
-        or payload.financial_independence_status in _COMMENT_REQUIRING_INDEPENDENCE
-        or payload.research_partner_eligibility_status
-        in _COMMENT_REQUIRING_ELIGIBILITY
-        or payload.swiss_value_creation is False
-    )
-    if needs_comment and not (payload.review_comment or "").strip():
+    if partners_repo.review_comment_required(payload) and not (
+        payload.review_comment or ""
+    ).strip():
         raise ProblemException(
             status=422, code="partner_comment_required",
             title="Unprocessable Entity",

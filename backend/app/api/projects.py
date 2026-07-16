@@ -21,7 +21,6 @@ from app.rules.inputs import inputs_from_snapshot
 from app.runs import cloud_policy
 from app.runs.policy import POLICY_VERSION
 from app.runs.project_snapshot import current_inputs
-from app.security.data_class import DataClass, derive_data_class
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
 router = APIRouter(tags=["Projects"])
@@ -109,31 +108,24 @@ def create_processing_confirmation(
         ..., alias="Idempotency-Key", min_length=8, max_length=128
     ),
 ) -> ProcessingConfirmation:
-    """Milestone 9D.2: a per-run user acknowledgement that selected public/synthetic
-    content may be sent to the configured cloud AI for one cloud_assisted run. Any
-    project participant (member or lead_admin) may confirm. This is NOT an
-    institutional approval — internal/confidential/NDA stay blocked."""
+    """Einmalige Bestätigung für einen klassifizierten Cloud-/Eval-Lauf.
+
+    Sie überschreibt weder die ProviderPolicy noch die zusammengeführte
+    Projekt-/Quellenklassifikation.
+    """
     project = projects.get_scoped(db, project_id, context.user.workspace_id)
     if project is None:
         raise ProblemException(
             status=404, code="not_found", title=_NOT_FOUND, detail="Project not found.",
         )
     if payload.processing_mode == "local_only":
-        # R4.3 (Owner-Entscheid 2026-07-08): KI-Opt-in über den lokalen Pfad —
-        # nur für interne/vertrauliche Projekte; NDA/unklassifiziert bleibt
-        # fail-closed blockiert. Die Bestätigung dokumentiert die verstandene
-        # Warnung (local-ai-confirm-v1).
-        data_class = derive_data_class(project.data_classification)
-        if data_class not in (DataClass.D1_INTERNAL, DataClass.D2_CONFIDENTIAL_IDEA):
-            raise ProblemException(
-                status=403, code="local_ai_not_eligible_for_classification",
-                title="Forbidden",
-                detail=("Der lokale KI-Pfad steht nur für interne oder vertrauliche "
-                        "Inhalte zur Verfügung; NDA-gesperrte oder nicht eingestufte "
-                        "Inhalte bleiben blockiert."),
-            )
-        route_class = cloud_policy.LOCAL_AI_ROUTE_CLASS
-        text_version = cloud_policy.LOCAL_AI_CONFIRMATION_TEXT_VERSION
+        # No local/institutional model adapter exists. FakeProvider is a
+        # CI/demo generator and must never open a product AI path.
+        raise ProblemException(
+            status=403, code="local_ai_provider_unavailable", title="Forbidden",
+            detail=("Für diese Datenklasse ist aktuell kein freigegebener KI-Provider "
+                    "konfiguriert. Die App führt nur regelbasierte Prüfungen aus."),
+        )
     else:
         # The confirmation cannot override the classification gate (corr #2).
         eligible, reason = cloud_policy.classification_eligible(project.data_classification)
@@ -141,11 +133,14 @@ def create_processing_confirmation(
             raise ProblemException(
                 status=403, code="cloud_not_eligible_for_classification",
                 title="Forbidden",
-                detail=("Cloud-KI ist in dieser Beta nur für öffentliche oder synthetische "
-                        "Daten verfügbar; interne, vertrauliche oder NDA-Inhalte sind blockiert."),
+                detail=("Cloud-KI ist nur für öffentliche Inhalte oder ausdrücklich "
+                        "synthetische/anonymisierte Evaluationsfälle verfügbar; "
+                        "Realprojekte und NDA-Inhalte bleiben blockiert."),
             )
         route_class = cloud_policy.provider_route_class()
-        text_version = cloud_policy.CONFIRMATION_TEXT_VERSION
+        text_version = cloud_policy.confirmation_text_version_for(
+            project.data_classification
+        )
     if payload.accepted_policy_version != POLICY_VERSION:
         raise ProblemException(
             status=422, code="policy_version_mismatch", title="Unprocessable Entity",
@@ -170,9 +165,7 @@ def create_processing_confirmation(
     controls.record(
         db, workspace_id=project.workspace_id, project_id=project.project_id,
         control_id="CTRL.DATA_POLICY", status="passed",
-        detail=("local_ai_confirmation_created"
-                if payload.processing_mode == "local_only"
-                else "cloud_confirmation_created"),
+        detail="cloud_confirmation_created",
     )
     audit.record(
         db, workspace_id=project.workspace_id, actor_user_id=context.user.id,

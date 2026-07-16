@@ -24,6 +24,7 @@ from dataclasses import dataclass
 from functools import lru_cache
 
 from app.agents.registry import get_agent_registry
+from app.agents.role_skills import RoleSkillRegistryError, get_role_skill_registry
 from app.registry import get_registry
 
 # Explicit allow-list (STEP 3). Adding a pair here is the only way to enable A2.
@@ -100,6 +101,14 @@ class A2FieldConfig:
     fake_text: str
 
 
+def skill_id_for(field_id: str, target_section: str | None) -> str | None:
+    """Resolve the sole versioned skill that may draft a field subsection."""
+    try:
+        return get_role_skill_registry().skill_for_a2(field_id, target_section).skill_id
+    except RoleSkillRegistryError:
+        return None
+
+
 def _registry_markers(field_id: str) -> tuple[str, ...]:
     """Registry mandatory markers for a composite editor field, e.g.
     VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_1 → "3.1" (SOL → 4.1–4.5)."""
@@ -146,6 +155,11 @@ def validate_a2_field_registry() -> None:
             )
         if field_id not in _FAKE_TEXTS:
             raise RuntimeError(f"A2 enabled field missing fake text: {field_id}")
+        for target_section in config.mandatory_markers or (None,):
+            if skill_id_for(field_id, target_section) is None:
+                raise RuntimeError(
+                    f"A2 field/section has no versioned skill: {field_id}/{target_section}"
+                )
 
 
 # Validate at import — fail-closed, like the registry loaders themselves.

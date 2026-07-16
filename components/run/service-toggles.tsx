@@ -13,6 +13,9 @@ interface ServiceToggleProps {
   available: boolean
   availableLabel?: string
   disabled?: boolean
+  /** Konkreter Grund, warum der Dienst nicht verfügbar ist (A4) — ersetzt
+   *  das generische «Dienst aktuell nicht verfügbar». */
+  unavailableReason?: string
 }
 
 /** Shared toggle row used for "KI-Unterstützung" and "Webrecherche". */
@@ -25,6 +28,7 @@ function ServiceToggle({
   available,
   availableLabel = "Dienst verfügbar",
   disabled,
+  unavailableReason,
 }: ServiceToggleProps) {
   const isDisabled = disabled || !available
   return (
@@ -42,7 +46,9 @@ function ServiceToggle({
             )}
           />
           <span className="text-muted-foreground">
-            {available ? availableLabel : "Dienst aktuell nicht verfügbar"}
+            {available
+              ? availableLabel
+              : (unavailableReason ?? "Dienst aktuell nicht verfügbar")}
           </span>
         </span>
       </div>
@@ -56,13 +62,27 @@ function ServiceToggle({
   )
 }
 
-export function LLMToggle(props: Omit<ServiceToggleProps, "title" | "subtitle">) {
+export function LLMToggle({
+  generationMode = "unavailable",
+  ...props
+}: Omit<ServiceToggleProps, "title" | "subtitle"> & {
+  generationMode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
+}) {
+  const isDemo = generationMode === "fake_demo"
   return (
     <ServiceToggle
       {...props}
-      title="KI-Unterstützung"
-      subtitle="Erstellt Textvorschläge und Analysen"
-      availableLabel="KI-Unterstützung verfügbar"
+      title={isDemo ? "Demo-Vorschläge" : "KI-Unterstützung"}
+      subtitle={
+        isDemo
+          ? "Erstellt gekennzeichnete Testvorschläge ohne echtes KI-Modell"
+          : "Erstellt modellgenerierte Textvorschläge und Analysen"
+      }
+      availableLabel={
+        isDemo
+          ? "Demo-Generator verfügbar – kein Modellaufruf"
+          : "KI-Unterstützung für Evaluationsfälle verfügbar"
+      }
     />
   )
 }

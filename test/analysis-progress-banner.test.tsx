@@ -6,7 +6,7 @@ import {
 } from "@/components/quellen/analysis-progress-banner"
 import { RunTechnicalDetails } from "@/components/run/run-technical-details"
 import type { RunPhaseView } from "@/lib/run-steps"
-import type { RunTechnicalSummaryDto } from "@/lib/runs"
+import { liveStatusNotice, type RunTechnicalSummaryDto } from "@/lib/runs"
 
 describe("AnalysisProgressBanner — echte Phasen", () => {
   const phases: RunPhaseView[] = [
@@ -128,6 +128,22 @@ describe("CompletedAnalysisBanner", () => {
     expect(
       screen.getByText(/Feldvorschläge bleiben erhalten/)
     ).toBeInTheDocument()
+  })
+
+  it("zeigt den ehrlichen Live-Hinweis (partial_live) mit Teilweise-Ikone", () => {
+    render(
+      <CompletedAnalysisBanner
+        liveNotice={liveStatusNotice("partial_live")}
+        onGoToRequirements={vi.fn()}
+      />
+    )
+    expect(
+      screen.getByText(/nicht alle Live-Schritte wurden mit echten Providern/)
+    ).toBeInTheDocument()
+    // Kein Hinweis bei vollständigem Live-Lauf oder Fake-Lauf.
+    expect(liveStatusNotice("completed_live")).toBeNull()
+    expect(liveStatusNotice(null)).toBeNull()
+    expect(liveStatusNotice(undefined)).toBeNull()
   })
 
   it("shows neutral copy without dummy counts", () => {

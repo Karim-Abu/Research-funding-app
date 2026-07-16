@@ -1,6 +1,8 @@
 """createRedraft endpoint + accept/reject flow (Milestone 9D)."""
 from __future__ import annotations
 
+import json
+
 import pytest
 from sqlalchemy import select
 
@@ -16,9 +18,11 @@ from app.db.session import SessionLocal
 from tests.a2_helpers import (
     FIELD_ID,
     GOOD_TEXT,
-    bundle,
+    SECTION_GOOD_TEXT,
+    TARGET_SECTION,
     build_run_with_draft,
     fake_resolver,
+    section_bundle,
     success_fake,
 )
 from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, login, unsafe_headers
@@ -38,14 +42,15 @@ def _setup(processing_mode="cloud_assisted"):
 def _arm_fake(monkeypatch, payload=None):
     monkeypatch.setattr(
         field_drafting, "_PROVIDER_RESOLVER",
-        fake_resolver(success_fake(payload or bundle())),
+        fake_resolver(success_fake(payload or section_bundle())),
     )
 
 
 def _create_redraft(client, csrf, run_id, field_id, base):
     return client.post(
         f"/api/v1/runs/{run_id}/fields/{field_id}/redrafts",
-        json={"base_version_id": base}, headers=unsafe_headers(csrf),
+        json={"base_version_id": base, "target_section": TARGET_SECTION},
+        headers=unsafe_headers(csrf),
     )
 
 
@@ -58,7 +63,10 @@ def test_create_redraft_async_then_result(client, monkeypatch):
     op_id = res.json()["operation_id"]
     op = client.get(f"/api/v1/operations/{op_id}").json()
     assert op["status"] == "succeeded"
-    assert op["result"]["suggested_text"] == GOOD_TEXT
+    assert op["result"]["suggested_text"] == SECTION_GOOD_TEXT
+    assert op["result"]["target_section"] == TARGET_SECTION
+    assert op["result"]["generation_kind"] == "fake_demo"
+    assert op["result"]["ai_proposal"] is None
     assert op["result"]["character_limit"] == 25000
 
 
@@ -96,7 +104,7 @@ def test_redraft_deterministic_only_503(client, monkeypatch):
     assert "Datenklasse oder Umgebung" not in body["detail"]
 
 
-# --- R4.3: lokaler KI-Opt-in (Owner-Entscheid 2026-07-08) --------------------
+# --- Kein vorgetäuschter lokaler KI-Pfad ------------------------------------
 
 def _setup_local(sensitivity: str = "confidential", nda: bool = False):
     db = SessionLocal()
@@ -142,22 +150,18 @@ def test_redraft_local_only_without_opt_in_503(client, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
     assert res.status_code == 503
-    assert res.json()["reason_code"] == "mode_deterministic_only"
+    assert res.json()["reason_code"] == "provider_unavailable"
 
 
-def test_redraft_local_only_with_opt_in_succeeds(client, monkeypatch):
-    """D2 (confidential/real_project) + verbrauchter Local-AI-Opt-in ⇒ der
-    lokale Fake-Provider liefert einen Vorschlag (kein externer Call)."""
+def test_redraft_local_only_with_legacy_opt_in_stays_unavailable(client, monkeypatch):
+    """Auch eine alte Bestätigung darf keinen nicht existierenden Adapter erzeugen."""
     run_id, _draft_id, base = _setup_local()
     _attach_local_confirmation(run_id)
     _arm_fake(monkeypatch)
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
-    assert res.status_code == 202, res.text
-    op_id = res.json()["operation_id"]
-    op = client.get(f"/api/v1/operations/{op_id}").json()
-    assert op["status"] == "succeeded"
-    assert op["result"]["suggested_text"] == GOOD_TEXT
+    assert res.status_code == 503, res.text
+    assert res.json()["reason_code"] == "provider_unavailable"
 
 
 def test_redraft_local_only_nda_stays_blocked(client, monkeypatch):
@@ -168,7 +172,7 @@ def test_redraft_local_only_nda_stays_blocked(client, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
     assert res.status_code == 503
-    assert res.json()["reason_code"] == "nda_locked"
+    assert res.json()["reason_code"] == "provider_unavailable"
 
 
 def _generate(client, monkeypatch, run_id, base) -> str:
@@ -183,12 +187,15 @@ def test_accept_creates_agent_draft_version(client, monkeypatch):
     csrf, op_id = _generate(client, monkeypatch, run_id, base)
     res = client.patch(
         f"/api/v1/runs/{run_id}/fields/{FIELD_ID}",
-        json={"base_version_id": base, "text": GOOD_TEXT, "source_operation_id": op_id},
+        json={"base_version_id": base, "text": SECTION_GOOD_TEXT,
+              "source_operation_id": op_id},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 200
     assert res.json()["current_version"]["created_by"] == "agent"
-    assert res.json()["current_version"]["text"] == GOOD_TEXT
+    assert SECTION_GOOD_TEXT in res.json()["current_version"]["text"]
+    assert "4.1 Stand der Technik" in res.json()["current_version"]["text"]
+    assert "4.3 Ziele" in res.json()["current_version"]["text"]
 
     db = SessionLocal()
     try:
@@ -207,7 +214,8 @@ def test_accept_stale_base_409(client, monkeypatch):
     csrf, op_id = _generate(client, monkeypatch, run_id, base)
     res = client.patch(
         f"/api/v1/runs/{run_id}/fields/{FIELD_ID}",
-        json={"base_version_id": "stale", "text": GOOD_TEXT, "source_operation_id": op_id},
+        json={"base_version_id": "stale", "text": SECTION_GOOD_TEXT,
+              "source_operation_id": op_id},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 409
@@ -229,7 +237,8 @@ def test_accept_invalidates_existing_approval(client, monkeypatch):
     csrf, op_id = _generate(client, monkeypatch, run_id, base)
     client.patch(
         f"/api/v1/runs/{run_id}/fields/{FIELD_ID}",
-        json={"base_version_id": base, "text": GOOD_TEXT, "source_operation_id": op_id},
+        json={"base_version_id": base, "text": SECTION_GOOD_TEXT,
+              "source_operation_id": op_id},
         headers=unsafe_headers(csrf),
     )
     db = SessionLocal()
@@ -241,23 +250,27 @@ def test_accept_invalidates_existing_approval(client, monkeypatch):
 
 
 def test_edited_text_not_marked_agent(client, monkeypatch):
-    # source_operation_id given but text differs from the suggestion → user edit.
+    # A human-edited proposal is merged only into its target section and keeps
+    # user provenance, while the reviewed proposal becomes terminally accepted.
     run_id, _draft_id, base = _setup()
     csrf, op_id = _generate(client, monkeypatch, run_id, base)
     res = client.patch(
         f"/api/v1/runs/{run_id}/fields/{FIELD_ID}",
-        json={"base_version_id": base, "text": GOOD_TEXT + "\nUser edit 4.x.",
+        json={"base_version_id": base, "text": "4.2 Menschlich bearbeitete Neuheit.",
               "source_operation_id": op_id},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 200
     assert res.json()["current_version"]["created_by"] == "user"
+    assert "4.2 Menschlich bearbeitete Neuheit." in res.json()["current_version"]["text"]
+    assert "4.1 Stand der Technik" in res.json()["current_version"]["text"]
+    assert "4.3 Ziele" in res.json()["current_version"]["text"]
     db = SessionLocal()
     try:
         suggestion = db.scalar(
             select(DraftSuggestion).where(DraftSuggestion.operation_id == op_id)
         )
-        assert suggestion.status == "proposed"  # not accepted (hash mismatch)
+        assert suggestion.status == "accepted"
     finally:
         db.close()
 
@@ -273,5 +286,112 @@ def test_reject_creates_no_version(client, monkeypatch):
             select(DraftVersion).where(DraftVersion.draft_id == draft_id)
         ).all()
         assert len(versions) == 1 and draft.current_version_id == base
+    finally:
+        db.close()
+
+
+# --- C4: Ablehnung als persistierte HumanDecision ---------------------------
+
+
+def _reject(client, csrf, run_id, suggestion_id, comment=None):
+    from tests.review_helpers import mut
+
+    return client.post(
+        f"/api/v1/runs/{run_id}/human-decisions",
+        json={
+            "target_type": "draft_suggestion",
+            "target_id": suggestion_id,
+            "action": "reject",
+            "comment": comment,
+        },
+        headers=mut(csrf),
+    )
+
+
+def _created_suggestion_id(client, csrf, run_id, base) -> str:
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202, res.text
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "succeeded"
+    return op["result"]["suggestion_id"]
+
+
+def _complete_run(run_id: str) -> None:
+    """Human decisions (Ablehnung) laufen in der Review-Phase — Run abschliessen."""
+    db = SessionLocal()
+    try:
+        db.get(AnalysisRun, run_id).status = "completed"
+        db.commit()
+    finally:
+        db.close()
+
+
+def test_reject_suggestion_persists_decision_and_status(client, monkeypatch):
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    suggestion_id = _created_suggestion_id(client, csrf, run_id, base)
+    _complete_run(run_id)
+
+    res = _reject(client, csrf, run_id, suggestion_id, "Eigene Formulierung bevorzugt")
+    assert res.status_code == 201, res.text
+    body = res.json()
+    assert body["target_type"] == "draft_suggestion"
+    assert body["action"] == "reject"
+
+    db = SessionLocal()
+    try:
+        suggestion = db.get(DraftSuggestion, suggestion_id)
+        assert suggestion.status == "rejected"
+        assert suggestion.decided_by is not None
+        assert suggestion.decided_at is not None
+        # Der Vorschlagstext bleibt unverändert erhalten (nur der Entscheid).
+        assert suggestion.suggested_text == SECTION_GOOD_TEXT
+    finally:
+        db.close()
+
+    # Bereits entschieden ⇒ 409, kein stiller Doppel-Reject.
+    again = _reject(client, csrf, run_id, suggestion_id)
+    assert again.status_code == 409
+    assert again.json()["code"] == "suggestion_not_rejectable"
+
+
+def test_reject_unknown_or_foreign_suggestion_404(client, monkeypatch):
+    run_id, _draft_id, _base = _setup()
+    _arm_fake(monkeypatch)
+    _complete_run(run_id)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _reject(client, csrf, run_id, "sug-does-not-exist")
+    assert res.status_code == 404
+
+
+def test_reject_audit_carries_no_raw_text(client, monkeypatch):
+    from app.db.models import AuditEvent
+
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    suggestion_id = _created_suggestion_id(client, csrf, run_id, base)
+    _complete_run(run_id)
+    reason = "Der geheime Grund mit Zebra-Marker."
+    assert _reject(client, csrf, run_id, suggestion_id, reason).status_code == 201
+
+    db = SessionLocal()
+    try:
+        run = db.get(AnalysisRun, run_id)
+        events = db.execute(
+            select(AuditEvent).where(AuditEvent.workspace_id == run.workspace_id)
+        ).scalars().all()
+        blob = json.dumps(
+            [e.detail for e in events], ensure_ascii=False, default=str
+        )
+        # Audit trägt nur IDs/Action — weder Grund noch Vorschlagstext.
+        assert "Zebra-Marker" not in blob
+        assert SECTION_GOOD_TEXT not in blob
+        assert any(
+            (e.detail or {}).get("target_type") == "draft_suggestion"
+            for e in events
+            if e.action == "review.decision_created"
+        )
     finally:
         db.close()

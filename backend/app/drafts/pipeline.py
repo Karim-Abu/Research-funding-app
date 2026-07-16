@@ -124,12 +124,6 @@ def run_a2_field_suggestions(db: Session, run: AnalysisRun) -> dict:
         "field_reasons": {},
     }
     for field_id in A2_FIELD_PROFILES:
-        stop = budget_stop_reason(db, run, policy)
-        if stop is not None:
-            counters["budget_stop"] = stop
-            counters["fields_skipped"] += 1
-            counters["field_reasons"][field_id] = stop
-            continue
         draft = db.scalar(
             select(PortalFieldDraft).where(
                 PortalFieldDraft.run_id == run.run_id,
@@ -145,28 +139,44 @@ def run_a2_field_suggestions(db: Session, run: AnalysisRun) -> dict:
             counters["fields_skipped"] += 1
             counters["field_reasons"][field_id] = reason
             continue
-        operation = AsyncOperation(
-            operation_id=str(uuid.uuid4()),
-            workspace_id=run.workspace_id,
-            project_id=run.project_id,
-            resource_type="redraft",
-            resource_id=draft.draft_id,
-            status="queued",
+        config = field_drafting.a2_fields.resolve_field_config(field_id)
+        targets: tuple[str | None, ...] = (
+            tuple(config.mandatory_markers) if config and config.mandatory_markers
+            else (None,)
         )
-        db.add(operation)
-        db.flush()
-        outcome = redraft_service.execute_a2_operation(
-            db, operation=operation, run=run, draft_id=draft.draft_id,
-            base_version_id=draft.current_version_id, field_id=field_id,
-        )
-        if outcome.status in ("succeeded", "reused"):
-            counters["suggestions_created"] += 1
-        elif outcome.status == "skipped":
-            counters["fields_skipped"] += 1
-            counters["field_reasons"][field_id] = outcome.reason
-        else:
-            counters["fields_failed"] += 1
-            counters["field_reasons"][field_id] = outcome.reason
+        for target_section in targets:
+            reason_key = (
+                f"{field_id}:{target_section}" if target_section else field_id
+            )
+            stop = budget_stop_reason(db, run, policy)
+            if stop is not None:
+                counters["budget_stop"] = stop
+                counters["fields_skipped"] += 1
+                counters["field_reasons"][reason_key] = stop
+                continue
+            operation = AsyncOperation(
+                operation_id=str(uuid.uuid4()),
+                workspace_id=run.workspace_id,
+                project_id=run.project_id,
+                resource_type="redraft",
+                resource_id=draft.draft_id,
+                status="queued",
+            )
+            db.add(operation)
+            db.flush()
+            outcome = redraft_service.execute_a2_operation(
+                db, operation=operation, run=run, draft_id=draft.draft_id,
+                base_version_id=draft.current_version_id, field_id=field_id,
+                target_section=target_section,
+            )
+            if outcome.status in ("succeeded", "reused"):
+                counters["suggestions_created"] += 1
+            elif outcome.status == "skipped":
+                counters["fields_skipped"] += 1
+                counters["field_reasons"][reason_key] = outcome.reason
+            else:
+                counters["fields_failed"] += 1
+                counters["field_reasons"][reason_key] = outcome.reason
     audit.record(
         db, workspace_id=run.workspace_id, actor_user_id=None,
         action="draft.fields_a2_completed", target_type="run",

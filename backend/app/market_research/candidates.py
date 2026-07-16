@@ -17,6 +17,7 @@ _CANDIDATE_TYPE = {
     "market_size": "market_size_candidate",
     "competitors_alternatives": "competitor_or_alternative",
     "customer_pain": "customer_segment",
+    "state_of_the_art": "state_of_the_art_candidate",
     "go_to_market_channels": "go_to_market_signal",
     "pricing_willingness_to_pay": "pricing_signal",
 }

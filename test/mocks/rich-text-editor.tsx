@@ -14,6 +14,8 @@ export interface RichTextEditorHandle {
   insertTextAtCursor: (text: string) => void
   selectPlaceholder: (index: number) => void
   selectMatch: (query: string) => void
+  getSelectedText: () => string
+  deleteSelection: () => void
   clearFormatCache: () => void
 }
 
@@ -84,6 +86,19 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, StubProps>(
           node.focus()
           const idx = value.indexOf(query)
           if (idx >= 0) node.setSelectionRange(idx, idx + query.length)
+        },
+        getSelectedText: () => {
+          const node = taRef.current
+          if (!node) return ""
+          return value.slice(node.selectionStart ?? 0, node.selectionEnd ?? 0)
+        },
+        deleteSelection: () => {
+          const node = taRef.current
+          if (!node || node.selectionStart === node.selectionEnd) return
+          const next =
+            value.slice(0, node.selectionStart) + value.slice(node.selectionEnd)
+          setValue(next)
+          onChange(next)
         },
         clearFormatCache: () => {},
       }),

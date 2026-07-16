@@ -15,7 +15,7 @@ import pytest
 
 from app.agents import a2_fields
 from app.config.settings import get_settings
-from app.db.models import Project, ResearchResult, UsageRecord, Workspace
+from app.db.models import Project, ResearchResult, Workspace
 from app.db.session import SessionLocal
 from app.integrated_draft.package import DraftPackage
 from app.integrated_draft.report import render_report
@@ -90,11 +90,15 @@ def _make_seed_ctx(seeded_ids: list[str]):
         if purpose is None:
             return
         task_id = "rt-" + uuid.uuid4().hex[:8]
+        source_id = "src-" + uuid.uuid4().hex[:8]
         db.add(ResearchTask(
             research_task_id=task_id, project_id=project.project_id,
             workspace_id=project.workspace_id, created_by="user-anna", purpose=purpose,
             subject_type="topic", query_text="öffentliche Suche", normalized_query_hash="qh",
-            status="succeeded",
+            status="succeeded", provider="firecrawl", execution_mode="live",
+            research_module=(
+                "market_growth" if field_id == VC_FIELD else "swiss_research_partners"
+            ),
         ))
         rid = "rr-" + uuid.uuid4().hex[:8]
         db.add(ResearchResult(
@@ -106,7 +110,6 @@ def _make_seed_ctx(seeded_ids: list[str]):
             "Der Markt für Anbieter und Wettbewerber wächst; alternative Lösungen "
             "und Produkte für Kunden sind öffentlich beschrieben."
         )
-        source_id = "src-" + uuid.uuid4().hex[:8]
         version_id = "sv-" + uuid.uuid4().hex[:8]
         dc = {
             "sensitivity": "public", "origin": "public_source",
@@ -131,6 +134,13 @@ def _make_seed_ctx(seeded_ids: list[str]):
             fragment_id="frag-" + uuid.uuid4().hex[:8], source_version_id=version_id,
             ordinal=0, original_text=text, normalized_text=text, start_offset=0,
             end_offset=len(text), content_hash="fh",
+        ))
+        db.add(ResearchResult(
+            result_id="rr-imported-" + uuid.uuid4().hex[:8],
+            research_task_id=task_id, workspace_id=project.workspace_id,
+            source_url="https://research.example.org/imported/1",
+            title="Übernommene öffentliche Quelle", snippet="Importierter Auszug.",
+            provider_rank=2, status="imported", source_document_id=source_id,
         ))
         db.flush()
         seeded_ids.append(rid)
@@ -166,7 +176,10 @@ def test_six_a2_fields_generate_or_missing_inputs(db, fake_provider):
     for f in a2:
         assert f.status in ("generated", "missing_inputs")
         if f.status == "generated":
-            assert f.ai_proposal is not None and f.ai_proposal["human_review_required"] is True
+            assert f.generation_kind == "fake_demo"
+            assert f.ai_proposal is None
+            assert f.draft_proposal is not None
+            assert f.draft_proposal["human_review_required"] is True
 
 
 def test_name_deterministic_and_name_en_missing(db, fake_provider):
@@ -222,21 +235,20 @@ def test_no_auto_accept_no_copy_ready(db, fake_provider):
 # --- usage -------------------------------------------------------------------
 
 
-def test_usage_linked_and_aggregated(db, fake_provider):
+def test_fake_demo_exposes_no_model_usage_metadata(db, fake_provider):
     project = _base_project(db)
     pkg = _run(db, project)
     generated = [f for f in pkg.fields if f.status == "generated"]
     assert len(generated) == 6
-    total = 0
     for f in generated:
-        assert f.usage_record_id is not None
-        assert db.get(UsageRecord, f.usage_record_id) is not None
-        assert f.total_tokens == (f.input_tokens or 0) + (f.output_tokens or 0)
-        total += f.total_tokens
-    assert pkg.usage_summary["total_tokens"] == total
-    assert pkg.usage_summary["usage_record_count"] == 6
-    # Fake provider ⇒ not_applicable, no price values.
-    assert set(pkg.usage_summary["cost_status_counts"]) <= {"not_applicable"}
+        assert f.generation_kind == "fake_demo"
+        assert f.ai_proposal is None
+        assert f.provider is None and f.model is None
+        assert f.usage_record_id is None
+        assert f.input_tokens is None and f.output_tokens is None and f.total_tokens is None
+    assert pkg.usage_summary["total_tokens"] == 0
+    assert pkg.usage_summary["usage_record_count"] == 0
+    assert pkg.usage_summary["cost_status_counts"] == {}
 
 
 # --- research context --------------------------------------------------------
@@ -256,7 +268,7 @@ def test_research_context_used_and_never_evidence(db, fake_provider):
     seeded = set(seeded_ids)
     assert len(seeded) == 2
     for f in pkg.fields:
-        used = (f.ai_proposal or {}).get("used_anchor_ids", [])
+        used = (f.draft_proposal or {}).get("used_anchor_ids", [])
         assert seeded.isdisjoint(used)
 
 

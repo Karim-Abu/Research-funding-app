@@ -35,6 +35,8 @@ numbers or market size.
   with the exact quote — never rephrased into a stronger claim than the source supports.
 - If the fragments contain no usable market/competitor information, return an **empty
   `items` list** and describe the gaps in `research_gaps`. Never fabricate to fill the table.
+- Never emit generic identities such as "publicly mentioned solution". `name` must be an
+  identifiable organisation, product, alternative or a concise claim present in the quote.
 
 ## Output
 
@@ -43,5 +45,8 @@ numbers or market size.
   with its category, a short description, the customer segment / offering /
   differentiation **only where the source supports it**, `relation_to_project`, and the
   supporting `source_fragment_id` + exact `quote`.
+- For identified competitors, fill `solution_type`, `centralization`,
+  `data_access_model` and `swiss_relevance` only where the exact quote supports them;
+  otherwise use null/`unclear`.
 - `research_gaps`: what the public sources do not answer (open questions for humans).
 - `warnings`: anything ambiguous, unverifiable, or requiring human judgement.

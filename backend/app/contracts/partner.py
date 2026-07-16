@@ -25,6 +25,7 @@ class PartnerCreate(BaseModel):
     project_role: str | None = None
     country: str | None = None
     location: str | None = None
+    department: str | None = None
     contribution: str | None = None
     uid: str | None = None
     industry: str | None = None

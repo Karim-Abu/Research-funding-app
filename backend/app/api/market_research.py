@@ -42,6 +42,7 @@ from app.market_research.topic import suggest_market_topic
 from app.repositories import idempotency
 from app.repositories import projects as projects_repo
 from app.research import service
+from app.research import brief_service
 from app.security import approval_service
 from app.security.data_class import DataClass, derive_data_class, is_external_blocked
 from app.security.deps import AuthContext, require_unsafe_guards, settings_dep
@@ -135,25 +136,21 @@ def plan_market_research(
     settings: Settings = Depends(settings_dep),
 ) -> MarketResearchPlanResponse:
     project = _require_project(db, project_id, context.user.workspace_id)
-    topic = _resolve_topic(project, payload)
-    queries = plan_market_queries(topic, data_mode="live_project")
-
-    # R8 Freigabepflicht: für ein D0-Projekt erhält jede public_safe Query eine
-    # pending Freigabe (Entscheid via /search-query-approvals/{id}/approve|reject).
-    # Nicht-D0-Projekte sehen weiterhin nur die Vorschau — ohne Freigabe kein Lauf.
-    approval_ids: dict[int, str | None] = {}
-    if derive_data_class(project.data_classification) == DataClass.D0_PUBLIC:
-        for i, q in enumerate(queries):
-            if not q.public_safe:
-                continue
-            outcome = approval_service.run_preview(
-                db, project=project, actor_user_id=context.user.id,
-                raw_query=q.query_text, intended_tool="firecrawl",
-                purpose=market_approval_purpose(q.purpose), force_approval=True,
-            )
-            if outcome.approval is not None:
-                approval_ids[i] = outcome.approval.approval_id
-        db.commit()
+    brief = brief_service.active_approved(db, project)
+    if brief is None:
+        raise ProblemException(
+            status=422, code="research_brief_required", title="Research brief required",
+            detail="Bitte prüfen und bestätigen Sie zuerst den öffentlichen Recherchebrief.",
+        )
+    try:
+        planned = brief_service.plan_queries(db, brief, context.user.id)
+    except brief_service.BriefError as exc:
+        raise ProblemException(
+            status=exc.status, code=exc.code, title="Research request refused", detail=exc.detail,
+        ) from exc
+    db.commit()
+    topic = brief_service._market_topic(brief)
+    market_queries = [q for q in planned.queries if q.module != "swiss_research_partners"]
 
     return MarketResearchPlanResponse(
         topic=MarketTopicDto(
@@ -162,10 +159,10 @@ def plan_market_research(
             target_customers=topic.target_customers,
             region=topic.region,
         ),
-        queries=[
-            _query_dto(q, approval_id=approval_ids.get(i))
-            for i, q in enumerate(queries)
-        ],
+        queries=[QueryCandidateDto(
+            query_text=q.query_text, purpose=q.planner_purpose, public_safe=True,
+            approval_required=True, approval_id=q.approval_id,
+        ) for q in market_queries],
         provider_mode=_provider_mode(settings),
     )
 
@@ -184,24 +181,39 @@ def preview_market_query(
     auch für D0) + neue pending Freigabe. Die Antwort zeigt IMMER den bereinigten
     Text — nur dieser würde ausgeführt."""
     project = _require_project(db, project_id, context.user.workspace_id)
-    _require_d0(project)
-    outcome = approval_service.run_preview(
-        db, project=project, actor_user_id=context.user.id,
-        raw_query=payload.query_text, intended_tool="firecrawl",
-        purpose=market_approval_purpose(payload.purpose), force_approval=True,
-        apply_project_lexicon=True,
-    )
-    db.commit()
-    result = outcome.result
-    blocked = result.decision == "block"
-    return QueryCandidateDto(
-        query_text=result.sanitized_query,
-        purpose=payload.purpose or "market_signal",
-        public_safe=not blocked,
-        approval_required=True,
-        blocked_reason=(result.reasons[0] if blocked and result.reasons else None),
-        approval_id=outcome.approval.approval_id if outcome.approval else None,
-    )
+    brief = brief_service.active_approved(db, project)
+    if brief is None:
+        raise ProblemException(
+            status=422, code="research_brief_required", title="Research brief required",
+            detail="Bitte prüfen und bestätigen Sie zuerst den öffentlichen Recherchebrief.",
+        )
+    purpose = payload.purpose or "market_size"
+    module = {
+        "market_size": "market_growth",
+        "competitors_alternatives": "competition_alternatives",
+        "customer_pain": "customer_problem",
+        "state_of_the_art": "state_of_the_art",
+    }.get(purpose)
+    if module is None:
+        raise ProblemException(
+            status=422, code="query_not_derived_from_brief", title="Search query refused",
+            detail="Diese Query gehört zu keinem freigegebenen Recherchemodul.",
+        )
+    try:
+        approval = brief_service.preview_query(
+            db, brief, context.user.id, module=module, planner_purpose=purpose,
+            query_text=payload.query_text, supersedes_approval_id=None,
+        )
+        db.commit()
+        return QueryCandidateDto(
+            query_text=approval.sanitized_query, purpose=purpose, public_safe=True,
+            approval_required=True, approval_id=approval.approval_id,
+        )
+    except brief_service.BriefError as exc:
+        db.rollback()
+        raise ProblemException(
+            status=exc.status, code=exc.code, title="Search query refused", detail=exc.detail,
+        ) from exc
 
 
 @router.post(
@@ -220,7 +232,18 @@ def run_market_research_endpoint(
 ) -> MarketResearchRunResponse:
     project = _require_project(db, project_id, context.user.workspace_id)
     _require_web_research_enabled(settings)
-    _require_d0(project)
+    data_class = derive_data_class(project.data_classification)
+    if is_external_blocked(data_class):
+        raise ProblemException(
+            status=403, code="web_research_class_blocked", title="Search query refused",
+            detail="Öffentliche Recherche ist für diese Datenklasse gesperrt.",
+        )
+    brief = brief_service.active_approved(db, project)
+    if brief is None:
+        raise ProblemException(
+            status=422, code="research_brief_required", title="Research brief required",
+            detail="Bitte prüfen und bestätigen Sie zuerst den öffentlichen Recherchebrief.",
+        )
 
     fingerprint = idempotency.fingerprint(
         "POST", f"/projects/{project_id}/market-research/run", payload.model_dump_json()
@@ -237,52 +260,58 @@ def run_market_research_endpoint(
 
     # R8 Freigabepflicht: nur freigegebene Queries werden ausgeführt (workspace-,
     # projekt- und zweck-gebunden; Single-Use im Firewall-Chokepoint).
+    requested_ids = list(dict.fromkeys(payload.approval_ids))
     approvals = [
         a for approval_id in dict.fromkeys(payload.approval_ids)
         if (a := approval_service.get_scoped(db, approval_id, context.user.workspace_id))
         is not None
         and a.project_id == project_id
-        and (a.purpose or "").startswith("market_comparison")
+        and a.research_brief_id == brief.research_brief_id
+        and a.research_module != "swiss_research_partners"
+        and a.status == "approved"
     ]
-    if not approvals:
+    if not approvals or len(approvals) != len(requested_ids):
         raise ProblemException(
             status=422, code="approval_required", title="Search query refused",
-            detail="Suchanfragen benötigen eine menschliche Freigabe, bevor die "
-                   "Recherche starten kann.",
+            detail="Alle angeforderten Queries müssen zum aktiven Brief gehören und "
+                   "freigegeben sein.",
         )
 
-    topic = MarketTopic(
-        application_domain=payload.application_domain,
-        technology_area=payload.technology_area,
-        target_customers=payload.target_customers,
-        region=payload.region,
-    )
     try:
-        outcome = run_market_research(
-            db, project=project, actor_user_id=context.user.id, topic=topic,
-            case_id=project_id, data_mode="live_project", max_results=3,
-            approvals=approvals,
+        run_outcome = brief_service.run(
+            db, brief, context.user.id, [a.approval_id for a in approvals]
         )
-    except service.ResearchBlocked as exc:
+    except (service.ResearchBlocked, brief_service.BriefError) as exc:
         db.commit()  # persist the firewall control/audit records
         raise ProblemException(
             status=exc.status, code=exc.code, title="Search query refused",
             detail=exc.detail,
         ) from exc
 
+    current = brief_service.workspace(db, project)
+    task_set = set(run_outcome.task_ids)
+    selected = [r for r in current.results if r.task_id in task_set]
     response = MarketResearchRunResponse(
-        task_ids=outcome.task_ids,
-        result_count=outcome.result_count,
-        tool_invocation_count=outcome.tool_invocation_count,
-        credits_used=outcome.credits_used,
-        candidates=[_candidate_dto(c) for c in outcome.candidates],
-        blocked_queries=outcome.blocked_queries,
-        provider=outcome.provider,
+        task_ids=run_outcome.task_ids, result_count=run_outcome.result_count,
+        tool_invocation_count=len(run_outcome.task_ids), credits_used=0,
+        candidates=[MarketCandidateDto(
+            result_id=r.result_id, purpose=r.planner_purpose or "market_signal",
+            candidate_type={
+                "market_size": "market_size_candidate",
+                "competitors_alternatives": "competitor_or_alternative",
+                "customer_pain": "customer_segment",
+                "state_of_the_art": "state_of_the_art_candidate",
+            }.get(r.planner_purpose or "", "market_signal"),
+            title=r.title, source_url=r.final_url or r.source_url, snippet=r.snippet,
+            confidence="low", status=r.status, human_review_required=True,
+        ) for r in selected],
+        blocked_queries=0,
+        provider="fake" if run_outcome.execution_mode == "fake_demo" else "live",
     )
     idempotency.save(
         db, scope=scope, key=idempotency_key, request_fingerprint=fingerprint,
         response_status=201, response_body=response.model_dump(mode="json"),
-        resource_id=outcome.task_ids[0] if outcome.task_ids else None,
+        resource_id=run_outcome.task_ids[0] if run_outcome.task_ids else None,
     )
     db.commit()
     return response

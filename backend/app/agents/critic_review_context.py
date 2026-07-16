@@ -16,7 +16,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents import field_drafting_context as a2_context
-from app.agents.a3_review import A3_PROFILE_ID, A3_SCOPE_FIELDS
+from app.agents.a3_review import (
+    A3_PROFILE_ID,
+    A3_SCOPE_FIELDS,
+)
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun, DraftVersion, EvidenceLink, ToolInvocation
 from app.registry import get_registry
@@ -159,7 +162,15 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
     for field_id in field_ids:
         requirement_ids |= a2_context._linked_requirement_ids(field_id)
 
-    evidence = a2_context.retrieve_verified_evidence(db, run)
+    typed_evidence = a2_context.retrieve_verified_evidence(db, run)
+    evidence = [
+        item for item in typed_evidence
+        if item.get("context_kind") == "external_evidence"
+    ]
+    research_candidates = [
+        item for item in typed_evidence
+        if item.get("context_kind") == "research_candidate"
+    ]
     requirements = a2_context._requirement_assessments(db, run, requirement_ids)
     rule_results = _rule_results(db, run, requirement_ids)
     structured = a2_context.retrieve_structured_project_data(db, run)
@@ -189,7 +200,12 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
         "evidence_links": evidence_links,
         # Enthält NUR echt bestätigte Facts (corr 1); Wire-Key bleibt Contract v1.1.
         "confirmed_facts": confirmed_only,  # contract-pinned: schema_catalog.yaml CriticReviewInput@v1
-        "structured_project_data": structured,
+        "structured_project_data": {
+            key: structured.get(key)
+            for key in (
+                "project_title", "funding_instrument_profile_id", "partner_count"
+            )
+        },
     }
 
     for tool_id, payload_hash in (
@@ -200,11 +216,42 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
     ):
         _record_tool(db, run, tool_id, payload_hash)
 
-    context_text = _render(
-        drafts, evidence, requirements, rule_results, proposed_facts, blocker_issues, [],
-    )
     budget = get_settings().a1_context_char_budget
-    context_text = context_text[:budget]
+    # Component-aware budget: distribute the draft share across fields and the
+    # remaining share across typed context. No assembled-string blind slice.
+    draft_budget = int(budget * 0.65)
+    per_draft = max(1, draft_budget // max(1, len(drafts)))
+    draft_parts: list[str] = []
+    draft_truncated = False
+    for draft in drafts:
+        header = (
+            f"## Field {draft['field_id']} "
+            f"(version {draft['draft_version_id']}, created_by={draft['created_by']})\n"
+        )
+        available = max(0, per_draft - len(header))
+        text = draft["text"]
+        draft_parts.append(header + text[:available])
+        draft_truncated = draft_truncated or len(text) > available
+    typed_components = [
+        ("external_evidence", str(evidence)),
+        ("research_candidate", str(research_candidates)),
+        ("portal_requirement", str({
+            "requirements": requirements, "rule_results": rule_results,
+        })),
+        ("accepted_project_input", str(structured)),
+        ("open_issue", str(blocker_issues)),
+        ("research_candidate", str(proposed_facts)),
+    ]
+    separator_budget = 2 * max(
+        0, len(draft_parts) + len(typed_components) - 1
+    )
+    other_budget = budget - sum(len(part) for part in draft_parts) - separator_budget
+    per_component = max(0, other_budget // max(1, len(typed_components)))
+    component_parts = [
+        f"## {kind}\n{content[:max(0, per_component - len(kind) - 4)]}"
+        for kind, content in typed_components
+    ]
+    context_text = "\n\n".join(draft_parts + component_parts)
     context_hash = _hash_text(context_text)
 
     return CriticContext(
@@ -218,10 +265,19 @@ def assemble_critic_context(db: Session, run: AnalysisRun) -> CriticContext | No
             "requirement_count": len(requirements),
             "proposed_fact_count": len(proposed_facts),
             "confirmed_fact_count": len(confirmed_only),
+            "research_candidate_count": len(research_candidates),
             "char_budget": budget,
             "total_chars": len(context_text),
+            "components": [
+                {"kind": "current_drafts", "item_count": len(drafts),
+                 "truncated": draft_truncated},
+                {"kind": "external_evidence", "item_count": len(evidence)},
+                {"kind": "research_candidate", "item_count": len(research_candidates)},
+                {"kind": "accepted_project_input", "item_count": 1},
+                {"kind": "open_issue", "item_count": len(blocker_issues)},
+            ],
         },
-        allowed_field_ids=field_ids,
+        allowed_field_ids={*field_ids, "PS.RISK_MANAGEMENT.SECTION"},
         allowed_requirement_ids=requirement_ids,
         allowed_anchor_ids={e["anchor_id"] for e in evidence},
         allowed_link_ids={link.evidence_link_id for link in draft_links},

@@ -90,6 +90,8 @@ def _base_request(run_id: str, project_id: str) -> ModelRequest:
         run_id=run_id,
         project_id=project_id,
         allowed_fragment_ids=frozenset({"frag-1"}),
+        # Evaluation helper only: the CLI guard is the deliberate one-run opt-in.
+        run_confirmation=True,
     )
 
 

@@ -17,6 +17,11 @@ class ParsedBlock:
     text: str
     page: int | None = None
     section: str | None = None
+    # PDF-Tabellen benötigen zusätzlich die von pypdf erhaltenen
+    # Spaltenpositionen. Der normale Text bleibt die alleinige Grundlage für
+    # Narrative, Suche und Fragmente; layout_text wird nur vom deterministischen
+    # strukturierten Import gelesen.
+    layout_text: str | None = None
 
 
 @dataclass
@@ -79,9 +84,22 @@ def parse_pdf(data: bytes) -> ParseResult:
         except Exception:  # noqa: BLE001
             warnings.append(f"page_extract_failed:{index + 1}")
             text = ""
+        try:
+            layout_text = page.extract_text(extraction_mode="layout") or ""
+        except Exception:  # noqa: BLE001
+            # Das Layout ist additive Mapping-Hilfe. Die etablierte
+            # fail-closed Beurteilung stützt sich weiterhin auf ``text``.
+            layout_text = ""
         text = text.strip()
         if text:
-            blocks.append(ParsedBlock(text=text, page=index + 1, section="body"))
+            blocks.append(
+                ParsedBlock(
+                    text=text,
+                    page=index + 1,
+                    section="body",
+                    layout_text=layout_text.rstrip() or None,
+                )
+            )
             total_chars += len(text)
 
     if total_chars == 0:

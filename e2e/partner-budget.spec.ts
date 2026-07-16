@@ -58,7 +58,7 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
   await expect(page.getByText(/Noch offen:/)).toBeVisible()
 
   async function fillPartner(name: string, role: string) {
-    await page.getByLabel("Name").fill(name)
+    await page.getByLabel("Name", { exact: true }).fill(name)
     await page.getByLabel("Land").fill("CH")
     await page.getByLabel("Rolle im Projekt").fill(role)
     await page.getByLabel("Kompetenz & Beitrag (kurz)").fill(

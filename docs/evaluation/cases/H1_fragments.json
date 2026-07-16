@@ -1,0 +1,73 @@
+{
+  "_comment": "H1 VOLTRACK — eingefrorene Eingabefragmente für die A1-Evaluation (HOLDOUT — nie für Prompt-Tuning). Vollständig synthetisch; enthält bewusst Portal-Rauschen (Zeichenzähler, Seitenkopf, Frage-Wortlaute) als Negativziel für falsche Portaltextübernahme.",
+  "case_id": "H1",
+  "holdout": true,
+  "source_title": "VOLTRACK Innolink-Antrag (synthetisch, Holdout)",
+  "fragments": [
+    {
+      "fragment_id": "H1-frag-01",
+      "section": "Kopf",
+      "text": "Innosuisse Innolink - Innovationsprojekt (Entwurf)  -  Seite 1\nProject Start Date: 01.09.2026\nProject End Date: 28.02.2029\nProject Duration: 30 months"
+    },
+    {
+      "fragment_id": "H1-frag-02",
+      "section": "1 Introduction — Application Name and Abstract",
+      "text": "1 Introduction\nApplication Name and Abstract\nApplication name\nVOLTRACK - Zustandsüberwachung für Batterie-Logistik\nTitle in English:\nVOLTRACK - Condition Monitoring for Battery Logistics\nAbstract (wird in Aramis publiziert)\nCharacters: 262/300\nVOLTRACK entwickelt ein sensorbasiertes Zustandsüberwachungssystem für Transport und Zwischenlagerung von Lithium-Ionen-Batterien. Risikoprofile je Sendung sollen Transportschäden um bis zu 30 Prozent senken. [[Angabe ergänzen: Validierung und Nutzenbeleg]]"
+    },
+    {
+      "fragment_id": "H1-frag-03",
+      "section": "1 Introduction — Executive Summary",
+      "text": "Executive summary (wird nicht in Aramis publiziert)\nCharacters: 918/2000\nBeim Transport von Lithium-Ionen-Batterien werden kritische Temperatur- und Stossereignisse heute oft erst beim Wareneingang entdeckt. Beschädigte Sendungen verursachen Rückweisungen, Sonderprüfungen und Sicherheitsrisiken.\nVOLTRACK verdichtet Temperatur-, Stoss- und Ladezustandsdaten aus der Logistikkette zu einem Risikoprofil je Sendung. Der Umsetzungspartner erwartet 30 Prozent weniger Transportschäden und eine Erkennungsrate kritischer Ereignisse von 95 Prozent. Diese Werte sind Projektziele; Baseline, Messmethode und Validierungszeitpunkt sind noch offen.\nDer Forschungspartner bringt Sensorfusion und Risikomodellierung ein; die Pilotflotte umfasst 12 Fahrzeuge auf 2 Routen.\n[[Angabe ergänzen: Baseline, Messmethode, Validierungszeitpunkt]]"
+    },
+    {
+      "fragment_id": "H1-frag-04",
+      "section": "1 Introduction — Scientific Integrity",
+      "text": "Scientific Integrity\nHas any staff member who will be collaborating on the application been severely sanctioned for violation of scientific integrity in the last three years?\nNo"
+    },
+    {
+      "fragment_id": "H1-frag-05",
+      "section": "1 Introduction — Intellectual Property Rights",
+      "text": "Intellectual Property Rights\nWas a patent search performed with or without IPI (Swiss Federal Institute for Intellectual Property)?\nNo\nEine Patentrecherche wurde noch nicht durchgeführt; eine Freedom-to-Operate-Abklärung ist noch nicht erfolgt. Die Eigentumsverhältnisse an neu entwickelten Modellen und Datensätzen sind zwischen den Partnern noch zu klären."
+    },
+    {
+      "fragment_id": "H1-frag-06",
+      "section": "2 Organisations & People — Research Partner",
+      "text": "2 Organisations & People\nResearch Partner\nName: Rheintal Institut für Energiesysteme\nCountry: CH\nDepartment: Batteriesysteme\nIndustry: Research\nFTE: 52\nOfficial Representative: Sam Muster\nProject Role: Sensorfusion und Risikomodellierung"
+    },
+    {
+      "fragment_id": "H1-frag-07",
+      "section": "2 Organisations & People — Implementation Partner 1",
+      "text": "Implementation Partner 1\nName: Batterion Logistik AG\nCountry: CH\nDepartment: Flottenbetrieb\nIndustry: Logistik\nFTE: 112\nOfficial Representative: Toni Beispiel\nProject Role: Pilotflotte und Systemintegration"
+    },
+    {
+      "fragment_id": "H1-frag-08",
+      "section": "2 Organisations & People — Implementation Partner 2",
+      "text": "Implementation Partner 2\nName: CargoTherm GmbH\nCountry: CH\nDepartment: Kühltransporte\nIndustry: Transport\nFTE: 41\nOfficial Representative: Andrea Probe\nProject Role: Pilotrouten und Betriebsdaten"
+    },
+    {
+      "fragment_id": "H1-frag-09",
+      "section": "2 Organisations & People — Independence",
+      "text": "Independence of Research and Implementation Partners\nConfirmation personal independence: Yes\nConfirmation financial independence: Yes\nExplanations and Comments\nCharacters: 0/300"
+    },
+    {
+      "fragment_id": "H1-frag-10",
+      "section": "3 Value Creation",
+      "text": "3 Value Creation\n3.1 Describe the business targets and the business model.\nGeschäftsmodell ist ein Abo je überwachte Sendung. Nach internen Annahmen könnte ein mittlerer Logistikbetrieb bis zu CHF 340'000 pro Jahr durch weniger Rückweisungen und Sonderprüfungen einsparen. Diese Annahme ist noch nicht durch externe Marktevidenz gestützt. Marktgrösse und Wettbewerber sind noch nicht erhoben.\n3.2 Describe potential customers and how they are to be reached\nBatteriehersteller, Gefahrgut-Logistiker und Versicherer; der Zugang soll über Pilotreferenzen erfolgen. Der Go-to-Market-Plan ist noch unvollständig.\n3.3 Does the planned project have a particular relevance to energy or ecological or social topics?\nFrüh erkannte Schäden ermöglichen mehr Batterie-Zweitleben statt Entsorgung. Der ökologische Nutzen ist plausibel, aber noch nicht quantifiziert."
+    },
+    {
+      "fragment_id": "H1-frag-11",
+      "section": "4 Solution",
+      "text": "4 Solution\n4.1 Describe the state of the art that you intend to advance.\nHeutige Logger zeichnen Temperatur und Stoss auf, werten aber erst nachträglich aus und liefern keine sendungsbezogenen Risikoprofile.\n4.2 Describe the novelty of your solution (technology, product, business model or process, service)\nNeu ist die Fusion von Temperatur-, Stoss- und Ladezustandsdaten zu einem laufend aktualisierten Risikoprofil je Sendung mit erklärbaren Warnungen für das Betriebspersonal.\n4.3 Describe the quantifiable goals to reach.\nTransportschäden minus 30 Prozent; Erkennungsrate kritischer Ereignisse mindestens 95 Prozent. Baseline und Messmethode sind noch nicht definiert.\n4.4 Describe the preliminary work already performed.\nEine Messkampagne mit 40 Sendungen wurde durchgeführt; Datenqualität und Annotationsprozess sind noch zu dokumentieren.\n4.5 Describe how the selected partners are suited for the planned project.\nForschung, Flottenbetrieb und Kühltransport ergänzen sich. Belege zu Track Record und Infrastruktur der Partner sind noch zu verlinken."
+    },
+    {
+      "fragment_id": "H1-frag-12",
+      "section": "5 Project Setup — Planned Hours",
+      "text": "5 Project Setup\nPlanned Hours\nPartner | Research | Implementation | Management\nRheintal Institut | 3600 | 0 | 180\nBatterion Logistik AG | 0 | 1800 | 120\nCargoTherm GmbH | 0 | 600 | 0\nExplanation\nCharacters: 142/1000\nDas Projekt umfasst Koordination, Reporting und Partnerabstimmung. Die genaue Verteilung der Management-Stunden ist noch zu präzisieren."
+    },
+    {
+      "fragment_id": "H1-frag-13",
+      "section": "5 Project Setup — Financial Overview",
+      "text": "Financial Overview\nDirect total project costs excluding overhead: CHF 500'000\nImplementation Partner Own Contribution: CHF 200'000\nCash Contribution: CHF 20'000\nRequested Innosuisse Funding: CHF 280'000\nRequested Innosuisse Funding incl. Overhead: CHF 322'000"
+    }
+  ]
+}

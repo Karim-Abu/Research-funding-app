@@ -24,6 +24,7 @@ from app.contracts.review import (
 from app.contracts.review import ApprovalCreate, ReviewPackage, ReviewStatusView
 from app.db.models import (
     AnalysisRun,
+    DraftSuggestion,
     DraftVersion,
     EvidenceAnchor,
     EvidenceLink,
@@ -39,6 +40,7 @@ from app.drafts import has_placeholder, is_empty
 from app.drafts.charcount import within_limit
 from app.registry import get_registry
 from app.repositories import audit, controls
+from app.repositories import draft_suggestions as suggestions_repo
 from app.repositories import drafts as drafts_repo
 from app.repositories import requirements as requirements_repo
 from app.review import package as review_package
@@ -56,10 +58,12 @@ def _finding_to_contract(finding: ReviewFinding) -> ReviewFindingContract:
         finding_id=finding.finding_id,
         profile_id=finding.profile_id,
         field_id=finding.field_id,
+        target_section=finding.target_section,
         requirement_id=finding.requirement_id,
         severity=finding.severity,
         description=finding.description,
         suggested_improvement=finding.suggested_improvement,
+        recommended_next_action=finding.recommended_next_action,
         status=finding.status,
         advisory=finding.advisory,
     )
@@ -189,6 +193,12 @@ def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
         per_area[area] = per_area.get(area, 0) + 1
 
     latest = review_package.latest_approval(db, run)
+    # B7 — gruppierte Aufgaben-/Evidenzhinweis-Zähler aus der Fix Queue
+    # (eine Quelle, keine parallele Zähllogik). Lazy Import: fix_queue wird
+    # hier nur für die Zähler gebraucht.
+    from app.review.fix_queue import build_fix_queue
+
+    queue = build_fix_queue(db, run)
     return ReviewStatusView(
         run_id=run.run_id,
         blocker_count=blocker,
@@ -199,6 +209,8 @@ def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
         review_package_version=review_package.package_version(scope_hash),
         per_area_counts=per_area,
         last_reviewed_at=latest.created_at if latest is not None else None,
+        blocking_task_count=queue.blocking_task_count,
+        evidence_note_count=queue.evidence_note_count,
     )
 
 
@@ -251,6 +263,13 @@ def _require_target(db: Session, run: AnalysisRun, target_type: str, target_id: 
         )
     elif target_type == "portal_field_draft":
         row = _draft_for_target(db, run, target_id)
+    elif target_type == "draft_suggestion":
+        row = db.scalar(
+            select(DraftSuggestion).where(
+                DraftSuggestion.suggestion_id == target_id,
+                DraftSuggestion.run_id == run.run_id,
+            )
+        )
     else:  # pragma: no cover - schema-validated
         row = None
     if row is None:
@@ -265,6 +284,14 @@ def record_human_decision(
     db: Session, run: AnalysisRun, decision, actor_user_id: str
 ) -> HumanDecisionContract:
     target = _require_target(db, run, decision.target_type, decision.target_id)
+
+    # C4 — nur ein noch offener Vorschlag ist ablehnbar (accepted/expired/
+    # rejected sind bereits entschieden). Vor dem Insert prüfen (fail-closed).
+    if decision.target_type == "draft_suggestion" and target.status != "proposed":
+        raise ProblemException(
+            status=409, code="suggestion_not_rejectable", title="Conflict",
+            detail="Dieser Vorschlag ist bereits entschieden (übernommen, abgelaufen oder abgelehnt).",
+        )
 
     record = HumanDecision(
         decision_id=str(uuid.uuid4()),
@@ -291,6 +318,10 @@ def record_human_decision(
         target.updated_at = record.created_at
     elif decision.target_type == "portal_field_draft":
         _apply_comment(db, run, target, decision, actor_user_id)
+    elif decision.target_type == "draft_suggestion":
+        # C4 — Ablehnung persistieren; der Vorschlagstext bleibt erhalten,
+        # das Audit trägt nur target_type/action/IDs (kein Rohtext).
+        suggestions_repo.mark_rejected(db, target, decided_by=actor_user_id)
     # requirement_assessment / evidence_anchor decisions are review-level only:
     # recorded + audited, never mutating the deterministic assessment or the
     # technical EvidenceAnchor.verification_status (corr. #3).

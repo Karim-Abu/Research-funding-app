@@ -61,12 +61,42 @@ def resolve_cost(
     ) in _NOT_APPLICABLE_NAMES:
         return CostResolution(0.0, COST_STATUS_NOT_APPLICABLE, None)
     entry = PRICE_TABLE.get((provider or "", model_id or ""))
+    configured_version = None
+    if entry is None and model_id:
+        # Deployment overlay for candidate aliases resolved to real provider
+        # ids. It is configuration, never a secret and never guessed.
+        try:
+            from app.config.settings import get_settings
+            configured = get_settings().agent_model_pricing_chf_per_million.get(model_id)
+        except Exception:  # pragma: no cover - settings remain fail-safe
+            configured = None
+        required = {
+            "input_chf_per_million", "output_chf_per_million",
+            "price_version", "source_url", "checked_at",
+        }
+        if isinstance(configured, dict) and required <= set(configured):
+            try:
+                entry = PriceEntry(
+                    input_chf_per_1k=float(configured["input_chf_per_million"]) / 1000,
+                    output_chf_per_1k=float(configured["output_chf_per_million"]) / 1000,
+                    source_url=str(configured["source_url"]).strip(),
+                    last_checked=str(configured["checked_at"]).strip(),
+                )
+                configured_version = str(configured["price_version"]).strip()
+            except (TypeError, ValueError):
+                entry = None
+            if entry is not None and not (
+                entry.source_url and entry.last_checked and configured_version
+                and entry.input_chf_per_1k >= 0 and entry.output_chf_per_1k >= 0
+            ):
+                entry = None
     if entry is None:
         return CostResolution(0.0, COST_STATUS_UNKNOWN, None)
     cost = (input_tokens / 1000) * entry.input_chf_per_1k + (
         output_tokens / 1000
     ) * entry.output_chf_per_1k
-    return CostResolution(round(cost, 6), COST_STATUS_PRICED, PRICE_TABLE_VERSION)
+    version = configured_version or PRICE_TABLE_VERSION
+    return CostResolution(round(cost, 6), COST_STATUS_PRICED, version)
 
 
 def sum_priced_chf(records) -> float:

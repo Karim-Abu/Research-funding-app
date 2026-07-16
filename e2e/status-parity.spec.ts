@@ -113,13 +113,15 @@ test("R1 Parität: X Blocker identisch auf Dashboard, Anforderungen, Prüfung, E
 
   const { projectId, runId } = await completeRun(api, mut)
 
-  // Kanonische Referenzzahl X aus dem Status-View.
+  // Kanonische Referenzzahl X aus dem Status-View: «Blockierende Aufgaben»
+  // (B7 — gruppierte Fix-Queue-Aufgaben, dieselbe Zahl auf allen Screens).
   const canonical = await (
     await api.get(`/api/runs/${runId}/review/status`)
   ).json()
-  const x = canonical.blocker_count as number
+  const x = canonical.blocking_task_count as number
   expect(x).toBeGreaterThan(0) // Template-Platzhalter blockieren
   expect(canonical.stale).toBe(false)
+  const xLabel = `${x} blockierende ${x === 1 ? "Aufgabe" : "Aufgaben"}`
 
   // --- Screen 1: Dashboard — Projektkarte zeigt X --------------------------
   await page.goto("/")
@@ -130,7 +132,7 @@ test("R1 Parität: X Blocker identisch auf Dashboard, Anforderungen, Prüfung, E
   await expect(card).toHaveAttribute("data-blocker-count", String(x), {
     timeout: 20_000,
   })
-  await expect(card).toHaveText(`${x} Blocker offen`)
+  await expect(card).toHaveText(xLabel)
 
   // Aktives Projekt setzen (wie der Karten-Klick), dann die Run-Screens prüfen.
   await page.evaluate(
@@ -147,7 +149,7 @@ test("R1 Parität: X Blocker identisch auf Dashboard, Anforderungen, Prüfung, E
       String(x),
       { timeout: 20_000 }
     )
-    await expect(badge).toHaveText(`${x} Blocker offen`)
+    await expect(badge).toHaveText(`${xLabel} offen`)
   }
 
   // --- Stale-Parität: Feld-Edit ⇒ «Prüfung nicht aktuell» einheitlich ------

@@ -15,7 +15,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AnalysisRun,
+    AgentInvocation,
+    AgentInvocationAttempt,
+    AuditEvent,
     ClaimLineage,
+    CopyEvent,
     DraftClaim,
     EvidenceAnchor,
     EvidenceLink,
@@ -28,6 +32,13 @@ from app.db.models import (
     RuleResult,
     RunProjectSnapshot,
     RunQualitySummary,
+    RunSourceSnapshot,
+    SourceDocument,
+    StructuredImportCandidate,
+    ResearchResult,
+    ToolInvocation,
+    ControlResult,
+    UsageRecord,
 )
 from app.exports import EXPORT_SNAPSHOT_SCHEMA
 from app.exports.eligibility import DraftDecision
@@ -42,8 +53,6 @@ from app.runs import project_snapshot
 DEFERRED_AREAS = [
     "Arbeitspakete (Work Packages)",
     "Meilensteine und Meilensteinziele",
-    "Budget- und Finanzierungsplan",
-    "Wiederholte Partner-/Positionsinstanzen",
 ]
 COVERAGE_NOTE = (
     "Diese Beta exportiert nur die aktuell unterstützten Portalfelder. Strukturierte "
@@ -58,6 +67,193 @@ def canonical_json(obj: object) -> str:
 
 def _sha256(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+_BUDGET_FIELDS: tuple[tuple[str, str], ...] = (
+    ("direct_total_project_costs_excluding_overhead", "Direkte Projektkosten (ohne Overhead)"),
+    ("implementation_own_contribution", "Eigenleistung Umsetzungspartner"),
+    ("cash_contribution", "Cash-Beitrag Umsetzungspartner"),
+    ("total_requested_funding", "Beantragte direkte Förderung"),
+    ("total_requested_funding_including_overhead", "Beantragte Förderung inkl. Overhead"),
+)
+
+_INSTRUMENT_LABELS = {
+    "innosuisse_innovation_project_with_implementation_partner": (
+        "Innosuisse Innovation Project mit Umsetzungspartner"
+    ),
+}
+_PARTNER_TYPE_LABELS = {
+    "research_partner": "Forschungspartner",
+    "implementation_partner": "Umsetzungspartner",
+    "other": "Weitere Organisation",
+}
+_ELIGIBILITY_LABELS = {
+    "eligible": "Geprüft: berechtigt",
+    "not_eligible": "Geprüft: nicht berechtigt",
+    "needs_verification": "Prüfung erforderlich",
+}
+_RULE_STATUS_LABELS = {
+    "passed": "Erfüllt",
+    "failed": "Nicht erfüllt",
+    "needs_input": "Eingabe erforderlich",
+    "not_applicable": "Nicht anwendbar",
+}
+
+
+def _candidate_payload(candidate: StructuredImportCandidate) -> dict:
+    return candidate.edited_payload_json or candidate.payload_json or {}
+
+
+def _frozen_provenance(
+    db: Session, *, project_id: str, frozen_at: datetime, target_id: str | None,
+    target_keys: set[str], frozen_value: object | None = None,
+) -> str:
+    """Return an export-safe provenance label for the immutable value only."""
+    rows = db.execute(
+        select(StructuredImportCandidate, SourceDocument.name)
+        .join(SourceDocument, SourceDocument.source_id == StructuredImportCandidate.source_id)
+        .where(
+            StructuredImportCandidate.project_id == project_id,
+            StructuredImportCandidate.decision == "accepted",
+            StructuredImportCandidate.decided_at.is_not(None),
+            StructuredImportCandidate.decided_at <= frozen_at,
+        )
+        .order_by(StructuredImportCandidate.decided_at.desc(), StructuredImportCandidate.candidate_id.asc())
+    ).all()
+    for candidate, source_name in rows:
+        if target_id is not None and candidate.applied_resource_id != target_id:
+            continue
+        if target_id is None and candidate.target_key not in target_keys:
+            continue
+        payload = _candidate_payload(candidate)
+        if frozen_value is not None and frozen_value not in payload.values():
+            continue
+        location = f", {candidate.source_location}" if candidate.source_location else ""
+        return f"Import bestätigt: {source_name}{location}"
+    return "Manuell erfasst oder nach Import geändert"
+
+
+def _budget_block(db: Session, snap: RunProjectSnapshot) -> dict:
+    project = snap.project_json or {}
+    direct = project.get("direct_total_project_costs_excluding_overhead")
+    own = project.get("implementation_own_contribution")
+    cash = project.get("cash_contribution")
+    contribution = (own or 0) + (cash or 0) if own is not None or cash is not None else None
+    values = []
+    for key, label in _BUDGET_FIELDS:
+        value = project.get(key)
+        values.append({
+            "key": key, "label": label, "value": value,
+            "copy_target": f"budget:{key}",
+            "provenance": _frozen_provenance(
+                db, project_id=snap.project_id, frozen_at=snap.created_at,
+                target_id=None, target_keys={f"project.{key}", key}, frozen_value=value,
+            ),
+        })
+    ratios = []
+    if direct and direct > 0:
+        if contribution is not None:
+            ratios.append({"label": "Anteil Eigenleistung und Cash an direkten Kosten", "value": contribution / direct})
+        if cash is not None:
+            ratios.append({"label": "Cash-Anteil an direkten Kosten", "value": cash / direct})
+    return {"values": values, "ratios": ratios}
+
+
+def _partner_block(db: Session, snap: RunProjectSnapshot) -> list[dict]:
+    result = []
+    for index, partner in enumerate(snap.partners_json or []):
+        partner_id = partner.get("partner_id")
+        result.append({
+            "index": index,
+            "name": partner.get("name") or "Nicht angegeben",
+            "partner_type": partner.get("partner_type") or "Nicht angegeben",
+            "partner_type_label": _PARTNER_TYPE_LABELS.get(partner.get("partner_type"), "Nicht angegeben"),
+            "project_role": partner.get("project_role") or "Nicht angegeben",
+            "country": partner.get("country") or "Nicht angegeben",
+            "swiss_value_creation": partner.get("swiss_value_creation"),
+            "eligibility_status": partner.get("research_partner_eligibility_status") or "Nicht geprüft",
+            "eligibility_status_label": _ELIGIBILITY_LABELS.get(
+                partner.get("research_partner_eligibility_status"), "Nicht geprüft"
+            ),
+            "provenance": _frozen_provenance(
+                db, project_id=snap.project_id, frozen_at=snap.created_at,
+                target_id=partner_id, target_keys=set(), frozen_value=partner.get("name"),
+            ),
+            "copy_target_row": f"partner:{index}",
+        })
+    return result
+
+
+def _source_block(db: Session, run: AnalysisRun) -> list[dict]:
+    """Return only sources frozen into this run; candidates never appear here."""
+    source_ids = list(db.scalars(
+        select(RunSourceSnapshot.source_id).where(RunSourceSnapshot.run_id == run.run_id)
+    ))
+    if not source_ids:
+        return []
+    public_urls = {
+        row.source_document_id: (row.final_url or row.source_url)
+        for row in db.scalars(
+            select(ResearchResult).where(
+                ResearchResult.source_document_id.in_(source_ids),
+                ResearchResult.status == "imported",
+            ).order_by(ResearchResult.result_id.asc())
+        )
+    }
+    names = dict(db.execute(
+        select(SourceDocument.source_id, SourceDocument.name).where(SourceDocument.source_id.in_(source_ids))
+    ).all())
+    return [
+        {"source_id": source_id, "title": names.get(source_id, "Unbenannte Quelle"), "url": public_urls.get(source_id)}
+        for source_id in sorted(source_ids)
+    ]
+
+
+def build_transfer_snapshot(db: Session, run: AnalysisRun) -> dict:
+    """Immutable structured read model for exports and manual portal transfer.
+
+    A legacy run without RunProjectSnapshot receives no current-project fallback.
+    That prevents a document from silently mixing later edits into a past run.
+    """
+    snap = db.scalar(select(RunProjectSnapshot).where(RunProjectSnapshot.run_id == run.run_id))
+    manual_tasks = ["Arbeitspakete (Work Packages)", "Meilensteine und Meilensteinziele"]
+    if snap is None:
+        return {
+            "snapshot_available": False, "stale": False,
+            "stale_message": "Strukturierter Run-Snapshot fehlt; Partner, Budget und Dauer werden nicht ersetzt.",
+            "project": {}, "partners": [], "budget": {"values": [], "ratios": [], "rules": []},
+            "sources": [], "manual_portal_tasks": manual_tasks, "snapshot_hash": None,
+        }
+    stale = project_snapshot.is_stale(db, snap)
+    rules = [
+        {
+            "rule_id": r.rule_id, "status": r.status, "status_label": _RULE_STATUS_LABELS.get(r.status, "Prüfstatus unbekannt"),
+            "outcome_label": r.outcome_label, "severity": r.severity,
+        }
+        for r in db.scalars(select(RuleResult).where(RuleResult.run_id == run.run_id).order_by(RuleResult.rule_result_id.asc()))
+        if r.rule_id.startswith("INNO.BUDGET.") or r.rule_id == "INNO.PARTNER.INDEPENDENCE.FINANCIAL_20"
+    ]
+    project = snap.project_json or {}
+    budget = _budget_block(db, snap)
+    budget["rules"] = rules
+    return {
+        "snapshot_available": True,
+        "stale": stale,
+        "stale_message": "Projekt- oder Partnerdaten wurden nach dem Run geändert. Diese Arbeitskopie verwendet weiterhin den eingefrorenen Run-Snapshot." if stale else None,
+        "snapshot_hash": snap.content_hash,
+        "project": {
+            "title": project.get("title") or "Ohne Projekttitel",
+            "instrument": _INSTRUMENT_LABELS.get(
+                project.get("funding_instrument_profile_id"), project.get("funding_instrument_profile_id") or "Nicht angegeben"
+            ),
+            "duration_months": project.get("duration_months"),
+            "duration_copy_target": "duration",
+            "application_language": None,
+            "structured_answers": project.get("structured_answers") or {},
+        },
+        "partners": _partner_block(db, snap), "budget": budget,
+        "sources": _source_block(db, run), "manual_portal_tasks": manual_tasks,
+    }
 
 
 def _approval_dict(approval: ReviewApproval | None) -> dict | None:
@@ -179,6 +375,143 @@ def _reliability_block(db: Session, run: AnalysisRun) -> dict:
     }
 
 
+def _technical_trace(db: Session, run: AnalysisRun) -> dict:
+    """Technical IDs/hashes/counts only. Never copy human text into an audit export."""
+    usage = {
+        item.usage_record_id: item
+        for item in db.scalars(select(UsageRecord).where(UsageRecord.run_id == run.run_id))
+    }
+    def attempt_trace(attempt: AgentInvocationAttempt) -> dict:
+        record = usage.get(attempt.usage_record_id)
+        return {
+            "attempt_index": attempt.attempt_index,
+            "retry_index": attempt.retry_index,
+            "route_key": attempt.route_key,
+            "route_alias": attempt.route_alias,
+            "provider": attempt.provider,
+            "requested_model_id": attempt.requested_model_id,
+            "actual_model_id": attempt.actual_model_id,
+            "status": attempt.status,
+            "error_class": attempt.error_class,
+            "termination_reason": attempt.termination_reason,
+            "latency_ms": attempt.latency_ms,
+            "estimated_cost_chf": attempt.estimated_cost_chf,
+            "estimated_cost_status": attempt.estimated_cost_status,
+            "usage_record_id": attempt.usage_record_id,
+            "metering": ({
+                "input_tokens": record.input_tokens,
+                "output_tokens": record.output_tokens,
+                "cost_chf": record.cost_chf,
+                "cost_status": record.cost_status,
+                "price_version": record.price_version,
+            } if record is not None else {"status": "no_provider_usage"}),
+        }
+    agents = []
+    for inv in db.scalars(
+        select(AgentInvocation).where(AgentInvocation.run_id == run.run_id).order_by(AgentInvocation.invocation_id.asc())
+    ):
+        context = inv.context_meta or {}
+        real_call = bool(context.get("model_call_attempted")) and context.get("generation_kind") == "model_generated"
+        item = {
+            "invocation_id": inv.invocation_id, "agent_id": inv.agent_id,
+            "profile_id": inv.profile_id, "model_route": inv.model_route,
+            "input_schema_id": inv.input_schema_id, "output_schema_id": inv.output_schema_id,
+            "prompt_version": inv.prompt_version, "status": inv.status,
+            "role_id": inv.role_id, "role_version": inv.role_version,
+            "skill_id": inv.skill_id, "skill_version": inv.skill_version,
+            "requested_model_id": inv.requested_model_id,
+            "retry_count": inv.retry_count,
+            "termination_reason": inv.termination_reason,
+            "input_hash": inv.input_hash, "output_hash": inv.output_hash,
+            "latency_ms": inv.latency_ms, "usage_record_id": inv.usage_record_id,
+            "generation_kind": context.get("generation_kind"),
+            "call_kind": "real_model_call" if real_call else ("fake_or_stubbed_call" if context.get("generation_kind") else "no_model_call"),
+            "context_meta_hash": _sha256(canonical_json(context)),
+        }
+        if real_call:
+            record = usage.get(inv.usage_record_id)
+            item["provider"] = inv.provider
+            item["model_id"] = inv.model_id
+            # Ebene E: angefragtes UND vom Provider gemeldetes Modell gehören
+            # beide in den technischen Nachweis (None = nicht gemeldet).
+            item["actual_model_id"] = inv.actual_model_id
+            if record is not None:
+                item["metering"] = {
+                    "input_tokens": record.input_tokens, "output_tokens": record.output_tokens,
+                    "cost_chf": record.cost_chf, "cost_status": record.cost_status,
+                    "price_version": record.price_version,
+                }
+            else:
+                item["metering"] = {"status": "missing_usage_record"}
+        else:
+            item["metering"] = {"status": "not_applicable_no_real_model_call"}
+        item["attempts"] = [
+            attempt_trace(attempt)
+            for attempt in db.scalars(
+                select(AgentInvocationAttempt)
+                .where(AgentInvocationAttempt.invocation_id == inv.invocation_id)
+                .order_by(AgentInvocationAttempt.attempt_index)
+            )
+        ]
+        agents.append(item)
+    tools = [
+        {
+            "invocation_id": t.invocation_id, "tool_id": t.tool_id, "caller": t.caller,
+            "input_hash": t.input_hash, "output_hash": t.output_hash, "status": t.status,
+            "duration_ms": t.duration_ms, "error_class": t.error_class,
+            "created_at": t.created_at.isoformat() if t.created_at else None,
+        }
+        for t in db.scalars(select(ToolInvocation).where(ToolInvocation.run_id == run.run_id).order_by(ToolInvocation.invocation_id.asc()))
+    ]
+    controls = [
+        {
+            "control_result_id": c.control_result_id, "control_id": c.control_id,
+            "status": c.status, "tool_invocation_id": c.tool_invocation_id,
+            "agent_invocation_id": c.agent_invocation_id,
+            "detail_hash": _sha256(c.detail or ""),
+            "created_at": c.created_at.isoformat() if c.created_at else None,
+        }
+        for c in db.scalars(select(ControlResult).where(ControlResult.run_id == run.run_id).order_by(ControlResult.control_result_id.asc()))
+    ]
+    copy_events = list(db.scalars(
+        select(CopyEvent).where(CopyEvent.run_id == run.run_id).order_by(CopyEvent.copy_event_id.asc())
+    ))
+    copy_event_ids = [event.copy_event_id for event in copy_events]
+    audit_scope = (AuditEvent.target_type == "run") & (AuditEvent.target_id == run.run_id)
+    if copy_event_ids:
+        audit_scope = audit_scope | ((AuditEvent.target_type == "copy_event") & AuditEvent.target_id.in_(copy_event_ids))
+    audits = [
+        {
+            "audit_event_id": a.id, "action": a.action, "target_type": a.target_type,
+            "target_id": a.target_id, "actor_user_id": a.actor_user_id,
+            "detail_hash": _sha256(canonical_json(a.detail or {})),
+            "created_at": a.created_at.isoformat() if a.created_at else None,
+        }
+        for a in db.scalars(
+            select(AuditEvent).where(
+                AuditEvent.workspace_id == run.workspace_id,
+                audit_scope,
+            ).order_by(AuditEvent.id.asc())
+        )
+    ]
+    return {
+        "agent_invocations": agents, "tool_invocations": tools, "control_results": controls,
+        "copy_events": [
+            {
+                "copy_event_id": event.copy_event_id, "target_type": event.target_type,
+                "target_key": event.target_key, "field_id": event.field_id,
+                "draft_version_id": event.draft_version_id, "content_hash": event.content_hash,
+                "client_warning_count": len(event.client_warnings or []),
+                "server_warning_count": len(event.server_warnings or []),
+                "override_reason_code": event.override_reason_code,
+                "created_at": event.created_at.isoformat() if event.created_at else None,
+            }
+            for event in copy_events
+        ],
+        "audit_events": audits,
+    }
+
+
 def build_snapshot(
     db: Session,
     run: AnalysisRun,
@@ -190,11 +523,11 @@ def build_snapshot(
 ) -> tuple[dict, str]:
     """Build the frozen snapshot dict + its SHA-256 hash."""
     registry = get_registry()
-    project = db.get(Project, run.project_id)
     snap = db.scalar(
         select(RunProjectSnapshot).where(RunProjectSnapshot.run_id == run.run_id)
     )
-    stale = snap is not None and project_snapshot.is_stale(db, snap)
+    structured = build_transfer_snapshot(db, run)
+    stale = structured["stale"]
 
     review_pkg = db.get(ReviewPackage, run.run_id)
 
@@ -278,10 +611,8 @@ def build_snapshot(
         "meta": {
             "run_id": run.run_id,
             "project_id": run.project_id,
-            "project_title": project.title if project else "",
-            "funding_profile_id": (
-                project.funding_instrument_profile_id if project else ""
-            ),
+            "project_title": structured["project"].get("title", "Ohne Projekttitel"),
+            "funding_profile_id": structured["project"].get("instrument", "Nicht angegeben"),
             "funding_profile_version": run.snapshot_versions.get(
                 "funding_instrument_profile_version"
             ),
@@ -306,6 +637,7 @@ def build_snapshot(
             "deferred_areas": DEFERRED_AREAS,
             "note": COVERAGE_NOTE,
         },
+        "structured": structured,
         "fields": fields,
         "requirements": [
             a.model_dump(mode="json")
@@ -318,6 +650,7 @@ def build_snapshot(
         "review_findings": findings,
         "human_decisions": decisions,
         "reliability": _reliability_block(db, run),
+        "technical_trace": _technical_trace(db, run),
         "config_versions": {
             "requirement_registry_version": registry.requirement_registry_version,
             "rule_registry_version": registry.rule_registry_version,

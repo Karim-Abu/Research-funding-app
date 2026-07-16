@@ -57,10 +57,12 @@ def test_post_creates_demo_package(client, fake_provider):
     assert pkg["human_review_required"] is True
     assert pkg["provider_mode"] == "fake"
     us = pkg["usage_summary"]
-    assert us["total_tokens"] > 0 and us["usage_record_count"] == 6
-    assert set(us["cost_status_counts"]) <= {"not_applicable"}
-    assert pkg["research_summary"]["market"]["used"] is True
-    assert pkg["research_summary"]["partner"]["used"] is True
+    assert us["total_tokens"] == 0 and us["usage_record_count"] == 0
+    assert us["cost_status_counts"] == {}
+    # The fake-only demo has no imported live web source. It must not present its
+    # synthetic research rows as productive research context.
+    assert pkg["research_summary"]["market"]["used"] is False
+    assert pkg["research_summary"]["partner"]["used"] is False
 
 
 def test_post_response_has_no_raw_prompts_or_keys(client, fake_provider):

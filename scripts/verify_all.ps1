@@ -1,7 +1,15 @@
-# Milestone 10 — one-command verification (Windows PowerShell; fake providers only).
-# Backend migration check + pytest; frontend vitest/lint/tsc/build; then a throwaway
-# migrated+seeded DB with backend + frontend started, Playwright + API smoke + the
-# EvaluationRunSummary, with explicit teardown in a finally block.
+﻿# Abschlussgate — one-command verification (Windows PowerShell; deterministisch,
+# NUR Fake-Provider).
+#
+# Pflichtpfade (machen das Gate rot): Backend-Tests, Migration, Frontend-Tests,
+# lint/tsc/build, technischer Playwright-Pfad (Suite + Golden Path 2. Lauf),
+# funktionaler Import-Pfad, Review-Truth-Pfad, DOCX-Render-Smoke, API-Smoke,
+# Testdaten-Marker, Legacy-Status-Guard.
+#
+# Opt-in-Kategorien (NIE Teil dieses Gates; nur Statusbericht): Live model
+# evaluation, Model selection (scripts/run_role_model_eval.py), Live Firecrawl
+# evaluation, Provider-Preflight, Supervised live E2E.
+# Es gibt bewusst KEINE Pauschalaussage «ALL GREEN».
 
 $ErrorActionPreference = "Continue"
 $root = Split-Path -Parent $PSScriptRoot
@@ -21,8 +29,8 @@ $env:E2E_EMAIL    = if ($env:E2E_EMAIL)    { $env:E2E_EMAIL }    else { "anna.ke
 $env:E2E_PASSWORD = if ($env:E2E_PASSWORD) { $env:E2E_PASSWORD } else { "changeme-dev-lead" }
 
 $R = @{ backend="skip"; migration="skip"; frontend="skip"; quality="skip";
-        playwright="skip"; golden2="skip"; apismoke="skip"; testdata="skip";
-        legacyguard="skip"; evalpath="-" }
+        playwright="skip"; golden2="skip"; functional="skip"; reviewtruth="skip";
+        docx="skip"; apismoke="skip"; testdata="skip"; legacyguard="skip"; evalpath="-" }
 $e2eDb = Join-Path $backend "var\verify_e2e.db"
 
 function Stop-Servers {
@@ -34,7 +42,7 @@ function Stop-Servers {
     }
 }
 
-Write-Host "== M10 verification ==  package manager: $PM"
+Write-Host "== Abschlussgate (deterministisch, Fake-Provider) ==  package manager: $PM"
 try {
     # --- Testdaten-Marker-Check (R0.4) ---
     Write-Host "-- testdata marker check --"
@@ -56,10 +64,14 @@ try {
     $R.migration = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
     Remove-Item $migDb -ErrorAction SilentlyContinue
 
-    Write-Host "-- backend: pytest --"
+    Write-Host "-- backend: pytest (ohne DOCX-Render-Smoke — eigene Gate-Zeile) --"
     Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
-    & $py -m pytest -q -p no:warnings
+    & $py -m pytest -q -p no:warnings --ignore=tests/test_docx_render_smoke.py
     $R.backend = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+
+    Write-Host "-- DOCX render smoke (benötigt Microsoft Word) --"
+    & $py -m pytest tests/test_docx_render_smoke.py -q -p no:warnings
+    $R.docx = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
     Pop-Location
 
     # --- Frontend: vitest + lint + tsc + build ---
@@ -111,15 +123,21 @@ try {
     }
 
     if ($ready) {
-        Write-Host "-- Playwright --"
+        Write-Host "-- Playwright (technischer Pfad, gesamte Suite) --"
         PmExec "playwright test --workers=1"
         $R.playwright = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
-        # Akzeptanz: der Golden Path läuft ZWEIMAL hintereinander auf der frischen
-        # Demo-DB (die Suite oben ist Lauf 1; hier folgt Lauf 2). Eindeutige
-        # Projekttitel machen den zweiten Lauf kollisionsfrei.
-        Write-Host "-- Golden Path (2. Lauf, frische Demo-DB) --"
+        # Akzeptanz: der technische E2E läuft ZWEIMAL hintereinander auf der
+        # frischen Demo-DB (die Suite oben ist Lauf 1; hier folgt Lauf 2).
+        # Eindeutige Projekttitel machen den zweiten Lauf kollisionsfrei.
+        Write-Host "-- technischer E2E (2. Lauf, frische Demo-DB) --"
         PmExec "playwright test e2e/golden-path.spec.ts --workers=1"
         $R.golden2 = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+        Write-Host "-- funktionaler Import-Pfad (gezielter Lauf) --"
+        PmExec "playwright test e2e/import-functional.spec.ts --workers=1"
+        $R.functional = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
+        Write-Host "-- Review-Truth-Pfad (gezielter Lauf) --"
+        PmExec "playwright test e2e/review-truth.spec.ts --workers=1"
+        $R.reviewtruth = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
         Write-Host "-- API smoke --"
         & $py (Join-Path $root "scripts\smoke_api.py")
         $R.apismoke = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
@@ -133,6 +151,7 @@ try {
         Pop-Location
     } else {
         $R.playwright = "FAIL(servers not ready)"; $R.golden2 = "FAIL(servers not ready)"
+        $R.functional = "FAIL(servers not ready)"; $R.reviewtruth = "FAIL(servers not ready)"
         $R.apismoke = "FAIL(servers not ready)"
     }
 }
@@ -142,23 +161,74 @@ finally {
 }
 
 $exportR = $R.backend; $norawR = $R.backend
+
+# --- Opt-in-Kategorien: Status aus vorhandenen Artefakten (nie Gate-relevant) --
+$mqJson = Join-Path $backend "var\evaluation\model_quality_summary.json"
+if (Test-Path $mqJson) {
+    try { $mqStatus = (Get-Content $mqJson -Raw -Encoding utf8 | ConvertFrom-Json).status }
+    catch { $mqStatus = "Artefakt vorhanden" }
+    $catModel = "$mqStatus — $mqJson"
+} else {
+    $catModel = "not_run (opt-in — scripts/run_model_quality_eval.py)"
+}
+$rmeJson = Join-Path $backend "var\evaluation\role_model_eval\summary.json"
+if (Test-Path $rmeJson) {
+    try { $rmeStatus = (Get-Content $rmeJson -Raw -Encoding utf8 | ConvertFrom-Json).status }
+    catch { $rmeStatus = "Artefakt vorhanden" }
+    $catRoleEval = "$rmeStatus — $rmeJson"
+} else {
+    $catRoleEval = "not_run (opt-in — scripts/run_role_model_eval.py)"
+}
+$lrMd = Join-Path $backend "var\evaluation\live_research_smoke.md"
+if (Test-Path $lrMd) {
+    $lrLine = (Select-String -Path $lrMd -Pattern "Status: (\S+)" | Select-Object -First 1)
+    $lrStatus = if ($lrLine) { $lrLine.Matches[0].Groups[1].Value.TrimEnd('*') } else { "Artefakt vorhanden" }
+    $catFirecrawl = "$lrStatus — $lrMd"
+} else {
+    $catFirecrawl = "not_run (opt-in — scripts/run_live_research_smoke.py)"
+}
+$pfMd = Join-Path $backend "var\evaluation\provider_preflight.md"
+$catPreflight = if (Test-Path $pfMd) { "Artefakt vorhanden — $pfMd" }
+                else { "not_run (opt-in — scripts/run_provider_preflight.py)" }
+
+$catTech   = if ($R.playwright -eq "pass" -and $R.golden2 -eq "pass") { "pass" } else { "FAIL" }
+$catImport = if ($R.functional -eq "pass") { "pass" } else { "FAIL" }
+
 Write-Host ""
-Write-Host "================ M10 VERIFICATION SUMMARY ================"
+Write-Host "=========== ABNAHME — SECHS GETRENNTE KATEGORIEN ==========="
+Write-Host "1. Technical deterministic E2E : $catTech   (Fake-Provider; Suite + 2. Lauf)"
+Write-Host "2. Structured import E2E       : $catImport   (e2e/import-functional.spec.ts)"
+Write-Host "3. Live model evaluation       : $catModel"
+Write-Host "4. Model selection (A1/A2/A3)  : $catRoleEval"
+Write-Host "5. Live Firecrawl evaluation   : $catFirecrawl"
+Write-Host "6. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)"
+Write-Host "Provider-Preflight (Ebene E)   : $catPreflight"
+Write-Host "Private SEDATE-Acceptance      : manuell — scripts/run_private_innolink_acceptance.py"
+Write-Host ""
+Write-Host "=============== TECHNISCHE GATE-DETAILS ==================="
 Write-Host "backend tests            : $($R.backend)"
 Write-Host "migration                : $($R.migration)"
 Write-Host "frontend tests (vitest)  : $($R.frontend)"
 Write-Host "build/typecheck/lint     : $($R.quality)"
-Write-Host "Playwright               : $($R.playwright)"
-Write-Host "golden path (2nd run)    : $($R.golden2)   (e2e/golden-path.spec.ts)"
+Write-Host "Playwright (Suite)       : $($R.playwright)"
+Write-Host "technischer E2E (2. Lauf): $($R.golden2)   (e2e/golden-path.spec.ts)"
+Write-Host "funktionaler Import      : $($R.functional)   (e2e/import-functional.spec.ts)"
+Write-Host "review truth             : $($R.reviewtruth)   (e2e/review-truth.spec.ts)"
+Write-Host "docx render smoke        : $($R.docx)   (tests/test_docx_render_smoke.py)"
 Write-Host "API smoke                : $($R.apismoke)"
 Write-Host "export smoke             : $exportR   (test_m10_smoke.py::test_export_all_types)"
 Write-Host "no-raw-log               : $norawR   (test_m10_smoke.py::test_no_raw_log)"
 Write-Host "testdata markers         : $($R.testdata)   (scripts/check_testdata_markers.py)"
 Write-Host "legacy status guard      : $($R.legacyguard)   (scripts/check_legacy_status_paths.py)"
 Write-Host "evaluation summary       : $($R.evalpath)"
-Write-Host "========================================================="
+Write-Host "==========================================================="
 
-$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright, $R.golden2, $R.apismoke, $R.testdata, $R.legacyguard) |
+$fail = @($R.backend, $R.migration, $R.frontend, $R.quality, $R.playwright,
+          $R.golden2, $R.functional, $R.reviewtruth, $R.docx, $R.apismoke,
+          $R.testdata, $R.legacyguard) |
         Where-Object { $_ -like "FAIL*" }
-if ($fail.Count -gt 0) { exit 1 }
-Write-Host "ALL GREEN"
+if ($fail.Count -gt 0) {
+    Write-Host "TECHNISCHES GATE (deterministisch, Fake-Provider): ROT"
+    exit 1
+}
+Write-Host "TECHNISCHES GATE (deterministisch, Fake-Provider): GRÜN — Live-Kategorien siehe oben (not_run heisst nicht bestanden)."

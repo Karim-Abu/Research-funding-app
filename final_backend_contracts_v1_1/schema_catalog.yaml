@@ -9,6 +9,57 @@ rules:
 - Unknown fields are rejected unless a schema explicitly allows extensions.
 - Domain record types referenced by fields map to canonical Pydantic domain views defined from Domain Model v4.
 schemas:
+# Additive role/skill contracts. v1.1 records and routes remain supported.
+- schema_id: FactEvidenceAnalysisResult@v2
+  version: 2.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    facts: {type: array, required: true, items: FactEvidenceRecordV2}
+    applicant_claims: {type: array, required: false, items: FactEvidenceRecordV2}
+    external_evidence_claims: {type: array, required: false, items: FactEvidenceRecordV2}
+    open_questions: {type: array, required: false, items: string}
+    conflicts: {type: array, required: false, items: string}
+    pii_redaction_status: {type: string, required: true}
+- schema_id: ProposalSectionSuggestion@v2
+  version: 2.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    field_id: {type: string, required: true}
+    section_id: {type: string, required: false}
+    proposed_text: {type: string, required: true}
+    character_count: {type: integer, required: true}
+    character_limit: {type: integer, required: true}
+    requires_human_review: {type: boolean, required: true}
+- schema_id: CriticalReviewBundle@v2
+  version: 2.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    findings: {type: array, required: true, items: CriticalFindingV2}
+    cross_field_conflicts: {type: array, required: false, items: string}
+    strengths: {type: array, required: false, items: string}
+    overall_status: {type: string, required: true}
+- schema_id: ResearchEvidenceSynthesis@v2
+  version: 2.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    findings: {type: array, required: true, items: ResearchSynthesisFindingV2}
+    market_comparison_rows: {type: array, required: false, items: object}
+    partner_candidates: {type: array, required: false, items: object}
+    open_evidence_gaps: {type: array, required: false, items: string}
+- schema_id: EvidenceSupportVerification@v2
+  version: 2.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    claim_ref: {type: string, required: true}
+    source_ref: {type: string, required: true}
+    support_status: {type: string, required: true}
+    rationale: {type: string, required: true}
+    exact_verified: {type: boolean, required: true}
 - schema_id: ProjectFactExtractionInput@v1
   version: 1.0.0
   additional_properties: false
@@ -192,6 +243,56 @@ schemas:
       type: array
       required: false
       items: OpenIssueRecord
+- schema_id: SectionDraftingInput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    run_id:
+      type: string
+      required: true
+    profile_id:
+      type: string
+      required: true
+    field_profile:
+      type: PortalFieldProfileView
+      required: true
+    target_section:
+      type: string
+      required: true
+    accepted_project_input:
+      type: object
+      required: true
+    external_evidence:
+      type: array
+      required: true
+      items: EvidenceLinkRecord
+    research_candidate_count:
+      type: integer
+      required: false
+    open_issues:
+      type: array
+      required: true
+      items: OpenIssueRecord
+    context_components:
+      type: array
+      required: true
+      items: SectionContextSummary
+    language:
+      type: string
+      required: true
+- schema_id: PortalSectionDraftBundle@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    section_candidate:
+      type: SectionDraftCandidateRecord
+      required: true
+    warnings:
+      type: array
+      required: false
+      items: string
 - schema_id: CriticReviewInput@v1
   version: 1.0.0
   additional_properties: false

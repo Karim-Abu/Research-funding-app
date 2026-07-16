@@ -13,7 +13,13 @@ from dataclasses import dataclass
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.db.models import SourceDocument, SourceFragment, SourceVersion
+from app.db.models import (
+    ResearchResult,
+    ResearchTask,
+    SourceDocument,
+    SourceFragment,
+    SourceVersion,
+)
 from app.evidence.tokenize import content_terms
 
 # Versioned, explicit market-signal vocabulary (German + English). Deliberately small
@@ -69,8 +75,24 @@ def imported_public_sources(
     result: list[SourceDocument] = []
     for doc in docs:
         dc = doc.data_classification or {}
-        if dc.get("origin") == "public_source" and dc.get("sensitivity") == "public":
-            result.append(doc)
+        if dc.get("origin") != "public_source" or dc.get("sensitivity") != "public":
+            continue
+        provenance_task = db.scalar(
+            select(ResearchTask)
+            .join(
+                ResearchResult,
+                ResearchResult.research_task_id == ResearchTask.research_task_id,
+            )
+            .where(ResearchResult.source_document_id == doc.source_id)
+        )
+        # Manuell importierte öffentliche URLs bleiben zulässig. Dokumente aus dem
+        # alten Fake-Provider werden dagegen explizit ausgeschlossen.
+        if provenance_task is not None and (
+            provenance_task.execution_mode == "fake_demo"
+            or provenance_task.provider == "fake"
+        ):
+            continue
+        result.append(doc)
     # Deterministic order: (created_at, source_id).
     result.sort(key=lambda d: (d.created_at, d.source_id))
     return result
@@ -82,6 +104,7 @@ def prefilter_fragments(
     *,
     max_fragments: int = 40,
     char_budget: int = 24000,
+    require_market_signal: bool = True,
 ) -> list[FragmentCandidate]:
     """Market-signal-bearing fragments from the imported public sources, deterministically
     ordered (source order, then fragment ordinal) and budget-limited."""
@@ -107,8 +130,10 @@ def prefilter_fragments(
         for frag in fragments:
             terms = content_terms(frag.normalized_text) | title_terms
             score = len(terms & MARKET_SIGNAL_TERMS)
-            if score == 0:
+            if score == 0 and require_market_signal:
                 continue
+            if score == 0:
+                score = 1
             text = frag.normalized_text
             if used + len(text) > char_budget:
                 continue

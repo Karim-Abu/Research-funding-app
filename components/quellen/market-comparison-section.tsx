@@ -21,7 +21,10 @@ import {
   CONFIDENCE_LABELS,
   CONFIDENCE_STYLE,
   SUMMARY_SECTIONS,
+  CENTRALIZATION_LABELS,
+  SUPPORT_STATUS_LABELS,
   type ItemStatus,
+  type SupportStatus,
   type MarketComparisonDto,
   type MarketComparisonItemDto,
 } from "@/lib/market-comparison"
@@ -83,9 +86,9 @@ export function MarketComparisonSection({
   }, [projectId, load])
 
   const setItemStatus = React.useCallback(
-    async (itemId: string, status: ItemStatus) => {
+    async (itemId: string, status: ItemStatus, supportStatus?: SupportStatus) => {
       try {
-        await updateItemStatus(itemId, status)
+        await updateItemStatus(itemId, status, supportStatus)
         await load()
       } catch {
         // keep the current view on transient errors
@@ -162,6 +165,7 @@ export function MarketComparisonSection({
                       <th className="py-2 pr-3 font-medium">Kurzbeschreibung</th>
                       <th className="py-2 pr-3 font-medium">Relevanz</th>
                       <th className="py-2 pr-3 font-medium">Differenzierungshinweis</th>
+                      <th className="py-2 pr-3 font-medium">Vergleichsdimensionen</th>
                       <th className="py-2 pr-3 font-medium">Quelle</th>
                       <th className="py-2 pr-3 font-medium">Status</th>
                     </tr>
@@ -234,7 +238,7 @@ function ItemRow({
   onSetStatus,
 }: {
   item: MarketComparisonItemDto
-  onSetStatus: (itemId: string, status: ItemStatus) => void
+  onSetStatus: (itemId: string, status: ItemStatus, supportStatus?: SupportStatus) => void
 }) {
   return (
     <tr className="border-b border-border/60 align-top">
@@ -249,6 +253,14 @@ function ItemRow({
       <td className="py-2 pr-3 text-muted-foreground">
         {item.differentiation_relevance ?? "—"}
       </td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-[11px]">
+          <dt>Lösungstyp</dt><dd>{item.solution_type ?? "—"}</dd>
+          <dt>Zentralität</dt><dd>{CENTRALIZATION_LABELS[item.centralization ?? "unclear"]}</dd>
+          <dt>Daten/Zugriff</dt><dd>{item.data_access_model ?? "—"}</dd>
+          <dt>Schweizer Bezug</dt><dd>{item.swiss_relevance ?? "unbestätigt"}</dd>
+        </dl>
+      </td>
       <td className="py-2 pr-3">
         {item.evidence_quotes.length > 0 ? (
           <blockquote className="border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
@@ -257,6 +269,11 @@ function ItemRow({
         ) : (
           <span className="text-[11px] text-muted-foreground">Kein belegtes Zitat</span>
         )}
+        {item.evidence_quotes[0]?.source_url && (
+          <a href={item.evidence_quotes[0].source_url} target="_blank" rel="noreferrer" className="mt-1 block break-all text-[11px] text-primary hover:underline">
+            Quelle öffnen
+          </a>
+        )}
       </td>
       <td className="py-2 pr-3">
         <Badge variant="secondary" className={CONFIDENCE_STYLE[item.confidence_label]}>
@@ -264,6 +281,10 @@ function ItemRow({
             ? ITEM_STATUS_LABELS.accepted
             : CONFIDENCE_LABELS[item.confidence_label]}
         </Badge>
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          Fundstelle: {item.coverage_status === "exact_quote_verified" ? "exakt gefunden" : "ungeprüft"}
+          {" · "}Inhalt: {SUPPORT_STATUS_LABELS[item.support_status ?? "unreviewed"]}
+        </p>
         <div className="mt-1 flex gap-1">
           <button
             type="button"
@@ -280,6 +301,11 @@ function ItemRow({
           >
             Prüfen
           </button>
+        </div>
+        <div className="mt-1 flex flex-wrap gap-1">
+          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "supports")}>Stützt</button>
+          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "partial")}>Teilweise</button>
+          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "does_not_support")}>Stützt nicht</button>
         </div>
       </td>
     </tr>

@@ -78,7 +78,7 @@ def _templates(topic: PartnerTopic) -> dict[str, str]:
     reg = f" {region}" if region else ""
     return {
         "university_lab": f"Swiss applied {tech} lab {domain}",
-        "research_group": f"{domain} {tech} research group{reg}",
+        "research_group": f"{domain} {tech} research group publications track record{reg}",
         "university_institute": f"{tech} {domain} university{reg}",
         "competence_center": f"{domain} {competence} competence center{reg}",
         "applied_sciences": f"applied sciences {tech} {domain} research{reg}",
@@ -91,7 +91,8 @@ def plan_partner_queries(
     """Deterministically plan 5 public-safe partner/competence query candidates (D0-only).
 
     ``data_mode`` is descriptive (``synthetic_eval`` | ``fake_test``); the MVP is D0-only
-    so ``approval_required`` is always False (the firewall still enforces the class).
+    Every candidate is marked approval-required; the canonical brief workflow creates
+    the actual single-use approval after the deterministic firewall preview.
     Organisation/topic only — never a person's name.
     """
     candidates: list[QueryCandidate] = []
@@ -106,7 +107,7 @@ def plan_partner_queries(
                 purpose=purpose,
                 source="deterministic_planner",
                 data_mode=data_mode,
-                approval_required=False,
+                approval_required=True,
                 public_safe=reason is None,
                 blocked_reason=reason,
             )

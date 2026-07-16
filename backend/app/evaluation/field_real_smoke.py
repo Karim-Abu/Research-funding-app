@@ -49,6 +49,7 @@ from app.db.models import (
     EvidenceLink,
     ExtractedFact,
     PortalFieldDraft,
+    ProcessingConfirmation,
     Project,
     RequirementAssessment,
     RunSourceSnapshot,
@@ -69,6 +70,7 @@ from app.evaluation.usage_smoke import (
     _ensure_base_rows,
 )
 from app.registry import get_registry
+from app.runs.cloud_policy import REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION
 
 PROFILE = "A2.introduction_public_summary"
 PROVIDERS = ("openai", "anthropic")
@@ -126,15 +128,16 @@ class _CountingAdapter:
     Proxy die einzige Diagnose-Quelle. Nur fürs git-ignorierte Artefakt.
     """
 
-    def __init__(self, inner, *, limit: int) -> None:
+    def __init__(self, inner, *, limit: int, adapter_name: str | None = None) -> None:
         self._inner = inner
         self._limit = limit
+        self._adapter_name = adapter_name
         self.calls = 0
         self.raw_outputs: list[str] = []
 
     @property
     def name(self) -> str:
-        return self._inner.name
+        return self._adapter_name or self._inner.name
 
     def available(self) -> bool:
         return self._inner.available()
@@ -211,7 +214,11 @@ def _forcing_resolver(provider: str, *, adapter=None):
     inner = adapter or (
         OpenAIProvider() if provider == "openai" else AnthropicProvider()
     )
-    proxy = _CountingAdapter(inner, limit=_max_calls())
+    proxy = _CountingAdapter(
+        inner, limit=_max_calls(), adapter_name=target_route,
+    )
+    if adapter is not None:
+        proxy._hermetic_test_model_id = "fake"
     return (lambda route: proxy if route.provider == target_route else None), proxy
 
 
@@ -260,6 +267,17 @@ def _seed_a2_run(db, field_id: str) -> tuple[AnalysisRun, str, str]:
         processing_mode="cloud_assisted", effective_data_classification=cls,
         snapshot_versions={"normalizer_version": NORMALIZER},
         recheck_required=False, semantic_findings_stale=False,
+    ))
+    db.add(ProcessingConfirmation(
+        confirmation_id=f"r5_5-{sfx}-confirm",
+        project_id=project_id, workspace_id=WS, created_by=ACTOR,
+        status="used", processing_mode="cloud_assisted",
+        source_version_ids=[sv_id], accepted_policy_version="1.1.0",
+        purpose="Explizit freigegebener synthetischer Evaluationslauf",
+        provider_route_class="direct_eval",
+        confirmation_text_version=REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION,
+        data_classification_shown=cls, expires_after_one_run=True,
+        used_by_run_id=run_id, decided_at=datetime.now(timezone.utc),
     ))
     db.add(RunSourceSnapshot(
         id=f"r5_5-{sfx}-snap", run_id=run_id, source_version_id=sv_id, source_id=doc_id,

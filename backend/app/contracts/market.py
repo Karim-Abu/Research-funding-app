@@ -25,6 +25,7 @@ class EvidenceQuote(BaseModel):
     source_document_id: str
     source_version_id: str
     linked_evidence_anchor_id: str | None = None
+    source_url: str | None = None
 
 
 class MarketComparisonItem(BaseModel):
@@ -37,11 +38,17 @@ class MarketComparisonItem(BaseModel):
     strengths: str | None = None
     weaknesses: str | None = None
     differentiation_relevance: str | None = None
+    solution_type: str | None = None
+    centralization: Literal["centralized", "decentralized", "hybrid", "unclear"] = "unclear"
+    data_access_model: str | None = None
+    swiss_relevance: str | None = None
     relation_to_project: ItemRelation
     confidence_label: ConfidenceLabel
     status: ItemStatus
     source_document_ids: list[str] = []
     evidence_quotes: list[EvidenceQuote] = []
+    coverage_status: Literal["exact_quote_verified"] | None = None
+    support_status: Literal["unreviewed", "supports", "partial", "does_not_support"] | None = None
 
 
 class MarketComparison(BaseModel):
@@ -50,6 +57,7 @@ class MarketComparison(BaseModel):
     status: ComparisonStatus
     comparison_version: int
     generation_status: str | None = None
+    generation_kind: Literal["fake_demo", "model_generated", "rule_template"] | None = None
     research_gaps: list[str] = []
     warnings: list[str] = []
     item_count: int = 0
@@ -64,3 +72,4 @@ class MarketComparisonView(MarketComparison):
 
 class ItemStatusUpdate(BaseModel):
     status: ItemStatus
+    support_status: Literal["unreviewed", "supports", "partial", "does_not_support"] | None = None

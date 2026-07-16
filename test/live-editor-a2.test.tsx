@@ -20,10 +20,10 @@ function vcDraft(overrides: Record<string, unknown> = {}) {
     field_name: "Value Creation",
     status: "draft",
     current_version: {
-      draft_version_id: "v1", text: "3.1 ... 3.2 ...", character_count: 16,
+      draft_version_id: "v1", text: "3.1 Alt A\n3.2 Alt B\n3.3 Alt C", character_count: 29,
       created_by: "template", created_at: new Date().toISOString(), content_hash: "h",
     },
-    character_count: 16,
+    character_count: 29,
     character_limit: 15000,
     open_issue_count: 0,
     evidence_links: [],
@@ -35,10 +35,18 @@ function vcDraft(overrides: Record<string, unknown> = {}) {
 function vcSuggestionResult() {
   return {
     suggestion_id: "s-vc", operation_id: "opvc", field_id: VC, base_version_id: "v1",
-    suggested_text: "3.1 Wertschöpfung neu 3.2 Geschäftsmodell neu [Marktzahl fehlt]",
+    target_section: "3.2", generation_kind: "fake_demo",
+    suggested_text: "3.2 Geschäftsmodell neu [Marktzahl fehlt]",
     rationale: "ok", evidence: [], open_issue_ids: [],
     placeholders: [{ label: "Marktzahl", reason: "fehlt" }],
-    character_count: 60, character_limit: 15000, warnings: ["contains_placeholders"],
+    character_count: 44, character_limit: 15000, warnings: ["contains_placeholders"],
+    section_result: {
+      field_id: VC, target_section: "3.2",
+      suggested_text: "3.2 Geschäftsmodell neu [Marktzahl fehlt]", rationale: "ok",
+      preserved_facts: [], removed_or_reframed_claims: [], new_claims: [],
+      missing_inputs: [{ label: "Marktzahl", reason: "fehlt" }],
+      evidence_anchor_ids: [], open_issue_ids: [],
+    },
   }
 }
 
@@ -50,13 +58,13 @@ function solDraft(overrides: Record<string, unknown> = {}) {
     status: "draft",
     current_version: {
       draft_version_id: "v1",
-      text: "4.1 ... 4.2 ... 4.3 ... 4.4 ... 4.5 ...",
-      character_count: 40,
+      text: "4.1 Alt\n4.2 Alt\n4.3 Alt\n4.4 Alt\n4.5.1 Alt\n4.5.2 Alt\n4.5.3 Alt\n4.5.4 Alt\n4.6 Alt",
+      character_count: 75,
       created_by: "template",
       created_at: new Date().toISOString(),
       content_hash: "h",
     },
-    character_count: 40,
+    character_count: 75,
     character_limit: 25000,
     open_issue_count: 0,
     evidence_links: [],
@@ -84,50 +92,84 @@ function reviewPkg() {
 function suggestionResult() {
   return {
     suggestion_id: "s1", operation_id: "op1", field_id: SOL, base_version_id: "v1",
-    suggested_text: "4.1 neu 4.2 neu 4.3 neu 4.4 neu 4.5 neu",
+    target_section: "4.2", generation_kind: "fake_demo",
+    suggested_text: "4.2 Neuheit neu",
     rationale: "ok", evidence: [], open_issue_ids: [], placeholders: [],
-    character_count: 39, character_limit: 25000, warnings: [],
+    character_count: 15, character_limit: 25000, warnings: [],
+    section_result: {
+      field_id: SOL, target_section: "4.2", suggested_text: "4.2 Neuheit neu",
+      rationale: "ok", preserved_facts: ["Projektbegriff"],
+      removed_or_reframed_claims: [], new_claims: [], missing_inputs: [],
+      evidence_anchor_ids: [], open_issue_ids: [],
+    },
   }
 }
 
-// The A2 control lives in the KI-Vorschlag pane → switch to KI-Assist first
+// The A2 control lives in the proposal pane → switch to Vorschläge first
 // (the pane is CSS-hidden in Bearbeiten; jsdom would find it anyway, but the
 // test should follow the real user flow).
 async function openKiAssist() {
-  fireEvent.click(await screen.findByRole("button", { name: "KI-Assist" }))
+  fireEvent.click(await screen.findByRole("button", { name: "Vorschläge" }))
 }
 
-async function clickGenerate() {
+async function clickGenerate(targetSection?: string) {
   await openKiAssist()
-  // Scope to the A2 control inside the KI pane.
+  // Scope to the A2 control inside the proposal pane.
   const control = await screen.findByTestId("a2-suggestion-control")
+  if (targetSection) {
+    fireEvent.change(within(control).getByLabelText("Zielabschnitt für Vorschlag"), {
+      target: { value: targetSection },
+    })
+  }
   fireEvent.click(
-    within(control).getByRole("button", { name: /KI-Vorschlag erstellen/ })
+    within(control).getByRole("button", { name: /Vorschlag erstellen/ })
   )
 }
 
 function baseMock(fields: Record<string, unknown>[]) {
   server.use(
+    http.get("/api/capabilities", () => HttpResponse.json({
+      api_version: "1.1.0", polling_interval_seconds: 2,
+      supported_source_types: ["txt"], features: {}, generation_mode: "fake_demo",
+    })),
     http.get("/api/runs/r1/fields", () => HttpResponse.json(fields)),
     http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
     http.get("/api/runs/r1/requirements", () => HttpResponse.json([])),
     http.get("/api/runs/r1/review", () => HttpResponse.json(reviewPkg())),
+    http.get("/api/runs/r1/fields/:fieldId/suggestion", () =>
+      HttpResponse.json({ detail: "not found" }, { status: 404 })
+    ),
+    http.get("/api/runs/r1/portal-fields", () => HttpResponse.json([
+      {
+        field_id: SOL, section: "SOL", label: "Solution", character_limit: 25000,
+        mandatory_status: "required", support_mode: "draft", field_kind: "composite",
+        display_mode: "editor", draft_available: true,
+        subsections: ["4.1", "4.2", "4.3", "4.4", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.6"]
+          .map((marker) => ({ marker, label: marker })),
+      },
+      {
+        field_id: VC, section: "VC", label: "Value Creation", character_limit: 15000,
+        mandatory_status: "required", support_mode: "draft", field_kind: "composite",
+        display_mode: "editor", draft_available: true,
+        subsections: ["3.1", "3.2", "3.3"].map((marker) => ({ marker, label: marker })),
+      },
+    ])),
     http.get(`/api/runs/r1/fields/${SOL}`, () => HttpResponse.json(solDraft())),
   )
 }
 
 describe("LiveEditor A2 suggestions", () => {
-  it("shows the AI control for the Abstract field (R5.5)", async () => {
+  it("shows the proposal control for the Abstract field (R5.5)", async () => {
     baseMock([abstractDraft()])
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Abstract")
     await openKiAssist()
-    // Abstract is now an A2-enabled field → the KI-Vorschlag control appears.
+    // Abstract is now an A2-enabled field → the proposal control appears.
     expect(await screen.findByTestId("a2-suggestion-control")).toBeInTheDocument()
     expect(screen.queryByTestId("a2-field-unavailable")).not.toBeInTheDocument()
   })
 
-  it("hides the AI control for an unsupported field", async () => {
+  it("hides the proposal control for an unsupported field", async () => {
     baseMock([unsupportedDraft()])
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Projekttitel")
@@ -137,7 +179,7 @@ describe("LiveEditor A2 suggestions", () => {
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
     const unavailable = screen.getByTestId("a2-field-unavailable")
     expect(unavailable).toHaveTextContent(
-      "Für dieses Feld ist noch kein KI-Vorschlag verfügbar."
+      "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar."
     )
     expect(
       within(unavailable).getByRole("button", { name: "Strukturvorlage nutzen" })
@@ -150,7 +192,7 @@ describe("LiveEditor A2 suggestions", () => {
     await openKiAssist()
     await screen.findByTestId("a2-suggestion-control")
     expect(
-      screen.getByText("KI-Vorschlag für diesen Abschnitt noch nicht erstellt.")
+      screen.getByText("Demo-Vorschlag (kein echtes KI-Modell) für diesen Abschnitt noch nicht erstellt.")
     ).toBeInTheDocument()
   })
 
@@ -170,8 +212,10 @@ describe("LiveEditor A2 suggestions", () => {
         HttpResponse.json(
           solDraft({
             current_version: {
-              draft_version_id: "v2", text: "4.1 neu 4.2 neu 4.3 neu 4.4 neu 4.5 neu",
-              character_count: 39, created_by: "agent", created_at: new Date().toISOString(),
+              draft_version_id: "v2",
+              text: "4.1 Alt\n4.2 Neuheit neu\n4.3 Alt\n4.4 Alt\n4.5.1 Alt\n4.5.2 Alt\n4.5.3 Alt\n4.5.4 Alt\n4.6 Alt",
+              character_count: 83, created_by: "agent", generation_kind: "fake_demo",
+              created_at: new Date().toISOString(),
               content_hash: "h2",
             },
           })
@@ -179,10 +223,10 @@ describe("LiveEditor A2 suggestions", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    await clickGenerate()
+    await clickGenerate("4.2")
     // Side-by-side dialog appears with the suggestion.
     await waitFor(() =>
-      expect(screen.getByTestId("suggestion-text").textContent).toContain("4.5 neu")
+      expect(screen.getByTestId("suggestion-text").textContent).toContain("4.2 Neuheit neu")
     )
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     await waitFor(() =>
@@ -190,9 +234,14 @@ describe("LiveEditor A2 suggestions", () => {
         screen.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
       ).toBeInTheDocument()
     )
+    // C8 — klarer Status nach der Übernahme (Badge, nicht nur Banner).
+    expect(
+      screen.getByText("In Bearbeitung – erneute Prüfung nötig")
+    ).toBeInTheDocument()
   })
 
   it("renders side-by-side and accepts a Value Creation (VC) suggestion", async () => {
+    baseMock([vcDraft()])
     server.use(
       http.get("/api/runs/r1/fields", () => HttpResponse.json([vcDraft()])),
       http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
@@ -214,8 +263,8 @@ describe("LiveEditor A2 suggestions", () => {
           vcDraft({
             current_version: {
               draft_version_id: "v2",
-              text: "3.1 Wertschöpfung neu 3.2 Geschäftsmodell neu [Marktzahl fehlt]",
-              character_count: 60, created_by: "agent",
+              text: "3.1 Alt A\n3.2 Geschäftsmodell neu [Marktzahl fehlt]\n3.3 Alt C",
+              character_count: 62, created_by: "agent", generation_kind: "fake_demo",
               created_at: new Date().toISOString(), content_hash: "h2",
             },
           })
@@ -223,7 +272,7 @@ describe("LiveEditor A2 suggestions", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    await clickGenerate()
+    await clickGenerate("3.2")
     await waitFor(() =>
       expect(screen.getByTestId("suggestion-text").textContent).toContain("3.2 Geschäftsmodell")
     )
@@ -247,10 +296,10 @@ describe("LiveEditor A2 suggestions", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    await clickGenerate()
+    await clickGenerate("4.2")
     await waitFor(() =>
       expect(
-        screen.getByText("Es ist kein freigegebener KI-Provider konfiguriert.")
+        screen.getByText("Für diese Datenklasse ist aktuell kein freigegebener KI-Provider konfiguriert. Die App führt nur regelbasierte Prüfungen aus.")
       ).toBeInTheDocument()
     )
     expect(
@@ -271,7 +320,7 @@ describe("LiveEditor A2 suggestions", () => {
     },
     {
       code: "provider_unavailable",
-      text: "Es ist kein freigegebener KI-Provider konfiguriert.",
+      text: "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider konfiguriert. Die App führt nur regelbasierte Prüfungen aus.",
       cta: "Provider-Konfiguration prüfen",
     },
     {
@@ -298,7 +347,7 @@ describe("LiveEditor A2 suggestions", () => {
         )
       )
       render(<LiveEditor runId="r1" />)
-      await clickGenerate()
+      await clickGenerate("4.2")
       await waitFor(() => expect(screen.getByText(text)).toBeInTheDocument())
       // CTA rendered as link (navigation) or button (disclosure/action).
       const control = screen.getByTestId("a2-suggestion-control")
@@ -322,7 +371,7 @@ describe("LiveEditor A2 suggestions", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    await clickGenerate()
+    await clickGenerate("4.2")
     const cta = await screen.findByRole("button", {
       name: "Provider-Konfiguration prüfen",
     })
@@ -332,7 +381,55 @@ describe("LiveEditor A2 suggestions", () => {
     ).toBeInTheDocument()
   })
 
-  it("dismisses the suggestion without saving", async () => {
+  it("persistiert die Ablehnung als HumanDecision (C4) — ohne den Text zu ändern", async () => {
+    baseMock([solDraft()])
+    const decisions: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "succeeded", created_at: new Date().toISOString(), result: suggestionResult(),
+        })
+      ),
+      http.post("/api/runs/r1/human-decisions", async ({ request }) => {
+        const body = (await request.json()) as Record<string, unknown>
+        decisions.push(body)
+        return HttpResponse.json(
+          {
+            ...body, decision_id: "dec1", user_id: "u1", run_id: "r1",
+            created_at: new Date().toISOString(),
+          },
+          { status: 201 }
+        )
+      })
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    await screen.findByRole("button", { name: "Vorschlag ablehnen" })
+    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ablehnen" }))
+    fireEvent.click(screen.getByRole("button", { name: "Eigene Formulierung bevorzugt" }))
+    fireEvent.click(screen.getByRole("button", { name: "Ablehnen bestätigen" }))
+    await waitFor(() =>
+      expect(screen.queryByTestId("suggestion-text")).not.toBeInTheDocument()
+    )
+    // Serverseitig persistiert: target draft_suggestion + Grund; kein PATCH.
+    await waitFor(() => expect(decisions).toHaveLength(1))
+    expect(decisions[0]).toMatchObject({
+      target_type: "draft_suggestion",
+      target_id: "s1",
+      action: "reject",
+      comment: "Eigene Formulierung bevorzugt",
+    })
+    // The empty-state hint returns; no recheck notice (nothing was saved).
+    expect(
+      screen.getByText("Demo-Vorschlag (kein echtes KI-Modell) für diesen Abschnitt noch nicht erstellt.")
+    ).toBeInTheDocument()
+  })
+
+  it("Schliessen (X) ist kein Verwerfen — der Vorschlag bleibt erreichbar", async () => {
     baseMock([solDraft()])
     server.use(
       http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
@@ -346,15 +443,12 @@ describe("LiveEditor A2 suggestions", () => {
       )
     )
     render(<LiveEditor runId="r1" />)
-    await clickGenerate()
-    await screen.findByRole("button", { name: "Vorschlag ausblenden" })
-    fireEvent.click(screen.getByRole("button", { name: "Vorschlag ausblenden" }))
-    await waitFor(() =>
-      expect(screen.queryByTestId("suggestion-text")).not.toBeInTheDocument()
-    )
-    // The empty-state hint returns; no recheck notice (nothing was saved).
-    expect(
-      screen.getByText("KI-Vorschlag für diesen Abschnitt noch nicht erstellt.")
-    ).toBeInTheDocument()
+    await clickGenerate("4.2")
+    await screen.findByTestId("suggestion-review-sheet")
+    fireEvent.click(screen.getByRole("button", { name: "Close" }))
+    // Sheet zu, aber der Vorschlag ist über «Vorschlag anzeigen» wieder da.
+    const reopen = await screen.findByRole("button", { name: "Vorschlag anzeigen" })
+    fireEvent.click(reopen)
+    expect(await screen.findByTestId("suggestion-text")).toBeInTheDocument()
   })
 })

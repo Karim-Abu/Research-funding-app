@@ -43,10 +43,12 @@ export interface ReviewFindingDto {
   finding_id: string
   profile_id: string
   field_id?: string | null
+  target_section?: string | null
   requirement_id?: string | null
   severity: FindingSeverity
   description: string
   suggested_improvement?: string | null
+  recommended_next_action?: string | null
   status: FindingStatus
   advisory: boolean
 }
@@ -71,6 +73,8 @@ export type DecisionTargetType =
   | "evidence_anchor"
   | "review_finding"
   | "portal_field_draft"
+  // C4 — ausdrückliche, persistierte Ablehnung eines A2-Vorschlags.
+  | "draft_suggestion"
 
 export interface HumanDecisionCreate {
   target_type: DecisionTargetType

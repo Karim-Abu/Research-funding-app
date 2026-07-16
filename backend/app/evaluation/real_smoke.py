@@ -101,13 +101,14 @@ def guard_refusal(
 class _SingleCallAdapter:
     """Defense-in-depth-Cap: erlaubt genau einen generate()-Call."""
 
-    def __init__(self, inner) -> None:
+    def __init__(self, inner, *, adapter_name: str | None = None) -> None:
         self._inner = inner
+        self._adapter_name = adapter_name
         self.calls = 0
 
     @property
     def name(self) -> str:  # provider_policy/_try_route lesen adapter.name
-        return self._inner.name
+        return self._adapter_name or self._inner.name
 
     def available(self) -> bool:
         return self._inner.available()
@@ -190,7 +191,9 @@ def run_llm_case(db, provider: str, *, adapter=None) -> dict:
     inner = adapter or (
         OpenAIProvider() if provider == "openai" else AnthropicProvider()
     )
-    proxy = _SingleCallAdapter(inner)
+    # Injected network-free doubles still exercise the *direct-provider* policy
+    # route; they must not be misclassified as product FakeProvider demos.
+    proxy = _SingleCallAdapter(inner, adapter_name=target_route_provider)
     project_id, run_id = _seed_project_and_run(db, f"eval2-{provider}")
 
     resp = invoke(

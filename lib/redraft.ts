@@ -1,12 +1,13 @@
 // A2 draft-suggestion client (Milestone 9D; extended to Value Creation in 9E).
 // createRedraft (202 async) → poll the operation → the suggestion in result.
 // Advisory only: accepting is a separate updateField call with source_operation_id.
-// Scoped to the A2-enabled fields below. R5.2 (Owner-Entscheid): das typisierte
-// AIProposal (inkl. provider/model/model_ref) fliesst in die Datenschicht,
-// wird aber weiterhin nirgends in der Standard-UI angezeigt.
+// Scoped to the A2-enabled fields below. DraftProposal ist der neutrale View;
+// Provider-/Modellmetadaten gibt es nur im kompatiblen AIProposal nach einem
+// echten Modellaufruf und nur unter Technische Details.
 
 import { getCsrfToken } from "./session"
 import { pollOperation, type AsyncOperationDto } from "./operations"
+import type { GenerationKind } from "./generation-kind"
 
 export const SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 export const VALUE_CREATION_FIELD_ID = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
@@ -49,39 +50,87 @@ export interface AIMissingInput {
   reason?: string | null
 }
 
-// R5.2 — typisiertes AIProposal (Spiegel von backend/app/agents/proposal.py).
+// Typisierte Proposal-Views (Spiegel von backend/app/agents/proposal.py).
 // human_review_required ist im Typ auf `true` fixiert: keine Auto-Übernahme.
-export interface AIProposal {
+export interface DraftProposal {
   suggestion_text: string
   used_anchor_ids: string[]
+  used_research_source_ids: string[]
   missing_inputs: AIMissingInput[]
   profile_id: string
   prompt_version: string | null
   context_hash: string | null
-  model_ref: string
+  generation_kind?: GenerationKind | null
+  model_ref?: string | null
   created_at: string
   data_mode: string
-  provider: string
-  model: string
+  provider?: string | null
+  model?: string | null
   usage_record_id?: string | null
   safety_notes?: string[]
   human_review_required: true
+}
+
+export interface AIProposal extends DraftProposal {
+  generation_kind: "model_generated"
+  model_ref: string
+  provider: string
+  model: string
+}
+
+export interface SectionResult {
+  field_id: string
+  target_section: string
+  suggested_text: string
+  rationale: string
+  preserved_facts: string[]
+  removed_or_reframed_claims: string[]
+  new_claims: string[]
+  missing_inputs: AIMissingInput[]
+  evidence_anchor_ids: string[]
+  research_source_ids: string[]
+  open_issue_ids: string[]
 }
 
 export interface A2Suggestion {
   suggestion_id: string
   operation_id: string
   field_id: string
+  target_section?: string | null
+  generation_kind?: GenerationKind | null
   base_version_id: string
   suggested_text: string
   rationale?: string | null
   evidence: A2EvidenceItem[]
+  research_sources?: Array<{
+    source_id: string
+    title: string
+    url: string
+    research_module?: string | null
+    support_status: "research_candidate"
+  }>
   open_issue_ids: string[]
   placeholders: A2Placeholder[]
   character_count: number
   character_limit: number
   warnings: string[]
+  section_result?: SectionResult | null
+  proposal?: DraftProposal
   ai_proposal?: AIProposal
+}
+
+export function parseDraftProposal(value: unknown): DraftProposal | null {
+  if (typeof value !== "object" || value === null) return null
+  const v = value as Record<string, unknown>
+  if (typeof v.suggestion_text !== "string" || typeof v.profile_id !== "string") return null
+  if (v.human_review_required !== true) return null
+  if (!Array.isArray(v.used_anchor_ids) || !Array.isArray(v.missing_inputs)) return null
+  if (v.used_research_source_ids != null && !Array.isArray(v.used_research_source_ids)) return null
+  if (
+    v.generation_kind != null &&
+    !["rule_template", "fake_demo", "model_generated"].includes(String(v.generation_kind))
+  ) return null
+  return v as unknown as DraftProposal
 }
 
 /** Fail-closed AIProposal-Parser: ungültige/fremde Shapes ⇒ null. */
@@ -93,6 +142,7 @@ export function parseAIProposal(value: unknown): AIProposal | null {
     "data_mode", "provider", "model",
   ] as const
   if (requiredStrings.some((k) => typeof v[k] !== "string")) return null
+  if (v.generation_kind !== "model_generated") return null
   if (v.human_review_required !== true) return null
   if (!Array.isArray(v.used_anchor_ids) || !Array.isArray(v.missing_inputs)) return null
   return v as unknown as AIProposal
@@ -129,7 +179,19 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
     ctaLabel: "Verarbeitungsmodus ändern",
   },
   provider_unavailable: {
-    text: "Es ist kein freigegebener KI-Provider konfiguriert.",
+    text: "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider konfiguriert. Die App führt nur regelbasierte Prüfungen aus.",
+    ctaLabel: "Provider-Konfiguration prüfen",
+  },
+  live_provider_key_missing: {
+    text: "Live-KI ist nicht verfügbar, weil Schlüssel, Modellzuordnung oder Preisangaben fehlen. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    ctaLabel: "Live-Systemstatus prüfen",
+  },
+  live_preflight_required: {
+    text: "Live-KI ist erst nach einem erfolgreichen synthetischen Systemtest verfügbar. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    ctaLabel: "Live-Systemstatus prüfen",
+  },
+  no_approved_model_provider: {
+    text: "Es ist kein freigegebener KI-Provider aktiv. Die App führt nur regelbasierte Prüfungen aus.",
     ctaLabel: "Provider-Konfiguration prüfen",
   },
   run_mode_mismatch: {
@@ -141,7 +203,7 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
     ctaLabel: "Quelle hinzufügen",
   },
   field_not_supported: {
-    text: "Für dieses Feld ist noch kein KI-Vorschlag verfügbar.",
+    text: "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
     ctaLabel: "Strukturvorlage nutzen",
   },
 }
@@ -175,7 +237,7 @@ async function toError(res: Response): Promise<RedraftError> {
   const message =
     MESSAGES[code] ??
     reasonMessage(reasonCode) ??
-    "Der KI-Vorschlag konnte nicht erstellt werden."
+    "Der Vorschlag konnte nicht erstellt werden."
   return new RedraftError(res.status, code, message, reasonCode)
 }
 
@@ -183,17 +245,26 @@ async function toError(res: Response): Promise<RedraftError> {
  *  normalen Analyse-Lauf erzeugt. Read-only; null, wenn keine vorliegt. */
 export async function getRunFieldSuggestion(
   runId: string,
-  fieldId: string
+  fieldId: string,
+  targetSection?: string
 ): Promise<A2Suggestion | null> {
+  const query = targetSection
+    ? `?target_section=${encodeURIComponent(targetSection)}`
+    : ""
   const res = await fetch(
-    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestion`
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestion${query}`
   )
   if (!res.ok) throw await toError(res)
   const body = (await res.json()) as { suggestion: Record<string, unknown> | null }
   if (!body.suggestion) return null
   const base = body.suggestion as unknown as A2Suggestion
-  const proposal = parseAIProposal(body.suggestion.ai_proposal)
-  return { ...base, ai_proposal: proposal ?? undefined }
+  const proposal = parseDraftProposal(body.suggestion.proposal)
+  const aiProposal = parseAIProposal(body.suggestion.ai_proposal)
+  return {
+    ...base,
+    proposal: proposal ?? undefined,
+    ai_proposal: aiProposal ?? undefined,
+  }
 }
 
 /** Request a suggestion and resolve once the async operation produces it. */
@@ -201,16 +272,19 @@ export async function createRedraft(
   runId: string,
   fieldId: string,
   baseVersionId: string,
-  guidance?: string
+  guidance?: string,
+  targetSection?: string
 ): Promise<A2Suggestion> {
   const res = await fetch(
     `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/redrafts`,
     {
       method: "POST",
       headers: { "Content-Type": "application/json", ...csrfHeaders() },
-      body: JSON.stringify(
-        guidance ? { base_version_id: baseVersionId, guidance } : { base_version_id: baseVersionId }
-      ),
+      body: JSON.stringify({
+        base_version_id: baseVersionId,
+        ...(guidance ? { guidance } : {}),
+        ...(targetSection ? { target_section: targetSection } : {}),
+      }),
     }
   )
   // 503 (unavailable) / 409 (stale base) are surfaced synchronously and safely.
@@ -222,10 +296,17 @@ export async function createRedraft(
       onTerminal: (op: AsyncOperationDto) => {
         if (op.status === "succeeded" && op.result) {
           const base = op.result as unknown as A2Suggestion
-          const proposal = parseAIProposal(
+          const proposal = parseDraftProposal(
+            (op.result as Record<string, unknown>).proposal
+          )
+          const aiProposal = parseAIProposal(
             (op.result as Record<string, unknown>).ai_proposal
           )
-          resolve({ ...base, ai_proposal: proposal ?? undefined })
+          resolve({
+            ...base,
+            proposal: proposal ?? undefined,
+            ai_proposal: aiProposal ?? undefined,
+          })
         } else {
           const code = op.error?.code ?? "redraft_failed"
           const reasonCode = op.error?.reason_code ?? null
@@ -235,7 +316,7 @@ export async function createRedraft(
               code,
               MESSAGES[code] ??
                 reasonMessage(reasonCode) ??
-                "Der KI-Vorschlag konnte nicht erstellt werden.",
+                "Der Vorschlag konnte nicht erstellt werden.",
               reasonCode
             )
           )

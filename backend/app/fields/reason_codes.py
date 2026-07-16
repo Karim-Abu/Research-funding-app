@@ -16,10 +16,13 @@ REASON_TEXTS_DE: dict[str, str] = {
     "nda_locked": "Für gesperrte/NDA-Daten sind KI-Vorschläge deaktiviert.",
     "mode_deterministic_only":
         "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt.",
-    "provider_unavailable": "Es ist kein freigegebener KI-Provider konfiguriert.",
+    "provider_unavailable": (
+        "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider "
+        "konfiguriert. Die App führt nur regelbasierte Prüfungen aus."
+    ),
     "run_mode_mismatch": "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
     "missing_sources": "Für einen belastbaren Vorschlag fehlen passende Quellen.",
-    "field_not_supported": "Für dieses Feld ist noch kein KI-Vorschlag verfügbar.",
+    "field_not_supported": "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
 }
 
 _FALLBACK_CODE = "provider_unavailable"
@@ -32,6 +35,8 @@ _INTERNAL_TO_CODE: dict[str, str] = {
     "processing_mode_deterministic_only": "mode_deterministic_only",
     "processing_mode_local_only": "mode_deterministic_only",
     "provider_unavailable": "provider_unavailable",
+    "local_ai_provider_unavailable": "provider_unavailable",
+    "real_eval_confirmation_required": "run_mode_mismatch",
     # data_policy.evaluate -------------------------------------------------
     "nda_applies": "nda_locked",
     "processing_mode_not_cloud_assisted": "run_mode_mismatch",

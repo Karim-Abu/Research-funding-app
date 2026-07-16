@@ -156,8 +156,23 @@ def get_item(
     )
 
 
-def update_item_status(db: Session, item: MarketComparisonItem, status: str) -> None:
+def update_item_status(
+    db: Session, item: MarketComparisonItem, status: str,
+    support_status: str | None = None,
+) -> None:
+    comparison = db.get(MarketComparison, item.comparison_id)
+    if (
+        status == "accepted" and comparison is not None
+        and comparison.generation_kind == "fake_demo"
+    ):
+        raise ComparisonBlocked(
+            "demo_comparison_not_acceptable",
+            "Demo-Ergebnisse können nicht als Live-Recherche übernommen werden.",
+            status=409,
+        )
     item.status = status
+    if support_status is not None:
+        item.support_status = support_status
     recording.record_audit(
         db, workspace_id=item.workspace_id, actor_user_id=None,
         action="market_comparison_item.status", comparison_id=item.comparison_id,
@@ -185,6 +200,7 @@ def comparison_to_contract(
         status=comparison.status,
         comparison_version=comparison.comparison_version,
         generation_status=comparison.generation_status,
+        generation_kind=comparison.generation_kind,
         research_gaps=list(comparison.research_gaps or []),
         warnings=list(comparison.warnings or []),
         item_count=_item_count(db, comparison.comparison_id),
@@ -201,6 +217,7 @@ def item_to_contract(item: MarketComparisonItem) -> MarketComparisonItemContract
             source_document_id=r["source_document_id"],
             source_version_id=r["source_version_id"],
             linked_evidence_anchor_id=r.get("linked_evidence_anchor_id"),
+            source_url=r.get("source_url"),
         )
         for r in (item.verified_quote_refs or [])
         if r.get("quote")
@@ -215,11 +232,17 @@ def item_to_contract(item: MarketComparisonItem) -> MarketComparisonItemContract
         strengths=item.strengths,
         weaknesses=item.weaknesses,
         differentiation_relevance=item.differentiation_relevance,
+        solution_type=(item.comparison_dimensions or {}).get("solution_type"),
+        centralization=(item.comparison_dimensions or {}).get("centralization", "unclear"),
+        data_access_model=(item.comparison_dimensions or {}).get("data_access_model"),
+        swiss_relevance=(item.comparison_dimensions or {}).get("swiss_relevance"),
         relation_to_project=item.relation_to_project,
         confidence_label=item.confidence_label,
         status=item.status,
         source_document_ids=list(item.source_document_ids or []),
         evidence_quotes=quotes,
+        coverage_status=item.coverage_status,
+        support_status=item.support_status,
     )
 
 

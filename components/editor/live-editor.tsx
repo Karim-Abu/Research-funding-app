@@ -90,6 +90,8 @@ import {
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
+import { generationActionLabel, generationLabel, type GenerationKind } from "@/lib/generation-kind"
+import { subsectionText } from "@/lib/subsections"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -205,6 +207,8 @@ export function LiveEditor({
   const [commentType, setCommentType] = React.useState<CommentType>("Hinweis")
   const [confirmResolveId, setConfirmResolveId] = React.useState<string | null>(null)
   const [fieldNotice, setFieldNotice] = React.useState<string | null>(null)
+  // B5 — Rückmeldung des «In Notizen verschieben»-Flows (unter dem Editor).
+  const [notesNotice, setNotesNotice] = React.useState<string | null>(null)
   // Controlled assistant tab — lets review hints open the Belege tab directly.
   const [assistantTab, setAssistantTab] = React.useState<AssistantTab | null>(null)
   // M10.3: live market comparison for the Markt tab + wide sheet.
@@ -225,6 +229,7 @@ export function LiveEditor({
   // True, wenn der angezeigte Vorschlag aus dem Analyse-Lauf stammt (statt
   // aus einem manuellen «KI-Vorschlag erstellen»).
   const [a2FromRun, setA2FromRun] = React.useState(false)
+  const [selectedSubsection, setSelectedSubsection] = React.useState<string | null>(null)
   const selectedIdRef = React.useRef<string | null>(null)
   const autoSelectedRef = React.useRef(false)
   const editorRef = React.useRef<RichTextEditorHandle>(null)
@@ -272,10 +277,17 @@ export function LiveEditor({
 
   // Im Analyse-Lauf erzeugte Vorschläge (proposed, zur aktuellen Basis)
   // beim Feldwechsel anzeigen — Anzeige only, nie Auto-Übernahme.
-  async function loadRunSuggestion(draft: PortalFieldDraftDto) {
+  async function loadRunSuggestion(
+    draft: PortalFieldDraftDto,
+    targetSection?: string
+  ) {
     if (!isA2Field(draft.field_id)) return
     try {
-      const suggestion = await getRunFieldSuggestion(runId, draft.field_id)
+      const suggestion = await getRunFieldSuggestion(
+        runId,
+        draft.field_id,
+        targetSection
+      )
       if (
         suggestion &&
         suggestion.base_version_id === draft.current_version.draft_version_id &&
@@ -314,7 +326,7 @@ export function LiveEditor({
           const preferred = initialFieldId
             ? drafts.find((d) => d.field_id === initialFieldId)
             : undefined
-          selectField(preferred ?? drafts[0])
+          selectField(preferred ?? drafts[0], catalog)
           if (preferred) {
             requestAnimationFrame(() => editorRef.current?.focus())
           }
@@ -333,7 +345,13 @@ export function LiveEditor({
 
   React.useEffect(() => load(), [load])
 
-  function selectField(draft: PortalFieldDraftDto) {
+  function selectField(
+    draft: PortalFieldDraftDto,
+    catalog: PortalFieldInfoDto[] = portalCatalog
+  ) {
+    const target =
+      catalog.find((p) => p.field_id === draft.field_id)?.subsections?.[0]?.marker ??
+      null
     setSelectedId(draft.field_id)
     selectedIdRef.current = draft.field_id
     setLocalText(draft.current_version.text)
@@ -342,10 +360,29 @@ export function LiveEditor({
     setErrorMsg(null)
     setRecheck(false)
     setFieldNotice(null)
+    setNotesNotice(null)
     setConfirmResolveId(null)
     setAssistantTab(null)
+    setSelectedSubsection(target)
     resetA2()
-    void loadRunSuggestion(draft)
+    void loadRunSuggestion(draft, target ?? undefined)
+  }
+
+  // Fokusansicht (B1): Abschnitt auswählen — der Editor zeigt danach nur noch
+  // dessen Antwortbereich, ein Sprung im Volltext ist nicht nötig.
+  function focusSubsection(marker: string) {
+    setSelectedSubsection(marker)
+    resetA2()
+    if (selected) void loadRunSuggestion(selected, marker)
+  }
+
+  // Fallback (Degraded-Modus ohne parsebare Marker): Sprung zur Markerstelle
+  // im Ein-Block-Editor.
+  function selectSubsection(marker: string) {
+    setSelectedSubsection(marker)
+    editorRef.current?.selectMatch(marker)
+    resetA2()
+    if (selected) void loadRunSuggestion(selected, marker)
   }
 
   async function generateSuggestion() {
@@ -354,7 +391,13 @@ export function LiveEditor({
     setA2Error(null)
     setA2UnavailableReason(null)
     try {
-      const suggestion = await createRedraft(runId, selected.field_id, baseVersionId)
+      const suggestion = await createRedraft(
+        runId,
+        selected.field_id,
+        baseVersionId,
+        undefined,
+        selectedSubsection ?? undefined
+      )
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
     } catch (e) {
@@ -364,14 +407,19 @@ export function LiveEditor({
       } else if (e instanceof RedraftError && e.status === 409) {
         setConflict(true)
       } else {
-        setA2Error(e instanceof Error ? e.message : "KI-Vorschlag fehlgeschlagen.")
+        setA2Error(e instanceof Error ? e.message : "Vorschlag fehlgeschlagen.")
       }
     } finally {
       setA2Loading(false)
     }
   }
 
-  async function acceptSuggestion() {
+  // C3 — `textOverride` trägt die Teilübernahme (gemergter Abschnittstext aus
+  // den gewählten Änderungen); ohne Override wird der ganze Vorschlag exakt
+  // übernommen. Beide Wege laufen über denselben PATCH mit
+  // source_operation_id — das Backend merged die Ziel-Section und vergibt die
+  // ehrliche Herkunft (exakt ⇒ agent, editiert ⇒ user).
+  async function acceptSuggestion(textOverride?: string) {
     if (!selected || !a2Suggestion) return
     setA2Accepting(true)
     setErrorMsg(null)
@@ -380,7 +428,7 @@ export function LiveEditor({
         runId,
         selected.field_id,
         a2Suggestion.base_version_id,
-        a2Suggestion.suggested_text,
+        textOverride ?? a2Suggestion.suggested_text,
         a2Suggestion.operation_id
       )
       applyDraft(updated)
@@ -401,9 +449,37 @@ export function LiveEditor({
     }
   }
 
-  function dismissSuggestion() {
-    // Client-side dismissal only — no backend call, no audited rejection.
+  // C3 — «Eigene Bearbeitung öffnen»: Sheet schliessen OHNE Ablehnung, den
+  // Zielabschnitt fokussieren; der Vorschlag bleibt über «Vorschlag anzeigen»
+  // erreichbar.
+  function editSuggestionTarget() {
+    setA2ReviewOpen(false)
+    const target = a2Suggestion?.target_section
+    if (target && target !== selectedSubsection) setSelectedSubsection(target)
+    editorRef.current?.focus()
+  }
+
+  // C4 — Ablehnen ist eine ausdrückliche, serverseitig persistierte
+  // Entscheidung (HumanDecision auf die Suggestion; Audit ohne Rohtext).
+  // Fehler beim Persistieren blenden den Vorschlag trotzdem aus — die
+  // Entscheidung des Nutzers gilt; der Fehler wird angezeigt.
+  async function dismissSuggestion(reason?: string) {
+    const suggestionId = a2Suggestion?.suggestion_id
+    setA2ReviewOpen(false)
     resetA2()
+    if (!suggestionId) return
+    try {
+      await createHumanDecision(runId, {
+        target_type: "draft_suggestion",
+        target_id: suggestionId,
+        action: "reject",
+        comment: reason?.trim() ? reason.trim() : undefined,
+      })
+    } catch (e) {
+      setErrorMsg(
+        e instanceof Error ? e.message : "Ablehnung konnte nicht gespeichert werden."
+      )
+    }
   }
 
   function applyDraft(updated: PortalFieldDraftDto) {
@@ -481,6 +557,36 @@ export function LiveEditor({
       loadReview()
     } catch (e) {
       setErrorMsg(e instanceof Error ? e.message : "Kommentar fehlgeschlagen.")
+    }
+  }
+
+  // B5 — Arbeitsnotizen: markierten Text aus dem Antragstext entfernen und als
+  // Notiz (Kommentar-Kanal, Typ «Notiz») zum Abschnitt speichern. Der Text
+  // verlässt den Entwurf über deleteSelection → onChange (dirty, nie Auto-Save).
+  async function moveSelectionToNotes() {
+    if (!selected) return
+    const selection = editorRef.current?.getSelectedText().trim() ?? ""
+    if (!selection) {
+      setNotesNotice(
+        "Bitte zuerst den Text markieren, der in die Notizen verschoben werden soll."
+      )
+      return
+    }
+    setNotesNotice(null)
+    try {
+      await createHumanDecision(runId, {
+        target_type: "portal_field_draft",
+        target_id: selected.draft_id,
+        action: "request_changes",
+        comment: commentWithType("Notiz", selection),
+      })
+      editorRef.current?.deleteSelection()
+      setNotesNotice(
+        "In die Notizen verschoben — der Text wurde aus dem Antragstext entfernt (noch nicht gespeichert)."
+      )
+      loadReview()
+    } catch (e) {
+      setErrorMsg(e instanceof Error ? e.message : "Notiz fehlgeschlagen.")
     }
   }
 
@@ -603,6 +709,19 @@ export function LiveEditor({
   // R6: sichtbare Unterabschnitte des ausgewählten Composite-Felds (Registry).
   const subsectionDefs =
     portalCatalog.find((p) => p.field_id === selected.field_id)?.subsections ?? []
+  const configuredGenerationKind: GenerationKind | null =
+    caps?.generation_mode === "fake_demo"
+      ? "fake_demo"
+      : caps?.generation_mode === "real_eval"
+        ? "model_generated"
+        : null
+  const visibleGenerationKind =
+    a2Suggestion?.generation_kind ?? configuredGenerationKind
+  const suggestionAction = generationActionLabel(configuredGenerationKind)
+  const currentReviewText =
+    selectedSubsection && subsectionDefs.length > 0
+      ? (subsectionText(localText, subsectionDefs, selectedSubsection) ?? localText)
+      : localText
 
   const hasBlocker = (review?.blocker_count ?? 0) > 0 || selectedFindings.some((f) => f.severity === "blocker")
   const hasBackedMarketData =
@@ -1101,7 +1220,7 @@ export function LiveEditor({
 
   const editorShell = (
     <DraftWorkspaceShell
-      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie KI-Vorschläge, Belege und offene Punkte."
+      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie Vorschläge, Belege und offene Punkte."
       viewModels={viewModels}
       selectedId={selected.field_id}
       onSelect={(id) => {
@@ -1119,9 +1238,24 @@ export function LiveEditor({
       saveDisabled={saveState === "saving" || saveState === "saved" || overLimit}
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
       deinTextBadge={
-        <Badge variant="secondary">
-          {CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf"}
-        </Badge>
+        <>
+          <Badge variant="secondary">
+            {selected.current_version.generation_kind
+              ? generationLabel(selected.current_version.generation_kind)
+              : selected.current_version.created_by === "agent"
+                ? "Herkunft nicht verifiziert"
+                : (CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf")}
+          </Badge>
+          {/* C8 — nach einer Übernahme/Änderung: klarer Status statt nur Banner. */}
+          {recheck && (
+            <Badge
+              variant="outline"
+              className="border-status-partial/40 bg-status-partial/10 text-status-partial"
+            >
+              In Bearbeitung – erneute Prüfung nötig
+            </Badge>
+          )}
+        </>
       }
       deinTextHint={
         <p className="text-xs text-muted-foreground">Bitte fachlich prüfen und ergänzen.</p>
@@ -1136,19 +1270,56 @@ export function LiveEditor({
               {RECHECK_NOTICE}
             </p>
           )}
+          {notesNotice && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {notesNotice}
+            </p>
+          )}
           {errorMsg && <p role="alert" className="text-xs text-destructive">{errorMsg}</p>}
         </>
+      }
+      deinTextActions={
+        <Button
+          variant="ghost"
+          size="xs"
+          onClick={moveSelectionToNotes}
+          title="Markierten Text aus dem Antragstext entfernen und als Notiz zum Abschnitt speichern"
+        >
+          In Notizen verschieben
+        </Button>
       }
       editorRef={editorRef}
       serverText={selected.current_version.text}
       projectId={marketProjectId}
       dataClass={workspaceDataClass}
       subsections={subsectionDefs}
-      onJumpToSubsection={(marker) => editorRef.current?.selectMatch(marker)}
+      onJumpToSubsection={selectSubsection}
+      activeSubsection={selectedSubsection}
+      onSelectSubsection={focusSubsection}
+      suggestionPaneLabel={
+        visibleGenerationKind ? generationLabel(visibleGenerationKind) : "Vorschläge"
+      }
       kiContent={
         <div className="flex flex-col gap-2">
           {showA2Controls ? (
             <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
+              {subsectionDefs.length > 0 && (
+                <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <span>Zielabschnitt</span>
+                  <select
+                    value={selectedSubsection ?? ""}
+                    onChange={(event) => focusSubsection(event.target.value)}
+                    className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                    aria-label="Zielabschnitt für Vorschlag"
+                  >
+                    {subsectionDefs.map((section) => (
+                      <option key={section.marker} value={section.marker}>
+                        {section.marker}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+              )}
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
@@ -1157,7 +1328,7 @@ export function LiveEditor({
                   disabled={a2Loading}
                 >
                   <Sparkles data-icon="inline-start" />
-                  {a2Loading ? "KI-Vorschlag wird erstellt …" : "KI-Vorschlag erstellen"}
+                  {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
                 </Button>
                 {a2Suggestion && !a2ReviewOpen && (
                   <Button size="sm" variant="ghost" onClick={() => setA2ReviewOpen(true)}>
@@ -1178,7 +1349,9 @@ export function LiveEditor({
               )}
               {!a2Suggestion && !a2Loading && !a2UnavailableReason && !a2Error && (
                 <p className="text-xs text-muted-foreground">
-                  KI-Vorschlag für diesen Abschnitt noch nicht erstellt.
+                  {configuredGenerationKind
+                    ? generationLabel(configuredGenerationKind)
+                    : "Vorschlag"} für diesen Abschnitt noch nicht erstellt.
                 </p>
               )}
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
@@ -1193,7 +1366,7 @@ export function LiveEditor({
                 onUseTemplate={() => editorRef.current?.focus?.()}
               />
               <p className="text-xs text-muted-foreground">
-                KI-Vorschläge unterstützen aktuell die Abschnitte «Abstract»,
+                Abschnittsvorschläge unterstützen aktuell «Abstract»,
                 «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,
                 «Finanzielle Unabhängigkeit» und «Management-Stunden».
               </p>
@@ -1246,12 +1419,16 @@ export function LiveEditor({
         <SuggestionReviewDialog
           open={a2ReviewOpen}
           onOpenChange={(o) => {
-            if (!o) dismissSuggestion()
+            // Schliessen (X/ESC) ist KEIN Verwerfen — der Vorschlag bleibt
+            // über «Vorschlag anzeigen» erreichbar; Ablehnen ist explizit.
+            if (!o) setA2ReviewOpen(false)
           }}
-          currentText={localText}
+          currentText={currentReviewText}
           suggestion={a2Suggestion}
-          onAccept={acceptSuggestion}
-          onDismiss={dismissSuggestion}
+          onAccept={() => void acceptSuggestion()}
+          onAcceptPartial={(mergedText) => void acceptSuggestion(mergedText)}
+          onEdit={editSuggestionTarget}
+          onDismiss={(reason) => void dismissSuggestion(reason)}
           accepting={a2Accepting}
         />
       )}

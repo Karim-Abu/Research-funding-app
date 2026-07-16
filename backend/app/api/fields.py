@@ -1,7 +1,7 @@
 """Fields router: listFields / getField / updateField + draft EvidenceLinks."""
 from __future__ import annotations
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, Request, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request, Response
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException, correlation_id
@@ -11,6 +11,7 @@ from app.contracts.draft import (
     DraftPatch,
     EvidenceLinkCreate,
     FieldSuggestionRead,
+    FieldSuggestionsRead,
     PortalFieldDraft,
     RedraftRequest,
 )
@@ -220,6 +221,7 @@ def update_field(
 def get_field_suggestion(
     run_id: str,
     field_id: str,
+    target_section: str | None = Query(default=None, max_length=16),
     context: AuthContext = Depends(require_session),
     db: Session = Depends(get_db),
 ) -> FieldSuggestionRead:
@@ -232,13 +234,35 @@ def get_field_suggestion(
     if draft.current_version_id is None:
         return FieldSuggestionRead(suggestion=None)
     suggestion = suggestions_repo.get_proposed_for(
-        db, run.run_id, draft.draft_id, draft.current_version_id
+        db, run.run_id, draft.draft_id, draft.current_version_id, target_section
     )
     if suggestion is None:
         return FieldSuggestionRead(suggestion=None)
     return FieldSuggestionRead(
         suggestion=field_drafting.proposed_suggestion_view(db, run, suggestion)
     )
+
+
+@router.get(
+    "/runs/{run_id}/fields/{field_id}/suggestions",
+    response_model=FieldSuggestionsRead,
+)
+def list_field_suggestions(
+    run_id: str,
+    field_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> FieldSuggestionsRead:
+    run = _require_run(db, run_id, context.user.workspace_id)
+    draft = _require_draft(db, run, field_id)
+    if draft.current_version_id is None:
+        return FieldSuggestionsRead()
+    rows = suggestions_repo.list_proposed_for(
+        db, run.run_id, draft.draft_id, draft.current_version_id
+    )
+    return FieldSuggestionsRead(suggestions=[
+        field_drafting.proposed_suggestion_view(db, run, row) for row in rows
+    ])
 
 
 @router.post(
@@ -255,27 +279,42 @@ def create_redraft(
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
 ) -> AsyncAccepted:
-    """Milestone 9D/9E: request an advisory A2 suggestion for an A2-enabled field
-    (Solution & Innovation or Value Creation). Async (202); 409 on a stale base
-    version; 503 when AI is unavailable for the run's data class / processing mode.
-    The draft is never auto-modified."""
+    """Advisory A2-Vorschlag anfordern; der Entwurf bleibt unverändert."""
     run = _require_run(db, run_id, context.user.workspace_id)
     # A2 is scoped to the explicit registry-backed field/profile allow-list.
     if field_id not in A2_FIELD_PROFILES:
         raise ProblemException(
             status=404, code="not_found", title=_NOT_FOUND,
-            detail="AI suggestions are not available for this field.",
+            detail="Für dieses Feld sind keine Abschnittsvorschläge verfügbar.",
         )
     draft = _require_draft(db, run, field_id)
+    config = field_drafting.a2_fields.resolve_field_config(field_id)
+    if config is None:
+        raise ProblemException(
+            status=404, code="not_found", title=_NOT_FOUND,
+            detail="Für dieses Feld sind keine Abschnittsvorschläge verfügbar.",
+        )
+    if config.mandatory_markers and payload.target_section not in config.mandatory_markers:
+        raise ProblemException(
+            status=422, code="target_section_required", title="Unprocessable Entity",
+            detail="Für Composite-Felder muss ein gültiger Zielabschnitt gewählt werden.",
+        )
+    if not config.mandatory_markers and payload.target_section is not None:
+        raise ProblemException(
+            status=422, code="target_section_not_supported", title="Unprocessable Entity",
+            detail="Dieses Feld besitzt keine getrennten Zielabschnitte.",
+        )
     operation, accepted, guidance = redraft_service.prepare_redraft(
         db, run, draft, base_version_id=payload.base_version_id,
-        guidance=payload.guidance, actor_user_id=context.user.id,
+        guidance=payload.guidance, target_section=payload.target_section,
+        actor_user_id=context.user.id,
         idempotency_key=None, correlation_id=correlation_id(request),
     )
     db.commit()
     background.add_task(
         redraft_service.redraft_executor, operation.operation_id, run.run_id,
         draft.draft_id, payload.base_version_id, guidance, field_id,
+        payload.target_section,
     )
     return accepted
 

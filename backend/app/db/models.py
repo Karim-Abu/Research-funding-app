@@ -5,10 +5,11 @@ SQLAlchemy's ``Session``.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 
 from sqlalchemy import (
     JSON,
+    Date,
     DateTime,
     Float,
     ForeignKey,
@@ -97,6 +98,9 @@ class Project(Base):
         ForeignKey("workspaces.id"), nullable=False, index=True
     )
     title: Mapped[str] = mapped_column(String, nullable=False)
+    title_en: Mapped[str | None] = mapped_column(String, nullable=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     description: Mapped[str] = mapped_column(Text, nullable=False)
     innovation_field: Mapped[str | None] = mapped_column(String, nullable=True)
     funding_instrument_profile_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -115,6 +119,11 @@ class Project(Base):
     cash_contribution: Mapped[float | None] = mapped_column(Float, nullable=True)
     total_requested_funding: Mapped[float | None] = mapped_column(
         Float, nullable=True
+    )
+    # Reine Zusatzinformation aus dem Portal. Sie wird nie als direkte
+    # Foerderung in die formale Regelbasis gespiegelt.
+    total_requested_funding_including_overhead: Mapped[float | None] = (
+        mapped_column(Float, nullable=True)
     )
     budget_exception_basis: Mapped[str | None] = mapped_column(String, nullable=True)
     duration_months: Mapped[int | None] = mapped_column(nullable=True)
@@ -209,6 +218,7 @@ class SourceDocument(Base):
     )
     # Display name / original filename — metadata only, never used in a path.
     name: Mapped[str] = mapped_column(String, nullable=False)
+    source_url: Mapped[str | None] = mapped_column(String, nullable=True)
     # Contract enum: pdf | docx | txt | url
     type: Mapped[str] = mapped_column(String, nullable=False)
     # Contract enum: uploaded | processing | processed | needs_manual_input | failed
@@ -330,6 +340,17 @@ class ImportCandidate(Base):
     confidence: Mapped[str] = mapped_column(String, nullable=False)
     # Menschlich lesbare Fundstelle, z. B. "Seite 3"; None bei Textquellen.
     source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Version + nachvollziehbare Abschnittszuordnung des deterministischen
+    # Mappings. section_metadata kann D2-Rohstellen enthalten: nie loggen.
+    mapping_version: Mapped[str] = mapped_column(
+        String, nullable=False, default="innolink-narrative-v2"
+    )
+    mapping_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="content_detected"
+    )
+    section_metadata: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
     decided_by: Mapped[str | None] = mapped_column(
         ForeignKey("users.id"), nullable=True
@@ -340,6 +361,63 @@ class ImportCandidate(Base):
     # Provenienz: die durch «Übernehmen» erzeugte DraftVersion.
     accepted_draft_version_id: Mapped[str | None] = mapped_column(
         String, nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class StructuredImportCandidate(Base):
+    """Deterministischer, nicht textfeldgebundener Importkandidat.
+
+    Payloads koennen D2 und bei Partnern Personennamen enthalten. Sie werden
+    ausschliesslich in der DB gespeichert und nie in Audit- oder Log-Details
+    kopiert. Jede fachliche Persistierung benoetigt eine menschliche
+    Entscheidung.
+    """
+
+    __tablename__ = "structured_import_candidates"
+    __table_args__ = (
+        UniqueConstraint(
+            "source_version_id",
+            "candidate_kind",
+            "target_key",
+            name="uq_structured_import_version_kind_target",
+        ),
+    )
+
+    candidate_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(
+        ForeignKey("workspaces.id"), nullable=False, index=True
+    )
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    source_id: Mapped[str] = mapped_column(
+        ForeignKey("source_documents.source_id"), nullable=False, index=True
+    )
+    source_version_id: Mapped[str] = mapped_column(
+        ForeignKey("source_versions.source_version_id"), nullable=False
+    )
+    candidate_kind: Mapped[str] = mapped_column(String, nullable=False)
+    target_key: Mapped[str] = mapped_column(String, nullable=False)
+    payload_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    edited_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    confidence: Mapped[str] = mapped_column(String, nullable=False)
+    source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    mapping_version: Mapped[str] = mapped_column(String, nullable=False)
+    decision: Mapped[str] = mapped_column(String, nullable=False, default="pending")
+    decided_by: Mapped[str | None] = mapped_column(
+        ForeignKey("users.id"), nullable=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # Polymorphe Provenienz auf Project/Partner; bewusst kein FK auf
+    # unterschiedliche Zieltabellen.
+    applied_resource_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    supersedes_candidate_id: Mapped[str | None] = mapped_column(
+        ForeignKey("structured_import_candidates.candidate_id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -422,6 +500,9 @@ class AnalysisRun(Base):
     actual_cost_chf: Mapped[float] = mapped_column(Float, default=0.0, nullable=False)
     stop_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     last_error: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # KI-Teilstatus getrennt vom allgemeinen, deterministischen Run-Status.
+    live_execution_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    live_status_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     # Cooperative cancellation flag, checked by the executor between stages.
     cancel_requested: Mapped[bool] = mapped_column(default=False, nullable=False)
     started_at: Mapped[datetime | None] = mapped_column(
@@ -605,6 +686,7 @@ class Partner(Base):
     project_role: Mapped[str | None] = mapped_column(String, nullable=True)
     country: Mapped[str | None] = mapped_column(String, nullable=True)
     location: Mapped[str | None] = mapped_column(String, nullable=True)
+    department: Mapped[str | None] = mapped_column(String, nullable=True)
     contribution: Mapped[str | None] = mapped_column(String, nullable=True)
     uid: Mapped[str | None] = mapped_column(String, nullable=True)
     industry: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -973,8 +1055,12 @@ class CopyEvent(Base):
         ForeignKey("analysis_runs.run_id"), nullable=False, index=True
     )
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
-    field_id: Mapped[str] = mapped_column(String, nullable=False)
-    draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    # ``portal_field`` keeps the original field/version reference. Structured
+    # transfer targets are snapshot-addressed and therefore have no draft.
+    target_type: Mapped[str] = mapped_column(String, nullable=False, default="portal_field")
+    target_key: Mapped[str] = mapped_column(String, nullable=False, default="")
+    field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
     content_hash: Mapped[str] = mapped_column(String, nullable=False)
     # Warning codes (open | limit | review): as reported by the client vs.
     # recomputed on the server — the union decides the override requirement.
@@ -1015,6 +1101,7 @@ class ReviewFinding(Base):
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     profile_id: Mapped[str] = mapped_column(String, nullable=False)
     field_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    target_section: Mapped[str | None] = mapped_column(String, nullable=True)
     requirement_id: Mapped[str | None] = mapped_column(String, nullable=True)
     # Contract enum: blocker | warning | info
     severity: Mapped[str] = mapped_column(String, nullable=False)
@@ -1235,6 +1322,21 @@ class AgentInvocation(Base):
     input_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     output_schema_id: Mapped[str] = mapped_column(String, nullable=False)
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Versioned professional contract. Historic rows remain nullable because
+    # their role/skill split cannot be reconstructed safely.
+    role_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    role_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    skill_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    skill_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    contract_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Ebene E (Live-Readiness): das vom Provider in der Antwort gemeldete
+    # Modell (Alias-Auflösung). model_id bleibt das ANGEFRAGTE Modell.
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Initial angeforderte Provider-ID. ``model_id`` bleibt der
+    # Kompatibilitätswert der letzten/finalen Route.
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    retry_count: Mapped[int] = mapped_column(nullable=False, default=0)
+    termination_reason: Mapped[str | None] = mapped_column(String, nullable=True)
     # queued | running | succeeded | failed | blocked | timed_out
     status: Mapped[str] = mapped_column(String, nullable=False, default="queued")
     input_hash: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1252,10 +1354,70 @@ class AgentInvocation(Base):
     # Milestone 9B: non-sensitive context metadata (selected/skipped fragment
     # counts, char budget, context_hash) — never raw context or prompt text.
     context_meta: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    # IDs, hashes and safe counts only; never raw source/query/prompt/draft text.
+    input_artifact_refs: Mapped[list | None] = mapped_column(JSON, nullable=True)
     created_by_system: Mapped[bool] = mapped_column(nullable=False, default=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
+
+
+class AgentInvocationAttempt(Base):
+    """One provider-route attempt; metadata only, never prompt/output text."""
+
+    __tablename__ = "agent_invocation_attempts"
+    __table_args__ = (
+        UniqueConstraint(
+            "invocation_id", "attempt_index", name="uq_agent_invocation_attempt_index"
+        ),
+    )
+
+    attempt_id: Mapped[str] = mapped_column(String, primary_key=True)
+    invocation_id: Mapped[str] = mapped_column(
+        ForeignKey("agent_invocations.invocation_id"), nullable=False, index=True
+    )
+    attempt_index: Mapped[int] = mapped_column(nullable=False)
+    retry_index: Mapped[int] = mapped_column(nullable=False, default=0)
+    route_key: Mapped[str] = mapped_column(String, nullable=False)
+    route_alias: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    termination_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    estimated_cost_chf: Mapped[float | None] = mapped_column(Float, nullable=True)
+    estimated_cost_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    usage_record_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+
+class ProviderPreflightResult(Base):
+    """Persisted, redacted synthetic route smoke result."""
+
+    __tablename__ = "provider_preflight_results"
+
+    preflight_id: Mapped[str] = mapped_column(String, primary_key=True)
+    route_key: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    route_alias: Mapped[str] = mapped_column(String, nullable=False)
+    provider: Mapped[str] = mapped_column(String, nullable=False)
+    requested_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actual_model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    checks_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    latency_ms: Mapped[int | None] = mapped_column(nullable=True)
+    triggered_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    checked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
 
 
 # ---------------------------------------------------------------------------
@@ -1349,8 +1511,8 @@ class AgentEvidenceProposal(Base):
 
 
 # ---------------------------------------------------------------------------
-# A2 Solution & Innovation draft suggestions (Milestone 9D): advisory AI draft
-# suggestions for SOL.INNOVATION_SOLUTION.EDITOR. Internal only — no public
+# A2 draft suggestions: advisory proposals with explicit generation provenance.
+# Internal only — no public
 # endpoint; surfaced through the async operation result. Immutable except the
 # status/decision fields. Accepting (only) creates a new DraftVersion.
 # ---------------------------------------------------------------------------
@@ -1376,6 +1538,18 @@ class DraftSuggestion(Base):
     prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
     model_route: Mapped[str | None] = mapped_column(String, nullable=True)
     model_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Ehrliche Herkunft der Ausgabe. Nullable nur fuer vor dieser Migration
+    # erzeugte Zeilen, deren tatsaechlicher Adapter historisch nicht sicher
+    # rekonstruiert werden kann. Neue Suggestions setzen den Wert immer.
+    # rule_template | fake_demo | model_generated
+    generation_kind: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Composite-A2 bearbeitet genau einen Registry-Unterabschnitt. Singleton-
+    # Felder bleiben null. Technische ID, nicht als Antragstext zu behandeln.
+    target_section: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Strukturierte, advisory Abschnittsausgabe (Rationale/Fakten/Claims/Luecken).
+    # Der vorgeschlagene Text bleibt zusaetzlich in suggested_text, damit der
+    # bestehende HITL-Annahmepfad kompatibel bleibt.
+    section_result_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     # proposed | accepted | rejected | expired | failed
     status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
     suggested_text: Mapped[str] = mapped_column(Text, nullable=False)
@@ -1438,11 +1612,55 @@ class ProcessingConfirmation(Base):
 # ---------------------------------------------------------------------------
 
 
+class ResearchBrief(Base):
+    """Versionierter, vom Menschen freigegebener public-safe Recherchebrief.
+
+    Der Brief enthält ausschliesslich abstrakte Suchdeskriptoren. Rohprojekttext,
+    Partnernamen, Budgets und Kontaktangaben gehören nie in diese Tabelle.
+    """
+
+    __tablename__ = "research_briefs"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id", "version", name="uq_research_briefs_project_version"
+        ),
+    )
+
+    research_brief_id: Mapped[str] = mapped_column(String, primary_key=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    version: Mapped[int] = mapped_column(nullable=False)
+    # draft | approved | superseded
+    status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    application_domain: Mapped[str] = mapped_column(String, nullable=False, default="")
+    technology_class: Mapped[str] = mapped_column(String, nullable=False, default="")
+    target_customer_segments: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    region: Mapped[str] = mapped_column(String, nullable=False, default="")
+    competence_needs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    modules: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    content_hash: Mapped[str] = mapped_column(String, nullable=False)
+    created_by: Mapped[str] = mapped_column(String, nullable=False)
+    approved_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    approved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, onupdate=_utcnow, nullable=False
+    )
+
+
 class ResearchTask(Base):
     """Explicit, user-initiated public web research task (Domain Model
     ResearchTask). Internal table; the public surface is the openapi ResearchTask
-    schema. ``query_text`` only ever holds the user-confirmed public query — never
-    raw confidential/internal project text."""
+    schema. ``query_text`` only ever holds the server-loaded, human-approved public-safe
+    query — never raw confidential/internal project text."""
 
     __tablename__ = "research_tasks"
 
@@ -1456,10 +1674,15 @@ class ResearchTask(Base):
     # Controlled enum: partner_role_suggestion | competence_gap_analysis |
     # publication_track_record (openapi ResearchTaskCreate.purpose).
     purpose: Mapped[str] = mapped_column(String, nullable=False)
+    research_brief_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_briefs.research_brief_id"), nullable=True, index=True
+    )
+    research_module: Mapped[str | None] = mapped_column(String, nullable=True)
+    planner_purpose: Mapped[str | None] = mapped_column(String, nullable=True)
     # person | organisation | topic
     subject_type: Mapped[str] = mapped_column(String, nullable=False)
     subject_name: Mapped[str | None] = mapped_column(String, nullable=True)
-    # User-confirmed public query only (== ResearchTaskCreate.query_preview).
+    # Server-loaded sanitized query from SearchQueryApproval.
     query_text: Mapped[str] = mapped_column(Text, nullable=False)
     normalized_query_hash: Mapped[str] = mapped_column(String, nullable=False)
     # queued | running | succeeded | failed | blocked | cancelled
@@ -1471,6 +1694,8 @@ class ResearchTask(Base):
     max_results: Mapped[int] = mapped_column(nullable=False, default=10)
     max_pages: Mapped[int] = mapped_column(nullable=False, default=1)
     provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    # fake_demo | live; null solange noch kein Provider erfolgreich geantwortet hat.
+    execution_mode: Mapped[str | None] = mapped_column(String, nullable=True)
     provider_usage: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     result_count: Mapped[int] = mapped_column(nullable=False, default=0)
     # Advisory A1 public-competence synthesis state (non-blocking): null | succeeded |
@@ -1481,7 +1706,7 @@ class ResearchTask(Base):
     )
     # Milestone 9J — Search Query Firewall provenance. ``firewall_data_class`` is the
     # derived D0–D3/UNKNOWN class at creation; ``firewall_approval_id`` links the
-    # single-use sanitized-query approval consumed for D1/D2 (null for D0).
+    # single-use sanitized-query approval consumed for new D0/D1/D2 brief tasks.
     firewall_data_class: Mapped[str | None] = mapped_column(String, nullable=True)
     firewall_approval_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1514,6 +1739,27 @@ class ResearchResult(Base):
     final_url: Mapped[str | None] = mapped_column(String, nullable=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
     snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
+    publisher: Mapped[str | None] = mapped_column(String, nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_category: Mapped[str | None] = mapped_column(String, nullable=True)
+    # Preliminary metadata only; it is not an evidence or correctness decision.
+    source_quality: Mapped[str] = mapped_column(
+        String, nullable=False, default="unassessed"
+    )
+    potential_sections: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Coverage (located text), deterministic support and human content review are
+    # intentionally independent states.
+    coverage_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    support_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    content_review_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="unreviewed"
+    )
     provider_rank: Mapped[int | None] = mapped_column(nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -1565,6 +1811,9 @@ class MarketComparison(Base):
     source_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
     # Once-per-comparison generation guard: null | succeeded | failed | skipped.
     generation_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    # fake_demo | model_generated | deterministic; truthful provenance is required
+    # before a comparison can enter the A2 drafting context.
+    generation_kind: Mapped[str | None] = mapped_column(String, nullable=True)
     operation_id: Mapped[str | None] = mapped_column(String, nullable=True)
     error_code: Mapped[str | None] = mapped_column(String, nullable=True)
     safe_error_detail: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1614,6 +1863,11 @@ class MarketComparisonItem(Base):
     source_document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # list of verified-quote reference dicts (rule 6). Never search snippets.
     verified_quote_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    # Lösungstyp, Zentralität, Daten-/Zugriffsmodell und Schweizer Bezug.
+    comparison_dimensions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    # Exakte Fundstelle und fachliche Stützung bleiben getrennt.
+    coverage_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    support_status: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -1646,6 +1900,11 @@ class SearchQueryApproval(Base):
     # firecrawl | web_research (intended tool for the sanitized query).
     intended_tool: Mapped[str] = mapped_column(String, nullable=False)
     purpose: Mapped[str | None] = mapped_column(String, nullable=True)
+    research_brief_id: Mapped[str | None] = mapped_column(
+        ForeignKey("research_briefs.research_brief_id"), nullable=True, index=True
+    )
+    research_module: Mapped[str | None] = mapped_column(String, nullable=True)
+    planner_purpose: Mapped[str | None] = mapped_column(String, nullable=True)
     # D0_PUBLIC | D1_INTERNAL | D2_CONFIDENTIAL_IDEA | D3_NDA_BLOCKED | UNKNOWN
     data_class: Mapped[str] = mapped_column(String, nullable=False)
     # SHA256 of the normalized RAW query. The raw query itself is never persisted.

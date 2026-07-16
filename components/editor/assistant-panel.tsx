@@ -208,7 +208,7 @@ export function AssistantPanel({
         <Section title="Versionen">
           {suggestionExists && (
             <div className="flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">
-              <span className="text-xs font-medium text-foreground">KI-Vorschlag (temporär)</span>
+              <span className="text-xs font-medium text-foreground">Strukturvorlage (temporär)</span>
               <span className="text-[11px] text-primary">nicht übernommen</span>
             </div>
           )}

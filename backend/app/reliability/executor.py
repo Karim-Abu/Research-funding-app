@@ -128,7 +128,10 @@ def run_reliability_pass(
             ))
             gate_specs = gate_mod.gate_claim(claim, lineage)
             fc_specs = fc_mod.false_consensus_specs(claim, lineage)
-            claim_specs = gate_specs + fc_specs
+            # B6 — pro Claim nur die primäre Ursache persistieren (Dedup über
+            # Gate- UND False-Consensus-Findings); die Summary-Metriken unten
+            # bleiben claimgenau (is_false_consensus vor dem Dedup bestimmt).
+            claim_specs = gate_mod.primary_claim_spec(gate_specs + fc_specs)
             if claim_specs:
                 claims_with_findings.add(claim.claim_id)
                 fields_with_findings.add(claim.field_id)

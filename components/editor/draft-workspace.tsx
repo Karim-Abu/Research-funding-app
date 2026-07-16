@@ -313,7 +313,8 @@ export function DraftWorkspace() {
 
   return (
     <DraftWorkspaceShell
-      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie KI-Vorschläge, Belege und offene Punkte."
+      subtitle="Bearbeiten Sie die Texte pro Innolink-Feld, prüfen Sie Strukturvorlagen, Belege und offene Punkte."
+      suggestionPaneLabel="Strukturvorlage"
       viewModels={viewModels}
       selectedId={selectedId}
       onSelect={setSelectedId}

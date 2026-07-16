@@ -16,12 +16,11 @@
 import { Badge } from "@/components/ui/badge"
 import { StatusHelp } from "@/components/status/status-help"
 import { cn } from "@/lib/utils"
+import type { AreaProgress } from "@/lib/check-status"
 import {
   PROGRESS_CARD_HELP,
   REVIEW_PROGRESS_NOTE,
   REVIEW_TILE_HELP,
-  type ReviewProgress,
-  type ReviewSummary,
 } from "@/lib/review-view"
 
 // ---------------------------------------------------------------------------
@@ -161,21 +160,30 @@ function LegendRow({
 }
 
 // ---------------------------------------------------------------------------
-// Card
+// Card — Zahlen kommen ausschliesslich aus dem autoritativen Check-Status-View
+// (Prüfbereiche) und der Fix Queue («Blockierende Aufgaben»/Evidenzhinweise).
+// «Nicht geprüft» ist ein eigenes graues Segment — nie stillschweigend grün.
 // ---------------------------------------------------------------------------
 export function ReviewProgressCard({
-  summary,
   progress,
+  blockingTasks,
+  evidenceNotes,
+  pruefungNoetig,
   recheckRequired = false,
 }: {
-  summary: ReviewSummary
-  progress: ReviewProgress
+  progress: AreaProgress
+  /** Gruppierte handlungsrelevante Aufgaben mit Blocker-Severity. */
+  blockingTasks: number
+  /** Technische Zahl der einzelnen Evidenzhinweise (claimgenau). */
+  evidenceNotes: number
+  pruefungNoetig: number
   recheckRequired?: boolean
 }) {
   const ariaLabel =
     `Bearbeitungs- und Prüfstand: ${progress.bestanden} von ${progress.total} ` +
     `Prüfbereichen bestanden, ${progress.teilweise} teilweise bestanden, ` +
-    `${progress.nichtBestanden} nicht bestanden.`
+    `${progress.nichtBestanden} nicht bestanden, ` +
+    `${progress.nichtGeprueft} nicht geprüft.`
 
   return (
     <section
@@ -204,6 +212,7 @@ export function ReviewProgressCard({
             { value: progress.bestanden, className: "text-status-fulfilled" },
             { value: progress.teilweise, className: "text-status-partial" },
             { value: progress.nichtBestanden, className: "text-destructive" },
+            { value: progress.nichtGeprueft, className: "text-muted-foreground/50" },
           ]}
           total={progress.total}
           centerValue={`${progress.bestanden} / ${progress.total}`}
@@ -212,7 +221,7 @@ export function ReviewProgressCard({
         />
 
         <dl className="w-full min-w-0 flex-1 self-center">
-          {/* Block A — the three ring statuses (dots match the segments). */}
+          {/* Block A — the four ring statuses (dots match the segments). */}
           <LegendRow
             label="Bestanden"
             value={progress.bestanden}
@@ -232,23 +241,29 @@ export function ReviewProgressCard({
             dotClassName="bg-destructive"
             accentClassName="text-destructive"
           />
+          <LegendRow
+            label="Nicht geprüft"
+            value={progress.nichtGeprueft}
+            help={REVIEW_TILE_HELP.nichtGeprueft}
+            dotClassName="bg-muted-foreground/50"
+          />
 
           {/* Block B — open items without a denominator (not in the ring). */}
           <div className="my-2 border-t border-border" aria-hidden />
           <LegendRow
-            label="Blocker"
-            value={summary.blocker}
-            help={REVIEW_TILE_HELP.blocker}
+            label="Blockierende Aufgaben"
+            value={blockingTasks}
+            help={REVIEW_TILE_HELP.blockierendeAufgaben}
             accentClassName="text-destructive"
           />
           <LegendRow
-            label="Hinweise"
-            value={summary.hinweise}
-            help={REVIEW_TILE_HELP.hinweise}
+            label="Unterliegende Evidenzhinweise"
+            value={evidenceNotes}
+            help={REVIEW_TILE_HELP.evidenzhinweise}
           />
           <LegendRow
             label="Prüfung nötig"
-            value={summary.pruefungNoetig}
+            value={pruefungNoetig}
             help={REVIEW_TILE_HELP.pruefungNoetig}
             accentClassName="text-status-partial"
           />

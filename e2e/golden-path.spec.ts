@@ -9,12 +9,17 @@ import {
   waitForRunCompleted,
 } from "./helpers"
 
-// GOLDEN PATH (Fake-LLM + Fake-Webprovider, deterministisch, ohne externe Schlüssel):
-// Login → Projekt aus Idee + Innolink-PDF → Importkandidaten prüfen/übernehmen →
-// Partner → Budget + Regeln → Analyse starten → sichere Research-Queries genehmigen →
-// Markt-/Research-Ergebnisse prüfen und Quellen übernehmen → A2-Vorschläge + A3-Findings
-// ansehen → ein Feld bearbeiten und freigeben → Qualitätsprüfung → Feld in der
-// Innolink-Kopieransicht kopieren → Browser neu laden (Zustand bleibt) → Abmelden.
+// TECHNISCHER E2E (Ebene A — deterministisch, Fake-LLM + Fake-Webprovider,
+// ohne externe Schlüssel). Beweist UI-/Persistenztechnik des Golden Path —
+// NICHT die fachliche Auslese-Qualität (dafür: e2e/import-functional.spec.ts)
+// und NICHT die Statuswahrheit (dafür: e2e/review-truth.spec.ts).
+// Ablauf: Login → Projekt aus Idee + Innolink-PDF → Importkandidaten
+// prüfen/übernehmen → Partner → Budget + Regeln → Recherchebrief freigeben →
+// Analyse starten → sichere Research-Queries genehmigen → Demo-Recherche
+// ehrlich anzeigen (kein Fake-Import, kein fabrizierter Marktvergleich) →
+// A2-Vorschläge + A3-Findings ansehen → ein Feld bearbeiten und freigeben →
+// Qualitätsprüfung → Feld in der Innolink-Kopieransicht kopieren → Browser
+// neu laden (Zustand bleibt) → Abmelden.
 //
 // Der Projekttitel trägt einen Zeitstempel, damit der Test ZWEIMAL hintereinander auf
 // derselben Demo-DB läuft (Akzeptanzkriterium). Benötigt: Backend mit
@@ -54,7 +59,7 @@ async function copyCard(page: Page, fieldName: string): Promise<void> {
   await expect(card.getByText(/Kopiert am/)).toBeVisible()
 }
 
-test("Golden Path: Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Reload", async ({
+test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Reload", async ({
   page,
 }) => {
   test.setTimeout(300_000)
@@ -100,7 +105,9 @@ test("Golden Path: Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Rel
     const addPartner = page.getByRole("button", { name: "Partner hinzufügen" })
 
     async function fillPartner(name: string, role: string): Promise<void> {
-      await page.getByLabel("Name").fill(name)
+      // exact: das Feld «Offizielle Vertretung – nur Name …» enthält sonst
+      // ebenfalls «Name».
+      await page.getByLabel("Name", { exact: true }).fill(name)
       await page.getByLabel("Land").fill("CH")
       await page.getByLabel("Rolle im Projekt").fill(role)
       await page
@@ -135,6 +142,30 @@ test("Golden Path: Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Rel
   let runId = ""
   await test.step("7.–8. Analyse starten und sichere Research-Queries genehmigen", async () => {
     await page.goto("/quellen")
+    // Queries entstehen nur aus dem geprüften öffentlichen Recherchebrief —
+    // zuerst vorschlagen lassen und public-safe freigeben (HITL).
+    const research = page.getByTestId("public-research-panel")
+    await expect(research).toBeVisible({ timeout: 20_000 })
+    await research
+      .getByRole("button", { name: "Recherchebrief vorschlagen" })
+      .click()
+    await expect(page.getByTestId("research-brief-form")).toBeVisible({
+      timeout: 20_000,
+    })
+    // Pflichtfelder public-safe ausfüllen (nur generische Begriffe — keine
+    // Rohidee, keine Partnernamen): der Brief bleibt menschlich geprüft.
+    await page.getByLabel("Anwendungsdomäne").fill("Energiemanagement")
+    await page.getByLabel("Technologieklasse").fill("Prognosesoftware")
+    await page
+      .getByLabel("Zielkundensegmente (kommagetrennt)")
+      .fill("Verteilnetzbetreiber, Stadtwerke")
+    await page
+      .getByLabel("Gesuchte Forschungs-/Partnerkompetenzen (kommagetrennt)")
+      .fill("Energiedatenanalyse")
+    await page.getByRole("button", { name: "Public-safe Brief freigeben" }).click()
+    await expect(page.getByText(/Brief v\d+ freigegeben/)).toBeVisible({
+      timeout: 20_000,
+    })
     await page.getByRole("button", { name: "Analyse starten" }).click()
     const dialog = page.getByRole("dialog")
     await dialog.getByRole("switch", { name: /Öffentliche Webrecherche/ }).click()
@@ -142,56 +173,82 @@ test("Golden Path: Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Rel
     await expect(list).toBeVisible({ timeout: 20_000 })
     const rows = list.getByTestId("query-approval-row")
     await expect(rows.first()).toBeVisible()
-    // Zwei freigeben, eine ablehnen (HITL — jede ausgehende Query wird gesehen).
+    // HITL — jede ausgehende Query wird gesehen: erste freigeben, letzte
+    // (falls der Brief-Planer mehrere Queries erzeugt) bewusst ablehnen.
+    const rowCount = await rows.count()
     await rows.nth(0).getByRole("button", { name: "Freigeben" }).click()
     await expect(rows.nth(0).getByText("Freigegeben")).toBeVisible()
-    await rows.nth(1).getByRole("button", { name: "Freigeben" }).click()
-    await expect(rows.nth(1).getByText("Freigegeben")).toBeVisible()
-    await rows.nth(2).getByRole("button", { name: "Ablehnen" }).click()
-    await expect(rows.nth(2).getByText("Abgelehnt")).toBeVisible()
+    if (rowCount >= 2) {
+      await rows
+        .nth(rowCount - 1)
+        .getByRole("button", { name: "Ablehnen" })
+        .click()
+      await expect(rows.nth(rowCount - 1).getByText("Abgelehnt")).toBeVisible()
+    }
+    // Fake-Modus: Bestätigung des Demo-Generators (ehemals «Cloud-KI erlauben»).
+    // Der KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus —
+    // idempotent einschalten, dann bestätigen.
+    const kiSwitch = dialog.getByRole("switch", {
+      name: /Demo-Vorschläge|KI-Unterstützung/,
+    })
+    if ((await kiSwitch.getAttribute("aria-checked")) !== "true") {
+      await kiSwitch.click()
+    }
     await dialog
-      .getByRole("checkbox", { name: "Cloud-KI für diesen Durchlauf erlauben" })
+      .getByRole("checkbox", { name: "Demo-Generator für diesen Durchlauf aktivieren" })
       .click()
     await dialog.getByRole("button", { name: "Analyse starten" }).click()
     runId = await waitForRunCompleted(page, projectId)
   })
 
-  await test.step("9. Markt-/Research-Ergebnisse prüfen und Quellen übernehmen", async () => {
-    // Öffentliche Recherche über die UI: Suche → Ergebnis als Quelle übernehmen.
+  await test.step("9. Demo-Recherche ehrlich anzeigen und Marktvergleich prüfen", async () => {
+    // Freigegebene Brief-Queries ausführen: Ergebnisse sind im Fake-Modus
+    // klar als «Demo» markiert und können NICHT als Quelle übernommen werden
+    // (kein Fake-Output als echte Webquelle — Bindungsregel).
     const research = page.getByTestId("public-research-panel")
     await expect(research).toBeVisible({ timeout: 20_000 })
+    // Die im Analyse-Dialog freigegebenen Queries sind nach dem Lauf
+    // verbraucht (single-use) — für die Panel-Recherche neue Queries aus dem
+    // freigegebenen Brief erzeugen und einzeln freigeben (HITL).
+    await research.getByRole("button", { name: "Queries erzeugen" }).click()
+    const panelRows = research.getByTestId("query-approval-row")
+    await expect(panelRows.first()).toBeVisible({ timeout: 20_000 })
+    // Die im Lauf verbrauchte Query steht als «Ausgeführt» in der Historie —
+    // freigegeben wird die neue, noch offene Query.
+    const openRow = panelRows.filter({ hasText: "Offen" }).first()
+    await openRow.getByRole("button", { name: "Freigeben" }).click()
+    await expect(openRow.getByText("Freigegeben")).toBeVisible({ timeout: 20_000 })
     await research
-      .getByRole("textbox")
-      .fill("öffentliche Marktdaten Automatisierung Schweiz")
-    await research.getByRole("button", { name: "Suchen" }).click()
+      .getByRole("button", { name: "Freigegebene Queries ausführen" })
+      .click()
     const results = page.getByTestId("research-results")
-    await expect(results).toBeVisible({ timeout: 30_000 })
-    await results.getByRole("button", { name: "Quelle importieren" }).first().click()
-    await expect(results.getByText("Als Quelle gespeichert").first()).toBeVisible({
-      timeout: 20_000,
+    await expect(results.getByText("Demo", { exact: true }).first()).toBeVisible({
+      timeout: 30_000,
     })
+    await expect(
+      results.getByRole("button", { name: "Übernehmen", exact: true })
+    ).toHaveCount(0)
 
-    // Markt-/Konkurrenzvergleich aus der übernommenen öffentlichen Quelle.
+    // Markt-/Konkurrenzvergleich: im Demo-Modus gibt es keine echten
+    // Webquellen — es wird KEIN Marktvergleich fabriziert; die Evidenzlücke
+    // wird ehrlich ausgewiesen (kein Fake-Output als «Marktanalyse»).
     const section = page.getByTestId("market-comparison-section")
     await expect(section).toBeVisible({ timeout: 20_000 })
     await section
       .getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ })
       .click()
-    await expect(page.getByTestId("market-comparison-table")).toBeVisible({
-      timeout: 30_000,
-    })
-    // Eine relevante Vergleichszeile inhaltlich übernehmen.
-    await section.getByRole("button", { name: "Übernehmen" }).first().click()
-    await expect(section.getByText("Inhaltlich geprüft").first()).toBeVisible({
-      timeout: 20_000,
-    })
+    await expect(
+      section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
+    ).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   })
 
   await test.step("10. A2-Feldvorschläge und A3-Findings anzeigen", async () => {
     // A2: Feldvorschlag aus der Analyse — nur zur Prüfung, nie automatisch übernommen.
     await page.goto(`/editor?field=${ABSTRACT}`)
+    // Editor-Modus «Vorschläge» (ehemals «KI-Assist öffnen»).
     await page
-      .getByRole("button", { name: "KI-Assist öffnen" })
+      .getByRole("button", { name: "Vorschläge", exact: true })
       .click({ timeout: 20_000 })
     await expect(page.getByTestId("run-suggestion-hint")).toBeVisible({
       timeout: 20_000,

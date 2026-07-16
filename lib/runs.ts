@@ -37,6 +37,14 @@ export interface AnalysisRunDto {
   started_at?: string | null
   ended_at?: string | null
   stop_reason?: string | null
+  live_execution_status?:
+    | "completed_live"
+    | "partial_live"
+    | "live_unavailable"
+    | "blocked_by_policy"
+    | "failed_live"
+    | null
+  live_status_reason?: string | null
 }
 
 export interface RunListDto {
@@ -177,6 +185,30 @@ export interface AgentUsageSummaryDto {
   priced_cost_chf: number
   has_unpriced_usage: boolean
   latency_ms_total: number
+  generation_kinds?: string[]
+  model_calls?: number
+  prompt_versions?: string[]
+  actual_models?: string[]
+  skill_versions?: string[]
+  retry_count?: number
+  termination_reasons?: string[]
+  attempts?: Array<{
+    route_alias: string
+    provider: string
+    requested_model_id?: string | null
+    actual_model_id?: string | null
+    status: string
+    error_class?: string | null
+    retry_index: number
+    termination_reason?: string | null
+    latency_ms?: number | null
+    estimated_cost_chf?: number | null
+    estimated_cost_status?: string | null
+    input_tokens?: number
+    output_tokens?: number
+    cost_chf?: number
+    cost_status?: string
+  }>
 }
 
 export interface RunTechnicalSummaryDto {
@@ -185,6 +217,7 @@ export interface RunTechnicalSummaryDto {
   priced_cost_chf_total: number
   has_unpriced_usage: boolean
   same_provider_a2_a3?: boolean | null
+  model_called?: boolean
 }
 
 export interface RunPhasesDto {
@@ -192,10 +225,46 @@ export interface RunPhasesDto {
   run_status: RunStatus
   phases: RunPhaseDto[]
   technical: RunTechnicalSummaryDto
+  live_execution_status?: AnalysisRunDto["live_execution_status"]
+  live_status_reason?: string | null
 }
 
 export async function getRunPhases(runId: string): Promise<RunPhasesDto> {
   const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/phases`)
   if (!res.ok) throw await toError(res)
   return (await res.json()) as RunPhasesDto
+}
+
+/** Ruhige, nutzerverständliche Meldung zum Live-Ausführungsstatus eines Runs
+ *  (Status-Sprache: Orange = Teilweise). `completed_live` und Fake-Läufe
+ *  brauchen keinen Hinweis; der technische Grund bleibt unter
+ *  «Technische Details». */
+export function liveStatusNotice(
+  status: AnalysisRunDto["live_execution_status"]
+): string | null {
+  switch (status) {
+    case "partial_live":
+      return (
+        "Teilweise — nicht alle Live-Schritte wurden mit echten Providern " +
+        "abgeschlossen. Vorhandene Ergebnisse bleiben erhalten; Details " +
+        "stehen unter «Technische Details»."
+      )
+    case "blocked_by_policy":
+      return (
+        "Die Live-Verarbeitung wurde durch die Datenrichtlinie blockiert. " +
+        "Die Ergebnisse stammen aus dem regelbasierten Pfad."
+      )
+    case "failed_live":
+      return (
+        "Die Live-Verarbeitung ist fehlgeschlagen. Bisherige Ergebnisse " +
+        "bleiben erhalten; Details stehen unter «Technische Details»."
+      )
+    case "live_unavailable":
+      return (
+        "Für diesen Lauf war kein Live-Provider verfügbar. Es wurde kein " +
+        "Demo-Ergebnis als Ersatz erzeugt."
+      )
+    default:
+      return null
+  }
 }

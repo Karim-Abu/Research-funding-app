@@ -157,10 +157,10 @@ def test_run_real_all_a2_fields_metered(db):
         assert f["usage_record_id"]
         assert f["total_tokens"] and f["total_tokens"] > 0
         assert f["latency_ms"] is not None
-        # Injizierter FakeProvider ⇒ adapter.name=="fake" ⇒ cost_status=not_applicable
-        # (resolve_cost). Ein echter Provider-Call würde unknown_price liefern (leere
-        # Preistabelle) — hier bewusst nicht real, siehe Modul-Docstring.
-        assert f["cost_status"] == "not_applicable"
+        # Der netzwerkfreie Test-Double läuft unter der explizit gewählten
+        # Direct-Eval-Route und prüft damit deren Metering-Semantik. Die
+        # Test-Preistabelle enthält für das Modell bewusst keinen Eintrag.
+        assert f["cost_status"] == "unknown_price"
         assert f["human_review_required"] is True
     # Namensfelder bleiben deterministisch, unabhängig vom Provider.
     assert by_id["INTRO.APP.NAME"]["status"] == "deterministic"

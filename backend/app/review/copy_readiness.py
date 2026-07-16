@@ -95,7 +95,10 @@ def _fields_with_open_blockers(db: Session, run_id: str) -> set[str]:
     }
 
 
-def _fields_with_valid_approval(db: Session, run_id: str) -> set[str]:
+def fields_with_valid_approval(db: Session, run_id: str) -> set[str]:
+    """Feld-IDs mit gültiger (nicht invalidierter) Feld-Freigabe. Public, weil
+    auch die Reliability-Eskalation (B5) «vom Nutzer als bereit markiert»
+    genau über diese Feld-Freigaben definiert."""
     rows = db.scalars(
         select(ReviewApproval.scope_id).where(
             ReviewApproval.run_id == run_id,
@@ -115,7 +118,7 @@ def _run_approved_current(db: Session, run: AnalysisRun) -> bool:
 def copy_readiness_for_run(db: Session, run: AnalysisRun) -> dict[str, str]:
     """Copy-Readiness aller Feld-Drafts eines Laufs (Schlüssel: field_id)."""
     blocked_fields = _fields_with_open_blockers(db, run.run_id)
-    approved_fields = _fields_with_valid_approval(db, run.run_id)
+    approved_fields = fields_with_valid_approval(db, run.run_id)
     run_approved = _run_approved_current(db, run)
 
     result: dict[str, str] = {}

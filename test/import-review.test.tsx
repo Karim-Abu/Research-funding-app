@@ -4,7 +4,10 @@ import { fireEvent, render, screen, waitFor, within } from "@testing-library/rea
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 
 import { ImportReview } from "@/components/import/import-review"
-import type { ImportCandidateDto } from "@/lib/imports"
+import type {
+  ImportCandidateDto,
+  StructuredImportCandidateDto,
+} from "@/lib/imports"
 
 const push = vi.fn()
 
@@ -49,7 +52,11 @@ vi.mock("@/lib/sources", () => ({
 }))
 
 const getImportCandidates = vi.fn<() => Promise<ImportCandidateDto[]>>()
+const getStructuredImportCandidates = vi.fn<
+  () => Promise<StructuredImportCandidateDto[]>
+>()
 const decideImportCandidate = vi.fn()
+const decideStructuredImportCandidate = vi.fn()
 const createImportCandidates = vi.fn()
 
 vi.mock("@/lib/imports", async (importOriginal) => {
@@ -57,8 +64,12 @@ vi.mock("@/lib/imports", async (importOriginal) => {
   return {
     ...actual,
     getImportCandidates: (...args: unknown[]) => getImportCandidates(...args),
+    getStructuredImportCandidates: (...args: unknown[]) =>
+      getStructuredImportCandidates(...args),
     decideImportCandidate: (...args: unknown[]) =>
       decideImportCandidate(...args),
+    decideStructuredImportCandidate: (...args: unknown[]) =>
+      decideStructuredImportCandidate(...args),
     createImportCandidates: (...args: unknown[]) =>
       createImportCandidates(...args),
   }
@@ -69,7 +80,7 @@ import { ImportError } from "@/lib/imports"
 function candidate(
   overrides: Partial<ImportCandidateDto> = {}
 ): ImportCandidateDto {
-  return {
+  const value: ImportCandidateDto = {
     import_candidate_id: "c-abstract",
     source_id: "s-1",
     field_id: "INTRO.APP.ABSTRACT",
@@ -78,11 +89,30 @@ function candidate(
     edited_text: null,
     confidence: "found",
     source_location: "Seite 1",
+    mapping_version: "innolink-narrative-v2",
+    mapping_status: "content_detected",
+    section_metadata: [],
     decision: "pending",
     decided_at: null,
     accepted_draft_version_id: null,
     ...overrides,
   }
+  value.mapping_status =
+    overrides.mapping_status ??
+    (!value.extracted_text ? "empty" : value.confidence === "uncertain" ? "uncertain" : "content_detected")
+  value.section_metadata = overrides.section_metadata ?? [
+    {
+      target_sections: [value.label],
+      source_location: value.source_location,
+      status: value.mapping_status,
+      candidate_text: value.extracted_text,
+      original_excerpt: `Abstract\n${value.extracted_text}`.trim(),
+      migration_version: null,
+      requires_manual_assignment: false,
+      review_note: null,
+    },
+  ]
+  return value
 }
 
 const FIXTURE: ImportCandidateDto[] = [
@@ -96,14 +126,55 @@ const FIXTURE: ImportCandidateDto[] = [
   }),
 ]
 
+function structuredCandidate(
+  overrides: Partial<StructuredImportCandidateDto> = {}
+): StructuredImportCandidateDto {
+  return {
+    candidate_id: "sc-budget",
+    source_id: "s-1",
+    candidate_kind: "budget",
+    target_key: "project.cash_contribution",
+    label: "Barbeitrag",
+    payload_json: { cash_contribution: 20000 },
+    edited_payload_json: null,
+    effective_payload_json: { cash_contribution: 20000 },
+    confidence: "found",
+    source_location: "Seite 6",
+    mapping_version: "innolink-structured-v1",
+    decision: "pending",
+    decided_at: null,
+    applied_resource_id: null,
+    current_value_json: { cash_contribution: 5000 },
+    has_conflict: true,
+    conflict_reason: "existing_project_value",
+    requires_manual_edit: false,
+    ...overrides,
+  }
+}
+
 beforeEach(() => {
   activeRunId = "run-1"
   getImportCandidates.mockResolvedValue(FIXTURE)
+  getStructuredImportCandidates.mockResolvedValue([])
   decideImportCandidate.mockImplementation(
     async (_id: string, payload: { decision: string; edited_text?: string }) =>
       candidate({
         decision: payload.decision as ImportCandidateDto["decision"],
         edited_text: payload.edited_text ?? null,
+      })
+  )
+  decideStructuredImportCandidate.mockImplementation(
+    async (
+      _id: string,
+      payload: {
+        decision: string
+        edited_payload_json?: Record<string, unknown>
+      }
+    ) =>
+      structuredCandidate({
+        decision:
+          payload.decision as StructuredImportCandidateDto["decision"],
+        edited_payload_json: payload.edited_payload_json ?? null,
       })
   )
 })
@@ -128,10 +199,10 @@ describe("ImportReview — Darstellung", () => {
     expect(
       within(rows[0]).getByText("Abstract (wird in Aramis publiziert)")
     ).toBeInTheDocument()
-    expect(within(rows[0]).getByText(/Fundstelle: Seite 1/)).toBeInTheDocument()
+    expect(within(rows[0]).getByText(/Fundseite: Seite 1/)).toBeInTheDocument()
     // Unsicher ist visuell markiert …
     expect(
-      within(rows[1]).getByText("Unsicher — Prüfung nötig")
+      within(rows[1]).getByText("Leer")
     ).toBeInTheDocument()
     // … und nichts ist vorentschieden.
     expect(screen.queryByText("Übernommen")).not.toBeInTheDocument()
@@ -150,9 +221,122 @@ describe("ImportReview — Darstellung", () => {
       within(uncertainRow).getByRole("button", { name: "Übernehmen" })
     ).toBeDisabled()
   })
+
+  it("zeigt Zielabschnitt, Originalausschnitt und technische Daten getrennt", async () => {
+    await renderReview()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    expect(within(row).getByText(/Zielabschnitt:/)).toBeInTheDocument()
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Abschnittsdetails" })
+    )
+    expect(within(row).getByText("Originalausschnitt")).toBeInTheDocument()
+    expect(within(row).getByText("Technische Details")).toBeInTheDocument()
+    expect(within(row).getByText("innolink-narrative-v2")).toBeInTheDocument()
+  })
+
+  it("verlangt für die gemeinsame 4.5.2/4.5.3-Altzuordnung Bearbeitung", async () => {
+    getImportCandidates.mockResolvedValueOnce([
+      candidate({
+        import_candidate_id: "c-sol",
+        field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+        label: "Innovation & Lösung",
+        extracted_text: "4.1\nSynthetische Antwort.",
+        confidence: "uncertain",
+        mapping_status: "legacy_migrated",
+        section_metadata: [
+          {
+            target_sections: ["4.5.2", "4.5.3"],
+            source_location: "Seite 3",
+            status: "uncertain",
+            candidate_text: "Nein",
+            original_excerpt: "Alte Lizenzfrage\nNein",
+            migration_version: "innolink-intro-ip-to-solution-v1",
+            requires_manual_assignment: true,
+            review_note: "Fachlich zuordnen.",
+          },
+        ],
+      }),
+    ])
+    await renderReview()
+    const row = screen.getByTestId("import-candidate")
+    expect(within(row).getByText("Altstruktur migriert")).toBeInTheDocument()
+    expect(within(row).getByText(/4.5.2, 4.5.3/)).toBeInTheDocument()
+    expect(within(row).getByRole("button", { name: "Übernehmen" })).toBeDisabled()
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Bearbeiten & übernehmen" })
+    )
+    expect(
+      await screen.findByText(/keine FTO- oder IP-Schlussfolgerung/)
+    ).toBeInTheDocument()
+  })
 })
 
 describe("ImportReview — Entscheidungsaktionen", () => {
+  it("gruppiert strukturierte Werte, zeigt Altwert und bestätigt Konflikte explizit", async () => {
+    getStructuredImportCandidates.mockResolvedValueOnce([structuredCandidate()])
+    decideStructuredImportCandidate
+      .mockRejectedValueOnce(
+        new ImportError(409, "structured_import_conflict", "Wert vorhanden.")
+      )
+      .mockResolvedValueOnce(structuredCandidate({ decision: "accepted" }))
+    await renderReview()
+
+    const section = screen.getByTestId("structured-import-review")
+    expect(within(section).getByText("Budget")).toBeInTheDocument()
+    const row = within(section).getByTestId("structured-import-candidate")
+    expect(within(row).getByText("Fundseite: Seite 6")).toBeInTheDocument()
+    expect(within(row).getByText("Aktueller Wert")).toBeInTheDocument()
+    fireEvent.click(within(row).getByRole("button", { name: "Übernehmen" }))
+
+    const confirm = await screen.findByTestId(
+      "structured-import-confirm-overwrite"
+    )
+    fireEvent.click(confirm)
+    await waitFor(() =>
+      expect(decideStructuredImportCandidate).toHaveBeenLastCalledWith(
+        "sc-budget",
+        {
+          decision: "accepted",
+          edited_payload_json: { cash_contribution: 20000 },
+          confirm_overwrite: true,
+        }
+      )
+    )
+  })
+
+  it("zeigt Vertreter nur eingeklappt und ohne Kontaktfelder", async () => {
+    getImportCandidates.mockResolvedValueOnce([])
+    getStructuredImportCandidates.mockResolvedValueOnce([
+      structuredCandidate({
+        candidate_id: "sc-partner",
+        candidate_kind: "partner",
+        target_key: "partner.research.01",
+        label: "Forschungspartner",
+        payload_json: {
+          name: "Synthetisches Labor",
+          partner_type: "research_partner",
+          official_representative: { display_name: "Robin Example" },
+        },
+        effective_payload_json: {
+          name: "Synthetisches Labor",
+          partner_type: "research_partner",
+          official_representative: { display_name: "Robin Example" },
+        },
+        current_value_json: null,
+        has_conflict: false,
+        conflict_reason: null,
+      }),
+    ])
+    await renderReview()
+    const disclosure = screen.getByText(
+      "Personenangabe zur offiziellen Vertretung prüfen"
+    )
+    expect(disclosure.closest("details")).not.toHaveAttribute("open")
+    fireEvent.click(disclosure)
+    expect(await screen.findByText("Robin Example")).toBeInTheDocument()
+    expect(screen.getByText(/keine E-Mail-Adresse/)).toBeInTheDocument()
+  })
+
   it("Übernehmen ruft die Entscheidung mit run_id auf und zeigt den neuen Zustand", async () => {
     await renderReview()
     const row = screen.getAllByTestId("import-candidate")[0]
@@ -166,11 +350,11 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     expect(await screen.findByText("Übernommen")).toBeInTheDocument()
   })
 
-  it("Als Quelle speichern und Ignorieren senden die jeweilige Entscheidung", async () => {
+  it("Hintergrund verknüpfen und Ignorieren senden die bestehende Entscheidung", async () => {
     await renderReview()
     const row = screen.getAllByTestId("import-candidate")[0]
     fireEvent.click(
-      within(row).getByRole("button", { name: "Als Quelle speichern" })
+      within(row).getByRole("button", { name: "Nur als Hintergrund verknüpfen" })
     )
     await waitFor(() =>
       expect(decideImportCandidate).toHaveBeenCalledWith("c-abstract", {

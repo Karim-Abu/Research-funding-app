@@ -35,5 +35,6 @@ def get_web_provider(
     provider = FirecrawlProvider(
         api_key=settings.firecrawl_api_key,
         timeout_seconds=settings.web_research_timeout_seconds,
+        privacy_mode=settings.firecrawl_privacy_mode,
     )
     return provider, None  # real DNS resolution

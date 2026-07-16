@@ -23,10 +23,12 @@ class ReviewFinding(BaseModel):
     finding_id: str
     profile_id: str
     field_id: str | None = None
+    target_section: str | None = None
     requirement_id: str | None = None
     severity: FindingSeverity
     description: str
     suggested_improvement: str | None = None
+    recommended_next_action: str | None = None
     status: FindingStatus
     advisory: bool
 
@@ -68,12 +70,24 @@ class ReviewStatusView(BaseModel):
     review_package_version: str
     per_area_counts: dict[str, int]
     last_reviewed_at: datetime | None = None
+    # Additiv (B7): «Blockierende Aufgaben» = gruppierte Fix-Queue-Aufgaben mit
+    # Severity blocker; «Unterliegende Evidenzhinweise» = offene claimgebundene
+    # Findings. Beide aus build_fix_queue — keine parallele Zähllogik.
+    blocking_task_count: int = 0
+    evidence_note_count: int = 0
 
 
 SeverityClass = Literal[
     "export_blocker", "eligibility_blocker", "budget_blocker",
     "reviewer_risk", "evidence_risk", "style_risk",
 ]
+
+# Teil A — die neun Prüfbereiche + Status je Bereich.
+CheckArea = Literal[
+    "pflichtfelder", "zeichenlimits", "platzhalter", "voraussetzungen",
+    "budget", "evidenz_coverage", "evidenz_suffizienz", "konsistenz", "export",
+]
+CheckAreaState = Literal["not_run", "passed", "warning", "failed"]
 
 
 class GroupedFindingExample(BaseModel):
@@ -105,6 +119,9 @@ class GroupedFinding(BaseModel):
     examples: list[GroupedFindingExample]
     recommended_next_action: str | None = None
     target_field_id: str | None = None
+    # Additiv (Teil A) — Prüfbereich der Gruppe; None wenn keiner zuordenbar
+    # ist (z. B. menschliche Kommentare).
+    area: CheckArea | None = None
 
 
 class FixQueueView(BaseModel):
@@ -117,6 +134,43 @@ class FixQueueView(BaseModel):
     grouped_findings: list[GroupedFinding]
     next_actions: list[GroupedFinding]
     total_open_findings: int
+    # Additiv (B7) — siehe ReviewStatusView.
+    blocking_task_count: int = 0
+    evidence_note_count: int = 0
+
+
+# --- Teil A — autoritative Check-Status je Prüfbereich ----------------------
+
+
+class CheckAreaStatus(BaseModel):
+    """Status EINES Prüfbereichs. ``passed`` nur, wenn der Check nachweislich
+    lief und erfolgreich war — Abwesenheit von Findings ohne gelaufenen Check
+    ist ``not_run``, nie bestanden."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    area: CheckArea
+    status: CheckAreaState
+    open_blockers: int
+    open_warnings: int
+    # Maschinen-Schlüssel für die UI-Übersetzung (z. B. "stale",
+    # "not_executed") — nie roh im Standard-UI anzeigen.
+    reason: str | None = None
+
+
+class ReviewCheckStatusView(BaseModel):
+    """Teil A — additiver, read-only Status-View über die neun Prüfbereiche.
+    Einzige autoritative Statusquelle des Frontends für die Qualitätsprüfung;
+    ersetzt die frühere automatische Pass-Logik im Frontend."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    run_id: str
+    areas: list[CheckAreaStatus]
+    stale: bool
+    blocking_task_count: int
+    evidence_note_count: int
+    review_package_version: str
 
 
 # --- human decisions (discriminated by target_type) ------------------------
@@ -158,12 +212,30 @@ class DraftDecisionCreate(BaseModel):
     comment: str | None = None
 
 
+class SuggestionDecisionCreate(BaseModel):
+    """C4 — ausdrückliche, persistierte Ablehnung eines A2-Vorschlags.
+
+    Additive Union-Variante: setzt ``DraftSuggestion.status = rejected``
+    (der Status existierte bereits ungenutzt). ``comment`` trägt den optionalen
+    Ablehnungsgrund — er bleibt in der HumanDecision-Zeile, NIE im Audit-Log
+    (dort nur target_type/action/IDs).
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    target_type: Literal["draft_suggestion"]
+    target_id: str
+    action: Literal["reject"]
+    comment: str | None = None
+
+
 HumanDecisionCreate = Annotated[
     Union[
         RequirementDecisionCreate,
         EvidenceDecisionCreate,
         FindingDecisionCreate,
         DraftDecisionCreate,
+        SuggestionDecisionCreate,
     ],
     Field(discriminator="target_type"),
 ]
@@ -179,6 +251,7 @@ class HumanDecision(BaseModel):
         "evidence_anchor",
         "review_finding",
         "portal_field_draft",
+        "draft_suggestion",
     ]
     target_id: str
     action: str

@@ -1,10 +1,9 @@
 """Structured, deterministic inputs for the rule engine.
 
 Built from the immutable run snapshot of project + partner data. Only structured
-fields are used — never raw source text. Budget figures and duration come from
-the frozen project snapshot (Slice 1); fields that are still not captured
-(portal fields, scientific-integrity answers) stay ``None`` so the
-corresponding rules resolve to ``needs_input`` honestly.
+fields are used — never raw source text. Budget figures, duration and accepted
+structured answers come from the frozen project snapshot; absent values stay
+``None`` so the corresponding rules resolve to ``needs_input`` honestly.
 """
 from __future__ import annotations
 
@@ -61,11 +60,13 @@ class RuleInputs:
     duration_months: int | None = None
     duration_exception: str | None = None
 
-    # Submission / scientific integrity (not captured in M4 → None).
+    # Submission / scientific integrity; only human-accepted import answers.
     sanction_answer: bool | None = None
     sanction_comment: str | None = None
     human_decision_present: bool = False
     portal_fields_complete: bool | None = None
+    management_hours: float | None = None
+    total_project_hours: float | None = None
 
     @property
     def implementation_partners(self) -> list[PartnerInput]:
@@ -110,6 +111,9 @@ def inputs_from_snapshot(
     and duration come from ``project_dict`` (Slice 1); absent values stay None
     so the budget rules resolve to ``needs_input``."""
     project = project_dict or {}
+    answers = project.get("structured_answers") or {}
+    scientific = answers.get("scientific_integrity") or {}
+    management = answers.get("management_hours") or {}
     return RuleInputs(
         profile_id=profile_id or EXPECTED_PROFILE_ID,
         partners=[PartnerInput.from_dict(p) for p in partner_dicts],
@@ -123,4 +127,9 @@ def inputs_from_snapshot(
         total_requested_funding=project.get("total_requested_funding"),
         budget_exception_basis=_clean_basis(project.get("budget_exception_basis")),
         duration_months=project.get("duration_months"),
+        sanction_answer=scientific.get("sanction_answer"),
+        sanction_comment=_clean_basis(scientific.get("comment")),
+        human_decision_present=bool(scientific.get("human_decision_present")),
+        management_hours=management.get("management_hours"),
+        total_project_hours=management.get("total_project_hours"),
     )

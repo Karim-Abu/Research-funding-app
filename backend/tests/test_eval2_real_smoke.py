@@ -177,10 +177,11 @@ def test_schema_failure_with_run_id_writes_usage_record(db):
     ).all()
     # Genau 1 Failure-Record; Tokens über beide Versuche akkumuliert
     # (Contract max_retries=1 ⇒ 2 generate-Calls à 7/9).
-    assert len(records) == 1
-    assert records[0].input_tokens == 14 and records[0].output_tokens == 18
-    assert records[0].cost_status == "not_applicable"  # fake-served
-    assert records[0].price_version is None
+    assert len(records) == 2
+    assert sum(record.input_tokens for record in records) == 14
+    assert sum(record.output_tokens for record in records) == 18
+    assert all(record.cost_status == "not_applicable" for record in records)
+    assert all(record.price_version is None for record in records)
 
 
 def test_schema_failure_without_run_id_writes_nothing(db):
@@ -212,7 +213,10 @@ def test_run_llm_case_with_fake_adapter_meters_schema_failure(db, monkeypatch):
     assert r["llm_calls"] == 1  # no_retry_registry: kein 2. Versuch
     assert r["usage_record_count"] == 1
     assert r["total_tokens"] == 30  # FakeProvider-Default 10/20
-    assert r["cost_status_counts"] == {"not_applicable": 1}
+    # The injected network-free double is classified as the selected direct
+    # evaluation route.  It therefore exercises real-call metering semantics;
+    # the test price table intentionally has no entry for this model.
+    assert r["cost_status_counts"] == {"unknown_price": 1}
     assert r["data_mode"] == "synthetic_eval"
     assert result["artifact"]["llm_output"] is None
 

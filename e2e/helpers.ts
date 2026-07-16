@@ -111,6 +111,42 @@ export async function waitForRunCompleted(
   return runId
 }
 
+/**
+ * Legt per API einen public-safe Recherchebrief an und gibt ihn frei.
+ * Seit dem Brief-Gate entstehen Recherche-Queries NUR aus einem menschlich
+ * freigegebenen Brief — Tests, die Queries planen/ausführen, brauchen dieses
+ * Setup (die HITL-UI-Variante zeigt der technische E2E).
+ */
+export async function approveBriefViaApi(
+  request: APIRequestContext,
+  mut: Mut,
+  projectId: string,
+  modules: string[] = ["market_growth"]
+): Promise<string> {
+  const briefResponse = await request.put(
+    `/api/projects/${projectId}/research-brief`,
+    {
+      headers: mut(),
+      data: {
+        application_domain: "Energiemanagement",
+        technology_class: "Prognosesoftware",
+        target_customer_segments: ["Verteilnetzbetreiber"],
+        region: "Schweiz",
+        competence_needs: ["Energiedatenanalyse"],
+        modules,
+      },
+    }
+  )
+  expect(briefResponse.ok()).toBeTruthy()
+  const brief = await briefResponse.json()
+  const approved = await request.post(
+    `/api/research-briefs/${encodeURIComponent(brief.research_brief_id)}/approve`,
+    { headers: mut() }
+  )
+  expect(approved.ok()).toBeTruthy()
+  return brief.research_brief_id as string
+}
+
 /** Wartet, bis die Qualitätsprüfung eines Laufs keine erneute Prüfung mehr fordert. */
 export async function waitForRecheckCleared(
   request: APIRequestContext,

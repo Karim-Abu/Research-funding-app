@@ -1,0 +1,305 @@
+%PDF-1.4
+1 0 obj
+<< /Type /Catalog /Pages 2 0 R >>
+endobj
+2 0 obj
+<< /Type /Pages /Kids [6 0 R 8 0 R 10 0 R 12 0 R] /Count 4 >>
+endobj
+3 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica /Encoding /WinAnsiEncoding >>
+endobj
+4 0 obj
+<< /Type /Font /Subtype /Type1 /BaseFont /Helvetica-Bold /Encoding /WinAnsiEncoding >>
+endobj
+5 0 obj
+<< /Length 2312 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 1) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F1 8.5 Tf
+(Project Start Date: 01.03.2026) Tj T*
+/F1 8.5 Tf
+(Project End Date: 31.08.2027) Tj T*
+/F1 8.5 Tf
+(Project Duration: 18 months) Tj T*
+/F2 14.0 Tf
+(1 Introduction) Tj T*
+/F2 11.5 Tf
+(Application Name and Abstract) Tj T*
+/F2 10.0 Tf
+(Application name) Tj T*
+/F1 10.0 Tf
+(TERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün) Tj T*
+/F2 10.0 Tf
+(Title in English:) Tj T*
+/F1 10.0 Tf
+(TERRAFLUX - Adaptive Irrigation Control for Urban Green) Tj T*
+/F2 10.0 Tf
+(Abstract \(wird in Aramis publiziert\)) Tj T*
+/F1 8.5 Tf
+(Characters: 228/300) Tj T*
+/F1 10.0 Tf
+(Das Projekt entwickelt eine adaptive Bewässerungssteuerung für) Tj T*
+/F1 10.0 Tf
+(städtisches Grün. Sensorbasierte Bodenmodelle senken den) Tj T*
+/F1 10.0 Tf
+(Wasserverbrauch um bis zu 25 Prozent und entlasten die) Tj T*
+/F1 10.0 Tf
+(Betriebsteams der Stadtgärtnereien.) Tj T*
+/F2 10.0 Tf
+(Executive summary \(wird nicht in Aramis publiziert\)) Tj T*
+/F1 8.5 Tf
+(Characters: 0/2000) Tj T*
+/F2 11.5 Tf
+(Scientific Integrity) Tj T*
+/F1 10.0 Tf
+(Has any staff member who will be collaborating on the application been severely sanctioned for violation of scientific integrity in the last three years?) Tj T*
+/F1 10.0 Tf
+(No) Tj T*
+/F2 11.5 Tf
+(Intellectual Property Rights) Tj T*
+/F1 10.0 Tf
+(Was a patent search performed with or without IPI \(Swiss Federal Institute for Intellectual Property\)?) Tj T*
+/F1 10.0 Tf
+(Yes) Tj T*
+/F1 10.0 Tf
+(Eine synthetische Recherche ergab zwei thematisch verwandte Dokumente.) Tj T*
+/F1 10.0 Tf
+(Does the project require \(patent-\)licencense\(s\)? If yes, please explain which background IP is needed for the project and the ownership of that background IP.) Tj T*
+/F1 10.0 Tf
+(No) Tj T*
+/F1 10.0 Tf
+(Have the project partners concluded a prior written agreement regarding the assignement or exploitation of any research findings or patents?) Tj T*
+/F1 10.0 Tf
+(Yes) Tj T*
+/F1 10.0 Tf
+(Ein Konsortialvertrag regelt die Verwertung der Ergebnisse.) Tj T*
+/F2 14.0 Tf
+(2 Organisations & People) Tj T*
+/F2 11.5 Tf
+(Research Partner) Tj T*
+/F1 10.0 Tf
+(Name: Nordlicht Institut für Angewandte Forschung) Tj T*
+/F1 10.0 Tf
+(Country: CH) Tj T*
+/F1 10.0 Tf
+(Department: Umweltsysteme) Tj T*
+ET
+endstream
+endobj
+6 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 5 0 R >>
+endobj
+7 0 obj
+<< /Length 2286 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 2) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F1 10.0 Tf
+(Industry: Research) Tj T*
+/F1 10.0 Tf
+(FTE: 38) Tj T*
+/F1 10.0 Tf
+(Official Representative: Robin Muster) Tj T*
+/F1 10.0 Tf
+(Project Role: Modellentwicklung und Validierung) Tj T*
+/F2 11.5 Tf
+(Implementation Partner 1) Tj T*
+/F1 10.0 Tf
+(Name: Voltaris AG) Tj T*
+/F1 10.0 Tf
+(Country: CH) Tj T*
+/F1 10.0 Tf
+(Department: Produktentwicklung) Tj T*
+/F1 10.0 Tf
+(Industry: Sensorik) Tj T*
+/F1 10.0 Tf
+(FTE: 74) Tj T*
+/F1 10.0 Tf
+(Official Representative: Alex Beispiel) Tj T*
+/F1 10.0 Tf
+(Project Role: Systemintegration und Pilotierung) Tj T*
+/F2 11.5 Tf
+(Implementation Partner 2) Tj T*
+/F1 10.0 Tf
+(Name: Brimatec GmbH) Tj T*
+/F1 10.0 Tf
+(Country: CH) Tj T*
+/F1 10.0 Tf
+(Department: Betrieb) Tj T*
+/F1 10.0 Tf
+(Industry: Gartenbau) Tj T*
+/F1 10.0 Tf
+(FTE: 26) Tj T*
+/F1 10.0 Tf
+(Official Representative: Kim Probe) Tj T*
+/F1 10.0 Tf
+(Project Role: Pilotbetrieb in zwei Städten) Tj T*
+/F2 11.5 Tf
+(Independence of Research and Implementation Partners) Tj T*
+/F1 10.0 Tf
+(Personnel Independence) Tj T*
+/F1 10.0 Tf
+(Are any of the employees involved in the project on the part of a research partner also an employee of an implementation partner?) Tj T*
+/F1 10.0 Tf
+(No) Tj T*
+/F1 10.0 Tf
+(Are any of the employees involved in the project on the part of the research partners a member of an involved implementation partner's executive board, supervisory board or scientific committee?) Tj T*
+/F1 10.0 Tf
+(No) Tj T*
+/F1 10.0 Tf
+(Have any of the employees involved in the project on the part of the research partners been commissioned by an involved implementation partner to perform another role?) Tj T*
+/F1 10.0 Tf
+(No) Tj T*
+/F1 10.0 Tf
+(Financial Independence) Tj T*
+/F1 10.0 Tf
+(I confirm that none of the employees involved in the project on behalf of the research partners holds 20% or more of the ownership interest \(e.g., shares\) in any implementation partner) Tj T*
+/F1 10.0 Tf
+(Checked) Tj T*
+/F1 10.0 Tf
+(I confirm that the research partner, as a legal entity, does not hold 20% or more of the ownership interest \(e.g., shares\) in any implementation partner) Tj T*
+/F1 10.0 Tf
+(Checked) Tj T*
+/F2 10.0 Tf
+(Explanations and Comments) Tj T*
+ET
+endstream
+endobj
+8 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 7 0 R >>
+endobj
+9 0 obj
+<< /Length 2397 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 3) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F1 8.5 Tf
+(Characters: 0/300) Tj T*
+/F2 14.0 Tf
+(3 Value Creation) Tj T*
+/F1 10.0 Tf
+(3.1 Describe the business targets and the business model.) Tj T*
+/F1 10.0 Tf
+(Zielmodell ist ein Abo pro Grünfläche; nach drei Jahren sollen) Tj T*
+/F1 10.0 Tf
+(zwölf Städte die Lösung im Regelbetrieb nutzen.) Tj T*
+/F1 10.0 Tf
+(3.2 Describe potential customers and how they are to be reached) Tj T*
+/F1 10.0 Tf
+(Stadtgärtnereien und Facility-Betreiber werden über bestehende) Tj T*
+/F1 10.0 Tf
+(Fachverbände und Pilotreferenzen erreicht.) Tj T*
+/F1 10.0 Tf
+(3.3 Does the planned project have a particular relevance to energy or ecological or social topics?) Tj T*
+/F1 10.0 Tf
+(Der reduzierte Wasserverbrauch entlastet städtische Ökosysteme.) Tj T*
+/F2 14.0 Tf
+(4 Solution) Tj T*
+/F1 10.0 Tf
+(4.1 Describe the state of the art that you intend to advance.) Tj T*
+/F1 10.0 Tf
+(Bestehende Steuerungen bewässern nach festen Zeitplänen ohne) Tj T*
+/F1 10.0 Tf
+(Bodenfeuchtemodell.) Tj T*
+/F1 10.0 Tf
+(4.2 Describe the novelty of your solution \(technology, product, business model or process, service\)) Tj T*
+/F1 10.0 Tf
+(Neu ist die Kopplung eines Bodenfeuchtemodells mit selbstlernender) Tj T*
+/F1 10.0 Tf
+(Ventilsteuerung je Grünfläche.) Tj T*
+/F1 10.0 Tf
+(4.3 Describe the quantifiable goals to reach.) Tj T*
+/F1 10.0 Tf
+(Wasserverbrauch minus 25 Prozent in zwei Pilotstädten.) Tj T*
+/F1 10.0 Tf
+(4.4 Describe the preliminary work already performed.) Tj T*
+/F1 10.0 Tf
+(Ein Laborprüfstand mit zwölf Ventilen wurde aufgebaut und vermessen.) Tj T*
+/F1 10.0 Tf
+(4.5 Describe how the selected partners are suited for the planned project.) Tj T*
+/F1 10.0 Tf
+(Forschung, Sensorik und Betrieb ergänzen sich ohne Überschneidung.) Tj T*
+/F2 14.0 Tf
+(5 Project Setup) Tj T*
+/F2 11.5 Tf
+(Planned Hours) Tj T*
+/F1 8.5 Tf
+(Partner | Research | Implementation | Management) Tj T*
+/F1 8.5 Tf
+(Nordlicht Institut | 2400 | 0 | 0) Tj T*
+/F1 8.5 Tf
+(Voltaris AG | 0 | 1100 | 0) Tj T*
+/F1 8.5 Tf
+(Brimatec GmbH | 0 | 500 | 0) Tj T*
+/F2 10.0 Tf
+(Explanation) Tj T*
+/F2 11.5 Tf
+(Financial Overview) Tj T*
+/F1 10.0 Tf
+(Direct total project costs excluding overhead: CHF 200'000) Tj T*
+/F1 10.0 Tf
+(Implementation Partner Own Contribution: CHF 105'000) Tj T*
+/F1 10.0 Tf
+(Cash Contribution: CHF 13'000) Tj T*
+ET
+endstream
+endobj
+10 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 9 0 R >>
+endobj
+11 0 obj
+<< /Length 262 >>
+stream
+BT
+72 780 Td
+16 TL
+/F1 8.5 Tf
+(Innosuisse Innolink - Innovationsprojekt \(Entwurf\)  -  Seite 4) Tj T*
+/F1 8.5 Tf
+() Tj T*
+/F1 10.0 Tf
+(Requested Innosuisse Funding: CHF 82'000) Tj T*
+/F1 10.0 Tf
+(Requested Innosuisse Funding incl. Overhead: CHF 94'300) Tj T*
+ET
+endstream
+endobj
+12 0 obj
+<< /Type /Page /Parent 2 0 R /MediaBox [0 0 595 842] /Resources << /Font << /F1 3 0 R /F2 4 0 R >> >> /Contents 11 0 R >>
+endobj
+xref
+0 13
+0000000000 65535 f 
+0000000009 00000 n 
+0000000058 00000 n 
+0000000135 00000 n 
+0000000232 00000 n 
+0000000334 00000 n 
+0000002698 00000 n 
+0000002834 00000 n 
+0000005172 00000 n 
+0000005308 00000 n 
+0000007757 00000 n 
+0000007894 00000 n 
+0000008208 00000 n 
+trailer
+<< /Size 13 /Root 1 0 R >>
+startxref
+8346
+%%EOF

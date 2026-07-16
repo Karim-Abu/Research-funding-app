@@ -4,6 +4,7 @@ import { http, HttpResponse } from "msw"
 import { PortalTransfer } from "@/components/portal-transfer/portal-transfer"
 import type { PortalFieldDraftDto } from "@/lib/fields"
 import type { ReviewPackageDto } from "@/lib/review"
+import type { TransferSnapshotDto } from "@/lib/portal-transfer"
 import { server } from "./server"
 
 // Slice 3 (Council E2-A): each copy in the Innolink view records a server-side
@@ -60,6 +61,7 @@ function reviewPkg(): ReviewPackageDto {
 }
 
 const COPY_URL = "/api/runs/r1/fields/:field/copy-events"
+const STRUCTURED_COPY_URL = "/api/runs/r1/transfer-copy-events"
 
 function copyEventResponse(fieldId: string) {
   return {
@@ -298,5 +300,46 @@ describe("PortalTransfer copy governance (Slice 3)", () => {
     fireEvent.click(screen.getByRole("button", { name: "Text kopieren" }))
     await waitFor(() => expect(writeText).toHaveBeenCalled())
     expect(calls).not.toHaveBeenCalled()
+  })
+
+  it("copies structured snapshot values with target-only events and no synchronization claim", async () => {
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+    const bodies: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(STRUCTURED_COPY_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({
+          copy_event_id: "structured-1",
+          target_type: "duration",
+          target_key: "duration",
+          created_at: new Date().toISOString(),
+        }, { status: 201 })
+      })
+    )
+    const snapshot: TransferSnapshotDto = {
+      snapshot_available: true,
+      stale: false,
+      stale_message: null,
+      project: { title: "Snapshot Project", instrument: "Instrument", duration_months: 24, duration_copy_target: "duration", application_language: null },
+      partners: [{ index: 0, name: "Snapshot Partner", partner_type: "implementation_partner", project_role: "Rolle", country: "CH", swiss_value_creation: true, eligibility_status: "eligible", provenance: "Import bestätigt", copy_target_row: "partner:0" }],
+      budget: { values: [{ key: "cash_contribution", label: "Cash", value: 5000, provenance: "Import bestätigt", copy_target: "budget:cash_contribution" }], ratios: [], rules: [] },
+      sources: [],
+      manual_portal_tasks: [],
+    }
+    render(
+      <PortalTransfer
+        fields={[field("INTRO.APP.ABSTRACT", "Sauberer Feldtext.")]}
+        review={reviewPkg()}
+        runId="r1"
+        copyEventsEnabled
+        transferSnapshot={snapshot}
+      />
+    )
+    expect(screen.getByText(/nichts synchronisiert oder eingereicht/i)).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Dauer kopieren" }))
+    await waitFor(() => expect(bodies).toEqual([{ target_type: "duration", target_key: "duration" }]))
+    expect(JSON.stringify(bodies)).not.toContain("24")
+    await waitFor(() => expect(writeText).toHaveBeenCalledWith("24"))
   })
 })

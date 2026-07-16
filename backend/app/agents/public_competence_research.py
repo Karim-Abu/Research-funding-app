@@ -29,6 +29,8 @@ from app.db.models import (
     SourceVersion,
 )
 from app.repositories import audit
+from app.market.verify import verify_quote
+from app.reliability.sufficiency import check_support
 
 logger = logging.getLogger("app.agents.public_competence_research")
 
@@ -196,6 +198,17 @@ def _run(db: Session, task: ResearchTask, project: Project, resolver) -> str:
         context_text=context_text,
         context_meta={"research_task_id": task.research_task_id,
                       "imported_version_count": len(version_ids)},
+        # Prompt 9A routes synthesis as its own role. The profile remains the
+        # existing public-research implementation/schema, while role, prompt
+        # asset and model route come from the versioned role/skill registry.
+        skill_id="research.public_evidence_synthesis",
+        input_artifact_refs=(
+            {
+                "kind": "imported_public_research",
+                "research_task_id": task.research_task_id,
+                "source_version_ids": version_ids,
+            },
+        ),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver, registry=registry)
 
@@ -208,6 +221,15 @@ def _run(db: Session, task: ResearchTask, project: Project, resolver) -> str:
         db.commit()
         return status
 
+    if result.generation_kind == "fake_demo":
+        task.a1_synthesis_status = "skipped"
+        _audit(
+            db, task, "agent.public_competence_research.skipped",
+            {"reason": "demo_synthesis_not_persisted"},
+        )
+        db.commit()
+        return "skipped"
+
     return _persist(db, task, pairs, result)
 
 
@@ -218,8 +240,34 @@ def _persist(db: Session, task: ResearchTask, pairs, response) -> str:
 
     evidence_dicts: list[dict] = []
     for rec in out.professional_evidence:
-        vid = rec.source_version_id if rec.source_version_id in version_to_result else primary_version
-        target = version_to_result.get(vid, primary_result)
+        if (
+            rec.source_version_id not in version_to_result
+            or not rec.source_fragment_id
+            or not rec.exact_quote
+        ):
+            continue
+        vid = rec.source_version_id
+        target = version_to_result[vid]
+        fragment = db.get(SourceFragment, rec.source_fragment_id)
+        if fragment is None or fragment.source_version_id != vid:
+            continue
+        coverage = verify_quote(
+            db, fragment=fragment,
+            source_document_id=target.source_document_id,
+            quote=rec.exact_quote,
+        )
+        if coverage is None:
+            continue
+        claim_type = (
+            "partner_fit" if rec.evidence_type in {
+                "institutional_profile", "professional_competence", "track_record"
+            } else "generic"
+        )
+        support = check_support(
+            claim_text=rec.claim, claim_type=claim_type,
+            quantified=bool(any(char.isdigit() for char in rec.claim)),
+            quote=rec.exact_quote,
+        )
         evidence_dicts.append({
             "professional_evidence_id": str(uuid.uuid4()),
             "evidence_type": rec.evidence_type,
@@ -230,7 +278,14 @@ def _persist(db: Session, task: ResearchTask, pairs, response) -> str:
             "source_title": rec.source_title,
             "accessed_at": (rec.accessed_at or target.retrieved_at.isoformat()),
             "source_id": target.source_document_id,
+            "source_version_id": vid,
+            "source_fragment_id": fragment.fragment_id,
+            "exact_quote": rec.exact_quote,
+            "coverage_status": "exact_quote_verified",
+            "support_status": support.status,
         })
+        target.coverage_status = "exact_quote_verified"
+        target.support_status = support.status
 
     suggestion_dicts: list[dict] = []
     for rec in out.partner_role_suggestions:

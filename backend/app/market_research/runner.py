@@ -8,8 +8,7 @@ touches the web directly and never imports results as evidence — a result stay
 
 R8 — Freigabepflicht: der Normalpfad führt NUR menschlich freigegebene Queries aus
 (``approvals``; exakt ``approval.sanitized_query``, single-use). Der freigabelose
-Auto-Pfad existiert nur noch für den deterministischen Fake-/CI-Pfad und den manuell
-aktivierten Smoke (``allow_unapproved_smoke``, ``scripts/run_market_research_f1.py``) —
+Auto-Pfad existiert nur noch für den deterministischen Fake-/CI-Pfad —
 ein realer Provider ohne Freigabe wird hart abgelehnt: ohne Freigabe kein
 Firecrawl-Aufruf.
 """
@@ -78,7 +77,6 @@ def run_market_research(
     max_results: int = 3,
     max_queries: int | None = None,
     approvals: list[SearchQueryApproval] | None = None,
-    allow_unapproved_smoke: bool = False,
 ) -> MarketResearchOutcome:
     """Execute market research for one project and return the candidate view.
 
@@ -86,8 +84,7 @@ def run_market_research(
     ausgeführt (exakt ``approval.sanitized_query``, single-use im Firewall-Chokepoint);
     eine nicht mehr gültige Freigabe wird fail-closed übersprungen und als
     ``blocked_queries`` gezählt. Ohne ``approvals`` plant der Runner selbst — dieser
-    Auto-Pfad ist auf den deterministischen Fake-Provider (CI/Eval) und den manuell
-    aktivierten Smoke (``allow_unapproved_smoke``) begrenzt; ein realer Provider ohne
+    Auto-Pfad ist auf den deterministischen Fake-Provider (CI/Eval) begrenzt; ein realer Provider ohne
     Freigabe wird mit ``ResearchBlocked(approval_required)`` abgelehnt.
 
     Each executed query becomes an internal ``market_comparison`` ResearchTask that
@@ -141,10 +138,9 @@ def run_market_research(
             task_ids.append(task_id)
     else:
         settings = get_settings()
-        if not settings.web_research_fake_provider and not allow_unapproved_smoke:
+        if not settings.web_research_fake_provider:
             # Ohne Freigabe kein Firecrawl-Aufruf (R8) — der freigabelose Auto-Pfad
-            # bleibt dem deterministischen Fake-Provider (CI/Eval) und dem manuell
-            # aktivierten Smoke-Skript vorbehalten.
+            # bleibt dem deterministischen Fake-Provider (CI/Eval) vorbehalten.
             raise ResearchBlocked(
                 "approval_required",
                 "Suchanfragen benötigen eine menschliche Freigabe, bevor ein realer "
