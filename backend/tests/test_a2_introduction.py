@@ -212,9 +212,19 @@ def _setup(field_id):
 
 
 def _arm(monkeypatch, field_id, text):
+    from app.config.settings import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ai_eval_mode", "off")
+    monkeypatch.setattr(settings, "agent_fake_provider", True)
+    resolver = fake_resolver(
+        success_fake(bundle(field_id=field_id, suggested_text=text))
+    )
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", resolver)
     monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER",
-        fake_resolver(success_fake(bundle(field_id=field_id, suggested_text=text))),
+        field_drafting,
+        "_default_resolver",
+        lambda _config, _target_section=None: resolver,
     )
 
 

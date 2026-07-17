@@ -91,7 +91,7 @@ def test_capabilities_live_intent_yields_live_unavailable_not_fake_demo():
     )
     caps = get_capabilities(_=object(), settings=settings)
     assert caps.generation_mode == "live_unavailable"
-    assert caps.generation_unavailable_reason == "live_provider_key_missing"
+    assert caps.generation_unavailable_reason == "live_fake_conflict"
 
 
 def test_capabilities_modes_are_distinct():
@@ -103,7 +103,9 @@ def test_capabilities_modes_are_distinct():
         ai_eval_mode="real", agent_fake_provider=False,
         openai_api_key="sk-test-not-real",
     )
-    assert get_capabilities(_=object(), settings=live).generation_mode == "real_eval"
+    caps = get_capabilities(_=object(), settings=live)
+    assert caps.generation_mode == "live_unavailable"
+    assert caps.generation_unavailable_reason == "live_model_id_missing"
 
 
 def test_firecrawl_tri_state_is_explicit():
@@ -138,7 +140,10 @@ def test_preflight_without_key_is_not_run_never_passed():
             raise AssertionError("no network call without key")
 
     result = preflight_agent_provider(
-        "openai", settings=Settings(), adapter=_NoKey(), execute_live=True
+        "openai",
+        settings=Settings(ai_eval_mode="real", agent_fake_provider=False),
+        adapter=_NoKey(),
+        execute_live=True,
     )
     assert result.status == FAIL  # key_present ist ehrlich fail …
     by_name = {check.name: check for check in result.checks}
@@ -153,7 +158,10 @@ def test_preflight_without_opt_in_is_not_run():
         name = "openai_direct"
 
     result = preflight_agent_provider(
-        "openai", settings=Settings(), adapter=_Keyed(), execute_live=False
+        "openai",
+        settings=Settings(ai_eval_mode="real", agent_fake_provider=False),
+        adapter=_Keyed(),
+        execute_live=False,
     )
     assert result.status == NOT_RUN
     assert all(
@@ -177,7 +185,14 @@ def test_preflight_pass_path_with_injected_adapter():
             )
 
     result = preflight_agent_provider(
-        "openai", settings=Settings(), adapter=_Echo(), execute_live=True
+        "openai",
+        settings=Settings(
+            ai_eval_mode="real",
+            agent_fake_provider=False,
+            agent_model_gpt_56_luna_id="requested-hermetic-model",
+        ),
+        adapter=_Echo(),
+        execute_live=True,
     )
     assert result.status == PASS
     by_name = {check.name: check for check in result.checks}
@@ -190,11 +205,32 @@ def test_preflight_pass_path_with_injected_adapter():
 def test_route_preflight_requires_environment_model_resolution():
     result = preflight_route(
         "openai_gpt_56_luna_candidate",
-        settings=Settings(agent_model_gpt_56_luna_id=None),
+        settings=Settings(
+            ai_eval_mode="real",
+            agent_fake_provider=False,
+            agent_model_gpt_56_luna_id=None,
+        ),
         adapter=FakeProvider(), execute_live=True,
     )
     assert result.status == FAIL
     assert result.error_class == "model_unavailable"
+
+
+def test_route_preflight_fails_closed_on_live_fake_conflict():
+    adapter = FakeProvider()
+    result = preflight_route(
+        "openai_gpt_56_luna_candidate",
+        settings=Settings(
+            ai_eval_mode="real",
+            agent_fake_provider=True,
+            agent_model_gpt_56_luna_id="must-not-be-called",
+        ),
+        adapter=adapter,
+        execute_live=True,
+    )
+    assert result.status == FAIL
+    assert result.error_class == "live_fake_conflict"
+    assert adapter.calls == 0
 
 
 def test_fresh_persisted_route_preflight_expires(db):
@@ -208,7 +244,19 @@ def test_fresh_persisted_route_preflight_expires(db):
             )
 
     settings = Settings(
+        ai_eval_mode="real",
+        agent_fake_provider=False,
+        openai_api_key="sk-hermetic",
         agent_model_gpt_56_luna_id="requested-hermetic-model",
+        agent_model_pricing_chf_per_million={
+            "requested-hermetic-model": {
+                "input_chf_per_million": 1,
+                "output_chf_per_million": 2,
+                "price_version": "test-v1",
+                "source_url": "https://prices.example.test",
+                "checked_at": "2026-07-16",
+            }
+        },
         provider_preflight_ttl_seconds=60,
     )
     result = preflight_route(
@@ -219,10 +267,10 @@ def test_fresh_persisted_route_preflight_expires(db):
     row = persist_route_preflight(db, result, settings=settings)
     assert row.requested_model_id == "requested-hermetic-model"
     assert row.actual_model_id == "actual-hermetic-model"
-    assert route_preflight_passed(db, result.route_key)
+    assert route_preflight_passed(db, result.route_key, settings=settings)
     row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     db.flush()
-    assert not route_preflight_passed(db, result.route_key)
+    assert not route_preflight_passed(db, result.route_key, settings=settings)
 
 
 def test_rate_limit_and_quota_errors_are_understandable():

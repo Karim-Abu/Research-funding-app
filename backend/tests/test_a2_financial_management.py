@@ -241,15 +241,29 @@ def _setup(field_id):
         db.close()
 
 
+def _arm_fake(monkeypatch, payload):
+    from app.config.settings import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ai_eval_mode", "off")
+    monkeypatch.setattr(settings, "agent_fake_provider", True)
+    resolver = fake_resolver(success_fake(payload))
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", resolver)
+    monkeypatch.setattr(
+        field_drafting,
+        "_default_resolver",
+        lambda _config, _target_section=None: resolver,
+    )
+
+
 @pytest.mark.parametrize(
     "field_id, text, limit",
     [(FIN_FIELD_ID, FIN_TEXT, 300), (MGMT_FIELD_ID, MGMT_TEXT, 1000)],
 )
 def test_create_redraft_async_then_result(client, monkeypatch, field_id, text, limit):
     run_id, _draft_id, base = _setup(field_id)
-    monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER",
-        fake_resolver(success_fake(bundle(field_id=field_id, suggested_text=text))),
+    _arm_fake(
+        monkeypatch, bundle(field_id=field_id, suggested_text=text)
     )
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = client.post(

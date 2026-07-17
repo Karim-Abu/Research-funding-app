@@ -76,7 +76,8 @@ async function publicProjectWithSource(page: Page, title: string) {
   expect((await src.json()).status).toBe("processed")
 
   // Query-Planung setzt seit dem Brief-Gate einen freigegebenen public-safe
-  // Recherchebrief voraus (API-Setup; zwei Module ⇒ zwei geplante Queries).
+  // Recherchebrief voraus (API-Setup; Markt & Wachstum liefert zwei präzise
+  // Queries, Wettbewerb eine weitere).
   const briefResponse = await page.request.put(
     `/api/projects/${projectId}/research-brief`,
     {
@@ -87,7 +88,7 @@ async function publicProjectWithSource(page: Page, title: string) {
         target_customer_segments: ["Verteilnetzbetreiber"],
         region: "Schweiz",
         competence_needs: ["Energiedatenanalyse"],
-        modules: ["market_growth", "competition_alternatives", "customer_problem"],
+        modules: ["market_growth", "competition_alternatives"],
       },
     }
   )
@@ -153,6 +154,7 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   await expect(list).toBeVisible({ timeout: 20_000 })
   const rows = list.getByTestId("query-approval-row")
   await expect(rows.first()).toBeVisible()
+  await expect(rows).toHaveCount(3)
 
   // 2a. Bearbeiten mit NEUEN Fachbegriffen ausserhalb des geprüften Briefs
   //     wird abgelehnt — fremdes Vokabular muss zuerst in den Brief (kein
@@ -169,28 +171,31 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
     dialog.getByText(/Suchanfrage konnte nicht geprüft werden/)
   ).toBeVisible({ timeout: 20_000 })
 
-  // 2b. Bearbeiten mit Brief-Vokabular wird geprüft übernommen — angezeigt
-  //     (und später ausgeführt) wird nur der geprüfte Text.
+  // Der blockierte Ersatz hat die alte Freigabe fail-closed invalidiert. Deshalb
+  // wird dieser Eintrag nicht erneut verwendet.
+  await rows.nth(0).getByRole("button", { name: "Abbrechen" }).click()
+
+  // 2b. Eine andere Query mit Brief-Vokabular und klarem Recherche-Ziel wird
+  //     geprüft übernommen — angezeigt und ausgeführt wird nur dieser Text.
+  await rows.nth(2).getByRole("button", { name: "Bearbeiten" }).click()
   await dialog
     .getByTestId("query-edit-input")
-    .fill("Energiemanagement Prognosesoftware Verteilnetzbetreiber Schweiz")
+    .fill("Energiemanagement Verteilnetzbetreiber providers alternatives comparison Schweiz")
   await rows
-    .nth(0)
+    .nth(2)
     .getByRole("button", { name: "Prüfen und übernehmen" })
     .click()
-  await expect(rows.nth(0)).toContainText(
-    "Energiemanagement Prognosesoftware Verteilnetzbetreiber Schweiz",
+  await expect(rows.nth(2)).toContainText(
+    "Energiemanagement Verteilnetzbetreiber providers alternatives comparison Schweiz",
     { timeout: 20_000 }
   )
-  await expect(rows.nth(0)).not.toContainText("Million")
+  await expect(rows.nth(2)).not.toContainText("Million")
 
-  // 3. Freigeben (bearbeitete + eine geplante Query), eine ablehnen.
-  await rows.nth(0).getByRole("button", { name: "Freigeben" }).click()
-  await expect(rows.nth(0).getByText("Freigegeben")).toBeVisible()
+  // 3. Zwei gültige Queries explizit freigeben; die invalidierte Query bleibt aus.
   await rows.nth(1).getByRole("button", { name: "Freigeben" }).click()
   await expect(rows.nth(1).getByText("Freigegeben")).toBeVisible()
-  await rows.nth(2).getByRole("button", { name: "Ablehnen" }).click()
-  await expect(rows.nth(2).getByText("Abgelehnt")).toBeVisible()
+  await rows.nth(2).getByRole("button", { name: "Freigeben" }).click()
+  await expect(rows.nth(2).getByText("Freigegeben")).toBeVisible()
   await expect(dialog.getByTestId("query-approval-count")).toContainText("2 von")
 
   // KI-Schalter startet je nach Capabilities-Ladezeitpunkt aus — idempotent einschalten.
@@ -269,7 +274,7 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   await expect(section).toBeVisible({ timeout: 20_000 })
   await section.getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ }).click()
   await expect(
-    section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
+    section.getByText(/keine live abgerufenen und inhaltlich positiv geprüften/i)
   ).toBeVisible({ timeout: 30_000 })
   await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   // Kein Provider-Branding in der Standard-UI.

@@ -162,6 +162,67 @@ describe("SuggestionReviewDialog", () => {
     expect(chips).toHaveTextContent("Offen gelassen: KPI-Baseline — fehlt")
   })
 
+  // Anf. 3 — fachliche Kurzbilanz VOR dem Diff, gezählt aus dem section_result.
+  it("Zusammenfassung vor dem Diff zählt SectionResult-Daten korrekt", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="Alter Text."
+        suggestion={suggestion({
+          suggested_text: "Neuer, längerer Text.",
+          research_sources: [{
+            source_id: "research-1",
+            title: "Swiss market report",
+            url: "https://research.example.edu/report",
+            research_module: "market_growth",
+            support_status: "supports",
+            content_review_status: "reviewed",
+          }],
+          section_result: {
+            field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+            target_section: "4.2",
+            suggested_text: "Neuer, längerer Text.",
+            rationale: "ok",
+            preserved_facts: ["Projektbegriff", "Konsortium"],
+            removed_or_reframed_claims: ["Wiederholte Marktbehauptung"],
+            new_claims: [],
+            missing_inputs: [{ label: "KPI-Baseline", reason: "fehlt" }],
+            evidence_anchor_ids: ["a1"],
+            open_issue_ids: [],
+          },
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const summary = screen.getByTestId("suggestion-summary")
+    expect(summary).toHaveTextContent("Erhaltene Fakten: 2")
+    expect(summary).toHaveTextContent("Entfernte/umformulierte Aussagen: 1")
+    expect(summary).toHaveTextContent("Fehlende Angaben: 1")
+    expect(summary).toHaveTextContent("Verwendete Belege: 1")
+    expect(summary).toHaveTextContent("Research-Quellen: 1")
+    expect(summary).toHaveTextContent(
+      `Zeichen: ${"Alter Text.".length} → ${"Neuer, längerer Text.".length}`
+    )
+    // Keine Provider-/Modellangaben im normalen Bereich.
+    expect(summary.textContent).not.toMatch(/anthropic|openai|gpt|claude|modell/i)
+  })
+
+  it("ohne section_result keine Zusammenfassung", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion()}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.queryByTestId("suggestion-summary")).toBeNull()
+  })
+
   it("disables accept when over the character limit", () => {
     const onAccept = vi.fn()
     render(
@@ -190,7 +251,8 @@ describe("SuggestionReviewDialog", () => {
             title: "Swiss market report",
             url: "https://research.example.edu/report",
             research_module: "market_growth",
-            support_status: "research_candidate",
+            support_status: "supports",
+            content_review_status: "reviewed",
           }],
         })}
         onAccept={() => {}}
@@ -201,6 +263,8 @@ describe("SuggestionReviewDialog", () => {
     expect(screen.getByRole("link", { name: "Swiss market report" })).toHaveAttribute(
       "href", "https://research.example.edu/report",
     )
-    expect(screen.getByText(/nicht automatisch eine fachliche Stützung/)).toBeInTheDocument()
+    expect(screen.getByText(
+      "Vom Nutzer geprüfte öffentliche Quelle – keine automatische fachliche Freigabe"
+    )).toBeInTheDocument()
   })
 })

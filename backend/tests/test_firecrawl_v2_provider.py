@@ -2,7 +2,14 @@ from __future__ import annotations
 
 import pytest
 
-from app.research.providers.base import ProviderError, SearchRequest
+from app.config.settings import Settings
+from app.evaluation.preflight import preflight_firecrawl
+from app.research.providers.base import (
+    ProviderError,
+    SearchCandidate,
+    SearchOutcome,
+    SearchRequest,
+)
 from app.research.providers.firecrawl import FirecrawlProvider
 from app.research.executor import _is_demo_url
 
@@ -71,6 +78,24 @@ def test_v2_search_normalizes_web_metadata_and_never_scrapes(monkeypatch):
     assert outcome.candidates[0].published_at == "2025-03-01T00:00:00Z"
 
 
+def test_v2_search_uses_real_host_when_publisher_is_missing(monkeypatch):
+    client = _Client([_Response({
+        "data": {"web": [{
+            "url": "https://www.bfs.admin.ch/market",
+            "title": "Swiss market statistics",
+        }]},
+    })])
+    provider = FirecrawlProvider(api_key="test", timeout_seconds=5)
+    monkeypatch.setattr(provider, "_client", lambda: client)
+
+    outcome = provider.search(SearchRequest(query="Swiss market", max_results=1))
+
+    assert outcome.candidates[0].url == "https://www.bfs.admin.ch/market"
+    assert outcome.candidates[0].title == "Swiss market statistics"
+    assert outcome.candidates[0].publisher == "www.bfs.admin.ch"
+    assert not _is_demo_url(outcome.candidates[0].url)
+
+
 def test_v2_scrape_uses_privacy_cache_and_tls_guards(monkeypatch):
     client = _Client([_Response({
         "data": {
@@ -115,3 +140,48 @@ def test_reserved_demo_domains_are_recognized_for_live_mode():
     assert _is_demo_url("https://example.org/result")
     assert _is_demo_url("https://research.example.org/result")
     assert not _is_demo_url("https://www.bfs.admin.ch/result")
+
+
+def test_live_preflight_rejects_example_org_without_demo_fallback():
+    class _DemoLeak:
+        def search(self, _request):
+            return SearchOutcome(
+                candidates=[
+                    SearchCandidate(
+                        url="https://research.example.org/result",
+                        title="Reserved demo result",
+                    )
+                ],
+                provider="firecrawl",
+            )
+
+    result = preflight_firecrawl(
+        settings=Settings(
+            web_research_enabled=True,
+            web_research_fake_provider=False,
+            firecrawl_api_key="fc-hermetic",
+        ),
+        provider=_DemoLeak(),
+        execute_live=True,
+    )
+    assert result.status == "fail"
+    assert result.error_class == "live_demo_domain_rejected"
+
+
+def test_live_preflight_surfaces_provider_failure_without_demo_fallback():
+    class _Outage:
+        def search(self, _request):
+            raise ProviderError("firecrawl search status 503")
+
+    result = preflight_firecrawl(
+        settings=Settings(
+            web_research_enabled=True,
+            web_research_fake_provider=False,
+            firecrawl_api_key="fc-hermetic",
+        ),
+        provider=_Outage(),
+        execute_live=True,
+    )
+    assert result.status == "fail"
+    assert result.mode == "live"
+    assert result.error_class == "provider_outage"

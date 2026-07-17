@@ -10,13 +10,12 @@ executor.
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass, field
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import a2_fields, data_policy, gateway, generation
+from app.agents import a2_fields, allowed_facts, data_policy, gateway, generation
 from app.agents import field_drafting_context as a2_context
 from app.agents.a2_fields import A2FieldConfig
 from app.agents.prompt_assets import prompt_version_for
@@ -26,16 +25,14 @@ from app.agents.schemas import (
     ValidationError,
     validate_payload,
 )
-from app.config import provider_policy
 from app.config.settings import get_settings
 from app.db.models import (
     AgentInvocation,
     AnalysisRun,
-    ProcessingConfirmation,
-    Project,
     ResearchResult,
     ResearchTask,
     SourceDocument,
+    SourceVersion,
 )
 from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
@@ -46,7 +43,7 @@ from app.drafts.sections import (
     extract_section,
     validate_section_candidate,
 )
-from app.runs.cloud_policy import REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION
+from app.runs.cloud_policy import real_eval_confirmed as _run_real_eval_confirmed
 
 logger = logging.getLogger("app.agents.field_drafting")
 
@@ -63,7 +60,8 @@ _PROVIDER_RESOLVER = gateway.default_provider_resolver
 def _default_resolver(config: A2FieldConfig, target_section: str | None = None):
     """Real adapters by default; a deterministic, field-aware fake when the dev/test
     flag is set. The fake text preserves the field's registry mandatory markers."""
-    if get_settings().agent_fake_provider:
+    settings = get_settings()
+    if settings.agent_fake_provider and settings.ai_eval_mode != "real":
         import json
 
         from app.agents.providers import FakeProvider
@@ -108,6 +106,9 @@ class A2Outcome:
     suggestion_id: str | None = None
     invocation_id: str | None = None
     view: dict | None = None  # operation.result payload for the frontend
+    # Beobachtungen des Erlaubt-Gates und der Routing-Bindung (nur Codes/
+    # Zählwerte/Tokens — nie Fliesstext). Für Evaluation und Review.
+    claim_check: dict = field(default_factory=dict)
 
 
 def _audit(
@@ -131,29 +132,7 @@ def local_ai_confirmed(run: AnalysisRun) -> bool:
 
 
 def real_eval_confirmed(run: AnalysisRun) -> bool:
-    classification = _classification(run)
-    if classification.get("origin") not in ("synthetic", "anonymized"):
-        return False
-    try:
-        db = Session.object_session(run)
-    except Exception:
-        return False
-    if db is None:
-        return False
-    project = db.get(Project, run.project_id) if run.project_id else None
-    if project is None or (project.data_classification or {}).get("origin") not in (
-        "synthetic", "anonymized"
-    ):
-        return False
-    return db.scalar(
-        select(ProcessingConfirmation.confirmation_id).where(
-            ProcessingConfirmation.used_by_run_id == run.run_id,
-            ProcessingConfirmation.processing_mode == "cloud_assisted",
-            ProcessingConfirmation.status == "used",
-            ProcessingConfirmation.confirmation_text_version
-            == REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION,
-        )
-    ) is not None
+    return _run_real_eval_confirmed(run)
 
 
 def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
@@ -170,14 +149,13 @@ def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
         return False, "processing_mode_deterministic_only"
     if mode == "local_only":
         return False, "local_ai_provider_unavailable"
-    route = registry.route(registry.profile(config.profile_id).primary_model)
-    adapter = None if settings.agent_fake_provider else _PROVIDER_RESOLVER(route)
-    is_demo = settings.agent_fake_provider or (
-        adapter is not None
-        and provider_policy.kind_of_adapter(adapter)
-        == provider_policy.ProviderKind.FAKE_LOCAL
-        and adapter.available()
+    from app.evaluation.preflight import (
+        live_fake_conflict,
+        ready_route_for_role,
     )
+    if live_fake_conflict(settings):
+        return False, "live_fake_conflict"
+    is_demo = settings.agent_fake_provider and settings.ai_eval_mode != "real"
     confirmed = real_eval_confirmed(run)
     if not is_demo and not confirmed:
         return False, "real_eval_confirmation_required"
@@ -188,12 +166,17 @@ def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     )
     if decision.blocked:
         return False, decision.reason
-    # A provider must actually be available: a real configured route OR the dev/test
-    # fake. Without either, A2 is unavailable (503) rather than a failing async job.
-    # Uses the module-level resolver so the orchestrator and this pre-check agree.
     if mode == "cloud_assisted" and not is_demo:
-        if adapter is None or not adapter.available():
-            return False, "provider_unavailable"
+        try:
+            db = Session.object_session(run)
+        except Exception:
+            db = None
+        _route_key, reason = ready_route_for_role(
+            db, "A2_INNOSUISSE_PROPOSAL_WRITER",
+            settings=settings, registry=registry,
+        )
+        if reason:
+            return False, reason
     return True, "available"
 
 
@@ -209,6 +192,12 @@ class _Validated:
     warnings: list = field(default_factory=list)
     placeholders: list = field(default_factory=list)
     section_result: dict | None = None
+    # Zahlen, die aus bekannten Werten deterministisch ableitbar sind: kein
+    # Beleg, aber auch keine Erfindung — sie gehen ins menschliche Review.
+    derived_numbers: list = field(default_factory=list)
+    # Das Modell hat abweichende Routing-IDs geliefert. Der Caller bindet die
+    # kanonischen Werte; der Widerspruch bleibt sichtbar (nie still korrigiert).
+    routing_mismatch: bool = False
 
 
 def _proposal_contract_v2(
@@ -253,40 +242,32 @@ def _proposal_contract_v2(
     return validate_payload("ProposalSectionSuggestion@v2", payload).model_dump(mode="json")
 
 
-_NUMBER_RE = re.compile(r"(?<![\w.])\d+(?:[.,'’]\d+)*(?:\s?%)?")
-_PATENT_RE = re.compile(r"\b(?:EP|WO|US|CH)\s?\d{4,}(?:[/.-]\d+)*\b", re.I)
-_ORG_RE = re.compile(
-    r"\b(?:[A-ZÄÖÜ][\wÄÖÜäöüß&-]+\s+){0,5}"
-    r"(?:AG|GmbH|Ltd\.?|Inc\.?|University|Universität|Hochschule|Institute|Institut)\b"
-)
+def _bind_routing_metadata(candidate, *, field_id: str, target_section: str | None):
+    """Routing-IDs deterministisch aus dem Request setzen (Caller-Bindung).
 
-
-def _unsupported_generated_tokens(text: str, allowed_corpus: str) -> str | None:
-    allowed_numbers = {token.casefold() for token in _NUMBER_RE.findall(allowed_corpus or "")}
-    allowed_patents = {token.casefold() for token in _PATENT_RE.findall(allowed_corpus or "")}
-    allowed_organisations = {
-        " ".join(token.split()).casefold()
-        for token in _ORG_RE.findall(allowed_corpus or "")
-    }
-    for token in _PATENT_RE.findall(text or ""):
-        if token.casefold() not in allowed_patents:
-            return "invented_patent_identifier"
-    for token in _NUMBER_RE.findall(text or ""):
-        if token.casefold() not in allowed_numbers:
-            return "invented_numeric_token"
-    for token in _ORG_RE.findall(text or ""):
-        if " ".join(token.split()).casefold() not in allowed_organisations:
-            return "invented_partner_name"
-    return None
+    Der Aufrufer kennt Feld und Zielabschnitt; das Modell muss sie nicht
+    erraten. Es liefert weiterhin Inhalt, Begründung und Vorschlag — die
+    kanonische Quelle der IDs ist der Request. Ein abweichender Modellwert wird
+    NICHT still übernommen, sondern als Widerspruch zurückgemeldet; die
+    fachliche Abschnittstreue prüfen unverändert die Struktur-Gates.
+    """
+    fields = {"field_id": field_id}
+    mismatch = candidate.field_id != field_id
+    if target_section is not None:
+        fields["target_section"] = target_section
+        mismatch = mismatch or candidate.target_section != target_section
+    return candidate.model_copy(update=fields), mismatch
 
 
 def _validate_candidate(
-    bundle, ctx, config: A2FieldConfig, target_section: str | None
+    bundle, ctx, config: A2FieldConfig, target_section: str | None,
+    manifest: allowed_facts.AllowedFactsManifest,
 ) -> tuple[_Validated | None, str]:
     if target_section is not None:
-        cand = bundle.section_candidate
-        if cand.field_id != config.field_id or cand.target_section != target_section:
-            return None, "section_target_mismatch"
+        cand, routing_mismatch = _bind_routing_metadata(
+            bundle.section_candidate,
+            field_id=config.field_id, target_section=target_section,
+        )
         if not cand.suggested_text.strip():
             return None, "empty_suggested_text"
         try:
@@ -297,15 +278,22 @@ def _validate_candidate(
             return None, exc.code
         if not within_limit(cand.suggested_text, config.char_limit):
             return None, "character_limit_exceeded"
+        placeholder_text = [
+            " ".join(
+                part for part in (item.label, item.reason or "") if part
+            )
+            for item in cand.missing_inputs
+        ]
         claim_text = "\n".join([
             cand.suggested_text,
             *cand.preserved_facts,
             *cand.removed_or_reframed_claims,
             *cand.new_claims,
+            *placeholder_text,
         ])
-        unsafe = _unsupported_generated_tokens(claim_text, ctx.context_text)
-        if unsafe:
-            return None, unsafe
+        check = allowed_facts.check_claims(claim_text, manifest)
+        if check.reason:
+            return None, check.reason
         if a2_context.application_language_conflicts(cand.suggested_text, ctx.language):
             return None, "application_language_changed"
         if proposal_anchor_violations(cand.evidence_anchor_ids, ctx.allowed_anchor_ids):
@@ -318,20 +306,39 @@ def _validate_candidate(
             return None, "unknown_research_source"
         if next((i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None):
             return None, "unknown_open_issue"
+        if cand.new_claims and not (
+            cand.evidence_anchor_ids or cand.research_source_ids
+        ):
+            return None, "new_claim_without_source"
         placeholders = [p.model_dump() for p in cand.missing_inputs]
         warnings = list(bundle.warnings or [])
         if placeholders:
             warnings.append("contains_placeholders")
         if ctx.meta.get("language_needs_review"):
             warnings.append("application_language_needs_review")
+        if check.derived_numbers:
+            warnings.append("contains_derived_numeric_claims")
+        if routing_mismatch:
+            warnings.append("model_routing_metadata_mismatch")
         return _Validated(
             candidate=cand,
             warnings=warnings,
             placeholders=placeholders,
             section_result=cand.model_dump(mode="json"),
+            derived_numbers=list(check.derived_numbers),
+            routing_mismatch=routing_mismatch,
         ), ""
 
     candidates = [c for c in bundle.draft_candidates if c.field_id == config.field_id]
+    routing_mismatch = False
+    if not candidates and len(bundle.draft_candidates) == 1:
+        # Einzelfeld-Lauf: der Caller kennt das Feld. Eine abweichende Modell-ID
+        # ist ein Routing-Widerspruch, kein fehlender Kandidat.
+        cand, routing_mismatch = _bind_routing_metadata(
+            bundle.draft_candidates[0], field_id=config.field_id,
+            target_section=None,
+        )
+        candidates = [cand]
     if not candidates:
         return None, "no_candidate_for_field"
     cand = candidates[0]
@@ -356,12 +363,18 @@ def _validate_candidate(
         warnings.append("based_on_unconfirmed_facts")
     if ctx.meta.get("language_needs_review"):
         warnings.append("application_language_needs_review")
-    unsafe = _unsupported_generated_tokens(cand.suggested_text, ctx.context_text)
-    if unsafe:
-        return None, unsafe
+    check = allowed_facts.check_claims(cand.suggested_text, manifest)
+    if check.reason:
+        return None, check.reason
+    if check.derived_numbers:
+        warnings.append("contains_derived_numeric_claims")
+    if routing_mismatch:
+        warnings.append("model_routing_metadata_mismatch")
     return _Validated(
         candidate=cand, warnings=warnings,
         placeholders=[p.model_dump() for p in bundle.placeholders],
+        derived_numbers=list(check.derived_numbers),
+        routing_mismatch=routing_mismatch,
     ), ""
 
 
@@ -456,6 +469,9 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         _audit(db, run, "agent.field_drafting.skipped", field_id, {"reason": reason})
         return A2Outcome(status="skipped", reason=reason)
     input_payload = a2_context.build_input_payload(ctx, run.run_id)
+    # Erlaubt-Basis VOR dem Modellaufruf und aus derselben finalen Auswahl, die
+    # in den Request geht (Payload + budgetierter Kontext).
+    manifest = a2_context.build_allowed_facts(ctx, input_payload)
     input_schema = SECTION_INPUT_SCHEMA if target_section is not None else FIELD_INPUT_SCHEMA
     try:
         validate_payload(input_schema, input_payload)
@@ -510,7 +526,13 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         return A2Outcome(status=result.status, reason=result.error_code,
                          invocation_id=result.invocation_id)
 
-    validated, reason = _validate_candidate(result.output, ctx, config, target_section)
+    claim_check = {
+        "routing_metadata_source": "caller_bound",
+        "allowed_facts": manifest.meta(),
+    }
+    validated, reason = _validate_candidate(
+        result.output, ctx, config, target_section, manifest
+    )
     if validated is None:
         controls.record(
             db, workspace_id=run.workspace_id, project_id=run.project_id,
@@ -519,7 +541,12 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         )
         _audit(db, run, "agent.field_drafting.failed", field_id, {"reason": reason})
         return A2Outcome(status="failed", reason=reason,
-                         invocation_id=result.invocation_id)
+                         invocation_id=result.invocation_id,
+                         claim_check=claim_check)
+    claim_check.update(
+        derived_numeric_claims=list(validated.derived_numbers),
+        routing_metadata_mismatch=validated.routing_mismatch,
+    )
 
     cand = validated.candidate
     # Keep the established v1 result shape readable for existing views while
@@ -557,12 +584,15 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     )
     _audit(db, run, "agent.field_drafting.succeeded", field_id,
            {"suggestion_id": suggestion.suggestion_id,
-            "character_count": suggestion.character_count})
+            "character_count": suggestion.character_count,
+            "derived_numeric_claim_count": len(validated.derived_numbers),
+            "routing_metadata_mismatch": validated.routing_mismatch})
     return A2Outcome(
         status="succeeded", suggestion_id=suggestion.suggestion_id,
         invocation_id=result.invocation_id,
         view=_suggestion_view(db, run, suggestion, evidence=ctx.verified_evidence,
                               warnings=validated.warnings),
+        claim_check=claim_check,
     )
 
 
@@ -607,10 +637,18 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
             select(SourceDocument, ResearchResult, ResearchTask)
             .join(ResearchResult, ResearchResult.source_document_id == SourceDocument.source_id)
             .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+            .join(
+                SourceVersion,
+                SourceVersion.source_version_id == SourceDocument.current_source_version_id,
+            )
             .where(
                 SourceDocument.source_id.in_(research_source_ids),
                 SourceDocument.project_id == run.project_id,
+                SourceDocument.status == "processed",
+                SourceVersion.processing_status == "processed",
                 ResearchResult.status == "imported",
+                ResearchResult.content_review_status == "reviewed",
+                ResearchResult.support_status.in_(("supports", "partially_supports")),
                 ResearchTask.execution_mode == "live",
             )
         )
@@ -622,10 +660,11 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
             doc, result_row, task = row
             research_sources.append({
                 "source_id": source_id,
-                "title": doc.name,
+                "title": result_row.title,
                 "url": result_row.final_url or result_row.source_url,
                 "research_module": task.research_module,
-                "support_status": "research_candidate",
+                "support_status": result_row.support_status,
+                "content_review_status": result_row.content_review_status,
             })
     return {
         "suggestion_id": suggestion.suggestion_id,
@@ -633,6 +672,11 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
         "field_id": suggestion.field_id,
         "target_section": suggestion.target_section,
         "generation_kind": suggestion.generation_kind,
+        "execution_mode": (
+            "live"
+            if suggestion.generation_kind == generation.MODEL_GENERATED
+            else "fake_demo"
+        ),
         "base_version_id": suggestion.base_version_id,
         "suggested_text": suggestion.suggested_text,
         "rationale": suggestion.rationale,

@@ -190,6 +190,7 @@ def preview_market_query(
     purpose = payload.purpose or "market_size"
     module = {
         "market_size": "market_growth",
+        "regulatory_demand_drivers": "market_growth",
         "competitors_alternatives": "competition_alternatives",
         "customer_pain": "customer_problem",
         "state_of_the_art": "state_of_the_art",
@@ -202,7 +203,7 @@ def preview_market_query(
     try:
         approval = brief_service.preview_query(
             db, brief, context.user.id, module=module, planner_purpose=purpose,
-            query_text=payload.query_text, supersedes_approval_id=None,
+            query_text=payload.query_text,
         )
         db.commit()
         return QueryCandidateDto(
@@ -299,6 +300,7 @@ def run_market_research_endpoint(
             candidate_type={
                 "market_size": "market_size_candidate",
                 "competitors_alternatives": "competitor_or_alternative",
+                "regulatory_demand_drivers": "market_driver_candidate",
                 "customer_pain": "customer_segment",
                 "state_of_the_art": "state_of_the_art_candidate",
             }.get(r.planner_purpose or "", "market_signal"),

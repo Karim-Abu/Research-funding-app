@@ -21,6 +21,12 @@ def test_live_status_is_metadata_only(client):
     body = response.json()
     assert body["registry_version"]
     assert body["routes"]
+    assert body["generation_mode"] in {
+        "unavailable", "fake_demo", "real_eval", "live_unavailable",
+    }
+    assert body["firecrawl"]["mode"] in {
+        "disabled", "fake", "live", "not_configured",
+    }
     encoded = response.text.lower()
     assert "preflight connectivity check" not in encoded
     assert "api_key" not in encoded
@@ -38,4 +44,6 @@ def test_preflight_requires_csrf_and_never_calls_without_keys(client):
     assert response.status_code == 200, response.text
     routes = response.json()["status"]["routes"]
     assert all(route["preflight_status"] != "pass" for route in routes)
+    assert response.json()["status"]["generation_mode"] != "real_eval"
+    assert response.json()["status"]["firecrawl"]["preflight_status"] != "pass"
     assert "preflight connectivity check" not in response.text.lower()

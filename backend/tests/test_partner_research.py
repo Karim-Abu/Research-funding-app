@@ -94,18 +94,33 @@ def _project(db, classification, *, description="Synthetischer F1-Partner-MVP.")
 # --- Planner ------------------------------------------------------------------
 
 
-def test_planner_produces_five_public_safe_queries():
+def test_planner_produces_three_public_safe_queries():
     queries = plan_partner_queries(TOPIC)
-    assert len(queries) == 5
+    assert len(queries) == 3
     purposes = {q.purpose for q in queries}
     assert purposes == {
-        "university_lab", "research_group", "university_institute",
-        "competence_center", "applied_sciences",
+        "research_group", "competence_center", "applied_sciences",
     }
     for q in queries:
         assert q.source == "deterministic_planner"
         assert q.public_safe and q.blocked_reason is None
         assert q.approval_required is True
+
+
+def test_planner_combines_competence_institution_type_and_switzerland():
+    queries = plan_partner_queries(TOPIC)
+    assert "explainable AI research group Switzerland" == queries[0].query_text
+    assert (
+        "production analytics university of applied sciences Switzerland"
+        == queries[1].query_text
+    )
+    assert "explainable AI competence center Switzerland" == queries[2].query_text
+    for query in queries:
+        words = [
+            word.strip(".,;:!?()[]{}\"'").casefold()
+            for word in query.query_text.split()
+        ]
+        assert len(words) == len(set(words)), query.query_text
 
 
 def test_planner_is_deterministic():
@@ -172,14 +187,14 @@ def test_fake_provider_creates_results_and_tool_invocations(db, web_fake):
     out = run_partner_research(db, project=project, actor_user_id="user-anna",
                                 topic=TOPIC, case_id="F1", data_mode="fake_test")
     assert out.provider == "fake"
-    assert out.result_count == 15  # 5 queries × 3 fake results
+    assert out.result_count == 9  # 3 queries × 3 fake results
     assert out.tool_invocation_count > 0
     persisted = db.scalar(
         select(func.count(ResearchResult.result_id)).where(
             ResearchResult.research_task_id.in_(out.task_ids)
         )
     )
-    assert persisted == 15
+    assert persisted == 9
 
 
 def test_cost_guard_blocks_partner_task_at_limit(db, web_fake):

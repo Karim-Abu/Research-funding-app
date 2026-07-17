@@ -22,6 +22,7 @@ from dataclasses import dataclass, field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from app.agents import allowed_facts
 from app.config.settings import get_settings
 from app.db.models import (
     AnalysisRun,
@@ -36,6 +37,7 @@ from app.db.models import (
     RequirementAssessment,
     RunProjectSnapshot,
     SourceDocument,
+    SourceVersion,
     ToolInvocation,
 )
 from app.market import source_scope
@@ -92,6 +94,10 @@ class A2Context:
     allowed_research_source_ids: set = field(default_factory=set)
     meta: dict = field(default_factory=dict)
     context_components: list[dict] = field(default_factory=list)
+    # (kind, Text) genau so, wie er nach Budgetierung/Truncation im Prompt
+    # landet. Basis der Erlaubt-Liste des Halluzinations-Gates: was hier fehlt,
+    # hat das Modell nie gesehen und darf nicht als belegt gelten.
+    visible_components: list[tuple[str, str]] = field(default_factory=list)
 
 
 class ContextBudgetError(ValueError):
@@ -344,11 +350,18 @@ def retrieve_advisory_research_context(
         select(SourceDocument, ResearchResult, ResearchTask)
         .join(ResearchResult, ResearchResult.source_document_id == SourceDocument.source_id)
         .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+        .join(
+            SourceVersion,
+            SourceVersion.source_version_id == SourceDocument.current_source_version_id,
+        )
         .where(
             SourceDocument.project_id == run.project_id,
             SourceDocument.workspace_id == run.workspace_id,
             SourceDocument.status == "processed",
+            SourceVersion.processing_status == "processed",
             ResearchResult.status == "imported",
+            ResearchResult.content_review_status == "reviewed",
+            ResearchResult.support_status.in_(("supports", "partially_supports")),
             ResearchTask.execution_mode == "live",
         )
     ))
@@ -364,12 +377,15 @@ def retrieve_advisory_research_context(
     imported = [
         {
             "source_id": f.source_document_id,
-            "source_name": f.source_name,
+            "source_name": provenance[f.source_document_id][1].title,
+            "title": provenance[f.source_document_id][1].title,
             "source_url": (
                 provenance[f.source_document_id][1].final_url
                 or provenance[f.source_document_id][1].source_url
             ),
             "research_module": provenance[f.source_document_id][2].research_module,
+            "content_review_status": provenance[f.source_document_id][1].content_review_status,
+            "support_status": provenance[f.source_document_id][1].support_status,
             "snippet": _trim(f.text, _RESEARCH_SNIPPET_MAX),
         }
         for f in fragments
@@ -389,7 +405,8 @@ def _render_research_context(rc: dict) -> str:
     for s in rc.get("imported_sources", []):
         lines.append(
             f"- [research_source_id={s['source_id']} | module={s['research_module']} | "
-            f"imported public source | {s['source_name']}] {s['snippet']}"
+            f"user-reviewed public source | support={s['support_status']} | "
+            f"{s['source_name']}] {s['snippet']}"
         )
     return "\n".join(lines)
 
@@ -462,12 +479,14 @@ def _budgeted_context(
     target_text: str,
     components: list[tuple[str, str, int, int]],
     budget: int,
-) -> tuple[str, list[dict]]:
+) -> tuple[str, list[dict], list[tuple[str, str]]]:
     """Keep the applicant target in full and allocate the remaining budget.
 
     Component tuple = (kind, text, weight, item_count). Unused shares are
     redistributed in declared priority order. Only safe counts are returned as
-    metadata.
+    metadata. Der dritte Rückgabewert sind die (kind, Text)-Paare exakt in der
+    Form, in der sie im Prompt stehen — abgeschnittene Anteile fehlen dort, wie
+    sie auch dem Modell fehlen.
     """
     target_body = target_text or "(empty)"
     target_block = "[imported_applicant_text:target_full]\n" + target_body
@@ -496,16 +515,18 @@ def _budgeted_context(
         "kind": "imported_applicant_text", "item_count": 1,
         "character_count": len(target_body), "truncated": False,
     }]
+    visible = [("current_field_text", target_body)]
     for (kind, content, _, item_count), header, length in zip(active, headers, used):
         blocks.append(header + content[:length])
         meta.append({
             "kind": kind, "item_count": item_count,
             "character_count": length, "truncated": length < len(content),
         })
+        visible.append((kind, content[:length]))
     rendered = "\n\n".join(blocks)
     if len(rendered) > budget:  # defensive accounting invariant
         raise ContextBudgetError("context_budget_accounting_error")
-    return rendered, meta
+    return rendered, meta, visible
 
 
 def assemble_a2_context(
@@ -603,7 +624,7 @@ def assemble_a2_context(
         "public_source_candidates": ctx.research_context.get("imported_sources", []),
         "advisory_a1_facts": ctx.advisory_facts,
     }
-    ctx.context_text, ctx.context_components = _budgeted_context(
+    ctx.context_text, ctx.context_components, ctx.visible_components = _budgeted_context(
         ctx.current_draft_text,
         [
             ("accepted_project_input", _json(ctx.structured_project_data), 25, 1),
@@ -646,6 +667,54 @@ def assemble_a2_context(
         "components": ctx.context_components,
     }
     return ctx
+
+
+_PARTNER_NAME_KEYS = (
+    "name", "organisation", "organization", "institution", "partner_name",
+    "legal_name", "display_name",
+)
+
+
+def _partner_names(structured: dict) -> list[str]:
+    names: list[str] = []
+    for partner in structured.get("partners") or []:
+        if isinstance(partner, str):
+            names.append(partner)
+            continue
+        if not isinstance(partner, dict):
+            continue
+        names.extend(
+            str(value) for key, value in partner.items()
+            if key in _PARTNER_NAME_KEYS and isinstance(value, str) and value.strip()
+        )
+    return names
+
+
+def build_allowed_facts(
+    ctx: A2Context, input_payload: dict
+) -> allowed_facts.AllowedFactsManifest:
+    """Erlaubt-Basis aus genau dem, was im finalen Request sichtbar ist.
+
+    Sichtbar ist (siehe ``gateway._assemble_prompt``) das strukturierte
+    ``INPUT``-Payload plus der budgetierte Kontexttext. Beides geht typisiert
+    ein — nicht der volle Fallkorpus und nicht nur der gekürzte Kontextstring.
+    Bekannte Partnernamen werden ergänzt, sofern sie tatsächlich im Request
+    stehen (ein wegen Budget entfallener Partner gilt nie als bekannt).
+    """
+    payload_text = _json(input_payload)
+    components = [
+        *ctx.visible_components,
+        ("structured_input_payload", payload_text),
+    ]
+    visible_text = "\n".join([payload_text, *(text for _kind, text in ctx.visible_components)])
+    haystack = visible_text.casefold()
+    names = [
+        name for name in _partner_names(ctx.structured_project_data)
+        if name.strip().casefold() in haystack
+    ]
+    return allowed_facts.add_known_organisations(
+        allowed_facts.build_manifest(components), names
+    )
 
 
 def build_input_payload(ctx: A2Context, run_id: str) -> dict:

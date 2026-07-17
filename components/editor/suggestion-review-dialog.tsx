@@ -16,8 +16,9 @@ import { cn } from "@/lib/utils"
 import { applySegments, countChanges, diffSuggestion, type DiffSegment } from "@/lib/diff"
 import { rationaleChips } from "@/lib/suggestion-view"
 import { VERIFICATION_LABELS, type VerificationStatus } from "@/lib/evidence"
+import { charCount } from "@/lib/fields"
 import type { A2Suggestion } from "@/lib/redraft"
-import { generationLabel } from "@/lib/generation-kind"
+import { GENERATION_KIND_BADGE_CLASS, generationLabel } from "@/lib/generation-kind"
 
 const WARNING_LABELS: Record<string, string> = {
   contains_placeholders:
@@ -134,7 +135,23 @@ export function SuggestionReviewDialog({
         className="flex flex-col gap-0 overflow-hidden p-0 data-[side=right]:w-full data-[side=right]:sm:w-[85vw] data-[side=right]:sm:max-w-[85vw]"
       >
         <SheetHeader className="shrink-0 border-b border-border px-6 py-4">
-          <SheetTitle>{label} prüfen</SheetTitle>
+          <div className="flex flex-wrap items-center gap-2">
+            <SheetTitle>{label} prüfen</SheetTitle>
+            {suggestion.generation_kind && (
+              <span
+                className={cn(
+                  "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                  GENERATION_KIND_BADGE_CLASS[suggestion.generation_kind]
+                )}
+              >
+                {suggestion.generation_kind === "model_generated"
+                  ? "Live-KI"
+                  : suggestion.generation_kind === "fake_demo"
+                    ? "Demo"
+                    : "Regelbasierte Vorlage"}
+              </span>
+            )}
+          </div>
           <SheetDescription>
             Der Vorschlag folgt der Antragssprache. Nichts wird automatisch
             übernommen — Sie entscheiden je Änderung.
@@ -142,6 +159,30 @@ export function SuggestionReviewDialog({
         </SheetHeader>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+          {/* Fachliche Kurzbilanz VOR dem Diff: was blieb, was fiel weg, was
+              fehlt, welche Quellen — plus Textumfang alt → neu. */}
+          {section && (
+            <div
+              className="flex flex-wrap gap-1.5"
+              data-testid="suggestion-summary"
+            >
+              {[
+                `Erhaltene Fakten: ${section.preserved_facts.length}`,
+                `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims.length}`,
+                `Fehlende Angaben: ${section.missing_inputs.length}`,
+                `Verwendete Belege: ${suggestion.evidence.length}`,
+                `Research-Quellen: ${suggestion.research_sources?.length ?? 0}`,
+                `Zeichen: ${charCount(currentText)} → ${charCount(suggestion.suggested_text)}`,
+              ].map((item) => (
+                <span
+                  key={item}
+                  className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                >
+                  {item}
+                </span>
+              ))}
+            </div>
+          )}
           {/* C5 — konkrete Begründung statt Pauschalsatz. */}
           {chips.length > 0 && (
             <div className="flex flex-wrap gap-1.5" data-testid="rationale-chips">
@@ -379,8 +420,8 @@ export function SuggestionReviewDialog({
                 Verwendete Research-Quellen
               </p>
               <p className="text-xs text-muted-foreground">
-                Vom Vorschlag referenzierte öffentliche Quellen. Eine Fundstelle ist nicht
-                automatisch eine fachliche Stützung.
+                Vom Vorschlag referenzierte, durch den Nutzer geprüfte öffentliche Quellen.
+                Sie bleiben von formell verifizierten Belegen getrennt.
               </p>
               <ul className="flex flex-col gap-1">
                 {suggestion.research_sources?.map((source) => (
@@ -393,7 +434,9 @@ export function SuggestionReviewDialog({
                     >
                       {source.title}
                     </a>
-                    <p className="text-muted-foreground">Quellenkandidat – fachlich prüfen</p>
+                    <p className="text-muted-foreground">
+                      Vom Nutzer geprüfte öffentliche Quelle – keine automatische fachliche Freigabe
+                    </p>
                   </li>
                 ))}
               </ul>

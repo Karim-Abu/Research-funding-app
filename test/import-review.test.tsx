@@ -33,14 +33,24 @@ vi.mock("@/lib/projects", () => ({
   })),
 }))
 
-// Zentrale Run-Auswahl (Ladder): der Test steuert den aktiven Run direkt.
+// Zentrale Run-Auswahl (Ladder): der Test steuert den aktiven Run und den
+// Partner-&-Budget-Schrittstatus direkt (für die zustandsabhängige CTA).
 let activeRunId: string | null = "run-1"
+let partnerStatus = "abgeschlossen"
 vi.mock("@/components/providers/workflow-run-provider", () => ({
   useActiveRun: () => ({
     runId: activeRunId,
     source: activeRunId ? "project_active" : null,
     loading: false,
     reload: vi.fn(),
+    statuses: {
+      projekt: "abgeschlossen",
+      partner: partnerStatus,
+      analyse: "nicht_begonnen",
+      entwurf: "nicht_begonnen",
+      pruefung: "nicht_begonnen",
+      uebernahme: "nicht_begonnen",
+    },
   }),
 }))
 
@@ -154,6 +164,9 @@ function structuredCandidate(
 
 beforeEach(() => {
   activeRunId = "run-1"
+  partnerStatus = "abgeschlossen"
+  // jsdom implementiert scrollIntoView nicht (Sprung zum nächsten Kandidaten).
+  Element.prototype.scrollIntoView = vi.fn()
   getImportCandidates.mockResolvedValue(FIXTURE)
   getStructuredImportCandidates.mockResolvedValue([])
   decideImportCandidate.mockImplementation(
@@ -474,9 +487,62 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     expect(uploadFiles.mock.calls[1][1]).toEqual([file])
   })
 
-  it("führt nach den Entscheidungen zur Fix Queue («Nächste Aufgaben»)", async () => {
+  // Anf. 11/12 — die Abschluss-Aktion ist zustandsabhängig und führt nie zu
+  // einer leeren Qualitätsprüfung ohne abgeschlossenen Analyse-Lauf.
+  it("bei offenen Kandidaten: «Nächsten Kandidaten prüfen» statt Navigation", async () => {
     await renderReview()
-    fireEvent.click(screen.getByTestId("import-to-fix-queue"))
+    const action = screen.getByTestId("import-to-fix-queue")
+    expect(action).toHaveTextContent("Nächsten Kandidaten prüfen")
+    fireEvent.click(action)
+    expect(push).not.toHaveBeenCalled()
+    // Der erste offene Kandidat ist danach aufgeklappt.
+    const firstRow = screen.getAllByTestId("import-candidate")[0]
+    expect(
+      within(firstRow).getByRole("button", { name: /Abschnittsdetails/ })
+    ).toHaveAttribute("aria-expanded", "true")
+  })
+
+  it("ohne Lauf und ohne Partner/Budget: «Weiter zu Partner & Budget», nie /review", async () => {
+    activeRunId = null
+    partnerStatus = "eingaben_fehlen"
+    getImportCandidates.mockResolvedValue([
+      candidate({ decision: "accepted" }),
+      candidate({ import_candidate_id: "c-2", decision: "ignored" }),
+    ])
+    await renderReview()
+    expect(
+      screen.getByText(/Die Qualitätsprüfung folgt nach dem ersten Analyse-Lauf/)
+    ).toBeInTheDocument()
+    const action = screen.getByTestId("import-to-fix-queue")
+    expect(action).toHaveTextContent("Weiter zu Partner & Budget")
+    fireEvent.click(action)
+    expect(push).toHaveBeenCalledWith("/partner")
+    expect(push).not.toHaveBeenCalledWith("/review")
+  })
+
+  it("ohne Lauf mit bereitem Partner/Budget: «Analyse & Recherche starten»", async () => {
+    activeRunId = null
+    getImportCandidates.mockResolvedValue([
+      candidate({ decision: "accepted" }),
+      candidate({ import_candidate_id: "c-2", decision: "ignored" }),
+    ])
+    await renderReview()
+    const action = screen.getByTestId("import-to-fix-queue")
+    expect(action).toHaveTextContent("Analyse & Recherche starten")
+    fireEvent.click(action)
+    expect(push).toHaveBeenCalledWith("/quellen")
+    expect(push).not.toHaveBeenCalledWith("/review")
+  })
+
+  it("mit abgeschlossenem Lauf und allen Entscheidungen: «Zur Fix Queue»", async () => {
+    getImportCandidates.mockResolvedValue([
+      candidate({ decision: "accepted" }),
+      candidate({ import_candidate_id: "c-2", decision: "ignored" }),
+    ])
+    await renderReview()
+    const action = screen.getByTestId("import-to-fix-queue")
+    expect(action).toHaveTextContent("Zur Fix Queue")
+    fireEvent.click(action)
     expect(push).toHaveBeenCalledWith("/review")
   })
 

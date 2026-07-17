@@ -24,6 +24,7 @@ import statistics
 from dataclasses import dataclass
 from pathlib import Path
 
+from app.agents import allowed_facts
 from app.evaluation.model_quality import (
     FAIL,
     NOT_RUN,
@@ -33,11 +34,15 @@ from app.evaluation.model_quality import (
     extract_numbers,
     kpi_gaps_marked_open,
     mandatory_subsections_present,
-    no_invented_numbers,
-    no_invented_patents,
     no_review_notes_as_prose,
     terms_preserved,
 )
+
+# Die Erfindungs-Detektoren dieser Evaluation stammen AUSSCHLIESSLICH aus
+# ``app.agents.allowed_facts`` — derselben Implementierung, die das
+# Produktionsgate benutzt (Owner 2026-07-17). Die frühere Zweitimplementierung
+# (Exakt-Token-Vergleich gegen einen eigenen Fallkorpus) hat bekannte
+# Fixture-Angaben als Erfindung markiert und ist ersatzlos entfallen.
 
 # Severity-Gewichte für den A3-Recall (Safety-/Blocker-Findings zählen mehr).
 SEVERITY_WEIGHTS = {
@@ -104,6 +109,9 @@ class CaseGold:
     gold_facts: tuple[dict, ...]
     gold_missing: tuple[dict, ...]
     gold_findings: tuple[dict, ...]
+    # Kanonische Antragssprache des Falls (Priorität 1 der Sprachauflösung);
+    # None ⇒ aus dem Draft/Portalfeld ableiten, nie still auf «de» fallen.
+    case_language: str | None = None
 
 
 def load_case_gold(case_id: str, cases_dir: Path | None = None) -> CaseGold:
@@ -141,6 +149,37 @@ def load_case_gold(case_id: str, cases_dir: Path | None = None) -> CaseGold:
         gold_facts=tuple(raw["gold_facts"]),
         gold_missing=tuple(raw["gold_missing"]),
         gold_findings=tuple(raw.get("gold_findings", [])),
+        case_language=raw.get("case_language"),
+    )
+
+
+def resolve_expected_language(
+    gold: CaseGold | None,
+    *,
+    draft_language: str | None = None,
+    project_language: str | None = None,
+    detected_language: str | None = None,
+) -> tuple[str, str]:
+    """Kanonische Antragssprache → (Sprache, Quelle). NIE ein stiller
+    «de»-Default: die Reihenfolge ist explizite Fallkonfiguration → Draft-/
+    Portalfeldsprache → Projektantragssprache → dokumentierte Erkennung.
+
+    Die Draft-/Portalfeldsprache ist dieselbe Quelle, die das Produktionsgate
+    verwendet (``A2Context.language``) — Evaluation und Produktion beurteilen
+    damit dieselbe Erwartung.
+    """
+    for value, source in (
+        (gold.case_language if gold else None, "case_language"),
+        (draft_language, "draft_field_language"),
+        (project_language, "project_application_language"),
+        (detected_language, "language_detection_fallback"),
+    ):
+        normalized = str(value or "").strip().casefold()
+        if normalized in ("de", "en"):
+            return normalized, source
+    raise GoldError(
+        "Erwartete Sprache nicht auflösbar — kein stiller Default. Setze "
+        "case_language im Gold oder übergib die Draft-/Projektsprache."
     )
 
 
@@ -361,8 +400,12 @@ _LEGAL_CLAIM_PATTERNS = (
 _URL_RE = re.compile(r"https?://[^\s)\]>»]+", re.I)
 
 
-def language_consistent(text: str, expected: str = "de") -> MetricResult:
+def language_consistent(text: str, expected: str) -> MetricResult:
     """Stopwort-Heuristik: dominante Sprache muss ``expected`` sein (Anteil ≥ 0.6).
+
+    ``expected`` ist PFLICHT — ein Default («de») hat englische Fälle
+    reihenweise falsch disqualifiziert. Die Erwartung kommt aus der kanonischen
+    Fallkonfiguration (``resolve_expected_language``), nie aus dieser Funktion.
 
     Kurztexte (< 30 Wörter) sind nicht bewertbar → not_run. Heuristik — das
     Human-Bestätigungsfeld im Blindbogen bleibt massgeblich.
@@ -390,44 +433,60 @@ def language_consistent(text: str, expected: str = "de") -> MetricResult:
     )
 
 
-def no_invented_partners(text: str, input_corpus: str) -> MetricResult:
-    """Organisationsnamen (Suffix AG/GmbH/…) müssen aus dem Eingabekontext stammen.
+def no_invented_numbers(report: allowed_facts.ClaimReport) -> MetricResult:
+    """Zahlen müssen im sichtbaren Request stehen (Manifest, normalisiert).
 
-    Satzanfangs-Grossschreibung («Die Voltaris AG») erweitert den Regex-Match um
-    führende Wörter — geprüft wird deshalb jeder Namens-Tail (mindestens ein
-    Wort + Suffix); erfunden ist ein Name nur, wenn KEIN Tail im Korpus vorkommt.
+    Deterministisch ableitbare Zahlen sind KEINE Erfindung — sie erscheinen als
+    ``derived_numeric_claim`` und gehen ins menschliche Review.
     """
-    corpus_folded = _fold(input_corpus)
-
-    def known(name: str, suffix: str) -> bool:
-        tokens = name.split()
-        return any(
-            _fold(" ".join(tokens[i:] + [suffix])) in corpus_folded
-            for i in range(len(tokens))
+    invented = report.invented_numbers
+    detail = (
+        "Keine Zahlen ausserhalb des sichtbaren Requests."
+        if not invented
+        else f"{len(invented)} Zahl(en) ohne Eingabe-Grundlage."
+    )
+    if report.derived_numbers:
+        detail += (
+            f" {len(report.derived_numbers)} ableitbare Zahl(en) "
+            "(derived_numeric_claim) — menschliche Prüfung."
         )
+    return MetricResult(
+        "no_invented_numbers", PASS if not invented else FAIL, detail
+    )
 
-    invented = sorted({
-        f"{name} {suffix}"
-        for name, suffix in _ORG_SUFFIX_RE.findall(text or "")
-        if not known(name, suffix)
-    })
+
+def no_invented_patents(report: allowed_facts.ClaimReport) -> MetricResult:
+    """Erfundene Patent-ID ODER Schutzrechts-Behauptung ohne jede Grundlage."""
+    if report.invented_patents:
+        detail = f"{len(report.invented_patents)} Patent-ID(s) ohne Eingabe-Grundlage."
+    elif report.unsupported_patent_claim:
+        detail = "Patentbehauptung, obwohl der Request keine Schutzrechte nennt."
+    else:
+        detail = "Keine erfundene Patentbehauptung."
+    return MetricResult(
+        "no_invented_patents",
+        FAIL if (report.invented_patents or report.unsupported_patent_claim) else PASS,
+        detail,
+    )
+
+
+def no_invented_partners(report: allowed_facts.ClaimReport) -> MetricResult:
+    invented = report.invented_organisations
     return MetricResult(
         "no_invented_partners",
         PASS if not invented else FAIL,
-        "Keine Organisationsnamen ausserhalb des Eingabekontexts."
+        "Keine Organisationsnamen ausserhalb des sichtbaren Requests."
         if not invented
         else f"{len(invented)} Organisationsname(n) ohne Eingabe-Grundlage.",
     )
 
 
-def no_invented_trl(text: str, input_corpus: str) -> MetricResult:
-    claims = set(m.group(0).upper().replace(" ", "") for m in _TRL_RE.finditer(text or ""))
-    known = set(m.group(0).upper().replace(" ", "") for m in _TRL_RE.finditer(input_corpus or ""))
-    invented = sorted(claims - known)
+def no_invented_trl(report: allowed_facts.ClaimReport) -> MetricResult:
+    invented = report.invented_trl
     return MetricResult(
         "no_invented_trl",
         PASS if not invented else FAIL,
-        "Keine TRL-Behauptung ausserhalb des Eingabekontexts."
+        "Keine TRL-Behauptung ausserhalb des sichtbaren Requests."
         if not invented
         else f"TRL-Behauptung(en) ohne Eingabe-Grundlage: {len(invented)}.",
     )
@@ -488,26 +547,31 @@ def a2_gate_results(
     required_terms: tuple[str, ...],
     expected_markers: tuple[str, ...],
     char_limit: int | None,
-    input_corpus: str,
+    manifest: allowed_facts.AllowedFactsManifest,
     missing_inputs_count: int,
     human_review_required: bool,
+    expected_language: str,
     allowed_sources: tuple[str, ...] = (),
-    expected_language: str = "de",
 ) -> list[dict]:
     """Die 10 automatischen A2-Gates (Auftrag) als Statuszeilen.
+
+    ``manifest`` ist die Erlaubt-Basis des tatsächlich sichtbaren Requests und
+    ``expected_language`` die kanonisch aufgelöste Antragssprache — beide sind
+    Pflicht, damit die Evaluation keine eigene, abweichende Wahrheit erfindet.
 
     Gate 1 (Schema) und Gate 10 (keine Auto-Freigabe) werden vom Harness
     beobachtet und hier nur berichtet.
     """
+    report = allowed_facts.analyze_claims(text, manifest)
     gate_2 = mandatory_subsections_present(text, expected_markers)
     gate_3 = char_limit_respected(text, char_limit)
     gate_4 = language_consistent(text, expected_language)
     gate_5 = terms_preserved(text, required_terms)
     invented_checks = [
-        no_invented_numbers(text, input_corpus),
-        no_invented_patents(text, input_corpus),
-        no_invented_partners(text, input_corpus),
-        no_invented_trl(text, input_corpus),
+        no_invented_numbers(report),
+        no_invented_patents(report),
+        no_invented_partners(report),
+        no_invented_trl(report),
         no_legal_clearance_claims(text),
         sources_exist(text, allowed_sources),
     ]
@@ -546,7 +610,7 @@ def gates_passed(gate_rows: list[dict]) -> bool:
 def fatal_gate_results(
     text: str,
     *,
-    input_corpus: str,
+    manifest: allowed_facts.AllowedFactsManifest,
     allowed_sources: tuple[str, ...] = (),
     evidence_ref_violations: int = 0,
     silent_fake_detected: bool = False,
@@ -557,10 +621,14 @@ def fatal_gate_results(
     """Fatal-Gates (Auftrag): ein bestätigter Verstoss schliesst den Kandidaten
     für die Rolle aus. Regex-basierte Treffer verlangen menschliche Adjudikation
     (``requires_human_adjudication``); Harness-Beobachtungen (stiller
-    Fake-Wechsel, Evidence-IDs) sind hart."""
-    number_check = no_invented_numbers(text, input_corpus)
-    patent_check = no_invented_patents(text, input_corpus)
-    partner_check = no_invented_partners(text, input_corpus)
+    Fake-Wechsel, Evidence-IDs) sind hart.
+
+    Die Erfindungs-Detektoren lesen dieselbe Erlaubt-Basis wie das
+    Produktionsgate (``manifest``) — keine zweite Korpus-/Token-Logik."""
+    report = allowed_facts.analyze_claims(text, manifest)
+    number_check = no_invented_numbers(report)
+    patent_check = no_invented_patents(report)
+    partner_check = no_invented_partners(report)
     source_check = sources_exist(text, allowed_sources)
     legal_check = no_legal_clearance_claims(text)
     foreign_check = foreign_portal_sections(text, foreign_markers)
@@ -605,7 +673,213 @@ def fatal_candidate(fatal_rows: list[dict]) -> bool:
     return any(row["status"] == FAIL for row in fatal_rows)
 
 
+# Harte A2-Disqualifikationen (Auftrag) — ehrliche, getrennte Reason-Codes
+# (Owner 2026-07-16): `dq_schema_error` NUR für tatsächlich ungültiges JSON
+# oder eine echte Schema-Validierungsverletzung; valides JSON, das an einem
+# fachlichen/kontextabhängigen Gate scheitert, bekommt seinen eigenen Code.
+# Regex-Treffer verlangen weiterhin menschliche Adjudikation.
+A2_HARD_DQ = (
+    "dq_invented_fact",
+    "dq_unsupported_numeric_claim",
+    "dq_unsupported_partner_claim",
+    "dq_unsupported_patent_claim",
+    "dq_wrong_field_id",
+    # Routing-IDs bindet der Caller (technisch). Widerspricht der Modellinhalt
+    # dieser Bindung, ist das eine INHALTLICHE Disqualifikation — getrennt
+    # geprüft und nie still überschrieben.
+    "dq_wrong_section",
+    "dq_no_candidate_for_field",
+    "dq_tool_contract_error",
+    "dq_invalid_target_section",
+    "dq_wrong_language",
+    "dq_review_notes_in_prose",
+    "dq_char_limit",
+    "dq_missing_structure",
+    "dq_empty_output",
+    "dq_unsupported_reference",
+    "dq_truncated_output",
+    "dq_schema_error",
+)
+
+_DQ_FATAL_NAMES = (
+    "fatal_invented_number",
+    "fatal_invented_partner",
+    "fatal_invented_patent",
+)
+_DQ_GATE_NAMES = {
+    "dq_wrong_language": "language_consistent",
+    "dq_review_notes_in_prose": "no_review_notes_as_prose",
+    "dq_char_limit": "char_limit",
+}
+
+# Orchestrator-/Gateway-Reason → sicherer DQ-Code. Quelle der Reasons:
+# field_drafting._validate_candidate bzw. gateway._execute (Whitelist-Codes).
+_REJECT_REASON_TO_DQ = {
+    "invented_numeric_token": "dq_unsupported_numeric_claim",
+    "invented_partner_name": "dq_unsupported_partner_claim",
+    "invented_patent_claim": "dq_unsupported_patent_claim",
+    "section_target_mismatch": "dq_wrong_field_id",
+    "no_candidate_for_field": "dq_no_candidate_for_field",
+    "provider_output_not_json": "dq_tool_contract_error",
+    "provider_output_schema_invalid": "dq_schema_error",
+    "output_schema_not_implemented": "dq_schema_error",
+    "provider_output_truncated": "dq_truncated_output",
+    "invalid_target_section": "dq_invalid_target_section",
+    "all_findings_filtered": "dq_all_findings_filtered",
+    "mandatory_structure_missing": "dq_missing_structure",
+    "section_structure_missing": "dq_missing_structure",
+    "character_limit_exceeded": "dq_char_limit",
+    "empty_suggested_text": "dq_empty_output",
+    "application_language_changed": "dq_wrong_language",
+    "unknown_evidence_anchor": "dq_unsupported_reference",
+    "unknown_research_source": "dq_unsupported_reference",
+    "unknown_open_issue": "dq_unsupported_reference",
+    "new_claim_without_source": "dq_unsupported_reference",
+}
+
+
+def a2_reject_reason_to_dq(reason: str | None) -> str | None:
+    """Sicherer DQ-Code für einen Orchestrator-/Gateway-Reason (oder None)."""
+    if not reason:
+        return None
+    if reason in _REJECT_REASON_TO_DQ:
+        return _REJECT_REASON_TO_DQ[reason]
+    # SectionStructureError-Codes (validate_section_candidate) sind eine
+    # kleine offene Familie — konservativ als Strukturfehler klassifizieren.
+    if "structure" in reason or reason.startswith("section_"):
+        return "dq_missing_structure"
+    return None
+
+
+def a2_hard_disqualifications(
+    gate_rows: list[dict],
+    fatal_rows: list[dict],
+    *,
+    reject_reason: str | None = None,
+    routing_metadata_mismatch: bool = False,
+) -> list[str]:
+    """Angeschlagene harte DQ-Kriterien (geordnete Teilmenge von A2_HARD_DQ).
+
+    ``reject_reason`` ist der exakte Ablehnungsgrund des Orchestrators/
+    Gateways — NUR daraus darf ``dq_schema_error``/``dq_tool_contract_error``
+    etc. entstehen; die Gates liefern Sprache/Notizen/Zeichenlimit.
+    ``routing_metadata_mismatch`` meldet, dass der Modellinhalt der
+    Caller-Bindung widersprochen hat (eigener, inhaltlicher DQ)."""
+    fired: set[str] = set()
+    if routing_metadata_mismatch:
+        fired.add("dq_wrong_section")
+    fatal_failed = {
+        row["name"] for row in fatal_rows if row["status"] == FAIL
+    }
+    gate_failed = {
+        row["name"] for row in gate_rows if row["status"] == FAIL
+    }
+    if fatal_failed & set(_DQ_FATAL_NAMES):
+        fired.add("dq_invented_fact")
+    for dq, gate_name in _DQ_GATE_NAMES.items():
+        if gate_name in gate_failed:
+            fired.add(dq)
+    mapped = a2_reject_reason_to_dq(reject_reason)
+    if mapped:
+        fired.add(mapped)
+    return [dq for dq in A2_HARD_DQ if dq in fired]
+
+
+# --- Drei Statusdimensionen (Owner 2026-07-17) --------------------------------
+# Technische Vertragsvalidität, produktive Eignung und menschliche
+# Bewertbarkeit sind DREI verschiedene Fragen. Sie zu vermischen hiess: ein
+# echtes Modellverhalten (z. B. erfundene Referenzen) blockiert die technische
+# Kalibrierung, und ein technisch valider Text bleibt der Blindbewertung
+# vorenthalten. Inhaltliche DQs bleiben dabei vollständig erhalten.
+
+# Inhaltliche DQ-Codes: Modellbefunde, nie technische Kalibrierungsblocker.
+CONTENT_DQ = (
+    "dq_invented_fact",
+    "dq_unsupported_numeric_claim",
+    "dq_unsupported_partner_claim",
+    "dq_unsupported_patent_claim",
+    "dq_unsupported_reference",
+    "dq_wrong_section",
+    "dq_wrong_language",
+    "dq_review_notes_in_prose",
+    "dq_char_limit",
+)
+# Technische DQ-Codes: der Vertrag selbst hat nicht getragen.
+TECHNICAL_DQ = (
+    "dq_schema_error",
+    "dq_tool_contract_error",
+    "dq_truncated_output",
+    "dq_no_candidate_for_field",
+    "dq_wrong_field_id",
+    "dq_invalid_target_section",
+    "dq_empty_output",
+    "dq_missing_structure",
+)
+
+
+def sample_status_dimensions(
+    *,
+    execution: str,
+    silent_fake: bool,
+    schema_valid: bool,
+    routing_metadata_source: str | None,
+    usage: dict | None,
+    hard_dq: tuple[str, ...] | list[str] = (),
+    has_readable_output: bool = False,
+) -> dict:
+    """(technical_valid, production_eligible, human_evaluable) eines Samples.
+
+    ``technical_valid``: echter Provider, kein Fake-Fallback, gültiges JSON im
+    erwarteten Schema, caller-bound Routing, Usage/Kosten vollständig.
+    ``production_eligible``: technisch valide UND ohne harte Inhalts-DQ.
+    ``human_evaluable``: technisch valide UND ein lesbarer, zum Zielabschnitt
+    gehörender Text bzw. ein lesbares Finding-Bundle.
+    """
+    dq = tuple(hard_dq or ())
+    usage = usage or {}
+    technical_valid = bool(
+        execution == "real"
+        and not silent_fake
+        and schema_valid
+        and routing_metadata_source == "caller_bound"
+        and usage.get("cost_status") == "priced"
+        and usage.get("input_tokens") is not None
+        and usage.get("output_tokens") is not None
+        and not any(code in TECHNICAL_DQ for code in dq)
+    )
+    return {
+        "technical_valid": technical_valid,
+        "production_eligible": bool(
+            technical_valid and not any(code in CONTENT_DQ for code in dq)
+        ),
+        "human_evaluable": bool(technical_valid and has_readable_output),
+    }
+
+
 # --- A3: Critic-Scoring -------------------------------------------------------
+
+# A3-Findings sind Hinweise — nie ein Förderentscheid. Zusätzlich zu den
+# Rechts-/Eligibility-Mustern (A2) greifen hier Entscheids-Formulierungen.
+_FUNDING_DECISION_PATTERNS = _LEGAL_CLAIM_PATTERNS + (
+    re.compile(r"\bförderentscheid\w*\b", re.I),
+    re.compile(r"\b(?:wird|werden|ist|sollte)\s+(?:nicht\s+)?(?:bewilligt|abgelehnt|gefördert)\b", re.I),
+    re.compile(r"\bfunding decision\b", re.I),
+    re.compile(r"\bshould (?:not )?be funded\b", re.I),
+)
+
+_FINDING_TEXT_KEYS = (
+    "description", "suggested_improvement", "recommended_next_action",
+)
+
+
+def funding_decision_claims(findings: list[dict]) -> int:
+    """Anzahl Findings, die eine Förderentscheids-Aussage formulieren."""
+    hits = 0
+    for finding in findings:
+        text = " ".join(str(finding.get(key) or "") for key in _FINDING_TEXT_KEYS)
+        if any(pattern.search(text) for pattern in _FUNDING_DECISION_PATTERNS):
+            hits += 1
+    return hits
 
 
 def match_finding(pred: dict, gold: dict) -> bool:
@@ -707,6 +981,7 @@ def score_a3(
             None if fixability_rate is None else round(fixability_rate, 4)
         ),
         "false_consensus": false_consensus,
+        "funding_decision_claims": funding_decision_claims(findings),
         "counts": {
             "predicted_findings": len(findings),
             "gold_findings_in_scope": len(scope_gold),

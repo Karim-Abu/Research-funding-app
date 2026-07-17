@@ -46,7 +46,7 @@ from app.security.data_class import DataClass, derive_data_class, is_external_bl
 from app.security.search_query_firewall import evaluate_query
 
 MODULE_PURPOSES = {
-    "market_growth": {"market_size"},
+    "market_growth": {"market_size", "regulatory_demand_drivers"},
     "competition_alternatives": {"competitors_alternatives"},
     "state_of_the_art": {"state_of_the_art"},
 }
@@ -57,8 +57,24 @@ _GENERIC_QUERY_TERMS = {
     "state", "art", "research", "group", "lab", "university", "institute",
     "competence", "center", "applied", "sciences", "swiss", "switzerland",
     "schweiz", "technology", "solution", "solutions", "trend", "trends",
+    "providers", "comparison", "regulation", "regulatory", "demand", "drivers",
+    "review", "benchmark", "limitations", "of",
 }
 _WORD = re.compile(r"[\wäöüéèàç-]+", re.IGNORECASE)
+_COMPARISON_NORMALIZER = re.compile(r"[\W_]+", re.UNICODE)
+_GENERIC_CUSTOMER_WORDS = {
+    "unternehmer", "unternehmen", "kunde", "kunden", "kundschaft", "kmu",
+    "organisation", "organisationen", "nutzer", "anwender",
+}
+_REGION_QUALIFIERS = {
+    "schweiz", "schweizer", "schweizerisch", "schweizerische",
+    "schweizerischer", "schweizerischen", "swiss", "switzerland",
+}
+_GENERIC_COMPETENCE_WORDS = {
+    "eth", "epfl", "universität", "universitaet", "university", "hochschule",
+    "fachhochschule", "institut", "institute", "kompetenzzentrum",
+    "competence", "center", "centre",
+}
 
 
 class BriefError(Exception):
@@ -176,12 +192,32 @@ def _validate_public_safe(
             )
 
 
-def _validate_required(data: dict) -> None:
-    if not data["application_domain"] or not data["technology_class"]:
-        raise BriefError(
-            "research_brief_incomplete",
-            "Anwendungsdomäne und Technologieklasse sind erforderlich.",
-        )
+def _comparison_key(value: str) -> str:
+    return _COMPARISON_NORMALIZER.sub("", _clean(value).casefold())
+
+
+def _meaningful_words(value: str) -> list[str]:
+    return [
+        match.group(0).casefold()
+        for match in _WORD.finditer(value)
+        if match.group(0).casefold() not in _REGION_QUALIFIERS
+    ]
+
+
+def _generic_customer_segment(value: str) -> bool:
+    words = _meaningful_words(value)
+    return not words or all(word in _GENERIC_CUSTOMER_WORDS for word in words)
+
+
+def _concrete_competence(value: str) -> bool:
+    cleaned = _clean(value)
+    if re.fullmatch(r"[A-ZÄÖÜ0-9]{2,10}", cleaned):
+        return False
+    words = _meaningful_words(cleaned)
+    return bool(words) and not all(word in _GENERIC_COMPETENCE_WORDS for word in words)
+
+
+def _validate_draft(data: dict) -> None:
     if not data["modules"]:
         raise BriefError("research_brief_incomplete", "Mindestens ein Recherchemodul ist erforderlich.")
     if "customer_problem" in data["modules"]:
@@ -189,16 +225,44 @@ def _validate_required(data: dict) -> None:
             "legacy_research_module",
             "Das historische Modul Kundenproblem kann angezeigt, aber nicht mehr neu geplant werden.",
         )
+
+
+def _validate_approval(data: dict) -> None:
+    _validate_draft(data)
+    if not data["application_domain"] or not data["technology_class"]:
+        raise BriefError(
+            "research_brief_incomplete",
+            "Anwendungsdomäne und Technologieklasse sind erforderlich.",
+        )
+    if _comparison_key(data["application_domain"]) == _comparison_key(data["technology_class"]):
+        raise BriefError(
+            "research_brief_fields_identical",
+            "Anwendungsdomäne und Technologieklasse müssen unterschiedlich beschrieben werden.",
+        )
     market_modules = set(data["modules"]) - {PARTNER_MODULE, "state_of_the_art"}
     if market_modules and not data["target_customer_segments"]:
         raise BriefError(
             "research_brief_incomplete",
             "Für die Marktrecherche ist mindestens ein Zielkundensegment erforderlich.",
         )
+    if market_modules and not any(
+        not _generic_customer_segment(value) for value in data["target_customer_segments"]
+    ):
+        raise BriefError(
+            "research_brief_customer_segment_too_generic",
+            "Bitte mindestens ein konkretes Zielkundensegment angeben.",
+        )
     if PARTNER_MODULE in data["modules"] and not data["competence_needs"]:
         raise BriefError(
             "research_brief_incomplete",
             "Für die Partnerrecherche ist mindestens eine gesuchte Kompetenz erforderlich.",
+        )
+    if PARTNER_MODULE in data["modules"] and not any(
+        _concrete_competence(value) for value in data["competence_needs"]
+    ):
+        raise BriefError(
+            "research_brief_competence_not_concrete",
+            "Bitte mindestens eine konkrete Fachkompetenz statt nur eines Organisationsnamens angeben.",
         )
 
 
@@ -208,9 +272,12 @@ def suggest(db: Session, project: Project, actor_user_id: str) -> ResearchBrief:
         return current
     field = _clean(project.innovation_field or "")
     parts = [p.strip() for p in re.split(r"\s*(?:/|,|\bund\b|\band\b)\s*", field, flags=re.I) if p.strip()]
+    domain = technology = ""
+    if len(parts) == 2 and _comparison_key(parts[0]) != _comparison_key(parts[1]):
+        domain, technology = parts
     proposed = ResearchBriefInput(
-        application_domain=parts[0] if parts else "",
-        technology_class=parts[1] if len(parts) > 1 else (parts[0] if parts else ""),
+        application_domain=domain,
+        technology_class=technology,
         target_customer_segments=[],
         region="Schweiz",
         competence_needs=[],
@@ -248,7 +315,7 @@ def save(
     db: Session, project: Project, actor_user_id: str, payload: ResearchBriefInput
 ) -> ResearchBrief:
     data = _normalized_payload(payload)
-    _validate_required(data)
+    _validate_draft(data)
     _validate_public_safe(db, project, actor_user_id, data)
     current = latest(db, project)
     wanted_hash = _content_hash(data)
@@ -281,7 +348,7 @@ def approve(db: Session, brief: ResearchBrief, actor_user_id: str) -> ResearchBr
         "competence_needs": list(brief.competence_needs or []),
         "modules": list(brief.modules or []),
     }
-    _validate_required(data)
+    _validate_approval(data)
     _validate_public_safe(db, project, actor_user_id, data)
     for old in db.scalars(
         select(ResearchBrief).where(

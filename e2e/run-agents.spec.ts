@@ -222,7 +222,7 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   await page.getByRole("button", { name: "Übernehmen", exact: true }).click()
   // Übernahme abgeschlossen: der Editor meldet die nötige erneute Prüfung.
   await expect(
-    page.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
+    page.getByText(/Text übernommen – Qualitätsprüfung erneut erforderlich/)
   ).toBeVisible({ timeout: 20_000 })
   await expect(page.getByTestId("run-suggestion-hint")).toHaveCount(0)
   const abstractAfter = await (

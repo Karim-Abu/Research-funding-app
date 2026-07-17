@@ -146,6 +146,28 @@ describe("MarketComparisonSection", () => {
     expect(
       screen.getByRole("button", { name: "Vergleich erstellen" })
     ).toBeInTheDocument()
+    expect(screen.getByText(/live ab, importieren und prüfen/)).toBeInTheDocument()
+  })
+
+  it("shows the precise reviewed-live empty result", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({
+          items: [],
+          item_count: 0,
+          research_gaps: [
+            "Keine live abgerufenen und inhaltlich positiv geprüften öffentlichen Quellen mit marktbezogenen Passagen vorhanden.",
+          ],
+        }))
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    expect(await screen.findByText(
+      /Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv/
+    )).toBeInTheDocument()
+    expect(screen.getByTestId("market-research-gaps")).toHaveTextContent(
+      "Keine live abgerufenen und inhaltlich positiv geprüften öffentlichen Quellen"
+    )
   })
 
   it("generates a comparison and renders the result", async () => {

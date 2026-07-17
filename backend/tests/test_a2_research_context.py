@@ -100,7 +100,7 @@ def test_candidates_never_enter_context_until_imported(db):
     assert "Marktkandidat Alpha" not in ctx.context_text
 
 
-def test_imported_source_enters_context_candidates_and_discarded_never(db):
+def test_reviewed_supporting_source_enters_context_and_discarded_never(db):
     run, _draft, _base = _vc_draft(db)
     add_imported_public_source(db, run, name="Akzeptierter Marktbericht",
                                text="Markt und Wettbewerber wachsen stark.")
@@ -117,6 +117,64 @@ def test_imported_source_enters_context_candidates_and_discarded_never(db):
     ctx = assemble_a2_context(db, run, field_id=VC_FIELD_ID, profile_id=VC_PROFILE)
     assert "Offener Kandidat" not in ctx.context_text
     assert "Verworfener Kandidat" not in ctx.context_text
+
+
+@pytest.mark.parametrize(
+    ("content_review_status", "support_status", "result_status"),
+    [
+        ("unreviewed", "not_checked", "imported"),
+        ("reviewed", "does_not_support", "rejected"),
+        ("reviewed", "does_not_support", "imported"),
+    ],
+)
+def test_unreviewed_rejected_or_non_supporting_source_never_enters_context(
+    db, content_review_status, support_status, result_status
+):
+    run, _draft, _base = _vc_draft(db)
+    add_imported_public_source(
+        db,
+        run,
+        name="Nicht zulässige Research-Quelle",
+        content_review_status=content_review_status,
+        support_status=support_status,
+        result_status=result_status,
+    )
+    assert retrieve_advisory_research_context(db, run, VC_PROFILE) == {}
+
+
+def test_partially_supporting_reviewed_source_enters_context(db):
+    run, _draft, _base = _vc_draft(db)
+    add_imported_public_source(
+        db,
+        run,
+        name="Teilweise stützende Quelle",
+        support_status="partially_supports",
+    )
+    context = retrieve_advisory_research_context(db, run, VC_PROFILE)
+    assert context["imported_sources"][0]["support_status"] == "partially_supports"
+    assert context["imported_sources"][0]["content_review_status"] == "reviewed"
+
+
+@pytest.mark.parametrize(
+    ("execution_mode", "document_status", "version_status"),
+    [
+        ("fake_demo", "processed", "processed"),
+        ("live", "processing", "processed"),
+        ("live", "processed", "pending"),
+    ],
+)
+def test_non_live_or_incomplete_source_never_enters_context(
+    db, execution_mode, document_status, version_status
+):
+    run, _draft, _base = _vc_draft(db)
+    add_imported_public_source(
+        db,
+        run,
+        execution_mode=execution_mode,
+        document_status=document_status,
+        version_status=version_status,
+    )
+    assert retrieve_advisory_research_context(db, run, VC_PROFILE) == {}
 
 
 def test_non_vc_sol_field_gets_no_research_block(db):
@@ -193,7 +251,8 @@ def test_used_research_source_is_subset_checked_and_visible_separately(db):
         "title": "Live market report",
         "url": "https://public.example.test/research",
         "research_module": "competition_alternatives",
-        "support_status": "research_candidate",
+        "support_status": "supports",
+        "content_review_status": "reviewed",
     }]
 
     other_run, other_draft, other_base = _vc_draft(db)

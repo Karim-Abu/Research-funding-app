@@ -7,11 +7,10 @@
 // erreichbar.
 //
 // evalViews (Demo-Golden-Path): blendet den Sidebar-Zugang «Evaluation & Technik»
-// (Provider-/Kosten-/Integrated-Draft-Ansichten mit synthetischen Beispieldaten)
-// ein. Default AUS — bewusst invers zu den Opt-out-Flags oben, damit der
-// Standardmodus frei von Demo-/Dummy-/synthetic_eval-Texten bleibt. Einschalten
-// über NEXT_PUBLIC_EVAL_VIEWS=on. Die Routen (/admin, /kosten, /antragsentwurf)
-// bleiben unabhängig vom Flag direkt erreichbar (nichts wird entfernt).
+// für technische Provider-/Integrated-Draft-Ansichten ein. Default AUS — bewusst
+// invers zu den Opt-out-Flags oben. Einschalten über NEXT_PUBLIC_EVAL_VIEWS=on.
+// /kosten ist eine reguläre projektbezogene Transparenzseite; /admin und
+// /antragsentwurf bleiben unabhängig vom Flag direkt erreichbar.
 export const flags = {
   innolinkImport: process.env.NEXT_PUBLIC_INNOLINK_IMPORT !== "off",
   evalViews: process.env.NEXT_PUBLIC_EVAL_VIEWS === "on",

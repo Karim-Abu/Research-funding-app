@@ -90,18 +90,35 @@ import {
   RedraftError,
   type A2Suggestion,
 } from "@/lib/redraft"
-import { generationActionLabel, generationLabel, type GenerationKind } from "@/lib/generation-kind"
+import {
+  GENERATION_KIND_BADGE_CLASS,
+  generationActionLabel,
+  generationLabel,
+  type GenerationKind,
+} from "@/lib/generation-kind"
 import { subsectionText } from "@/lib/subsections"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
 // R4.2 — jeder KI-Blockgrund nennt Grund + Ausweg. Navigations-CTAs führen zur
-// Quellen-/Analyseseite (Datenklasse, Analyse-Einstellungen, Quellen hinzufügen).
+// Quellen-/Analyseseite (Datenklasse, Analyse-Einstellungen, Quellen hinzufügen);
+// Live-Blockgründe führen zum Live-Systemstatus (/admin) — nie zu einem
+// stillen Demo-Ersatz.
 const REASON_CTA_HREF: Record<string, string> = {
   nda_locked: "/quellen",
   mode_deterministic_only: "/quellen",
   run_mode_mismatch: "/quellen",
   missing_sources: "/quellen",
+  live_provider_key_missing: "/admin",
+  live_fake_conflict: "/admin",
+  live_eval_mode_disabled: "/admin",
+  live_model_id_missing: "/admin",
+  live_price_metadata_missing: "/admin",
+  live_preflight_required: "/admin",
+  live_preflight_expired: "/admin",
+  live_preflight_failed: "/admin",
+  live_preflight_stale_model: "/admin",
+  live_actual_model_missing: "/admin",
 }
 
 function A2ReasonNotice({
@@ -162,6 +179,8 @@ function A2ReasonNotice({
 
 const RECHECK_NOTICE =
   "Änderungen gespeichert. Eine erneute Prüfung ist vor der Freigabe erforderlich."
+const ACCEPT_NOTICE =
+  "Text übernommen – Qualitätsprüfung erneut erforderlich."
 const LINK_EXPLANATION =
   "Die Verknüpfung ordnet eine Fundstelle diesem Entwurf zu. Sie bestätigt nicht automatisch den gesamten Text."
 const STALE_LINK_NOTICE =
@@ -200,7 +219,9 @@ export function LiveEditor({
   const [saveState, setSaveState] = React.useState<SaveState>("saved")
   const [errorMsg, setErrorMsg] = React.useState<string | null>(null)
   const [conflict, setConflict] = React.useState(false)
-  const [recheck, setRecheck] = React.useState(false)
+  // Unterscheidet den Hinweis nach Speichern («saved») von dem nach einer
+  // Vorschlags-Übernahme («accepted»); null = kein Hinweis.
+  const [recheck, setRecheck] = React.useState<null | "saved" | "accepted">(null)
   const [loadError, setLoadError] = React.useState<string | null>(null)
   const [review, setReview] = React.useState<ReviewPackageDto | null>(null)
   const [commentText, setCommentText] = React.useState("")
@@ -358,7 +379,7 @@ export function LiveEditor({
     setBaseVersionId(draft.current_version.draft_version_id)
     setSaveState("saved")
     setErrorMsg(null)
-    setRecheck(false)
+    setRecheck(null)
     setFieldNotice(null)
     setNotesNotice(null)
     setConfirmResolveId(null)
@@ -406,6 +427,10 @@ export function LiveEditor({
         setA2UnavailableReason(e.reasonCode ?? FALLBACK_AI_REASON)
       } else if (e instanceof RedraftError && e.status === 409) {
         setConflict(true)
+      } else if (e instanceof RedraftError && e.reasonCode) {
+        // Auch ein Operation-Fehler mit Blockgrund (z. B. Live-Preflight)
+        // zeigt Grund + CTA — nie einen Demo-Ersatz.
+        setA2UnavailableReason(e.reasonCode)
       } else {
         setA2Error(e instanceof Error ? e.message : "Vorschlag fehlgeschlagen.")
       }
@@ -435,7 +460,7 @@ export function LiveEditor({
       setBaseVersionId(updated.current_version.draft_version_id)
       setLocalText(updated.current_version.text)
       setSaveState("saved")
-      setRecheck(true)
+      setRecheck("accepted")
       loadReview()
       resetA2()
     } catch (e) {
@@ -506,7 +531,7 @@ export function LiveEditor({
       setBaseVersionId(updated.current_version.draft_version_id)
       setLocalText(updated.current_version.text)
       setSaveState("saved")
-      setRecheck(true)
+      setRecheck("saved")
       loadReview()
     } catch (e) {
       if (e instanceof FieldError && e.status === 409) {
@@ -524,7 +549,7 @@ export function LiveEditor({
     try {
       await createEvidenceLink(runId, selected.field_id, anchorId, baseVersionId)
       await refreshSelected(false)
-      setRecheck(true)
+      setRecheck("saved")
     } catch (e) {
       setErrorMsg(e instanceof FieldError ? e.message : "Verknüpfung fehlgeschlagen.")
     }
@@ -715,6 +740,16 @@ export function LiveEditor({
       : caps?.generation_mode === "real_eval"
         ? "model_generated"
         : null
+  // Ohne konfigurierten Provider ist die Aktion deaktiviert und der konkrete
+  // Grund (aus den Capabilities) steht direkt darunter. caps === null
+  // (Laderennen) blockiert bewusst nicht — der Klick scheitert dann sicher
+  // über den 503-Reason-Pfad.
+  const capsBlockedReason =
+    caps && configuredGenerationKind === null
+      ? (caps.generation_unavailable_reason ??
+        caps.ai_unavailable_reason ??
+        FALLBACK_AI_REASON)
+      : null
   const visibleGenerationKind =
     a2Suggestion?.generation_kind ?? configuredGenerationKind
   const suggestionAction = generationActionLabel(configuredGenerationKind)
@@ -1232,14 +1267,20 @@ export function LiveEditor({
       onChangeText={(value) => {
         setLocalText(value)
         setSaveState("dirty")
-        setRecheck(false)
+        setRecheck(null)
       }}
       onSave={save}
       saveDisabled={saveState === "saving" || saveState === "saved" || overLimit}
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
       deinTextBadge={
         <>
-          <Badge variant="secondary">
+          <Badge
+            variant={selected.current_version.generation_kind ? "outline" : "secondary"}
+            className={cn(
+              selected.current_version.generation_kind &&
+                GENERATION_KIND_BADGE_CLASS[selected.current_version.generation_kind]
+            )}
+          >
             {selected.current_version.generation_kind
               ? generationLabel(selected.current_version.generation_kind)
               : selected.current_version.created_by === "agent"
@@ -1267,7 +1308,7 @@ export function LiveEditor({
               role="status"
               className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
             >
-              {RECHECK_NOTICE}
+              {recheck === "accepted" ? ACCEPT_NOTICE : RECHECK_NOTICE}
             </p>
           )}
           {notesNotice && (
@@ -1320,12 +1361,21 @@ export function LiveEditor({
                   </select>
                 </label>
               )}
+              {/* Was passiert bei der Aktion — in einem Satz, vor dem Klick. */}
+              <p
+                className="text-xs text-muted-foreground"
+                data-testid="a2-action-explainer"
+              >
+                Der ausgewählte Abschnitt wird neu strukturiert: Vorhandene
+                Fakten bleiben erhalten, fehlende Angaben werden separat
+                ausgewiesen, und nichts wird ohne Ihre Prüfung übernommen.
+              </p>
               <div className="flex items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"
                   onClick={generateSuggestion}
-                  disabled={a2Loading}
+                  disabled={a2Loading || capsBlockedReason !== null}
                 >
                   <Sparkles data-icon="inline-start" />
                   {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
@@ -1339,6 +1389,10 @@ export function LiveEditor({
               {a2UnavailableReason && (
                 <A2ReasonNotice reason={a2UnavailableReason} />
               )}
+              {/* Ohne Provider ist die Aktion deaktiviert — mit Grund + CTA. */}
+              {capsBlockedReason && !a2UnavailableReason && (
+                <A2ReasonNotice reason={capsBlockedReason} />
+              )}
               {a2Suggestion && a2FromRun && !a2ReviewOpen && (
                 <p
                   className="text-xs text-muted-foreground"
@@ -1347,13 +1401,16 @@ export function LiveEditor({
                   Vorschlag aus der Analyse — Prüfung nötig.
                 </p>
               )}
-              {!a2Suggestion && !a2Loading && !a2UnavailableReason && !a2Error && (
-                <p className="text-xs text-muted-foreground">
-                  {configuredGenerationKind
-                    ? generationLabel(configuredGenerationKind)
-                    : "Vorschlag"} für diesen Abschnitt noch nicht erstellt.
-                </p>
-              )}
+              {configuredGenerationKind &&
+                !a2Suggestion &&
+                !a2Loading &&
+                !a2UnavailableReason &&
+                !a2Error && (
+                  <p className="text-xs text-muted-foreground">
+                    {generationLabel(configuredGenerationKind)} für diesen
+                    Abschnitt noch nicht erstellt.
+                  </p>
+                )}
               {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
             </div>
           ) : (

@@ -100,6 +100,10 @@ describe("PublicResearchPanel", () => {
       ...brief,
       status: "draft" as const,
       approved_at: null,
+      application_domain: "",
+      technology_class: "",
+      target_customer_segments: [],
+      competence_needs: [],
       modules: [
         "market_growth", "competition_alternatives", "customer_problem",
         "state_of_the_art", "swiss_research_partners",
@@ -115,10 +119,55 @@ describe("PublicResearchPanel", () => {
     render(<PublicResearchPanel projectId={PROJECT} />)
     fireEvent.click(await screen.findByRole("button", { name: /Recherchebrief vorschlagen/ }))
     expect(await screen.findByTestId("research-brief-form")).toBeInTheDocument()
+    // Anf. 8 — die fachliche Leitfrage statt eines technischen Formulars.
+    expect(
+      screen.getByRole("heading", { name: "Was soll öffentlich recherchiert werden?" })
+    ).toBeInTheDocument()
     for (const label of [
       "Markt & Wachstum", "Wettbewerb & Alternativen",
       "State of the Art", "Mögliche Schweizer Forschungspartner",
     ]) expect(screen.getByText(label)).toBeInTheDocument()
+    for (const example of [
+      "Schweizer Gesundheitsdatenaustausch",
+      "dezentrale Zugriffssteuerung / Audit Trail / DLT",
+      "medizinische Labore, Arztpraxen, Spitäler, Health-IT-Anbieter",
+      "Schweiz / DACH",
+      "Healthcare Cybersecurity, Interoperabilität, Distributed Systems, Data Governance",
+    ]) expect(screen.getByText(`Beispiel: ${example}`)).toBeInTheDocument()
+    expect(screen.getByText(/Vorschläge bestätigen keine fachliche Richtigkeit/)).toBeInTheDocument()
+    expect(screen.getByText(/In welchem konkreten Anwendungsbereich/)).toBeInTheDocument()
+    expect(screen.getByText(/Welche konkreten Organisationstypen/)).toBeInTheDocument()
+  })
+
+  it("prevents approval for identical fields, generic customers and organisation-only competence", async () => {
+    const invalidDraft = {
+      ...brief,
+      status: "draft" as const,
+      approved_at: null,
+      application_domain: "Medizintechnik",
+      technology_class: "Medizin-Technik",
+      target_customer_segments: ["Schweizer KMU"],
+      competence_needs: ["FHNW"],
+    }
+    let saveCalls = 0
+    server.use(
+      http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json({
+        ...emptyWorkspace(),
+        brief: { latest: invalidDraft, active_approved: null },
+      })),
+      http.put(`/api/projects/${PROJECT}/research-brief`, () => {
+        saveCalls += 1
+        return HttpResponse.json(invalidDraft)
+      }),
+    )
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    fireEvent.click(await screen.findByRole("button", { name: "Public-safe Brief freigeben" }))
+    expect(await screen.findAllByText(
+      "Anwendungsdomäne und Technologieklasse müssen unterschiedlich sein."
+    )).toHaveLength(2)
+    expect(screen.getByText(/mindestens ein konkretes Kundensegment/)).toBeInTheDocument()
+    expect(screen.getByText(/mindestens eine konkrete Fachkompetenz/)).toBeInTheDocument()
+    expect(saveCalls).toBe(0)
   })
 
   it("shows live URL, module relevance and imports through the existing source path", async () => {
@@ -147,9 +196,16 @@ describe("PublicResearchPanel", () => {
       "href", "https://research.example.edu/report",
     )
     expect(screen.getByText("Kandidat")).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: /Übernehmen und vollständig abrufen/ }))
+    // Anf. 9 — die drei primären Entscheidungen pro Resultat.
+    expect(screen.getByRole("button", { name: /Öffnen/ })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Verwerfen" })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen und prüfen" }))
     expect(await screen.findByText("Übernommen")).toBeInTheDocument()
     expect(screen.getByText("Fundstelle aus abgerufener Seite")).toBeInTheDocument()
+    // Nach dem Import: die drei Prüf-Entscheidungen.
+    expect(screen.getByRole("button", { name: "Stützt" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Teilweise" })).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Stützt nicht" })).toBeInTheDocument()
   })
 
   it("marks demo results honestly and never offers import", async () => {
@@ -166,7 +222,7 @@ describe("PublicResearchPanel", () => {
       "Demo-Recherche – keine echten Webquellen",
     )
     expect(screen.getByText("Demo")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: /Übernehmen und vollständig abrufen/ })).toBeNull()
+    expect(screen.queryByRole("button", { name: /Übernehmen/ })).toBeNull()
   })
 
   it("keeps historical query status without blocking a new approved brief", async () => {

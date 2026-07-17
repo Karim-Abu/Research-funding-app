@@ -11,7 +11,7 @@ function renderDialog(
   onStart = vi.fn(),
   role: Role = "member",
   options: {
-    generationMode?: "unavailable" | "fake_demo" | "real_eval"
+    generationMode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
     projectOrigin?: Origin
     webAvailable?: boolean
     unavailableReason?: string
@@ -98,6 +98,19 @@ describe("AnalyseEinstellungenDialog — Deaktivierungs-Gründe (A4)", () => {
         "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt."
       )
     ).toBeInTheDocument()
+  })
+
+  it("Live-Fehler zeigt eine konkrete Aktion und niemals Demo", () => {
+    renderDialog("public", vi.fn(), "member", {
+      generationMode: "live_unavailable",
+      unavailableReason: "live_fake_conflict",
+    })
+    expect(screen.getByText("Nicht verfügbar")).toBeInTheDocument()
+    expect(
+      screen.getByText(/Setzen Sie AGENT_FAKE_PROVIDER=false/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/^Demo$/)).toBeNull()
+    expect(screen.queryByText("Live-KI verfügbar")).toBeNull()
   })
 
   it("Websuche serverseitig aus: konkreter Grund statt Generik", () => {
@@ -209,10 +222,17 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
 
   it("fake provider is presented only as demo output", () => {
     renderDialog("public", vi.fn(), "member", { generationMode: "fake_demo" })
+    expect(screen.getByText(/^Demo$/)).toBeInTheDocument()
     expect(screen.getByText("Demo-Vorschläge")).toBeInTheDocument()
     expect(screen.getByText("Demo-Vorschlag (kein echtes KI-Modell)")).toBeInTheDocument()
     expect(screen.queryByText(/^KI-Vorschlag$/)).toBeNull()
     expect(screen.getByLabelText("Demo-Generator für diesen Durchlauf aktivieren")).toBeInTheDocument()
+  })
+
+  it("Live-Modus ist eindeutig und nicht gleichzeitig Demo", () => {
+    renderDialog("public")
+    expect(screen.getByText("Live-KI verfügbar")).toBeInTheDocument()
+    expect(screen.queryByText(/^Demo$/)).toBeNull()
   })
 
   it("public: der Web-Toggle aktiviert die öffentliche Webrecherche", () => {

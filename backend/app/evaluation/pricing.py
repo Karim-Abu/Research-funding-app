@@ -53,6 +53,7 @@ def resolve_cost(
     input_tokens: int,
     output_tokens: int,
     adapter_name: str | None = None,
+    settings=None,
 ) -> CostResolution:
     """Kostensemantik pro Call: fake/local ⇒ not_applicable; Tabellen-Miss ⇒
     unknown_price (cost_chf bleibt 0.0, nie summieren); Hit ⇒ priced."""
@@ -66,8 +67,10 @@ def resolve_cost(
         # Deployment overlay for candidate aliases resolved to real provider
         # ids. It is configuration, never a secret and never guessed.
         try:
-            from app.config.settings import get_settings
-            configured = get_settings().agent_model_pricing_chf_per_million.get(model_id)
+            if settings is None:
+                from app.config.settings import get_settings
+                settings = get_settings()
+            configured = settings.agent_model_pricing_chf_per_million.get(model_id)
         except Exception:  # pragma: no cover - settings remain fail-safe
             configured = None
         required = {

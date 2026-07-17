@@ -1093,7 +1093,9 @@ function QuellenPageContent() {
                   capabilities.generation_mode !== "live_unavailable"
               )
             : activeScenario.kiAvailable,
-          web: activeScenario.webAvailable,
+          web: liveMode
+            ? Boolean(capabilities?.features?.web_research)
+            : activeScenario.webAvailable,
           generationMode: liveMode
             ? (capabilities?.generation_mode ?? "unavailable")
             : activeScenario.kiAvailable

@@ -2,6 +2,7 @@
   "_comment": "F2 TERRAFLUX — A1-Goldstandard für die Rollen-Modell-Evaluation. Match-Strategie (backend/app/evaluation/role_model_scoring.py): Wertgleichheit (normalized_value bzw. Wert im Statement) ODER ≥0.5-Keyword-Trefferquote; target_ref-Gleichheit zählt zusätzlich für field_accuracy. boundary = Fragment-Provenienz (source_fragment_ids ⊆ fragment_ids) + exakter Wert.",
   "case_id": "F2",
   "holdout": false,
+  "case_language": "de",
   "title_de": "TERRAFLUX - Adaptive Bewässerungssteuerung für Stadtgrün",
   "title_en": "TERRAFLUX - Adaptive Irrigation Control for Urban Green",
   "required_terms": ["TERRAFLUX"],

@@ -18,6 +18,11 @@ def get_capabilities(
     settings: Settings = Depends(settings_dep),
     db: Session | None = Depends(get_db),
 ) -> Capabilities:
+    from app.evaluation.preflight import firecrawl_preflight_reason
+    web_research_available = settings.web_research_enabled and (
+        settings.web_research_fake_provider
+        or firecrawl_preflight_reason(db, settings) is None
+    )
     # Truthful feature flags — only fully-implemented slices are advertised.
     # Milestone 4 activates the deterministic formal-eligibility precheck:
     # partner management + run + live requirement assessments. Semantic
@@ -41,12 +46,10 @@ def get_capabilities(
         # Milestone 9I-A: public web research. Truthful — true only when enabled AND a
         # provider (real Firecrawl or the dedicated web fake) is configured. url_import
         # stays false: web import is an internal Research path, not free-form URL import.
-        "web_research": settings.web_research_enabled
-        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        "web_research": web_research_available,
         # Milestone 9I-B: market/competitor comparison (beta-internal) — available with
         # web research (it is built from imported public sources).
-        "market_comparison": settings.web_research_enabled
-        and (settings.web_research_fake_provider or bool(settings.firecrawl_api_key)),
+        "market_comparison": web_research_available,
         # Milestone 9K: deterministic MAS reliability & value assurance (beta-internal) —
         # available whenever the review layer is (no provider dependency).
         "reliability": True,
@@ -57,41 +60,8 @@ def get_capabilities(
     # Ebene E: Live-ABSICHT (ai_eval_mode=real) gewinnt. Ist Live konfiguriert,
     # aber kein Provider-Schlüssel vorhanden, ist der Status ausdrücklich
     # ``live_unavailable`` — nie ein stiller Abstieg auf den Demo-Generator.
-    live_intent = settings.ai_eval_mode == "real"
-    real_eval_available = live_intent and bool(
-        settings.openai_api_key or settings.anthropic_api_key
-    )
-    # HTTP callers additionally require a fresh synthetic preflight for at
-    # least one route of each core role. Direct unit calls without a Session
-    # retain the configuration-only contract.
-    preflight_reason = None
-    if real_eval_available and hasattr(db, "scalar"):
-        from app.agents.registry import get_agent_registry
-        from app.evaluation.preflight import route_preflight_passed
-        registry = get_agent_registry()
-        core_roles = (
-            "A1_FACT_EVIDENCE_ANALYST",
-            "A2_INNOSUISSE_PROPOSAL_WRITER",
-            "A3_INNOSUISSE_CRITICAL_REVIEWER",
-        )
-        for role_id in core_roles:
-            role = (registry.role_routes or {}).get(role_id)
-            route_keys = [key for key in (role.primary, role.fallback) if key] if role else []
-            if not any(route_preflight_passed(db, key) for key in route_keys):
-                real_eval_available = False
-                preflight_reason = "live_preflight_required"
-                break
-    generation_mode = (
-        "real_eval" if real_eval_available
-        else "live_unavailable" if live_intent
-        else "fake_demo" if settings.agent_fake_provider
-        else "unavailable"
-    )
-    unavailable_reasons = {
-        "unavailable": "no_approved_model_provider",
-        "live_unavailable": "live_provider_key_missing",
-    }
-    unavailable_reason = preflight_reason or unavailable_reasons.get(generation_mode)
+    from app.evaluation.preflight import generation_mode_status
+    generation_mode, unavailable_reason = generation_mode_status(db, settings)
     ai_available = generation_mode == "real_eval"
     return Capabilities(
         api_version=settings.api_version,

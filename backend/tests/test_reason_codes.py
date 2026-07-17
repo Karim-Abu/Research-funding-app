@@ -14,6 +14,16 @@ from app.fields.reason_codes import REASON_TEXTS_DE, maybe_reason, to_reason
         ("processing_mode_deterministic_only", "mode_deterministic_only"),
         ("processing_mode_local_only", "mode_deterministic_only"),
         ("provider_unavailable", "provider_unavailable"),
+        ("live_fake_conflict", "live_fake_conflict"),
+        ("live_eval_mode_disabled", "live_eval_mode_disabled"),
+        ("live_provider_key_missing", "live_provider_key_missing"),
+        ("live_model_id_missing", "live_model_id_missing"),
+        ("live_price_metadata_missing", "live_price_metadata_missing"),
+        ("live_preflight_required", "live_preflight_required"),
+        ("live_preflight_expired", "live_preflight_expired"),
+        ("live_preflight_failed", "live_preflight_failed"),
+        ("live_preflight_stale_model", "live_preflight_stale_model"),
+        ("live_actual_model_missing", "live_actual_model_missing"),
         # data_policy.evaluate
         ("nda_applies", "nda_locked"),
         ("processing_mode_not_cloud_assisted", "run_mode_mismatch"),
@@ -57,6 +67,46 @@ def test_catalog_texts_are_the_approved_microcopy():
         "provider_unavailable": (
             "Für diese Datenklasse ist aktuell kein freigegebener KI-Provider "
             "konfiguriert. Die App führt nur regelbasierte Prüfungen aus."
+        ),
+        "live_fake_conflict": (
+            "Live-KI ist wegen einer widersprüchlichen Konfiguration nicht verfügbar. "
+            "Setzen Sie AGENT_FAKE_PROVIDER=false und führen Sie den Preflight erneut aus."
+        ),
+        "live_eval_mode_disabled": (
+            "Live-KI ist deaktiviert. Setzen Sie AI_EVAL_MODE=real und führen Sie "
+            "den synthetischen Preflight erneut aus."
+        ),
+        "live_provider_key_missing": (
+            "Live-KI ist nicht verfügbar. Hinterlegen Sie den API-Schlüssel der "
+            "konfigurierten Route und führen Sie den Preflight erneut aus."
+        ),
+        "live_model_id_missing": (
+            "Live-KI ist nicht verfügbar. Hinterlegen Sie die konkrete "
+            "AGENT_MODEL_*_ID der Route und führen Sie den Preflight erneut aus."
+        ),
+        "live_price_metadata_missing": (
+            "Live-KI ist nicht verfügbar. Ergänzen Sie geprüfte Preis-Metadaten "
+            "für die konkrete Modell-ID."
+        ),
+        "live_preflight_required": (
+            "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus "
+            "den synthetischen Preflight."
+        ),
+        "live_preflight_expired": (
+            "Der Live-Preflight ist abgelaufen. Führen Sie ihn im Live-Systemstatus "
+            "erneut aus."
+        ),
+        "live_preflight_failed": (
+            "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten "
+            "Routenfehler im Live-Systemstatus und wiederholen Sie den Test."
+        ),
+        "live_preflight_stale_model": (
+            "Die konfigurierte Modell-ID wurde seit dem Preflight geändert. "
+            "Führen Sie den synthetischen Preflight erneut aus."
+        ),
+        "live_actual_model_missing": (
+            "Der Provider hat im Preflight keine tatsächliche Modell-ID bestätigt. "
+            "Prüfen Sie die Route im Live-Systemstatus."
         ),
         "run_mode_mismatch": "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
         "missing_sources": "Für einen belastbaren Vorschlag fehlen passende Quellen.",

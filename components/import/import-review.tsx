@@ -102,7 +102,12 @@ type StructuredConflictState = StructuredEditState
 export function ImportReview() {
   const router = useRouter()
   // Zentrale Run-Auswahl (Ladder) — dieselbe Run-ID wie auf allen Screens.
-  const { runId: activeRunId } = useActiveRun()
+  // statuses/loading speisen die zustandsabhängige Abschluss-Aktion.
+  const {
+    runId: activeRunId,
+    statuses,
+    loading: workflowLoading,
+  } = useActiveRun()
   const [phase, setPhase] = React.useState<Phase>("loading")
   const [projectId, setProjectId] = React.useState<string | null>(null)
   const [classification, setClassification] =
@@ -386,6 +391,62 @@ export function ImportReview() {
   const totalCandidates = candidates.length + structuredCandidates.length
   const allDecided =
     totalCandidates > 0 && open.length === 0 && structuredOpen.length === 0
+  const openCount = open.length + structuredOpen.length
+
+  // Zum nächsten offenen Kandidaten springen (strukturierte zuerst — sie
+  // stehen oben auf der Seite), Textkandidaten zusätzlich aufklappen.
+  function reviewNextCandidate() {
+    if (structuredOpen.length > 0) {
+      document
+        .getElementById("strukturierte-kandidaten")
+        ?.scrollIntoView({ behavior: "smooth", block: "start" })
+      return
+    }
+    const next = open[0]
+    if (!next) return
+    setExpandedId(next.import_candidate_id)
+    document
+      .getElementById(next.import_candidate_id)
+      ?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
+  // Zustandsabhängige Abschluss-Aktion (der EINE nächste Schritt): führt nie
+  // ohne abgeschlossenen Analyse-Lauf zu einer leeren Qualitätsprüfung.
+  const nextStep: {
+    label: string
+    onClick?: () => void
+    variant: "default" | "outline"
+    disabled?: boolean
+  } =
+    openCount > 0
+      ? {
+          label: "Nächsten Kandidaten prüfen",
+          onClick: reviewNextCandidate,
+          variant: "outline",
+        }
+      : workflowLoading
+        ? {
+            label: "Nächster Schritt wird ermittelt …",
+            variant: "outline",
+            disabled: true,
+          }
+        : !activeRunId && statuses.partner !== "abgeschlossen"
+          ? {
+              label: "Weiter zu Partner & Budget",
+              onClick: () => router.push("/partner"),
+              variant: allDecided ? "default" : "outline",
+            }
+          : !activeRunId
+            ? {
+                label: "Analyse & Recherche starten",
+                onClick: () => router.push("/quellen"),
+                variant: allDecided ? "default" : "outline",
+              }
+            : {
+                label: "Zur Fix Queue",
+                onClick: () => router.push("/review"),
+                variant: allDecided ? "default" : "outline",
+              }
 
   // -- Render ----------------------------------------------------------------
   if (phase === "loading") {
@@ -629,15 +690,19 @@ export function ImportReview() {
           <div className="mt-2 flex items-center justify-between gap-3">
             <p className="text-sm text-muted-foreground">
               {allDecided
-                ? "Alle Kandidaten sind entschieden."
-                : `${open.length + structuredOpen.length} von ${totalCandidates} Kandidaten offen.`}
+                ? activeRunId
+                  ? "Alle Kandidaten sind entschieden."
+                  : "Alle Kandidaten sind entschieden. Die Qualitätsprüfung folgt nach dem ersten Analyse-Lauf."
+                : `${openCount} von ${totalCandidates} Kandidaten offen.`}
             </p>
+            {/* data-testid bleibt in allen Zuständen gleich (Selektor-Kontinuität). */}
             <Button
-              onClick={() => router.push("/review")}
-              variant={allDecided ? "default" : "outline"}
+              onClick={nextStep.onClick}
+              variant={nextStep.variant}
+              disabled={nextStep.disabled}
               data-testid="import-to-fix-queue"
             >
-              Zur Fix Queue — Nächste Aufgaben
+              {nextStep.label}
             </Button>
           </div>
         </div>
@@ -1238,6 +1303,7 @@ function CandidateRow({
 
   return (
     <Card
+      id={candidate.import_candidate_id}
       className={cn(
         "flex flex-col gap-0 p-0",
         uncertain && openForDecision && "border-orange-300 dark:border-orange-800"

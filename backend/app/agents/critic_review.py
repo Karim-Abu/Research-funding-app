@@ -19,12 +19,12 @@ from app.agents import critic_review_context as a3_context
 from app.agents import data_policy, gateway
 from app.agents import a3_review, field_drafting
 from app.agents.a3_review import A3_PROFILE_ID
-from app.agents.field_drafting import real_eval_confirmed
 from app.agents.prompt_assets import prompt_version_for
 from app.agents.schemas import SchemaNotImplementedError, ValidationError, validate_payload
 from app.config.settings import get_settings
 from app.db.models import AnalysisRun
 from app.repositories import audit, controls
+from app.runs.cloud_policy import real_eval_confirmed
 
 logger = logging.getLogger("app.agents.critic_review")
 
@@ -54,6 +54,10 @@ class A3Outcome:
     reason: str = ""
     findings: list[A3Finding] = field(default_factory=list)
     invocation_id: str | None = None
+    # Observability (Owner 2026-07-16): der Produktionsfilter darf Findings
+    # nie still verschwinden lassen — Zählwerte + Reason-Codes je Verwerfung
+    # (nur Codes/Counts, keine Inhalte).
+    filter_stats: dict = field(default_factory=dict)
 
 
 def _classification(run: AnalysisRun) -> dict:
@@ -75,8 +79,12 @@ def availability(run: AnalysisRun) -> tuple[bool, str]:
         return False, f"processing_mode_{mode}"
     registry = gateway.get_agent_registry()
     settings = get_settings()
+    from app.evaluation.preflight import live_fake_conflict, ready_route_for_role
+    if live_fake_conflict(settings):
+        return False, "live_fake_conflict"
     confirmed = real_eval_confirmed(run)
-    if not settings.agent_fake_provider and not confirmed:
+    is_demo = settings.agent_fake_provider and settings.ai_eval_mode != "real"
+    if not is_demo and not confirmed:
         return False, "real_eval_confirmation_required"
     decision = data_policy.evaluate(
         profile=registry.profile(A3_PROFILE_ID), classification=_classification(run),
@@ -84,11 +92,17 @@ def availability(run: AnalysisRun) -> tuple[bool, str]:
     )
     if decision.blocked:
         return False, decision.reason
-    if not settings.agent_fake_provider:
-        route = registry.route(registry.profile(A3_PROFILE_ID).primary_model)
-        adapter = _PROVIDER_RESOLVER(route)
-        if adapter is None or not adapter.available():
-            return False, "provider_unavailable"
+    if not is_demo:
+        try:
+            db = Session.object_session(run)
+        except Exception:
+            db = None
+        _route_key, reason = ready_route_for_role(
+            db, "A3_INNOSUISSE_CRITICAL_REVIEWER",
+            settings=settings, registry=registry,
+        )
+        if reason:
+            return False, reason
     return True, "available"
 
 
@@ -124,33 +138,69 @@ def _fake_resolver(ctx: a3_context.CriticContext):
 def _resolver(ctx: a3_context.CriticContext, provider_resolver):
     if provider_resolver is not None:
         return provider_resolver
-    if get_settings().agent_fake_provider:
+    settings = get_settings()
+    if settings.agent_fake_provider and settings.ai_eval_mode != "real":
         return _fake_resolver(ctx)
     return _PROVIDER_RESOLVER
 
 
-def _validate_findings(bundle, ctx: a3_context.CriticContext) -> list[A3Finding]:
+def _validate_findings(
+    bundle, ctx: a3_context.CriticContext, bound_routing: dict | None = None
+) -> tuple[list[A3Finding], dict]:
     """Drop findings whose target does not exist / is out of scope (the bundle schema
     is already validated by the gateway). A per-finding target failure never fails the
-    whole bundle (STEP 6)."""
+    whole bundle (STEP 6). Liefert zusätzlich eine Filter-Statistik
+    (received/accepted/rejected + Reason-Codes) — nie stilles Verwerfen.
+
+    ``bound_routing`` (Review EINES Abschnitts): der Caller kennt field_id und
+    target_section und bindet sie an jedes Finding. Das Modell liefert dann nur
+    noch Beschreibung, Begründung, Severity und Verbesserungsvorschlag — ein
+    Finding verschwindet nie wegen einer fehlenden Routing-ID. Widersprüchliche
+    Modellangaben werden gezählt (``model_routing_hint_mismatch``), nicht
+    stillschweigend übernommen; inhaltliche Prüfungen bleiben unberührt.
+    """
     out: list[A3Finding] = []
+    rejected: dict[str, int] = {}
+    routing_hint_mismatch = 0
+
+    def _reject(code: str) -> None:
+        rejected[code] = rejected.get(code, 0) + 1
+
     for rec in bundle.findings:
+        if bound_routing is not None:
+            bound_field = bound_routing["field_id"]
+            bound_section = bound_routing["target_section"]
+            if (
+                (rec.field_id is not None and rec.field_id != bound_field)
+                or (rec.target_section and rec.target_section != bound_section)
+            ):
+                routing_hint_mismatch += 1
+            rec = rec.model_copy(update={
+                "field_id": bound_field, "target_section": bound_section,
+            })
         if rec.field_id is None or rec.field_id not in ctx.allowed_field_ids:
+            _reject("field_out_of_scope")
             continue
         if rec.field_id in a3_review.A3_SCOPE_FIELDS:
             config = field_drafting.a2_fields.resolve_field_config(rec.field_id)
             if config is None or rec.target_section not in config.mandatory_markers:
+                _reject("invalid_target_section")
                 continue
         elif rec.field_id == "PS.RISK_MANAGEMENT.SECTION":
             if rec.target_section != "risk_register":
+                _reject("invalid_target_section")
                 continue
         if rec.requirement_id is not None and rec.requirement_id not in ctx.allowed_requirement_ids:
+            _reject("unknown_requirement")
             continue
         if rec.evidence_anchor_id is not None and rec.evidence_anchor_id not in ctx.allowed_anchor_ids:
+            _reject("unknown_evidence_anchor")
             continue
         if rec.evidence_link_id is not None and rec.evidence_link_id not in ctx.allowed_link_ids:
+            _reject("unknown_evidence_link")
             continue
         if rec.field_id is None and rec.requirement_id is None:
+            _reject("no_target")
             continue  # a finding must target a scoped field or a known requirement
         out.append(A3Finding(
             origin_profile_id=rec.origin_profile_id, severity=rec.severity,
@@ -161,7 +211,19 @@ def _validate_findings(bundle, ctx: a3_context.CriticContext) -> list[A3Finding]
             suggested_improvement=rec.suggested_improvement,
             recommended_next_action=rec.recommended_next_action,
         ))
-    return _group_similar_findings(out)
+    grouped = _group_similar_findings(out)
+    stats = {
+        "received": len(bundle.findings),
+        "accepted": len(out),
+        "rejected": sum(rejected.values()),
+        "rejected_reasons": rejected,
+        "grouped": len(grouped),
+        "routing_metadata_source": (
+            "caller_bound" if bound_routing is not None else "model_provided"
+        ),
+        "model_routing_hint_mismatch": routing_hint_mismatch,
+    }
+    return grouped, stats
 
 
 _GROUP_NUMBER_RE = re.compile(r"\b\d+(?:[.,]\d+)?\b")
@@ -211,19 +273,26 @@ def _group_similar_findings(findings: list[A3Finding]) -> list[A3Finding]:
 
 
 def run_a3_evidence_consistency(
-    db: Session, run: AnalysisRun, *, provider_resolver=None
+    db: Session, run: AnalysisRun, *, provider_resolver=None, bound_routing=None
 ) -> A3Outcome:
     """Generate + validate advisory A3 findings. Never raises. Only a 'succeeded'
-    outcome carries findings the caller may persist."""
+    outcome carries findings the caller may persist.
+
+    ``bound_routing={"field_id": …, "target_section": …}`` bindet die
+    Routing-Metadaten beim Review eines einzelnen Abschnitts an den Request
+    (Default None ⇒ unveränderter Mehrfeld-Review mit Modellangaben)."""
     try:
-        return _run(db, run, provider_resolver=provider_resolver)
+        return _run(
+            db, run, provider_resolver=provider_resolver,
+            bound_routing=bound_routing,
+        )
     except Exception:  # defensive: A3 must never break the recheck
         logger.exception("A3 evidence consistency crashed; run %s", run.run_id)
         _audit(db, run, "agent.evidence_consistency.failed", {"reason": "internal_error"})
         return A3Outcome(status="failed", reason="internal_error")
 
 
-def _run(db, run, *, provider_resolver) -> A3Outcome:
+def _run(db, run, *, provider_resolver, bound_routing=None) -> A3Outcome:
     ctx = a3_context.assemble_critic_context(db, run)
     if ctx is None:
         # corr 5: no scoped draft content — skip, never fabricate.
@@ -279,7 +348,10 @@ def _run(db, run, *, provider_resolver) -> A3Outcome:
         control_id="CTRL.OUTPUT_SCHEMA", status="passed", detail="a3_bundle_validated",
         run_id=run.run_id, agent_invocation_id=result.invocation_id,
     )
-    findings = _validate_findings(result.output, ctx)
+    findings, filter_stats = _validate_findings(result.output, ctx, bound_routing)
     _audit(db, run, "agent.evidence_consistency.succeeded",
-           {"finding_count": len(findings), "invocation_id": result.invocation_id})
-    return A3Outcome(status="succeeded", findings=findings, invocation_id=result.invocation_id)
+           {"finding_count": len(findings), "invocation_id": result.invocation_id,
+            "filter_stats": filter_stats})
+    return A3Outcome(status="succeeded", findings=findings,
+                     invocation_id=result.invocation_id,
+                     filter_stats=filter_stats)

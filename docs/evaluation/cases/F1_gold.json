@@ -2,6 +2,8 @@
   "_comment": "F1 QUALIMON — maschinenlesbarer Goldstandard für die Rollen-Modell-Evaluation, wörtlich abgeleitet aus F1_synthetic_case.md (Expected Fields / Expected Findings). Match-Strategie wie F2/H1 (role_model_scoring.py).",
   "case_id": "F1",
   "holdout": false,
+  "_case_language_comment": "Kanonische Antragssprache dieses Falls: der eingefrorene Antragstext (F1_fragments.json) ist englisch verfasst. Ohne diese Angabe hat das A2-Scoring gegen einen Deutsch-Default geprüft und korrekt englische Ausgaben disqualifiziert.",
+  "case_language": "en",
   "title_de": "QUALIMON — KI-gestützte Qualitätsüberwachung für Produktionslinien",
   "title_en": "QUALIMON — AI-based Quality Monitoring for Production Lines",
   "required_terms": ["QUALIMON"],

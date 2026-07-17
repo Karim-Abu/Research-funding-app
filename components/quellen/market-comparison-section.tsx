@@ -128,8 +128,8 @@ export function MarketComparisonSection({
         </Button>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Nur aus importierten öffentlichen Quellen. Webquellen müssen fachlich
-        geprüft werden — kein automatischer Eintrag in den Antrag.
+        Nur aus live abgerufenen, vollständig importierten und inhaltlich positiv
+        geprüften öffentlichen Quellen — kein automatischer Eintrag in den Antrag.
       </p>
 
       {error && (
@@ -140,8 +140,8 @@ export function MarketComparisonSection({
 
       {state === "idle" && !comparison && (
         <p className="text-sm text-muted-foreground">
-          Noch kein Vergleich. Importieren Sie öffentliche Quellen und erstellen
-          Sie einen Vergleich.
+          Noch kein Vergleich. Rufen Sie öffentliche Quellen live ab, importieren
+          und prüfen Sie deren Inhalt positiv und erstellen Sie danach den Vergleich.
         </p>
       )}
 
@@ -188,7 +188,8 @@ export function MarketComparisonSection({
 
       {comparison && comparison.items.length === 0 && state === "ready" && (
         <p className="text-sm text-muted-foreground">
-          Keine belegten Vergleichseinträge aus den öffentlichen Quellen.
+          Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv
+          geprüften öffentlichen Quellen.
         </p>
       )}
 

@@ -173,9 +173,13 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             )
             candidates = source_scope.prefilter_fragments(db, sources)
             if not candidates:
-                _complete_empty(db, comparison, operation_id,
-                                "Keine importierten öffentlichen Quellen mit marktbezogenen "
-                                "Passagen vorhanden.")
+                _complete_empty(
+                    db,
+                    comparison,
+                    operation_id,
+                    "Keine live abgerufenen und inhaltlich positiv geprüften "
+                    "öffentlichen Quellen mit marktbezogenen Passagen vorhanden.",
+                )
                 db.commit()
                 return
 

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import time
+from urllib.parse import urlparse
 
 from app.research.providers.base import (
     CreditExceeded,
@@ -105,7 +106,10 @@ class FirecrawlProvider:
                 title=item.get("title") or item["url"],
                 snippet=item.get("description"),
                 rank=item.get("position") or index + 1,
-                publisher=item.get("publisher") or item.get("siteName"),
+                publisher=(
+                    item.get("publisher") or item.get("siteName")
+                    or urlparse(item["url"]).hostname
+                ),
                 published_at=(
                     item.get("publishedDate") or item.get("publishedTime")
                     or item.get("date")
@@ -165,7 +169,10 @@ class FirecrawlProvider:
             latency_ms=int((time.monotonic() - start) * 1000),
             credits_used=response_payload.get("creditsUsed"),
             title=meta.get("title"),
-            publisher=meta.get("publisher") or meta.get("siteName"),
+            publisher=(
+                meta.get("publisher") or meta.get("siteName")
+                or urlparse(final_url).hostname
+            ),
             published_at=(
                 meta.get("publishedDate") or meta.get("publishedTime") or meta.get("date")
             ),

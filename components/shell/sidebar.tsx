@@ -20,10 +20,11 @@ import {
   CheckSquare,
   Download,
   Users,
-  Bot,
   PanelLeftClose,
   PanelLeftOpen,
   FlaskConical,
+  Workflow,
+  Gauge,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
@@ -83,13 +84,14 @@ const currentApplication: NavLink[] = [
   ),
 ]
 
-// Transparenzseite (KI-/Regel-/Mensch-Rollen) + Evaluations-Hub. Die
+// Projektbezogene Transparenzseiten + Evaluations-Hub. Die
 // technischen Demo-/Evaluationsansichten (Provider-Tabellen, synthetische
 // Läufe) sind bewusst NICHT Teil des Nutzer-Workflows. Der Zugang «Evaluation &
 // Technik» ist im Standardmodus ausgeblendet (Demo-Golden-Path) und nur mit
 // NEXT_PUBLIC_EVAL_VIEWS=on sichtbar; die Routen bleiben direkt erreichbar.
 const moreItems: NavLink[] = [
-  { label: "KI-Team", href: "/ki-team", icon: Bot },
+  { label: "Kosten & Laufzeit", href: "/kosten", icon: Gauge },
+  { label: "Rollen & Verantwortung", href: "/ki-team", icon: Workflow },
   ...(flags.evalViews
     ? [{ label: "Evaluation & Technik", href: "/admin", icon: FlaskConical }]
     : []),
@@ -121,7 +123,7 @@ function pathActive(pathname: string, href: string): boolean {
 const PROJECT_INDEPENDENT = new Set([
   "Übersicht",
   "Projekt anlegen",
-  "KI-Team",
+  "Rollen & Verantwortung",
   "Evaluation & Technik",
 ])
 
@@ -265,13 +267,21 @@ export function Sidebar({
             )}
 
             <SectionLabel>Weitere</SectionLabel>
-            {moreItems.map((item) => (
-              <ExpandedLink
-                key={item.label}
-                item={item}
-                active={pathActive(pathname, item.href)}
-              />
-            ))}
+            {moreItems.map((item) =>
+              hasProject || PROJECT_INDEPENDENT.has(item.label) ? (
+                <ExpandedLink
+                  key={item.label}
+                  item={item}
+                  active={pathActive(pathname, item.href)}
+                />
+              ) : (
+                <DisabledRow
+                  key={item.label}
+                  item={{ label: item.label, icon: item.icon }}
+                  hint="Zuerst Antrag auswählen"
+                />
+              )
+            )}
           </>
         )}
       </nav>

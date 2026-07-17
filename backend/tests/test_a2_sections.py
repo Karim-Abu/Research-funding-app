@@ -111,6 +111,112 @@ def test_section_output_rejects_new_numbers_patents_and_partners(
     assert outcome.reason == reason
 
 
+_FIXTURE_WITH_FACTS = GOOD_TEXT.replace(
+    "4.2 Neuheit: klare Abgrenzung.",
+    "4.2 Neuheit: klare Abgrenzung gegenüber 10'000 bestehenden Messpunkten "
+    "bei 45.5 % Abdeckung; Budget CHF 100'000; Partner ist die Muster "
+    "Technologies AG.",
+)
+
+
+@pytest.mark.parametrize("claim", [
+    # identische Schreibweise
+    "4.2 Neuheit: 10'000 Messpunkte bei 45.5 % Abdeckung.",
+    # typografisch andere Schreibweise derselben Fixture-Angaben
+    "4.2 Neuheit: 10 000 Messpunkte bei 45,5 % Abdeckung.",
+    "4.2 Neuheit: 10000 Messpunkte bei 45,5 Prozent Abdeckung.",
+    # bekannte Partnernamensvariante
+    "4.2 Neuheit: die Muster Technologies AG liefert die Abgrenzung.",
+])
+def test_known_fixture_facts_are_not_flagged_as_invented(db, claim):
+    """Regression der Kalibrierung 2026-07-16: bekannte Angaben aus dem
+    sichtbaren Request wurden als Erfindung markiert, weil die Erlaubt-Basis
+    der gekürzte Kontextstring war."""
+    run, draft, base = build_run_with_draft(db, draft_text=_FIXTURE_WITH_FACTS)
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id=f"op-known-{hash(claim)}",
+        target_section="4.2",
+        provider_resolver=fake_resolver(
+            success_fake(section_bundle(suggested_text=claim))
+        ),
+    )
+    assert outcome.status == "succeeded", outcome.reason
+    assert outcome.claim_check["routing_metadata_source"] == "caller_bound"
+    assert outcome.claim_check["derived_numeric_claims"] == []
+
+
+def test_derived_number_is_flagged_for_review_not_rejected(db):
+    """Aus bekannten Werten berechenbar ⇒ derived-Status + Human Review."""
+    run, draft, base = build_run_with_draft(db, draft_text=_FIXTURE_WITH_FACTS)
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id="op-derived", target_section="4.2",
+        provider_resolver=fake_resolver(success_fake(section_bundle(
+            # 10'000 + 100'000 = 110'000 (deterministisch ableitbar)
+            suggested_text="4.2 Neuheit: in Summe 110'000 Einheiten.",
+        ))),
+    )
+    assert outcome.status == "succeeded", outcome.reason
+    assert outcome.claim_check["derived_numeric_claims"] == ["110'000"]
+    assert "contains_derived_numeric_claims" in outcome.view["warnings"]
+    contract = outcome.view["section_result"]["role_skill_contract_v2"]
+    assert contract["requires_human_review"] is True
+
+
+def test_new_number_next_to_known_ones_is_still_rejected(db):
+    """Keine pauschale Abschwächung: eine wirklich neue Zahl bleibt eine DQ."""
+    run, draft, base = build_run_with_draft(db, draft_text=_FIXTURE_WITH_FACTS)
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id="op-new-number", target_section="4.2",
+        provider_resolver=fake_resolver(success_fake(section_bundle(
+            suggested_text="4.2 Neuheit: 10'000 Messpunkte und neu 87'321 Kunden.",
+        ))),
+    )
+    assert outcome.status == "failed"
+    assert outcome.reason == "invented_numeric_token"
+
+
+def test_routing_metadata_is_caller_bound_and_mismatch_is_reported(db):
+    """Owner Block 2: der Caller setzt field_id/target_section. Das Modell
+    liefert hier beides falsch — das Ergebnis wird nicht am Routing verworfen,
+    der Widerspruch aber ausgewiesen (nie still als korrekt überschrieben)."""
+    run, draft, base = build_run_with_draft(db)
+    payload = section_bundle(
+        suggested_text="4.2 Neuheit: klare Abgrenzung für den Testfall.",
+        field_id="VC.BUSINESS_TARGETS_MODEL.EDITOR",  # falsches Feld
+        target_section="4.1",                          # falscher Abschnitt
+    )
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id="op-routing", target_section="4.2",
+        provider_resolver=fake_resolver(success_fake(payload)),
+    )
+    assert outcome.status == "succeeded", outcome.reason
+    assert outcome.claim_check["routing_metadata_mismatch"] is True
+    assert "model_routing_metadata_mismatch" in outcome.view["warnings"]
+    section = outcome.view["section_result"]
+    assert section["field_id"] == FIELD_ID
+    assert section["target_section"] == "4.2"
+
+
+def test_wrong_section_content_still_fails_structurally(db):
+    """Technische Routing-Bindung ≠ fachliche Abschnittstreue: Text für einen
+    anderen Abschnitt scheitert weiterhin an der Strukturprüfung."""
+    run, draft, base = build_run_with_draft(db)
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id="op-wrong-content",
+        target_section="4.2",
+        provider_resolver=fake_resolver(success_fake(section_bundle(
+            suggested_text="4.1 Stand der Technik: Inhalt des Nachbarabschnitts.",
+        ))),
+    )
+    assert outcome.status == "failed"
+    assert "section" in outcome.reason or "structure" in outcome.reason
+
+
 def test_clear_language_change_is_rejected(db):
     english = GOOD_TEXT.replace(
         "4.2 Neuheit: klare Abgrenzung.",

@@ -124,6 +124,9 @@ describe("active Antrag context (M10.2)", () => {
     expect(screen.getAllByText("Aktueller Antrag").length).toBeGreaterThanOrEqual(2)
     // Project-scoped links are enabled.
     expect(screen.getByRole("link", { name: "Quellen" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("link", { name: "Kosten & Laufzeit" })
+    ).toBeInTheDocument()
   })
 
   it("disables project links and prompts selection when no Antrag is active", async () => {
@@ -145,11 +148,19 @@ describe("active Antrag context (M10.2)", () => {
     )
     // Project-scoped items render disabled with the selection hint.
     expect(screen.queryByRole("link", { name: "Quellen" })).toBeNull()
+    expect(
+      screen.queryByRole("link", { name: "Kosten & Laufzeit" })
+    ).toBeNull()
+    expect(screen.getByText("Kosten & Laufzeit")).toBeInTheDocument()
     expect(screen.getAllByText("Zuerst Antrag auswählen").length).toBeGreaterThan(0)
     // «Projekt anlegen» stays reachable to create a new Antrag.
     expect(
       screen.getAllByRole("link", { name: "Projekt anlegen" }).length
     ).toBeGreaterThan(0)
+    expect(
+      screen.getByRole("link", { name: "Rollen & Verantwortung" })
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("link", { name: "KI-Team" })).toBeNull()
   })
 
   it("starts expanded on desktop and collapses to the icon rail", async () => {
@@ -172,6 +183,9 @@ describe("active Antrag context (M10.2)", () => {
     )
     expect(screen.queryByText("Funding Programme")).toBeNull()
     expect(screen.getByRole("link", { name: "Quellen" })).toBeInTheDocument()
+    expect(
+      screen.getByRole("link", { name: "Kosten & Laufzeit" })
+    ).toBeInTheDocument()
   })
 
   it("restores the persisted collapsed state", async () => {

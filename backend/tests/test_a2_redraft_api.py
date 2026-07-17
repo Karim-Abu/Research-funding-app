@@ -40,9 +40,17 @@ def _setup(processing_mode="cloud_assisted"):
 
 
 def _arm_fake(monkeypatch, payload=None):
+    from app.config.settings import get_settings
+
+    monkeypatch.setattr(get_settings(), "ai_eval_mode", "off")
+    monkeypatch.setattr(get_settings(), "agent_fake_provider", True)
+    resolver = fake_resolver(success_fake(payload or section_bundle()))
     monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER",
-        fake_resolver(success_fake(payload or section_bundle())),
+        field_drafting, "_PROVIDER_RESOLVER", resolver,
+    )
+    monkeypatch.setattr(
+        field_drafting, "_default_resolver",
+        lambda _config, _target_section=None: resolver,
     )
 
 
@@ -68,6 +76,45 @@ def test_create_redraft_async_then_result(client, monkeypatch):
     assert op["result"]["generation_kind"] == "fake_demo"
     assert op["result"]["ai_proposal"] is None
     assert op["result"]["character_limit"] == 25000
+
+
+def test_redraft_result_exposes_concrete_change_metadata_for_review(
+    client, monkeypatch
+):
+    payload = section_bundle()
+    payload["section_candidate"].update({
+        "preserved_facts": [
+            "Der synthetische Projektbegriff bleibt erhalten.",
+        ],
+        "removed_or_reframed_claims": [
+            "Die pauschale Überlegenheitsbehauptung wurde entfernt.",
+        ],
+        "new_claims": [],
+        "missing_inputs": [{
+            "label": "Vergleichsbasis",
+            "reason": "Welcher bestehende Ansatz ist die freigegebene Vergleichsbasis?",
+        }],
+        "research_source_ids": [],
+    })
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch, payload)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "succeeded"
+    section = op["result"]["section_result"]
+    assert section["preserved_facts"] == payload["section_candidate"]["preserved_facts"]
+    assert section["removed_or_reframed_claims"] == (
+        payload["section_candidate"]["removed_or_reframed_claims"]
+    )
+    assert section["new_claims"] == []
+    assert section["missing_inputs"] == payload["section_candidate"]["missing_inputs"]
+    assert section["research_source_ids"] == []
+    assert section["role_skill_contract_v2"]["requires_human_review"] is True
+    assert op["result"]["proposal"]["human_review_required"] is True
 
 
 def test_redraft_other_field_404(client, monkeypatch):
@@ -102,6 +149,25 @@ def test_redraft_deterministic_only_503(client, monkeypatch):
         "Dieses Projekt ist aktuell auf regelbasierte Verarbeitung beschränkt."
     )
     assert "Datenklasse oder Umgebung" not in body["detail"]
+
+
+def test_redraft_live_fake_conflict_is_503_without_demo_operation(
+    client, monkeypatch
+):
+    from app.config.settings import get_settings
+
+    settings = get_settings()
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    monkeypatch.setattr(settings, "ai_eval_mode", "real")
+    monkeypatch.setattr(settings, "agent_fake_provider", True)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+
+    assert res.status_code == 503
+    assert res.json()["reason_code"] == "live_fake_conflict"
+    assert "operation_id" not in res.json()
 
 
 # --- Kein vorgetäuschter lokaler KI-Pfad ------------------------------------

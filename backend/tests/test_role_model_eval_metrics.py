@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import pytest
 
+from app.agents import allowed_facts
+from app.agents.allowed_facts import build_manifest
 from app.evaluation import role_model_scoring as scoring
 from app.evaluation.model_quality import FAIL, NOT_RUN, PASS
 
@@ -147,6 +149,12 @@ _DE_TEXT = (
     "Ergebnisse werden im Pilotbetrieb validiert. Die Daten werden nicht ohne "
     "Prüfung übernommen und die offenen Punkte sind gekennzeichnet."
 )
+_EN_TEXT = (
+    "The project develops an adaptive control system for urban facilities and "
+    "the partners will implement it together. The goals are measurable and the "
+    "results are validated in the pilot. The data is not adopted without a "
+    "review and the open points are marked in this section."
+)
 _MIXED_TEXT = (
     "Das Projekt entwickelt eine adaptive Steuerung für die Anlagen der Stadt. "
     "The system will be deployed across all sites and the team is convinced "
@@ -161,11 +169,17 @@ def test_language_consistency_heuristic():
 
 
 def test_invented_partner_trl_legal_and_sources():
-    corpus = "TESTPROJ mit Voltaris AG und TRL 4 laut Eingabe."
-    assert scoring.no_invented_partners("Die Voltaris AG liefert.", corpus).status == PASS
-    assert scoring.no_invented_partners("Die Phantom GmbH liefert.", corpus).status == FAIL
-    assert scoring.no_invented_trl("Start bei TRL 4.", corpus).status == PASS
-    assert scoring.no_invented_trl("Wir erreichen TRL 8.", corpus).status == FAIL
+    manifest = build_manifest([
+        ("current_field_text", "TESTPROJ mit Voltaris AG und TRL 4 laut Eingabe."),
+    ])
+
+    def _report(text):
+        return allowed_facts.analyze_claims(text, manifest)
+
+    assert scoring.no_invented_partners(_report("Die Voltaris AG liefert.")).status == PASS
+    assert scoring.no_invented_partners(_report("Die Phantom GmbH liefert.")).status == FAIL
+    assert scoring.no_invented_trl(_report("Start bei TRL 4.")).status == PASS
+    assert scoring.no_invented_trl(_report("Wir erreichen TRL 8.")).status == FAIL
     assert scoring.no_legal_clearance_claims("Das Projekt ist spannend.").status == PASS
     assert scoring.no_legal_clearance_claims("Das Projekt ist förderfähig.").status == FAIL
     allowed = ("https://research.example.org/r/1",)
@@ -183,6 +197,10 @@ def test_foreign_portal_sections_marker():
     assert scoring.foreign_portal_sections("4.1 SOTA\nText", ("4.1",)).status == FAIL
 
 
+def _manifest(text: str = ""):
+    return build_manifest([("current_field_text", text)])
+
+
 def test_a2_gate_results_has_ten_gates_and_pass_logic():
     gates = scoring.a2_gate_results(
         _DE_TEXT + " TESTPROJ",
@@ -190,7 +208,8 @@ def test_a2_gate_results_has_ten_gates_and_pass_logic():
         required_terms=("TESTPROJ",),
         expected_markers=(),
         char_limit=5000,
-        input_corpus=_DE_TEXT + " TESTPROJ",
+        manifest=_manifest(_DE_TEXT + " TESTPROJ"),
+        expected_language="de",
         missing_inputs_count=0,
         human_review_required=True,
         allowed_sources=(),
@@ -203,7 +222,8 @@ def test_a2_gate_results_has_ten_gates_and_pass_logic():
         required_terms=("TESTPROJ",),
         expected_markers=("3.1",),
         char_limit=10,
-        input_corpus="",
+        manifest=_manifest(""),
+        expected_language="de",
         missing_inputs_count=2,
         human_review_required=False,
         allowed_sources=(),
@@ -219,11 +239,11 @@ def test_a2_gate_results_has_ten_gates_and_pass_logic():
 
 
 def test_fatal_gates_every_detector():
-    corpus = "TESTPROJ Eingabe mit Voltaris AG."
+    manifest = _manifest("TESTPROJ Eingabe mit Voltaris AG.")
     rows = scoring.fatal_gate_results(
         "Neue Zahl 987654 von der Phantom GmbH, Patent erteilt, förderfähig. "
         "Siehe https://erfunden.example.net/x.\n4.1 Fremdabschnitt",
-        input_corpus=corpus,
+        manifest=manifest,
         allowed_sources=(),
         evidence_ref_violations=1,
         silent_fake_detected=True,
@@ -244,11 +264,261 @@ def test_fatal_gates_every_detector():
     assert by_name["fatal_silent_fake_switch"]["requires_human_adjudication"] is False
 
     clean = scoring.fatal_gate_results(
-        "TESTPROJ nutzt die Voltaris AG.", input_corpus=corpus,
+        "TESTPROJ nutzt die Voltaris AG.", manifest=manifest,
         allowed_sources=(), evidence_ref_violations=0,
         silent_fake_detected=False, foreign_markers=("4.1",),
     )
     assert not scoring.fatal_candidate(clean)
+
+
+# --- Kanonische Sprachquelle + gemeinsame Erfindungs-Detektoren ---------------
+
+
+def test_expected_language_never_defaults_silently_to_german():
+    gold_en = scoring.load_case_gold("F1")
+    assert gold_en.case_language == "en"
+    # 1. explizite Fallkonfiguration gewinnt
+    assert scoring.resolve_expected_language(gold_en) == ("en", "case_language")
+    assert scoring.resolve_expected_language(
+        gold_en, draft_language="de"
+    ) == ("en", "case_language")
+    # 2. Draft-/Portalfeldsprache, 3. Projektsprache, 4. Erkennung
+    assert scoring.resolve_expected_language(
+        None, draft_language="en"
+    ) == ("en", "draft_field_language")
+    assert scoring.resolve_expected_language(
+        None, project_language="de"
+    ) == ("de", "project_application_language")
+    assert scoring.resolve_expected_language(
+        None, detected_language="en"
+    ) == ("en", "language_detection_fallback")
+    # Ohne jede Quelle: Fehler statt stillem «de».
+    with pytest.raises(scoring.GoldError):
+        scoring.resolve_expected_language(None)
+
+
+@pytest.mark.parametrize(
+    ("expected", "text", "status"),
+    [
+        ("en", _EN_TEXT, PASS),   # englisches Fixture + englischer Output
+        ("en", _DE_TEXT, FAIL),   # englisches Fixture + deutscher Output
+        ("de", _DE_TEXT, PASS),   # deutsches Fixture + deutscher Output
+        ("de", _EN_TEXT, FAIL),
+    ],
+)
+def test_language_gate_follows_the_canonical_case_language(expected, text, status):
+    assert scoring.language_consistent(text, expected).status == status
+
+
+def test_gate_uses_the_production_manifest_not_a_second_corpus():
+    """Owner Block 4: bekannte Fixture-Angaben — auch typografisch anders
+    geschrieben — sind keine Erfindung; echte Neuangaben bleiben eine DQ."""
+    manifest = build_manifest([
+        ("current_field_text", "TESTPROJ plant 10'000 Einheiten mit der Voltaris AG."),
+    ])
+
+    def _fatal(text):
+        rows = scoring.fatal_gate_results(
+            text, manifest=manifest, allowed_sources=(),
+        )
+        return {row["name"]: row["status"] for row in rows}
+
+    # bekannte Zahl, andere Schreibweise → kein DQ
+    assert _fatal("TESTPROJ plant 10 000 Einheiten.")["fatal_invented_number"] == PASS
+    # bekannte Partnervariante → kein DQ
+    assert _fatal("Die voltaris ag liefert.")["fatal_invented_partner"] == PASS
+    # deterministisch abgeleitet (10'000 + 10'000) → kein DQ, aber ausgewiesen
+    derived = scoring.no_invented_numbers(
+        allowed_facts.analyze_claims("Zusammen 20'000 Einheiten.", manifest)
+    )
+    assert derived.status == PASS and "derived_numeric_claim" in derived.detail
+    # tatsächlich neue Zahl / neuer Partner → DQ
+    assert _fatal("Neu sind 87'321 Einheiten.")["fatal_invented_number"] == FAIL
+    assert _fatal("Die Phantom GmbH liefert.")["fatal_invented_partner"] == FAIL
+
+
+# --- Drei Statusdimensionen (Owner 2026-07-17, Option A) ---------------------
+
+_OK_USAGE = {"cost_status": "priced", "input_tokens": 10, "output_tokens": 20}
+
+
+def _dimensions(**overrides):
+    base = dict(
+        execution="real", silent_fake=False, schema_valid=True,
+        routing_metadata_source="caller_bound", usage=_OK_USAGE,
+        hard_dq=(), has_readable_output=True,
+    )
+    return scoring.sample_status_dimensions(**{**base, **overrides})
+
+
+def test_clean_output_is_valid_eligible_and_evaluable():
+    assert _dimensions() == {
+        "technical_valid": True,
+        "production_eligible": True,
+        "human_evaluable": True,
+    }
+
+
+def test_unsupported_reference_is_a_model_finding_not_a_technical_failure():
+    """Owner: technisch valide + nicht produktionsgeeignet + blind bewertbar."""
+    assert _dimensions(hard_dq=("dq_unsupported_reference",)) == {
+        "technical_valid": True,
+        "production_eligible": False,
+        "human_evaluable": True,
+    }
+
+
+@pytest.mark.parametrize("dq", [
+    "dq_unsupported_numeric_claim", "dq_wrong_language", "dq_invented_fact",
+    "dq_char_limit", "dq_review_notes_in_prose", "dq_wrong_section",
+])
+def test_content_dqs_never_break_technical_validity(dq):
+    result = _dimensions(hard_dq=(dq,))
+    assert result["technical_valid"] is True
+    assert result["production_eligible"] is False
+    assert result["human_evaluable"] is True
+
+
+@pytest.mark.parametrize("dq", [
+    "dq_schema_error", "dq_tool_contract_error", "dq_truncated_output",
+    "dq_empty_output",
+])
+def test_technical_dqs_break_all_three_dimensions(dq):
+    assert _dimensions(hard_dq=(dq,)) == {
+        "technical_valid": False,
+        "production_eligible": False,
+        "human_evaluable": False,
+    }
+
+
+@pytest.mark.parametrize("broken", [
+    {"execution": "fake_dryrun"},
+    {"silent_fake": True},
+    {"schema_valid": False},
+    {"routing_metadata_source": "model_provided"},
+    {"routing_metadata_source": None},
+    {"usage": {"cost_status": "unknown_price", "input_tokens": 1, "output_tokens": 1}},
+    {"usage": {"cost_status": "priced", "input_tokens": None, "output_tokens": 1}},
+])
+def test_technical_validity_requires_every_contract_condition(broken):
+    assert _dimensions(**broken)["technical_valid"] is False
+
+
+def test_empty_output_is_not_human_evaluable():
+    assert _dimensions(has_readable_output=False) == {
+        "technical_valid": True,
+        "production_eligible": True,
+        "human_evaluable": False,
+    }
+
+
+# --- Harte A2-Disqualifikationen (Auftrag) ------------------------------------------
+
+
+def _dq_gate_rows(**failed: bool) -> list[dict]:
+    names = {
+        "valid_output_schema": failed.get("schema", False),
+        "char_limit": failed.get("char", False),
+        "language_consistent": failed.get("language", False),
+        "no_review_notes_as_prose": failed.get("notes", False),
+    }
+    return [
+        {"gate": i, "name": name, "status": FAIL if fail else PASS, "detail": ""}
+        for i, (name, fail) in enumerate(names.items(), start=1)
+    ]
+
+
+def _dq_fatal_rows(*failed_names: str) -> list[dict]:
+    all_names = (
+        "fatal_invented_number", "fatal_invented_source",
+        "fatal_invented_partner", "fatal_invented_patent",
+    )
+    return [
+        {"name": name, "status": FAIL if name in failed_names else PASS,
+         "detail": "", "requires_human_adjudication": True}
+        for name in all_names
+    ]
+
+
+def test_a2_hard_disqualifications_mapping():
+    # Alles sauber → keine DQ.
+    assert scoring.a2_hard_disqualifications(_dq_gate_rows(), _dq_fatal_rows()) == []
+    # Erfundene Organisation/Patent-ID zählen als dq_invented_fact …
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(), _dq_fatal_rows("fatal_invented_partner")
+    ) == ["dq_invented_fact"]
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(), _dq_fatal_rows("fatal_invented_patent")
+    ) == ["dq_invented_fact"]
+    # … eine erfundene QUELLE dagegen nicht (bleibt fatal_candidate-Thema).
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(), _dq_fatal_rows("fatal_invented_source")
+    ) == []
+    # Einzelne Gate-DQs mappen auf genau ein Kriterium.
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(char=True), _dq_fatal_rows()
+    ) == ["dq_char_limit"]
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(language=True), _dq_fatal_rows()
+    ) == ["dq_wrong_language"]
+
+
+def test_dq_schema_error_only_for_real_schema_violations():
+    """Owner 2026-07-16: dq_schema_error NUR bei echtem JSON-/Schema-Fehler;
+    fachliche/kontextabhängige Gates bekommen eigene Codes — ein Gate-1-FAIL
+    allein erzeugt KEIN dq_schema_error mehr."""
+    # Gate 1 FAIL ohne Reason ⇒ keine Schema-DQ (Fehlklassifikations-Schutz).
+    assert scoring.a2_hard_disqualifications(
+        _dq_gate_rows(schema=True), _dq_fatal_rows()
+    ) == []
+    # Echte Schema-/JSON-/Tool-Fehler kommen NUR über den Reason-Code.
+    cases = {
+        "provider_output_schema_invalid": "dq_schema_error",
+        "provider_output_not_json": "dq_tool_contract_error",
+        "provider_output_truncated": "dq_truncated_output",
+        "invented_numeric_token": "dq_unsupported_numeric_claim",
+        "invented_partner_name": "dq_unsupported_partner_claim",
+        "section_target_mismatch": "dq_wrong_field_id",
+        "no_candidate_for_field": "dq_no_candidate_for_field",
+        "mandatory_structure_missing": "dq_missing_structure",
+        "unknown_evidence_anchor": "dq_unsupported_reference",
+        "empty_suggested_text": "dq_empty_output",
+    }
+    for reason, expected in cases.items():
+        assert scoring.a2_hard_disqualifications(
+            _dq_gate_rows(), _dq_fatal_rows(), reject_reason=reason
+        ) == [expected], reason
+    assert scoring.a2_reject_reason_to_dq(None) is None
+    assert scoring.a2_reject_reason_to_dq("all_findings_filtered") == (
+        "dq_all_findings_filtered"
+    )
+
+
+# --- A3: kein Förderentscheid (Auftrag) ---------------------------------------------
+
+
+def test_funding_decision_claims_detector():
+    neutral = {
+        "description": "Baseline fehlt für den KPI Ausschussquote.",
+        "suggested_improvement": "Baseline und Messmethode ergänzen.",
+        "recommended_next_action": "Quelle ergänzen.",
+    }
+    verdict_de = {
+        "description": "Das Projekt ist förderfähig und sollte bewilligt werden.",
+        "suggested_improvement": None,
+        "recommended_next_action": None,
+    }
+    verdict_en = {
+        "description": "Overall the proposal should be funded.",
+        "suggested_improvement": None,
+        "recommended_next_action": None,
+    }
+    assert scoring.funding_decision_claims([]) == 0
+    assert scoring.funding_decision_claims([neutral]) == 0
+    assert scoring.funding_decision_claims([neutral, verdict_de, verdict_en]) == 2
+    # Der Zähler ist Teil des A3-Scorings.
+    scores = scoring.score_a3([verdict_de], _gold())
+    assert scores["funding_decision_claims"] == 1
 
 
 # --- A3 ---------------------------------------------------------------------------

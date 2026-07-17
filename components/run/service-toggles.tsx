@@ -48,9 +48,12 @@ function ServiceToggle({
           <span className="text-muted-foreground">
             {available
               ? availableLabel
-              : (unavailableReason ?? "Dienst aktuell nicht verfügbar")}
+              : "Nicht verfügbar"}
           </span>
         </span>
+        {!available && unavailableReason && (
+          <p className="text-xs text-muted-foreground">{unavailableReason}</p>
+        )}
       </div>
       <Switch
         id={id}
@@ -72,7 +75,7 @@ export function LLMToggle({
   return (
     <ServiceToggle
       {...props}
-      title={isDemo ? "Demo-Vorschläge" : "KI-Unterstützung"}
+      title={isDemo ? "Demo-Vorschläge" : "Live-KI-Unterstützung"}
       subtitle={
         isDemo
           ? "Erstellt gekennzeichnete Testvorschläge ohne echtes KI-Modell"
@@ -80,8 +83,8 @@ export function LLMToggle({
       }
       availableLabel={
         isDemo
-          ? "Demo-Generator verfügbar – kein Modellaufruf"
-          : "KI-Unterstützung für Evaluationsfälle verfügbar"
+          ? "Demo"
+          : "Live-KI verfügbar"
       }
     />
   )

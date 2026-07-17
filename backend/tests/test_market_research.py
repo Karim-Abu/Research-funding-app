@@ -94,19 +94,33 @@ def _project(db, classification, *, description="Synthetischer F1-MVP.") -> Proj
 # --- Planner ----------------------------------------------------------------
 
 
-def test_planner_produces_three_to_five_public_safe_queries():
+def test_planner_produces_three_precise_public_safe_queries():
     queries = plan_market_queries(TOPIC)
-    assert 3 <= len(queries) <= 5
+    assert len(queries) == 3
     purposes = {q.purpose for q in queries}
     assert purposes == {
-        "market_size", "competitors_alternatives", "customer_pain",
-        "go_to_market_channels", "pricing_willingness_to_pay",
+        "market_size", "competitors_alternatives", "regulatory_demand_drivers",
     }
     for q in queries:
         assert q.source == "deterministic_planner"
         assert q.public_safe and q.blocked_reason is None
         # R8 Freigabepflicht: jede Planner-Query braucht eine menschliche Freigabe.
         assert q.approval_required is True
+
+
+def test_planner_queries_do_not_repeat_terms():
+    repeated = MarketTopic(
+        application_domain="Medizintechnik",
+        technology_area="Medizintechnik Audit",
+        target_customers="Medizintechnik Labore",
+        region="Schweiz",
+    )
+    for query in plan_market_queries(repeated, include_state_of_the_art=True):
+        words = [
+            word.strip(".,;:!?()[]{}\"'").casefold()
+            for word in query.query_text.split()
+        ]
+        assert len(words) == len(set(words)), query.query_text
 
 
 def test_planner_is_deterministic():
@@ -160,14 +174,14 @@ def test_fake_provider_creates_results_and_tool_invocations(db, web_fake):
     out = run_market_research(db, project=project, actor_user_id="user-anna",
                               topic=TOPIC, case_id="F1", data_mode="fake_test")
     assert out.provider == "fake"
-    assert out.result_count == 15  # 5 queries × 3 fake results
+    assert out.result_count == 9  # 3 queries × 3 fake results
     assert out.tool_invocation_count > 0
     persisted = db.scalar(
         select(func.count(ResearchResult.result_id)).where(
             ResearchResult.research_task_id.in_(out.task_ids)
         )
     )
-    assert persisted == 15
+    assert persisted == 9
 
 
 def test_cost_guard_blocks_market_task_at_limit(db, web_fake):

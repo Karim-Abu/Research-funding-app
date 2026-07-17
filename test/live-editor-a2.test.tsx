@@ -1,7 +1,8 @@
-import { describe, it, expect, vi } from "vitest"
+import { afterEach, describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
+import { setBackendMode } from "@/lib/app-mode"
 
 vi.mock(
   "@/components/editor/rich-text-editor",
@@ -122,15 +123,20 @@ async function clickGenerate(targetSection?: string) {
     })
   }
   fireEvent.click(
-    within(control).getByRole("button", { name: /Vorschlag erstellen/ })
+    within(control).getByRole("button", {
+      name: /Vorschlag erstellen|Text mit KI verbessern/,
+    })
   )
 }
 
-function baseMock(fields: Record<string, unknown>[]) {
+function baseMock(
+  fields: Record<string, unknown>[],
+  capabilities: Record<string, unknown> = { generation_mode: "fake_demo" }
+) {
   server.use(
     http.get("/api/capabilities", () => HttpResponse.json({
       api_version: "1.1.0", polling_interval_seconds: 2,
-      supported_source_types: ["txt"], features: {}, generation_mode: "fake_demo",
+      supported_source_types: ["txt"], features: {}, ...capabilities,
     })),
     http.get("/api/runs/r1/fields", () => HttpResponse.json(fields)),
     http.get("/api/runs/r1/evidence", () => HttpResponse.json([])),
@@ -159,6 +165,9 @@ function baseMock(fields: Record<string, unknown>[]) {
 }
 
 describe("LiveEditor A2 suggestions", () => {
+  // Einzelne Tests schalten für echte Capabilities-Antworten auf «live».
+  afterEach(() => setBackendMode("mock"))
+
   it("shows the proposal control for the Abstract field (R5.5)", async () => {
     baseMock([abstractDraft()])
     render(<LiveEditor runId="r1" />)
@@ -196,6 +205,80 @@ describe("LiveEditor A2 suggestions", () => {
     ).toBeInTheDocument()
   })
 
+  // Anf. 1/2 — modusabhängige Primäraktion + Erklärsatz direkt darüber.
+  it("real_eval: Aktion «Text mit KI verbessern» mit Erklärsatz", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    const control = await screen.findByTestId("a2-suggestion-control")
+    expect(
+      await within(control).findByRole("button", { name: "Text mit KI verbessern" })
+    ).toBeEnabled()
+    expect(within(control).getByTestId("a2-action-explainer")).toHaveTextContent(
+      "Der ausgewählte Abschnitt wird neu strukturiert"
+    )
+    expect(
+      screen.getByText("Live-KI-Vorschlag für diesen Abschnitt noch nicht erstellt.")
+    ).toBeInTheDocument()
+    expect(screen.queryByText(/Demo-Vorschlag/)).toBeNull()
+  })
+
+  it("ohne Provider: Aktion deaktiviert mit konkretem Grund und CTA", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], {
+      generation_mode: "live_unavailable",
+      generation_unavailable_reason: "live_preflight_required",
+    })
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    const control = await screen.findByTestId("a2-suggestion-control")
+    expect(
+      await within(control).findByText(
+        "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus den synthetischen Preflight."
+      )
+    ).toBeInTheDocument()
+    expect(
+      within(control).getByRole("button", { name: "Vorschlag erstellen" })
+    ).toBeDisabled()
+    const cta = within(control).getByRole("link", {
+      name: "Live-Systemstatus prüfen",
+    })
+    expect(cta).toHaveAttribute("href", "/admin")
+    // Kein stiller Demo-Ersatz und kein irreführender Leerzustand.
+    expect(screen.queryByText(/Demo-Vorschlag/)).toBeNull()
+    expect(screen.queryByText(/noch nicht erstellt/)).toBeNull()
+  })
+
+  // Anf. 6 — ein Live-Fehler erzeugt keinen Demo-Vorschlag.
+  it("Live-Fehler zeigt Grund + Live-CTA und keinen Demo-Inhalt", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json(
+          { code: "ai_unavailable", reason_code: "live_preflight_failed" },
+          { status: 503 }
+        )
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    await waitFor(() =>
+      expect(
+        screen.getByText(
+          "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten Routenfehler im Live-Systemstatus und wiederholen Sie den Test."
+        )
+      ).toBeInTheDocument()
+    )
+    const control = screen.getByTestId("a2-suggestion-control")
+    expect(
+      within(control).getByRole("link", { name: "Routenfehler prüfen" })
+    ).toHaveAttribute("href", "/admin")
+    expect(screen.queryByTestId("suggestion-review-sheet")).toBeNull()
+    expect(screen.queryByText(/Demo/)).toBeNull()
+  })
+
   it("generates a suggestion, shows side-by-side and accepts it", async () => {
     baseMock([solDraft()])
     server.use(
@@ -231,7 +314,7 @@ describe("LiveEditor A2 suggestions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     await waitFor(() =>
       expect(
-        screen.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
+        screen.getByText(/Text übernommen – Qualitätsprüfung erneut erforderlich/)
       ).toBeInTheDocument()
     )
     // C8 — klarer Status nach der Übernahme (Badge, nicht nur Banner).
@@ -282,7 +365,7 @@ describe("LiveEditor A2 suggestions", () => {
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     await waitFor(() =>
       expect(
-        screen.getByText(/erneute Prüfung ist vor der Freigabe erforderlich/)
+        screen.getByText(/Text übernommen – Qualitätsprüfung erneut erforderlich/)
       ).toBeInTheDocument()
     )
   })

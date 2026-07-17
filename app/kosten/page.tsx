@@ -1,8 +1,8 @@
 "use client"
 
-import * as React from "react"
 import { AppShell } from "@/components/shell/app-shell"
 import { KostenScreen } from "@/components/kosten/kosten-screen"
+import { useSession } from "@/components/providers/app-providers"
 import { currentUser, memberUser, projects, activeProjectId } from "@/lib/mock-data"
 import type { Role } from "@/lib/types"
 
@@ -10,7 +10,10 @@ import type { Role } from "@/lib/types"
 const previewRole: Role = "lead_admin"
 
 export default function KostenPage() {
-  const user = previewRole === "lead_admin" ? currentUser : memberUser
+  const { mode, user: sessionUser } = useSession()
+  const role: Role =
+    mode === "live" ? (sessionUser?.effective_role ?? "member") : previewRole
+  const user = role === "lead_admin" ? currentUser : memberUser
 
   return (
     <AppShell
@@ -19,7 +22,7 @@ export default function KostenPage() {
       activeProjectId={activeProjectId}
       // No stepper — this is not a workflow step.
     >
-      <KostenScreen role={previewRole} />
+      <KostenScreen role={role} />
     </AppShell>
   )
 }

@@ -63,34 +63,37 @@ class FragmentCandidate:
 def imported_public_sources(
     db: Session, project_id: str, workspace_id: str
 ) -> list[SourceDocument]:
-    """Processed, web-imported public sources for the project (M9I-A import path)."""
+    """Live, fully processed and positively reviewed public research sources."""
     docs = db.scalars(
-        select(SourceDocument).where(
+        select(SourceDocument)
+        .join(
+            ResearchResult,
+            ResearchResult.source_document_id == SourceDocument.source_id,
+        )
+        .join(
+            ResearchTask,
+            ResearchTask.research_task_id == ResearchResult.research_task_id,
+        )
+        .join(
+            SourceVersion,
+            SourceVersion.source_version_id == SourceDocument.current_source_version_id,
+        )
+        .where(
             SourceDocument.project_id == project_id,
             SourceDocument.workspace_id == workspace_id,
             SourceDocument.type == "url",
             SourceDocument.status == "processed",
+            SourceVersion.processing_status == "processed",
+            ResearchResult.status == "imported",
+            ResearchResult.content_review_status == "reviewed",
+            ResearchResult.support_status.in_(("supports", "partially_supports")),
+            ResearchTask.execution_mode == "live",
         )
-    ).all()
+    ).unique().all()
     result: list[SourceDocument] = []
     for doc in docs:
         dc = doc.data_classification or {}
         if dc.get("origin") != "public_source" or dc.get("sensitivity") != "public":
-            continue
-        provenance_task = db.scalar(
-            select(ResearchTask)
-            .join(
-                ResearchResult,
-                ResearchResult.research_task_id == ResearchTask.research_task_id,
-            )
-            .where(ResearchResult.source_document_id == doc.source_id)
-        )
-        # Manuell importierte öffentliche URLs bleiben zulässig. Dokumente aus dem
-        # alten Fake-Provider werden dagegen explizit ausgeschlossen.
-        if provenance_task is not None and (
-            provenance_task.execution_mode == "fake_demo"
-            or provenance_task.provider == "fake"
-        ):
             continue
         result.append(doc)
     # Deterministic order: (created_at, source_id).

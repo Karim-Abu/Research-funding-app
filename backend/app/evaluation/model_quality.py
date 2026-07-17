@@ -36,7 +36,10 @@ PASS, FAIL, NOT_RUN = "pass", "fail", "not_run"
 
 # Gap-/Offen-Marker, die eine Lücke EHRLICH kennzeichnen (statt Werte zu
 # erfinden). "[[…]]" ist der etablierte Platzhalter der Template-Drafts.
-GAP_MARKERS = ("[[", "offen", "fehlt", "zu ergänzen", "nicht verfügbar", "keine angabe")
+GAP_MARKERS = (
+    "[[", "offen", "fehlt", "zu ergänzen", "nicht verfügbar", "keine angabe",
+    "open", "missing", "to be confirmed", "not available",
+)
 
 # Muster für Review-Notizen/Portalfragen, die NICHT als finale Prosa in einem
 # Feldvorschlag stehen dürfen.

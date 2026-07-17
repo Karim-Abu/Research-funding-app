@@ -210,19 +210,32 @@ backend\.venv\Scripts\python.exe scripts\run_live_research_smoke.py
 # (price_unknown_for_cost_guard); Ceiling-Routen (fable-5, gpt-5.6-sol)
 # brauchen zusätzlich AGENT_QUALITY_CEILING_ENABLED=true.
 $env:RUN_REAL_PROVIDER_SMOKE = "true"; $env:AI_EVAL_MODE = "real"
-backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a1
-backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2
-backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a3
+# Primärvergleich mit genau ZWEI Kandidaten je Rolle (Ceiling separat):
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2 `
+  --candidate anthropic_sonnet_5_candidate --candidate openai_gpt_56_terra_candidate
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a3 `
+  --candidate openai_gpt_56_terra_candidate --candidate anthropic_sonnet_5_candidate
+# Holdout mit denselben Kandidaten (identischer Prompt-SHA — Freeze erzwungen):
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2 `
+  --candidate anthropic_sonnet_5_candidate --candidate openai_gpt_56_terra_candidate `
+  --cases H1 --allow-holdout
+# DANN EIN Blind-Pack je Rolle (Dev+Holdout in EINER Scoring-Session — `blind`
+# mischt bei jedem Aufruf neu; nie nach begonnenem Scoring wiederholen):
 backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py blind --role a2
 # → Blindbogen menschlich ausfüllen (docs/evaluation/blind_rubric_a2.md), dann:
 backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py ingest --role a2 `
   --scores backend/var/evaluation/role_model_eval/blind/a2/a2_scoring_sheet.csv
-# Holdout erst NACH dem Blind-Scoring der Dev-Läufe (identischer Prompt-SHA):
-backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py run --role a2 `
-  --cases H1 --allow-holdout
-# → backend/var/evaluation/role_model_eval/summary.{md,json}
+# → backend/var/evaluation/role_model_eval/summary.{md,json} (Ingest trennt
+#   Dev-/Holdout-Zeilen; die Auswahl stützt sich auf H1)
 # Kostenloser Probelauf des gesamten Zyklus (keine Keys nötig): «run --fake …»
 # — Samples sind unübersehbar als fake_dryrun markiert, nie eine Live-Aussage.
+
+# Live-PILOT (begrenzt: max 24 Calls / CHF 12; eigenes Verzeichnis
+# role_model_eval_pilot/) — Details: docs/evaluation/live-model-selection.md §12:
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py pilot --phase smoke
+# → STOPP: Zwischenbericht prüfen (pilot_summary.md), erst dann:
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py pilot --phase run --allow-holdout
+backend\.venv\Scripts\python.exe scripts\run_role_model_eval.py pilot --phase blind
 ```
 
 ## 6b. Supervised live E2E (manuelles Protokoll)
@@ -238,7 +251,7 @@ durchgeführt:
    aber kein Key vorhanden, zeigt die UI ausdrücklich den Zustand
    `live_unavailable` — es erscheint **nie** ein Demo-Ergebnis als Ersatz.
 3. Die Modellrouten je Rolle sind die im
-   [`model-selection-report`](../evaluation/model-selection-report.md)
+   [`live-model-selection`](../evaluation/live-model-selection.md)
    dokumentierten Sieger (gesetzt über `AGENT_MODEL_*_ID` in `backend/.env`);
    A3 läuft über einen anderen Provider als A2 — die Warnung
    `same_provider_a2_a3` in «Technische Details» muss fehlen.
@@ -247,8 +260,11 @@ durchgeführt:
    ausgewiesenen `partial_live` mit Begründung — nie zu einem stillen Fallback.
 5. **Zweimal-Regel:** ein vollständiger Lauf auf Demo-Projekt 1 **plus** ein
    gezielter Wiederholungslauf der kritischen Provider-/Research-Schritte
-   (Preflight → A1 → Query-Freigabe → Firecrawl → Quelle übernehmen → A2 → A3)
-   auf Demo-Projekt 2 — oder alternativ zwei vollständige Läufe.
+   (Preflight → A1 → Query-Freigabe → Firecrawl → Quelle übernehmen →
+   Inhalts-Review der übernommenen Quelle («stützt» / «stützt teilweise» /
+   «stützt nicht») → A2-Redraft mit sichtbarer Quelle unter «Verwendete
+   Research-Quellen» → A3-Hinweis → Vorschlag ausdrücklich übernehmen oder
+   verwerfen) auf Demo-Projekt 2 — oder alternativ zwei vollständige Läufe.
 6. Evidenz archivieren unter `backend/var/evaluation/supervised_live/<datum>/`:
    Technical-Evidence-Export (Provider, Modell, Skill, Tokens, Kosten, Latenz,
    Quellen), Preflight-Artefakte, Run-/Projekt-IDs.

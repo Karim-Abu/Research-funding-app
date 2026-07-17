@@ -32,9 +32,16 @@ export interface QueryCandidateDto {
 export const QUERY_PURPOSE_LABELS: Record<string, string> = {
   market_size: "Marktgrösse und Wachstum",
   competitors_alternatives: "Wettbewerber und Alternativen",
+  regulatory_demand_drivers: "Regulatorische und Bedarfs-Treiber",
+  state_of_the_art: "Stand der Technik",
   customer_pain: "Kundenproblem und Bedarf",
   go_to_market_channels: "Vertriebskanäle",
   pricing_willingness_to_pay: "Zahlungsbereitschaft",
+  research_group: "Forschungsgruppe",
+  applied_sciences: "Fachhochschule",
+  competence_center: "Kompetenzzentrum",
+  university_lab: "Universitätslabor",
+  university_institute: "Universitätsinstitut",
 }
 
 export function queryPurposeLabel(purpose: string): string {

@@ -174,6 +174,12 @@ def add_imported_public_source(
     db, run, *, name: str = "Marktbericht (öffentlich)",
     text: str = "Der Markt für Anbieter und Wettbewerber wächst; Umsatz ca. 12 Mio.",
     research_module: str = "competition_alternatives",
+    content_review_status: str = "reviewed",
+    support_status: str = "supports",
+    result_status: str = "imported",
+    execution_mode: str = "live",
+    document_status: str = "processed",
+    version_status: str = "processed",
 ) -> str:
     """R5.7: an imported D0/public web SourceDocument (type=url, origin=public_source) with
     a market-signal fragment so source_scope.prefilter_fragments picks it. Returns source_id."""
@@ -186,14 +192,14 @@ def add_imported_public_source(
     }
     db.add(SourceDocument(
         source_id=source_id, project_id=run.project_id, workspace_id=run.workspace_id,
-        name=name, type="url", status="processed", data_classification=dc,
+        name=name, type="url", status=document_status, data_classification=dc,
         current_source_version_id=version_id, created_by="user-anna",
     ))
     db.add(SourceVersion(
         source_version_id=version_id, source_document_id=source_id, version_number=1,
         original_content_hash="h", normalized_content_hash="h2", normalized_text=text,
         parser_version="parser-1", normalizer_version="normalizer-1",
-        chunker_version="chunker-1", processing_status="processed", data_classification=dc,
+        chunker_version="chunker-1", processing_status=version_status, data_classification=dc,
         storage_ref="b" * 32, original_filename="market.html", byte_size=len(text),
         mime_type="text/html",
     ))
@@ -210,7 +216,7 @@ def add_imported_public_source(
         query_text="public research query", normalized_query_hash="query-hash",
         status="succeeded", preferred_domains=[], disallowed_domains=[],
         competence_needs=[], requested_partner_roles=[], max_results=1, max_pages=1,
-        provider="firecrawl", execution_mode="live", result_count=1,
+        provider="firecrawl", execution_mode=execution_mode, result_count=1,
         firewall_data_class="D0_PUBLIC", research_module=research_module,
         planner_purpose=(
             "competitors_alternatives"
@@ -223,7 +229,9 @@ def add_imported_public_source(
         workspace_id=run.workspace_id,
         source_url="https://public.example.test/research",
         final_url="https://public.example.test/research", title=name,
-        snippet="Imported live research source", status="imported",
+        snippet="Imported live research source", status=result_status,
+        content_review_status=content_review_status,
+        support_status=support_status,
         source_document_id=source_id,
     ))
     db.flush()

@@ -174,10 +174,23 @@ def _setup(field_id=VC_FIELD_ID, processing_mode="cloud_assisted"):
         db.close()
 
 
-def _arm_vc(monkeypatch):
+def _arm_fake(monkeypatch, payload):
+    from app.config.settings import get_settings
+
+    settings = get_settings()
+    monkeypatch.setattr(settings, "ai_eval_mode", "off")
+    monkeypatch.setattr(settings, "agent_fake_provider", True)
+    resolver = fake_resolver(success_fake(payload))
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", resolver)
     monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER", fake_resolver(success_fake(_vc_bundle())),
+        field_drafting,
+        "_default_resolver",
+        lambda _config, _target_section=None: resolver,
     )
+
+
+def _arm_vc(monkeypatch):
+    _arm_fake(monkeypatch, _vc_bundle())
 
 
 def _create_redraft(client, csrf, run_id, field_id, base):
@@ -206,10 +219,7 @@ def test_create_redraft_vc_async_then_result(client, monkeypatch):
 
 def test_create_redraft_sol_still_works(client, monkeypatch):
     run_id, _draft_id, base = _setup(field_id=SOL_FIELD_ID)
-    monkeypatch.setattr(
-        field_drafting, "_PROVIDER_RESOLVER",
-        fake_resolver(success_fake(section_bundle())),
-    )
+    _arm_fake(monkeypatch, section_bundle())
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     res = _create_redraft(client, csrf, run_id, SOL_FIELD_ID, base)
     assert res.status_code == 202

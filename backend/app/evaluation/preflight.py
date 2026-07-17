@@ -39,10 +39,18 @@ from app.agents.providers.openai import OpenAIProvider
 from app.agents.registry import AgentRegistry, get_agent_registry
 from app.config.settings import Settings, get_settings
 from app.db.models import ProviderPreflightResult
+from app.evaluation.pricing import COST_STATUS_PRICED, resolve_cost
 
 PASS = "pass"
 FAIL = "fail"
 NOT_RUN = "not_run"
+LIVE_FAKE_CONFLICT = "live_fake_conflict"
+
+CORE_LIVE_ROLE_IDS = (
+    "A1_FACT_EVIDENCE_ANALYST",
+    "A2_INNOSUISSE_PROPOSAL_WRITER",
+    "A3_INNOSUISSE_CRITICAL_REVIEWER",
+)
 
 # Konstanter, öffentlicher Ping — bewusst OHNE jeden Antrags-/Projektbezug.
 PING_PROMPT = (
@@ -65,6 +73,7 @@ _AGENT_ADAPTERS = {
 }
 
 _CHECK_NAMES = (
+    "configuration",
     "key_present",
     "api_reachable",
     "model_available",
@@ -102,7 +111,7 @@ class ProviderPreflight:
 
 def classify_provider_error(message: str) -> tuple[str, str]:
     """HTTP-/Fehlerklassifikation → (code, verständlicher deutscher Text)."""
-    match = re.search(r"http (\d{3})", message)
+    match = re.search(r"(?:http|status) (\d{3})", message)
     status = int(match.group(1)) if match else None
     if status in (401, 403):
         return "auth_failed", (
@@ -149,6 +158,29 @@ def preflight_route(
         provider=route.provider, mode="live", route_key=route_key,
         requested_model_id=requested,
     )
+    if live_fake_conflict(settings):
+        result.error_class = LIVE_FAKE_CONFLICT
+        result.checks.append(PreflightCheck(
+            "configuration", FAIL,
+            "AI_EVAL_MODE=real kollidiert mit AGENT_FAKE_PROVIDER=true.",
+        ))
+        result.checks = _not_run_rest(
+            result.checks, "Konfigurationskonflikt zuerst beheben."
+        )
+        return result
+    if settings.ai_eval_mode != "real":
+        result.error_class = "live_eval_mode_disabled"
+        result.checks.append(PreflightCheck(
+            "configuration", FAIL,
+            "AI_EVAL_MODE=real ist für einen Live-Provider-Preflight erforderlich.",
+        ))
+        result.checks = _not_run_rest(
+            result.checks, "Live-Evaluationsmodus zuerst aktivieren."
+        )
+        return result
+    result.checks.append(PreflightCheck(
+        "configuration", PASS, "Kein Live-/Demo-Konflikt."
+    ))
     key_present = adapter.available()
     result.checks.append(PreflightCheck(
         "key_present", PASS if key_present else FAIL,
@@ -248,14 +280,159 @@ def latest_route_preflight(db: Session, route_key: str) -> ProviderPreflightResu
     )
 
 
-def route_preflight_passed(db: Session, route_key: str) -> bool:
+def live_fake_conflict(settings: Settings) -> bool:
+    return settings.ai_eval_mode == "real" and settings.agent_fake_provider
+
+
+def _provider_key_present(provider: str, settings: Settings) -> bool:
+    if provider == "openai_direct":
+        return bool(settings.openai_api_key)
+    if provider == "anthropic_direct":
+        return bool(settings.anthropic_api_key)
+    return False
+
+
+def route_configuration_reason(
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> str | None:
+    """First deployment-only reason that makes one live route unusable."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    if live_fake_conflict(settings):
+        return LIVE_FAKE_CONFLICT
+    if settings.ai_eval_mode != "real":
+        return "live_eval_mode_disabled"
+    route = registry.route(route_key)
+    if route.evaluation_only and not settings.agent_quality_ceiling_enabled:
+        return "live_route_evaluation_disabled"
+    requested = route.requested_model_id(settings)
+    if not requested:
+        return "live_model_id_missing"
+    if not _provider_key_present(route.provider, settings):
+        return "live_provider_key_missing"
+    cost = resolve_cost(
+        provider=route.provider,
+        model_id=requested,
+        input_tokens=0,
+        output_tokens=0,
+        settings=settings,
+    )
+    if cost.cost_status != COST_STATUS_PRICED:
+        return "live_price_metadata_missing"
+    return None
+
+
+def route_preflight_reason(
+    db: Session,
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> str | None:
+    """None only for a configured, fresh preflight of the current model ID."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    configured_reason = route_configuration_reason(
+        route_key, settings=settings, registry=registry
+    )
+    if configured_reason:
+        return configured_reason
+    requested = registry.route(route_key).requested_model_id(settings)
     row = latest_route_preflight(db, route_key)
-    if row is None or row.status != PASS:
-        return False
+    if row is None:
+        return "live_preflight_required"
+    if row.status != PASS:
+        return "live_preflight_failed"
+    if row.requested_model_id != requested:
+        return "live_preflight_stale_model"
+    if not row.actual_model_id:
+        return "live_actual_model_missing"
     expires = row.expires_at
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
-    return expires > datetime.now(timezone.utc)
+    if expires <= datetime.now(timezone.utc):
+        return "live_preflight_expired"
+    return None
+
+
+def route_preflight_passed(
+    db: Session,
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> bool:
+    return route_preflight_reason(
+        db, route_key, settings=settings, registry=registry
+    ) is None
+
+
+def ready_route_for_role(
+    db: Session | None,
+    role_id: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> tuple[str | None, str | None]:
+    """Resolve one usable primary/fallback route for a live model role."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    role = (registry.role_routes or {}).get(role_id)
+    if role is None or role.execution_kind != "model_gateway":
+        return None, "live_route_not_configured"
+    candidates = [key for key in (role.primary, role.fallback) if key]
+    configured: list[str] = []
+    configuration_reasons: list[str] = []
+    for route_key in candidates:
+        reason = route_configuration_reason(
+            route_key, settings=settings, registry=registry
+        )
+        if reason is None:
+            configured.append(route_key)
+        else:
+            configuration_reasons.append(reason)
+    if not configured:
+        return None, configuration_reasons[0] if configuration_reasons else (
+            "live_route_not_configured"
+        )
+    if db is None or not hasattr(db, "scalar"):
+        return None, "live_preflight_required"
+    preflight_reasons: list[str] = []
+    for route_key in configured:
+        reason = route_preflight_reason(
+            db, route_key, settings=settings, registry=registry
+        )
+        if reason is None:
+            return route_key, None
+        preflight_reasons.append(reason)
+    return None, preflight_reasons[0]
+
+
+def generation_mode_status(
+    db: Session | None,
+    settings: Settings,
+    *,
+    registry: AgentRegistry | None = None,
+    role_ids: tuple[str, ...] = CORE_LIVE_ROLE_IDS,
+) -> tuple[str, str | None]:
+    """Deployment generation truth shared by capabilities and status views."""
+    if settings.ai_eval_mode == "real":
+        if live_fake_conflict(settings):
+            return "live_unavailable", LIVE_FAKE_CONFLICT
+        registry = registry or get_agent_registry()
+        for role_id in role_ids:
+            _route_key, reason = ready_route_for_role(
+                db, role_id, settings=settings, registry=registry
+            )
+            if reason:
+                return "live_unavailable", reason
+        return "real_eval", None
+    if settings.agent_fake_provider:
+        return "fake_demo", None
+    return "unavailable", "no_approved_model_provider"
 
 
 def _not_run_rest(done: list[PreflightCheck], reason: str) -> list[PreflightCheck]:
@@ -267,13 +444,17 @@ def _not_run_rest(done: list[PreflightCheck], reason: str) -> list[PreflightChec
     ]
 
 
-def _route_for(registry: AgentRegistry, provider_key: str) -> str | None:
+def _route_for(
+    registry: AgentRegistry, provider_key: str, settings: Settings
+) -> str | None:
     for route in registry.model_routes.values():
-        if route.provider == provider_key and route.status == "active":
-            return route.model_id
+        requested = route.requested_model_id(settings)
+        if route.provider == provider_key and requested and route.status == "active":
+            return requested
     for route in registry.model_routes.values():
-        if route.provider == provider_key:
-            return route.model_id
+        requested = route.requested_model_id(settings)
+        if route.provider == provider_key and requested:
+            return requested
     return None
 
 
@@ -292,6 +473,29 @@ def preflight_agent_provider(
     adapter = adapter or adapter_cls()
     result = ProviderPreflight(provider=provider, mode="live")
 
+    if live_fake_conflict(settings):
+        result.error_class = LIVE_FAKE_CONFLICT
+        result.checks.append(PreflightCheck(
+            "configuration", FAIL,
+            "AI_EVAL_MODE=real kollidiert mit AGENT_FAKE_PROVIDER=true.",
+        ))
+        result.checks = _not_run_rest(
+            result.checks, "Konfigurationskonflikt zuerst beheben."
+        )
+        return result
+    if settings.ai_eval_mode != "real":
+        result.error_class = "live_eval_mode_disabled"
+        result.checks.append(PreflightCheck(
+            "configuration", FAIL,
+            "AI_EVAL_MODE=real ist für einen Live-Provider-Preflight erforderlich.",
+        ))
+        result.checks = _not_run_rest(
+            result.checks, "Live-Evaluationsmodus zuerst aktivieren."
+        )
+        return result
+    result.checks.append(PreflightCheck(
+        "configuration", PASS, "Kein Live-/Demo-Konflikt."
+    ))
     key_present = adapter.available()
     result.checks.append(
         PreflightCheck(
@@ -311,7 +515,7 @@ def preflight_agent_provider(
         )
         return result
 
-    requested_model = _route_for(registry, provider_key)
+    requested_model = _route_for(registry, provider_key, settings)
     if requested_model is None:
         result.checks.append(
             PreflightCheck(
@@ -403,6 +607,31 @@ def firecrawl_mode(settings: Settings) -> str:
     return "not_configured"
 
 
+def firecrawl_preflight_reason(
+    db: Session | None, settings: Settings
+) -> str | None:
+    mode = firecrawl_mode(settings)
+    if mode == "disabled":
+        return "web_research_disabled"
+    if mode == "fake":
+        return "web_research_demo"
+    if mode != "live":
+        return "firecrawl_key_missing"
+    if db is None or not hasattr(db, "scalar"):
+        return "firecrawl_preflight_required"
+    row = latest_route_preflight(db, "firecrawl")
+    if row is None:
+        return "firecrawl_preflight_required"
+    if row.status != PASS:
+        return "firecrawl_preflight_failed"
+    expires = row.expires_at
+    if expires.tzinfo is None:
+        expires = expires.replace(tzinfo=timezone.utc)
+    if expires <= datetime.now(timezone.utc):
+        return "firecrawl_preflight_expired"
+    return None
+
+
 def preflight_firecrawl(
     *,
     settings: Settings | None = None,
@@ -412,7 +641,14 @@ def preflight_firecrawl(
     """Preflight für die Webrecherche (Firecrawl) inkl. Modusanzeige."""
     settings = settings or get_settings()
     mode = firecrawl_mode(settings)
-    result = ProviderPreflight(provider="firecrawl", mode=mode)
+    result = ProviderPreflight(
+        provider="firecrawl", mode=mode, route_key="firecrawl"
+    )
+    result.checks.append(PreflightCheck(
+        "configuration",
+        PASS if mode == "live" else (NOT_RUN if mode in ("disabled", "fake") else FAIL),
+        f"Webrecherche-Modus: {mode}.",
+    ))
     key_present = mode == "live"
     result.checks.append(
         PreflightCheck(
@@ -446,6 +682,7 @@ def preflight_firecrawl(
             SearchRequest(query=FIRECRAWL_PING_QUERY, max_results=1)
         )
     except CreditExceeded:
+        result.error_class = "rate_limited"
         result.checks.append(
             PreflightCheck(
                 "rate_limit_clarity", PASS,
@@ -463,6 +700,7 @@ def preflight_firecrawl(
         return result
     except (WebProviderError, WebProviderTimeout, WebProviderUnavailable) as exc:
         code, text = classify_provider_error(str(exc))
+        result.error_class = code
         result.checks.append(PreflightCheck("api_reachable", FAIL, f"[{code}] {text}"))
         result.checks = _not_run_rest(result.checks, "API nicht erreichbar.")
         return result
@@ -470,12 +708,15 @@ def preflight_firecrawl(
     result.checks.append(
         PreflightCheck("api_reachable", PASS, "Firecrawl-Suche hat geantwortet.")
     )
+    result.latency_ms = outcome.latency_ms
     # Live darf NIE Fake-Hosts liefern (example.org ist der Fake-Provider).
     fake_hosts = [
         candidate.url
         for candidate in outcome.candidates
         if "example.org" in candidate.url
     ]
+    if fake_hosts:
+        result.error_class = "live_demo_domain_rejected"
     result.checks.append(
         PreflightCheck(
             "model_available",
@@ -532,7 +773,64 @@ def run_preflight(
     return results
 
 
+def configured_live_route_keys(
+    *,
+    registry: AgentRegistry | None = None,
+    role_ids: tuple[str, ...] = CORE_LIVE_ROLE_IDS,
+    include_comparison: bool = False,
+) -> list[str]:
+    registry = registry or get_agent_registry()
+    route_keys: list[str] = []
+    for role_id in role_ids:
+        role = (registry.role_routes or {}).get(role_id)
+        if role is None or role.execution_kind != "model_gateway":
+            continue
+        candidates = [role.primary, role.fallback]
+        if include_comparison:
+            candidates.append(role.comparison)
+        for route_key in candidates:
+            if route_key and route_key not in route_keys:
+                route_keys.append(route_key)
+    return route_keys
+
+
+def run_configured_preflight(
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+    execute_live: bool,
+    adapters: dict[str, object] | None = None,
+    web_provider=None,
+) -> list[ProviderPreflight]:
+    """Exact environment-resolved role routes plus Firecrawl; metadata only."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    adapters = adapters or {}
+    results = [
+        preflight_route(
+            route_key,
+            settings=settings,
+            registry=registry,
+            adapter=adapters.get(route_key),
+            execute_live=execute_live,
+        )
+        for route_key in configured_live_route_keys(registry=registry)
+    ]
+    results.append(
+        preflight_firecrawl(
+            settings=settings, provider=web_provider, execute_live=execute_live
+        )
+    )
+    return results
+
+
 _STATUS_LABELS = {PASS: "bestanden", FAIL: "nicht bestanden", NOT_RUN: "not_run"}
+
+
+def _route_configured(result: ProviderPreflight) -> bool:
+    if result.provider == "firecrawl":
+        return result.mode == "live"
+    return bool(result.requested_model_id)
 
 
 def render_report(results: list[ProviderPreflight]) -> str:
@@ -555,6 +853,20 @@ def render_report(results: list[ProviderPreflight]) -> str:
             f"Gesamtstatus: {_STATUS_LABELS[result.status]}"
         )
         lines.append("")
+        if result.route_key:
+            lines.append(f"- Route: `{result.route_key}`")
+        lines.append(
+            f"- Route konfiguriert: {'ja' if _route_configured(result) else 'nein'}"
+        )
+        lines.append(
+            f"- Angefragte Modell-ID: `{result.requested_model_id}`"
+            if result.requested_model_id else "- Angefragte Modell-ID: nicht aufgelöst"
+        )
+        lines.append(
+            f"- Tatsächliche Modell-ID: `{result.actual_model_id}`"
+            if result.actual_model_id else "- Tatsächliche Modell-ID: nicht bestätigt"
+        )
+        lines.append("")
         lines.append("| Check | Status | Detail |")
         lines.append("|---|---|---|")
         for check in result.checks:
@@ -572,6 +884,12 @@ def to_json(results: list[ProviderPreflight]) -> str:
                 "provider": result.provider,
                 "mode": result.mode,
                 "status": result.status,
+                "route_key": result.route_key,
+                "route_configured": _route_configured(result),
+                "requested_model_id": result.requested_model_id,
+                "actual_model_id": result.actual_model_id,
+                "latency_ms": result.latency_ms,
+                "error_class": result.error_class,
                 "checks": [
                     {"name": c.name, "status": c.status, "detail": c.detail}
                     for c in result.checks

@@ -146,7 +146,7 @@ def main() -> int:
     if outages:
         print(
             "Hinweis: mindestens ein Provider ist ausgefallen — klar berichtet, "
-            "das Gate bleibt grün (Fake-/manueller Fallback verfügbar)."
+            "das Gate bleibt grün. Es gibt keinen automatischen Demo-Fallback."
         )
     print(f"Bericht: {_OUT_DIR / 'provider_availability_summary.md'}")
     # Ausfälle machen dieses Skript bewusst NICHT rot.

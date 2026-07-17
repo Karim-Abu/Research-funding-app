@@ -6,12 +6,23 @@ from sqlalchemy.orm import Session
 
 from app.agents.registry import get_agent_registry
 from app.config.settings import Settings
-from app.contracts.live_system import LivePreflightResponse, LiveRouteStatus, LiveSystemStatus
+from app.contracts.live_system import (
+    LiveFirecrawlStatus,
+    LivePreflightResponse,
+    LiveRouteStatus,
+    LiveSystemStatus,
+)
 from app.db.session import get_db
 from app.evaluation.preflight import (
+    firecrawl_mode,
+    firecrawl_preflight_reason,
+    generation_mode_status,
     latest_route_preflight,
     persist_route_preflight,
+    preflight_firecrawl,
     preflight_route,
+    route_configuration_reason,
+    route_preflight_reason,
 )
 from app.evaluation.pricing import resolve_cost
 from app.security.deps import (
@@ -42,11 +53,23 @@ def _status(db: Session, settings: Settings) -> LiveSystemStatus:
             requested = route.requested_model_id(settings)
             latest = latest_route_preflight(db, route_key)
             evaluation_disabled = route.evaluation_only and not settings.agent_quality_ceiling_enabled
-            configured = bool(requested) and not evaluation_disabled
+            configuration_reason = route_configuration_reason(
+                route_key, settings=settings, registry=registry
+            )
+            readiness_reason = route_preflight_reason(
+                db, route_key, settings=settings, registry=registry
+            )
+            configured = configuration_reason is None
             cost = resolve_cost(
                 provider=route.provider, model_id=requested,
                 input_tokens=0, output_tokens=0,
+                settings=settings,
             ) if requested else None
+            effective_preflight_status = (
+                "pass" if readiness_reason is None
+                else "not_run" if latest is None
+                else "fail"
+            )
             rows.append(LiveRouteStatus(
                 role_id=role_id, route_key=route_key, route_alias=route.alias,
                 provider=route.provider, requested_model_id=requested,
@@ -55,13 +78,16 @@ def _status(db: Session, settings: Settings) -> LiveSystemStatus:
                     "evaluation_disabled" if evaluation_disabled
                     else "configured" if configured else "not_configured"
                 ),
-                preflight_status=latest.status if latest else "not_run",
+                preflight_status=effective_preflight_status,
                 checked_at=latest.checked_at if latest else None,
                 expires_at=latest.expires_at if latest else None,
                 latency_ms=latest.latency_ms if latest else None,
-                error_class=latest.error_class if latest else None,
+                error_class=readiness_reason or (
+                    latest.error_class if latest else None
+                ),
                 capabilities=route.capabilities or {},
                 cost_status=cost.cost_status if cost else "unknown_price",
+                readiness_reason=readiness_reason,
                 checks=list(latest.checks_json or []) if latest else [],
             ))
     core_primary = [
@@ -69,14 +95,45 @@ def _status(db: Session, settings: Settings) -> LiveSystemStatus:
         if row.role_id in _CORE_ROLES
         and (registry.role_routes or {})[row.role_id].primary == row.route_key
     ]
+    generation_mode, generation_reason = generation_mode_status(
+        db, settings, registry=registry
+    )
     passed = sum(row.preflight_status == "pass" for row in core_primary)
-    overall = "available" if core_primary and passed == len(core_primary) else (
-        "degraded" if passed else "unavailable"
+    overall = (
+        "available" if generation_mode == "real_eval"
+        else "degraded"
+        if settings.ai_eval_mode == "real" and passed
+        else "unavailable"
+    )
+    firecrawl_latest = latest_route_preflight(db, "firecrawl")
+    firecrawl_reason = firecrawl_preflight_reason(db, settings)
+    firecrawl_status = (
+        "pass" if firecrawl_reason is None
+        else "not_run" if firecrawl_latest is None
+        else "fail"
     )
     return LiveSystemStatus(
         overall_status=overall,
         registry_version=settings.agent_registry_version,
+        generation_mode=generation_mode,
+        generation_unavailable_reason=generation_reason,
         routes=rows,
+        firecrawl=LiveFirecrawlStatus(
+            mode=firecrawl_mode(settings),
+            available=(
+                firecrawl_mode(settings) == "fake"
+                or firecrawl_reason is None
+            ),
+            preflight_status=firecrawl_status,
+            checked_at=firecrawl_latest.checked_at if firecrawl_latest else None,
+            expires_at=firecrawl_latest.expires_at if firecrawl_latest else None,
+            latency_ms=firecrawl_latest.latency_ms if firecrawl_latest else None,
+            error_class=firecrawl_reason or (
+                firecrawl_latest.error_class if firecrawl_latest else None
+            ),
+            checks=list(firecrawl_latest.checks_json or [])
+            if firecrawl_latest else [],
+        ),
     )
 
 
@@ -118,5 +175,9 @@ def run_live_system_preflight(
         persist_route_preflight(
             db, result, triggered_by=context.user.id, settings=settings
         )
+    firecrawl = preflight_firecrawl(settings=settings, execute_live=True)
+    persist_route_preflight(
+        db, firecrawl, triggered_by=context.user.id, settings=settings
+    )
     db.commit()
     return LivePreflightResponse(status=_status(db, settings))

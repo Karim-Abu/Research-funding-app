@@ -370,7 +370,13 @@ def _execute(
             parsed = json.loads(result.raw_output)
             model = validate_payload(output_schema, parsed)
         except json.JSONDecodeError:
-            last_code = "provider_output_not_json"
+            # Abgeschnittene Antworten (Provider meldet max_tokens/
+            # max_output_tokens) sind Truncation — kein generischer JSON-Fehler.
+            last_code = (
+                "provider_output_truncated"
+                if result.termination_reason in ("max_tokens", "max_output_tokens")
+                else "provider_output_not_json"
+            )
             if on_attempt:
                 on_attempt(
                     retry_index, started, result, "failed", "schema_invalid", last_code
@@ -422,7 +428,7 @@ def invoke(
     resolver = provider_resolver or default_provider_resolver
     profile = registry.profile(request.profile_id)
     role_skill = get_role_skill_registry().resolve(profile.profile_id, request.skill_id)
-    live_routing = settings.ai_eval_mode == "real" and not settings.agent_fake_provider
+    live_routing = settings.ai_eval_mode == "real"
     route_keys = registry.route_keys_for_profile(
         profile, role_skill.role.role_id, live=live_routing
     )
@@ -457,6 +463,15 @@ def invoke(
     )
     db.add(inv)
     db.flush()
+
+    # Live intent is fail-closed. A deployment may be either an explicit demo
+    # or a real-evaluation environment, never both at once.
+    from app.evaluation.preflight import live_fake_conflict
+    if live_fake_conflict(settings):
+        _control(db, inv, "CTRL.DATA_POLICY", "blocked", "live_fake_conflict")
+        return _safe(
+            db, inv, "blocked", "live_fake_conflict", "live_fake_conflict"
+        )
 
     # 1. Data Policy (before any external call). ``local_provider`` remains a
     # gateway-level test capability; product A2/A3 availability never treats
@@ -531,6 +546,10 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
     if adapter is None:
         route_failure("model_unavailable", "provider_unavailable")
         return None, "failed", "provider_unavailable", None
+    adapter_name = getattr(adapter, "name", None)
+    if settings.ai_eval_mode == "real" and adapter_name == "fake":
+        route_failure("blocked", "live_fake_conflict")
+        return None, "blocked", "live_fake_conflict", None
     # Hermetic injected fakes do not need a deploy-time real model id. Production
     # adapters remain fail-closed when their configured model cannot be resolved.
     hermetic_test_model_id = getattr(adapter, "_hermetic_test_model_id", None)
@@ -555,7 +574,6 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
     if not adapter.available():
         route_failure("model_unavailable", "provider_unavailable")
         return None, "failed", "provider_unavailable", None
-    adapter_name = getattr(adapter, "name", None)
     generation_kind = generation.for_adapter_name(adapter_name)
     product_adapter = False
     if generation_kind == generation.MODEL_GENERATED:
@@ -574,10 +592,13 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
             "app.agents.providers.openai", "app.agents.providers.anthropic"
         }
         if product_adapter:
-            from app.evaluation.preflight import route_preflight_passed
-            if not route_preflight_passed(db, route_key):
-                route_failure("model_unavailable", "preflight_required")
-                return None, "failed", "preflight_required", None
+            from app.evaluation.preflight import route_preflight_reason
+            preflight_reason = route_preflight_reason(
+                db, route_key, settings=settings, registry=registry
+            )
+            if preflight_reason:
+                route_failure("model_unavailable", preflight_reason)
+                return None, "failed", preflight_reason, None
     # Metadata only: adapter identity + booleans/counts, never prompt/context.
     # A FakeProvider executes test code but is explicitly not a model call.
     inv.context_meta = {
@@ -636,6 +657,9 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
         # remains the sole validation authority.
         output_json_schema=json_schema_for(output_schema),
         reasoning_effort=effort,
+        # Route-Capability (Default None ⇒ etablierter Adapter-Pfad). Nur die
+        # abgeleitete Evaluations-Registry setzt hier aktuell einen Wert.
+        structured_output_mode=capabilities.get("structured_output_mode"),
     )
     last_usage_record_id = None
 
@@ -707,7 +731,7 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
 
 def _execute_routes(db, inv, profile, request, registry, resolver):
     settings = get_settings()
-    live_routing = settings.ai_eval_mode == "real" and not settings.agent_fake_provider
+    live_routing = settings.ai_eval_mode == "real"
     routes = registry.route_keys_for_profile(
         profile, inv.role_id, live=live_routing
     )[:2]
@@ -766,6 +790,9 @@ def _execute_routes(db, inv, profile, request, registry, resolver):
         )
 
     # R4.3: ProviderPolicy-Blocks sind Policy-Entscheide, keine Ausführungsfehler.
+    if last_reason == "live_fake_conflict":
+        _control(db, inv, "CTRL.DATA_POLICY", "blocked", last_reason)
+        return _safe(db, inv, "blocked", "live_fake_conflict", last_reason)
     if last_reason in (provider_policy.BLOCKED_REASON, "provider_unknown_adapter"):
         _control(db, inv, "CTRL.DATA_POLICY", "blocked", last_reason)
         return _safe(db, inv, "blocked", "provider_policy_blocked", last_reason)

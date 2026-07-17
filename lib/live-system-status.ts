@@ -16,13 +16,26 @@ export interface LiveRouteStatusDto {
   error_class?: string | null
   capabilities: Record<string, unknown>
   cost_status: string
+  readiness_reason?: string | null
   checks: Array<Record<string, unknown>>
 }
 
 export interface LiveSystemStatusDto {
   overall_status: "available" | "degraded" | "unavailable"
   registry_version: string
+  generation_mode: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
+  generation_unavailable_reason?: string | null
   routes: LiveRouteStatusDto[]
+  firecrawl: {
+    mode: "disabled" | "fake" | "live" | "not_configured"
+    available: boolean
+    preflight_status: "pass" | "fail" | "not_run"
+    checked_at?: string | null
+    expires_at?: string | null
+    latency_ms?: number | null
+    error_class?: string | null
+    checks: Array<Record<string, unknown>>
+  }
 }
 
 export class LiveSystemStatusError extends Error {}

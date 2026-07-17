@@ -30,6 +30,7 @@ from app.db.models import AnalysisRun, OpenIssue
 from app.registry.loader import get_registry
 from app.repositories import audit, controls
 from app.repositories import extracted_facts as facts_repo
+from app.runs.cloud_policy import real_eval_confirmed
 
 logger = logging.getLogger("app.agents.fact_extraction")
 
@@ -48,7 +49,8 @@ def _default_resolver():
     deterministischen Fake (leeres, schema-gültiges Ergebnis) — CI/E2E machen
     nie echte Provider-Calls, auch wenn API-Keys gesetzt sind. Reale Provider
     bleiben der separate opt-in Smoke-Pfad."""
-    if get_settings().agent_fake_provider:
+    settings = get_settings()
+    if settings.agent_fake_provider and settings.ai_eval_mode != "real":
         import json
 
         from app.agents.providers import FakeProvider
@@ -104,6 +106,7 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1Outcome:
     profile = registry.profile(PROFILE_ID)
     settings = get_settings()
     mode = run.processing_mode
+    confirmed = real_eval_confirmed(run)
 
     # 1. Mode gate — deterministic_only / local_only never call a provider.
     if mode in _NO_CALL_MODES:
@@ -114,7 +117,7 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1Outcome:
     # 2. Data Policy gate (before context assembly — no blocked payload built).
     decision = data_policy.evaluate(
         profile=profile, classification=_classification(run),
-        processing_mode=mode, settings=settings, run_confirmation=False,
+        processing_mode=mode, settings=settings, run_confirmation=confirmed,
     )
     if decision.blocked:
         _skip_control(db, run, "blocked", decision.reason)
@@ -154,7 +157,7 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1Outcome:
         run_id=run.run_id,
         project_id=run.project_id,
         allowed_fragment_ids=frozenset(ctx.selected_fragment_ids),
-        run_confirmation=False,
+        run_confirmation=confirmed,
         prompt_version=prompt_version_for(PROFILE_ID),
         context_text=ctx.context_text,
         context_hash=ctx.context_hash,

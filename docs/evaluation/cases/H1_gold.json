@@ -2,6 +2,7 @@
   "_comment": "H1 VOLTRACK — A1-Goldstandard (HOLDOUT — nie für Prompt-Tuning). Match-Strategie wie F2 (role_model_scoring.py): Wertgleichheit ODER ≥0.5-Keyword-Trefferquote; target_ref-Gleichheit zählt zusätzlich für field_accuracy; boundary = Fragment-Provenienz + exakter Wert.",
   "case_id": "H1",
   "holdout": true,
+  "case_language": "de",
   "title_de": "VOLTRACK - Zustandsüberwachung für Batterie-Logistik",
   "title_en": "VOLTRACK - Condition Monitoring for Battery Logistics",
   "required_terms": ["VOLTRACK"],

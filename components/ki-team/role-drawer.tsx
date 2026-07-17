@@ -2,16 +2,24 @@
 
 import * as React from "react"
 import {
+  Activity,
   ArrowRight,
-  Clock,
+  BrainCircuit,
+  Braces,
   Cpu,
+  Database,
   Eye,
-  History,
   ListChecks,
-  TriangleAlert,
+  ShieldAlert,
   UserRoundCheck,
   type LucideIcon,
 } from "lucide-react"
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion"
 import {
   Sheet,
   SheetContent,
@@ -19,24 +27,20 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion"
 import { Separator } from "@/components/ui/separator"
+import { WORKFLOW_STEPS } from "@/lib/workflow"
 import { cn } from "@/lib/utils"
-import { kiTeamTexts, MODE_LABELS } from "@/lib/ki-team-data"
-import type { KiTeamRole } from "@/lib/ki-team-data"
-import { ModeBadge, StatusChip } from "./mode-badge"
+import {
+  MODEL_ROUTE_NOTICE,
+  type KiTeamRole,
+} from "@/lib/ki-team-data"
+import { AvailabilityBadge, ModeBadge } from "./mode-badge"
+import { RoleIcon } from "./role-card"
 
 interface RoleDrawerProps {
   role: KiTeamRole | null
   open: boolean
   onOpenChange: (open: boolean) => void
-  detailMode: boolean
-  /** Element, das nach dem Schliessen den Fokus zurückerhält (die Karte). */
   finalFocusRef: React.RefObject<HTMLElement | null>
 }
 
@@ -56,28 +60,81 @@ function Field({
   children,
 }: Readonly<FieldProps>) {
   return (
-    <div className={className}>
-      <p className="flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
+    <section className={className}>
+      <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
         {Icon && (
           <Icon aria-hidden="true" className={cn("size-3.5", iconClassName)} />
         )}
         {label}
+      </h3>
+      <div className="mt-1.5 text-sm leading-relaxed text-foreground">
+        {children}
+      </div>
+    </section>
+  )
+}
+
+function activeStepLabels(role: KiTeamRole): string[] {
+  return role.activeSteps.map((stepNumber) => {
+    const step = WORKFLOW_STEPS.find((item) => item.step === stepNumber)
+    if (!step) {
+      throw new Error(`Unbekannter Workflow-Schritt: ${stepNumber}`)
+    }
+    return step.label
+  })
+}
+
+function ModelRouteDetails({ role }: Readonly<{ role: KiTeamRole }>) {
+  if (role.modelInfo.kind === "none") {
+    return <p>{role.modelInfo.description}</p>
+  }
+
+  return (
+    <div className="flex flex-col gap-3">
+      <dl className="grid gap-2">
+        <div className="flex items-start justify-between gap-4 rounded-md bg-muted/55 px-3 py-2.5">
+          <dt className="text-xs font-medium text-muted-foreground">
+            Primär vorgesehen
+          </dt>
+          <dd className="text-right">
+            <span className="block font-medium">{role.modelInfo.primary.model}</span>
+            <span className="block text-xs text-muted-foreground">
+              {role.modelInfo.primary.provider}
+            </span>
+          </dd>
+        </div>
+        {role.modelInfo.fallback && (
+          <div className="flex items-start justify-between gap-4 rounded-md border border-border/70 px-3 py-2.5">
+            <dt className="text-xs font-medium text-muted-foreground">
+              Ersatzroute
+            </dt>
+            <dd className="text-right">
+              <span className="block font-medium">
+                {role.modelInfo.fallback.model}
+              </span>
+              <span className="block text-xs text-muted-foreground">
+                {role.modelInfo.fallback.provider}
+              </span>
+            </dd>
+          </div>
+        )}
+      </dl>
+      {role.modelInfo.scope && (
+        <p className="text-xs leading-relaxed text-muted-foreground">
+          {role.modelInfo.scope}
+        </p>
+      )}
+      <p className="rounded-md border border-border/70 bg-muted/30 p-3 text-xs leading-relaxed text-muted-foreground">
+        {MODEL_ROUTE_NOTICE}
       </p>
-      <div className="mt-1 text-sm leading-relaxed text-foreground">{children}</div>
     </div>
   )
 }
 
-/**
- * Detail-Drawer einer Rolle. Rein statische Rollenbeschreibung — keine
- * Live-Daten, keine API-Aufrufe, keine Rohinhalte. Felder sind in Gruppen
- * organisiert; die menschliche Prüfung ist als Vertrauens-Callout hervorgehoben.
- */
 export function RoleDrawer({
   role,
   open,
   onOpenChange,
-  detailMode,
   finalFocusRef,
 }: Readonly<RoleDrawerProps>) {
   return (
@@ -85,95 +142,116 @@ export function RoleDrawer({
       <SheetContent
         side="right"
         finalFocus={finalFocusRef}
-        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-[440px]"
+        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-[480px]"
       >
         {role && (
           <>
-            <SheetHeader className="border-b pr-12">
-              <div className="flex flex-wrap items-center gap-2">
-                <ModeBadge mode={role.mode} />
-                <StatusChip role={role} />
+            <SheetHeader className="border-b border-border pr-14">
+              <div className="flex items-start gap-3">
+                <RoleIcon role={role} className="size-11" />
+                <div className="min-w-0 flex-1">
+                  <SheetTitle className="text-lg leading-snug">
+                    {role.name}
+                  </SheetTitle>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    <ModeBadge mode={role.mode} />
+                    <AvailabilityBadge role={role} />
+                  </div>
+                </div>
               </div>
-              <SheetTitle className="mt-1">{role.name}</SheetTitle>
-              <SheetDescription>{role.short}</SheetDescription>
+              <SheetDescription className="sr-only">
+                Aufgabe, Ergebnis, Prüfbedarf und technische Zuordnung der
+                Funktion {role.name}.
+              </SheetDescription>
             </SheetHeader>
 
-            <div className="flex flex-col gap-5 p-4">
-              <Field label="Aufgabe" icon={ListChecks}>
-                {role.aufgabe}
+            <div className="flex flex-col gap-5 p-4 sm:p-5">
+              <Field label="Spezialgebiet" icon={Activity}>
+                {role.specialization}
               </Field>
 
-              {/* Kompakte Fakten-Gruppe. */}
-              <div className="grid gap-4 rounded-lg border border-border/70 bg-muted/30 p-3 sm:grid-cols-2">
-                <Field label="Wann aktiv" icon={Clock}>
-                  {role.aktiv}
+              <Field label="Aufgabe" icon={ListChecks}>
+                {role.task}
+              </Field>
+
+              <div className="grid gap-4 rounded-lg bg-muted/45 p-4 sm:grid-cols-2">
+                <Field label="Arbeitet mit" icon={Database}>
+                  {role.worksWith}
                 </Field>
-                <Field label="Modus & Provider" icon={Cpu}>
-                  {MODE_LABELS[role.mode]} · {role.provider}
-                </Field>
-                <Field
-                  label="Eingaben & Ausgaben"
-                  icon={ArrowRight}
-                  className="sm:col-span-2"
-                >
-                  <p>
-                    {role.eingaben}
-                    <span aria-hidden="true" className="mx-1.5 text-muted-foreground">
-                      →
-                    </span>
-                    <span className="sr-only">wird zu</span>
-                    {role.ausgaben}
-                  </p>
+                <Field label="Liefert" icon={ArrowRight}>
+                  {role.outputSummary}
                 </Field>
               </div>
 
-              <Field label="Daten, die diese Rolle sieht" icon={Eye}>
-                {role.daten}
-              </Field>
-
-              {/* Menschliche Prüfung — hervorgehobener Vertrauens-Hinweis. */}
-              <div className="rounded-lg border border-status-partial/30 bg-status-partial/5 p-3">
+              <div className="rounded-lg border border-status-partial/30 bg-status-partial/5 p-4">
                 <Field
-                  label="Menschliche Prüfung"
+                  label="Ihre Prüfung"
                   icon={UserRoundCheck}
                   iconClassName="text-status-partial"
                 >
-                  {role.menschlichePruefung}
+                  {role.humanReview}
                 </Field>
               </div>
 
-              <Field label="Grenzen & Risiken" icon={TriangleAlert}>
-                {role.grenzen}
+              <div className="rounded-lg bg-muted/35 p-4">
+                <Field label="Entscheidungsgrenze" icon={ShieldAlert}>
+                  {role.decisionBoundary}
+                </Field>
+              </div>
+
+              <Field label="Aktiv in" icon={Activity}>
+                <ul className="flex flex-wrap gap-2">
+                  {activeStepLabels(role).map((label) => (
+                    <li
+                      key={label}
+                      className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium"
+                    >
+                      {label}
+                    </li>
+                  ))}
+                </ul>
+              </Field>
+
+              <Field label="Datenzugriff" icon={Eye}>
+                {role.dataAccess}
               </Field>
 
               <Separator />
 
-              <Field label="Letzter Lauf" icon={History}>
-                {kiTeamTexts.letzterLauf}
-              </Field>
-
-              {detailMode && (
-                <>
-                  <Separator />
-                  <Accordion>
-                    <AccordionItem value="technische-details">
-                      <AccordionTrigger>Technische Details</AccordionTrigger>
-                      <AccordionContent>
-                        <div className="flex flex-col gap-3">
-                          <Field label="Werkzeuge / Regelquellen">
-                            <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                              {role.technischeQuelle}
-                            </code>
-                          </Field>
-                          <Field label="Datenklassen-Regel">
-                            {role.datenklassenRegel}
-                          </Field>
-                        </div>
-                      </AccordionContent>
-                    </AccordionItem>
-                  </Accordion>
-                </>
-              )}
+              <Accordion>
+                <AccordionItem value="technical-details">
+                  <AccordionTrigger>Technische Details</AccordionTrigger>
+                  <AccordionContent>
+                    <div className="flex flex-col gap-4 pt-1">
+                      <Field label="KI-Modell" icon={BrainCircuit}>
+                        <ModelRouteDetails role={role} />
+                      </Field>
+                      <Field label="Ausführungslogik" icon={Cpu}>
+                        {role.providerSummary}
+                      </Field>
+                      <Field label="Technische Komponenten" icon={Braces}>
+                        <ul className="flex flex-col gap-1.5">
+                          {role.technicalComponents.map((component) => (
+                            <li key={component}>
+                              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                                {component}
+                              </code>
+                            </li>
+                          ))}
+                        </ul>
+                      </Field>
+                      <Field label="Interne Quelle">
+                        <code className="break-words rounded bg-muted px-1.5 py-0.5 text-xs">
+                          {role.technicalSource}
+                        </code>
+                      </Field>
+                      <Field label="Datenklassen-Regel">
+                        {role.dataClassRule}
+                      </Field>
+                    </div>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </div>
           </>
         )}

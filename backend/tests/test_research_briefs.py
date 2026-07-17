@@ -118,6 +118,90 @@ def test_all_four_active_modules_plan_bound_queries_and_reload_state(client, db,
     assert workspace.json()["provider_mode"] == "fake_demo"
 
 
+@pytest.mark.parametrize(
+    ("payload_patch", "error_code"),
+    [
+        (
+            {"technology_class": "Manufacturing quality assurance"},
+            "research_brief_fields_identical",
+        ),
+        (
+            {"target_customer_segments": ["Schweizer KMU"]},
+            "research_brief_customer_segment_too_generic",
+        ),
+        (
+            {"target_customer_segments": ["Schweizerische"]},
+            "research_brief_customer_segment_too_generic",
+        ),
+        (
+            {
+                "modules": ["swiss_research_partners"],
+                "target_customer_segments": [],
+                "competence_needs": ["FHNW"],
+            },
+            "research_brief_competence_not_concrete",
+        ),
+    ],
+)
+def test_incomplete_or_generic_draft_saves_but_cannot_be_approved(
+    client, web_fake, payload_patch, error_code
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _project(client, csrf)
+    payload = {
+        "application_domain": "manufacturing quality assurance",
+        "technology_class": "industrial AI anomaly detection",
+        "target_customer_segments": ["manufacturing SMEs"],
+        "region": "Switzerland",
+        "competence_needs": ["applied machine learning"],
+        "modules": ["market_growth"],
+        **payload_patch,
+    }
+    saved = client.put(
+        f"/api/v1/projects/{project_id}/research-brief",
+        json=payload,
+        headers=unsafe_headers(csrf),
+    )
+    assert saved.status_code == 200, saved.text
+    assert saved.json()["status"] == "draft"
+
+    refused = client.post(
+        f"/api/v1/research-briefs/{saved.json()['research_brief_id']}/approve",
+        headers=unsafe_headers(csrf),
+    )
+    assert refused.status_code == 422, refused.text
+    assert refused.json()["code"] == error_code
+
+
+def test_suggest_only_uses_two_distinct_public_safe_innovation_field_parts(
+    client, db, web_fake
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _project(client, csrf, title="Private Project Name")
+    project = db.get(Project, project_id)
+    project.innovation_field = "Medizintechnik"
+    project.description = (
+        "Rohidee PROJECT_SECRET_MARKER mit Secret Partner AG, CHF 500000 "
+        "und owner@example.test."
+    )
+    db.commit()
+
+    suggested = client.post(
+        f"/api/v1/projects/{project_id}/research-brief/suggest",
+        headers=unsafe_headers(csrf),
+    )
+    assert suggested.status_code == 200, suggested.text
+    body = suggested.json()
+    assert body["application_domain"] == ""
+    assert body["technology_class"] == ""
+    blob = json.dumps(body)
+    for marker in (
+        "PROJECT_SECRET_MARKER", "Secret Partner", "500000",
+        "owner@example.test", "Private Project Name",
+    ):
+        assert marker not in blob
+
+
 def test_new_brief_version_expires_unconsumed_query_approvals(client, db, web_fake):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _project(client, csrf)

@@ -1,39 +1,86 @@
 "use client"
 
 import * as React from "react"
-import { ChevronRight } from "lucide-react"
+import {
+  Calculator,
+  ChevronRight,
+  ClipboardCheck,
+  FileOutput,
+  FileSearch,
+  Link2,
+  ListChecks,
+  PenLine,
+  Search,
+  ShieldCheck,
+  Workflow,
+  type LucideIcon,
+} from "lucide-react"
 import { cn } from "@/lib/utils"
-import type { KiTeamRole, RoleMode } from "@/lib/ki-team-data"
-import { ModeIcon, StatusChip, modeMatchesHighlight } from "./mode-badge"
+import type { KiTeamRole, RoleIconKey } from "@/lib/ki-team-data"
+import { AvailabilityBadge, ModeBadge } from "./mode-badge"
+
+const ROLE_ICONS: Record<RoleIconKey, LucideIcon> = {
+  workflow: Workflow,
+  shieldCheck: ShieldCheck,
+  search: Search,
+  fileSearch: FileSearch,
+  link2: Link2,
+  penLine: PenLine,
+  calculator: Calculator,
+  listChecks: ListChecks,
+  clipboardCheck: ClipboardCheck,
+  fileOutput: FileOutput,
+}
+
+function iconTone(role: KiTeamRole): string {
+  if (role.id === "suchanfragen-schutz") {
+    return "border-status-fulfilled/25 bg-status-fulfilled/10 text-status-fulfilled"
+  }
+  if (role.category === "system") {
+    return "border-border bg-muted text-foreground/70"
+  }
+  return "border-primary/20 bg-primary/8 text-primary"
+}
+
+export function RoleIcon({
+  role,
+  className,
+}: Readonly<{ role: KiTeamRole; className?: string }>) {
+  const Icon = ROLE_ICONS[role.iconKey]
+  return (
+    <span
+      className={cn(
+        "inline-flex size-10 shrink-0 items-center justify-center rounded-lg border",
+        iconTone(role),
+        className
+      )}
+    >
+      <Icon aria-hidden="true" className="size-5" />
+    </span>
+  )
+}
 
 interface RoleCardProps {
   role: KiTeamRole
-  /** Eindeutig je Karten-Instanz (Rolle kann in mehreren Phasen erscheinen). */
   instanceId: string
-  /** true → zeigt zusätzlich die kurze „Wann aktiv"-Zeile. */
-  detailMode: boolean
-  /** Aktiver Legenden-Modus für die Hervorhebung (oder null). */
-  highlight: RoleMode | null
-  /** Ob der Drawer für diese Karte gerade offen ist. */
   expanded: boolean
-  onOpen: (role: KiTeamRole, instanceId: string, element: HTMLButtonElement) => void
+  variant?: "row" | "catalog"
+  onOpen: (
+    role: KiTeamRole,
+    instanceId: string,
+    element: HTMLButtonElement
+  ) => void
 }
 
-/**
- * Eine Rolle als volle, klickbare Zeile: Modus-Icon + Name (ohne Abschneiden) +
- * optionaler Status-Chip + Chevron. Die ganze Zeile öffnet den Detail-Drawer.
- */
 export function RoleCard({
   role,
   instanceId,
-  detailMode,
-  highlight,
   expanded,
+  variant = "row",
   onOpen,
 }: Readonly<RoleCardProps>) {
   const ref = React.useRef<HTMLButtonElement>(null)
-  const highlighted = modeMatchesHighlight(role.mode, highlight)
-  const dimmed = highlight !== null && !highlighted
+  const catalog = variant === "catalog"
 
   return (
     <button
@@ -41,34 +88,44 @@ export function RoleCard({
       type="button"
       aria-haspopup="dialog"
       aria-expanded={expanded}
+      aria-label={`${role.name}: ${role.specialization}. Details öffnen`}
       onClick={() => {
         if (ref.current) onOpen(role, instanceId, ref.current)
       }}
       className={cn(
-        "group/role flex w-full cursor-pointer items-center gap-3 rounded-lg border bg-card px-3 py-2 text-left outline-none transition-colors",
-        "hover:border-primary/40 hover:bg-muted/50 focus-visible:ring-2 focus-visible:ring-ring",
-        expanded
-          ? "border-primary/50 bg-muted/40"
-          : "border-border/70",
-        highlighted && "border-primary/50 ring-2 ring-primary/25",
-        dimmed && "opacity-45"
+        "group/role flex w-full cursor-pointer gap-3 text-left outline-none transition-[background-color,border-color,box-shadow] duration-200",
+        "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
+        catalog
+          ? "min-h-44 items-start rounded-xl border border-border bg-card p-5 hover:border-primary/30 hover:bg-muted/25"
+          : "min-h-11 items-center rounded-lg px-3 py-3 hover:bg-background/80",
+        expanded && "bg-accent/55 ring-2 ring-primary/20"
       )}
     >
-      <ModeIcon mode={role.mode} />
+      <RoleIcon role={role} />
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-x-2 gap-y-1">
-          <span className="text-sm font-medium text-foreground">{role.name}</span>
-          <StatusChip role={role} />
+        <span className="flex flex-wrap items-center gap-2">
+          <span className="text-sm font-semibold text-foreground">
+            {role.name}
+          </span>
+          <ModeBadge mode={role.mode} />
+          <AvailabilityBadge role={role} />
         </span>
-        {detailMode && (
-          <span className="mt-0.5 block text-xs text-muted-foreground">
-            {role.aktiv}
+        <span className="mt-1.5 block text-sm leading-relaxed text-muted-foreground">
+          {role.specialization}
+        </span>
+        {catalog && (
+          <span className="mt-3 block border-t border-border/70 pt-3 text-sm text-foreground">
+            <span className="font-medium">Liefert:</span>{" "}
+            {role.outputSummary}
           </span>
         )}
       </span>
       <ChevronRight
         aria-hidden="true"
-        className="size-4 shrink-0 text-muted-foreground/60 transition-transform group-hover/role:translate-x-0.5"
+        className={cn(
+          "size-4 shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover/role:translate-x-0.5",
+          catalog ? "mt-3" : ""
+        )}
       />
     </button>
   )

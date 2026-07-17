@@ -1,6 +1,6 @@
 """Deterministic partner-research query planner (RESEARCH.2).
 
-Pure, no LLM, no network. Turns a small set of **D0/public** topic fields into 5
+Pure, no LLM, no network. Turns a small set of **D0/public** topic fields into 3
 public-safe organisation/topic query candidates aimed at research labs, universities,
 universities of applied sciences, and competence centers — never a person. It NEVER
 reads confidential/real-project text (raw idea, partner names, budget figures, personal
@@ -13,14 +13,17 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass, field
 
+from app.research.query_composer import compose_query
+
 # The fine-grained partner query purposes (planner-level; distinct from the coarse
 # internal ResearchTask.purpose = "partner_research_org_topic").
 QUERY_PURPOSES = (
-    "university_lab",
     "research_group",
-    "university_institute",
     "competence_center",
     "applied_sciences",
+    # Historical values remain accepted for persisted approvals.
+    "university_lab",
+    "university_institute",
 )
 
 # Defensive public-safety detectors. The planner input is D0-only by construction, so
@@ -71,24 +74,29 @@ def _public_safe(query: str) -> str | None:
 
 
 def _templates(topic: PartnerTopic) -> dict[str, str]:
-    domain = _clean(topic.application_domain)
-    tech = _clean(topic.technology_area)
-    region = _clean(topic.region or "")
-    competence = _clean(", ".join(topic.competence_areas)) if topic.competence_areas else domain
-    reg = f" {region}" if region else ""
+    competences = [_clean(value) for value in topic.competence_areas if _clean(value)]
+    if not competences:
+        return {}
+    while len(competences) < 3:
+        competences.append(competences[0])
+    region = _clean(topic.region or "") or "Switzerland"
     return {
-        "university_lab": f"Swiss applied {tech} lab {domain}",
-        "research_group": f"{domain} {tech} research group publications track record{reg}",
-        "university_institute": f"{tech} {domain} university{reg}",
-        "competence_center": f"{domain} {competence} competence center{reg}",
-        "applied_sciences": f"applied sciences {tech} {domain} research{reg}",
+        "research_group": compose_query(
+            competences[0], "research group", region
+        ),
+        "applied_sciences": compose_query(
+            competences[1], "university of applied sciences", region
+        ),
+        "competence_center": compose_query(
+            competences[2], "competence center", region
+        ),
     }
 
 
 def plan_partner_queries(
     topic: PartnerTopic, *, data_mode: str = "synthetic_eval"
 ) -> list[QueryCandidate]:
-    """Deterministically plan 5 public-safe partner/competence query candidates (D0-only).
+    """Deterministically plan 3 public-safe partner/competence query candidates (D0-only).
 
     ``data_mode`` is descriptive (``synthetic_eval`` | ``fake_test``); the MVP is D0-only
     Every candidate is marked approval-required; the canonical brief workflow creates

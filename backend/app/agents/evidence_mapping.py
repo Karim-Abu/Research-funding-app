@@ -36,6 +36,7 @@ from app.evidence.discovery import quote_hash as compute_quote_hash
 from app.registry.loader import get_registry
 from app.repositories import agent_proposals, audit, controls
 from app.repositories import evidence as evidence_repo
+from app.runs.cloud_policy import real_eval_confirmed
 
 logger = logging.getLogger("app.agents.evidence_mapping")
 
@@ -52,7 +53,8 @@ def _default_resolver():
     """Wie A2/A3: mit ``agent_fake_provider`` liefert der Default einen
     deterministischen Fake (leeres, schema-gültiges Ergebnis) — CI/E2E machen
     nie echte Provider-Calls, auch wenn API-Keys gesetzt sind."""
-    if get_settings().agent_fake_provider:
+    settings = get_settings()
+    if settings.agent_fake_provider and settings.ai_eval_mode != "real":
         import json
 
         from app.agents.providers import FakeProvider
@@ -118,6 +120,7 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
     profile = registry.profile(PROFILE_ID)
     settings = get_settings()
     mode = run.processing_mode
+    confirmed = real_eval_confirmed(run)
 
     # 1. Mode gate.
     if mode in _NO_CALL_MODES:
@@ -132,7 +135,7 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
     # 2. Data Policy gate (before context assembly).
     decision = data_policy.evaluate(
         profile=profile, classification=_classification(run),
-        processing_mode=mode, settings=settings, run_confirmation=False,
+        processing_mode=mode, settings=settings, run_confirmation=confirmed,
     )
     if decision.blocked:
         controls.record(
@@ -173,7 +176,8 @@ def _run(db: Session, run: AnalysisRun, resolver) -> A1MappingOutcome:
         profile_id=PROFILE_ID, workspace_id=run.workspace_id, input_payload=input_payload,
         classification=_classification(run), processing_mode=mode, run_id=run.run_id,
         project_id=run.project_id,
-        allowed_fragment_ids=frozenset(ctx.selected_fragment_ids), run_confirmation=False,
+        allowed_fragment_ids=frozenset(ctx.selected_fragment_ids),
+        run_confirmation=confirmed,
         prompt_version=prompt_version_for(PROFILE_ID), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
         skill_id="a1.evidence_candidate_mapping",

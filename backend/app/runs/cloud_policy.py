@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.agents.registry import get_agent_registry
@@ -67,6 +68,38 @@ def confirmation_text_version_for(classification: dict) -> str:
     ):
         return REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION
     return CONFIRMATION_TEXT_VERSION
+
+
+def real_eval_confirmed(run) -> bool:
+    """Return whether this exact run consumed the real-evaluation confirmation.
+
+    The run and its project must both remain synthetic/anonymized.  The helper
+    reads only IDs/status metadata and is shared by A1/A2/A3 so every live
+    resolver uses the same one-run truth.
+    """
+    classification = dict(run.effective_data_classification or {})
+    if classification.get("origin") not in ("synthetic", "anonymized"):
+        return False
+    try:
+        db = Session.object_session(run)
+    except Exception:
+        return False
+    if db is None:
+        return False
+    project = db.get(Project, run.project_id) if run.project_id else None
+    if project is None or (project.data_classification or {}).get("origin") not in (
+        "synthetic", "anonymized"
+    ):
+        return False
+    return db.scalar(
+        select(ProcessingConfirmation.confirmation_id).where(
+            ProcessingConfirmation.used_by_run_id == run.run_id,
+            ProcessingConfirmation.processing_mode == "cloud_assisted",
+            ProcessingConfirmation.status == "used",
+            ProcessingConfirmation.confirmation_text_version
+            == REAL_AI_EVAL_CONFIRMATION_TEXT_VERSION,
+        )
+    ) is not None
 
 
 def _control(db, project, status: str, reason: str) -> None:

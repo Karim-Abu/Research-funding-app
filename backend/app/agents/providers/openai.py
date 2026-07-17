@@ -6,9 +6,10 @@ env-gated smoke test. No tool delegation, no request/response logging.
 
 When the request carries an ``output_json_schema``, the Responses adapter asks
 for strict Structured Outputs (``text.format: json_schema``) so the model must
-emit schema-shaped JSON (no markdown, no prose). This is transport-
-level hardening only — the gateway's pydantic validation stays the sole
-authority over what is accepted.
+emit schema-shaped JSON (no markdown, no prose). Die Schema-Form liefert
+``providers.json_schema.strict_schema`` (geteilt mit dem Anthropic-Pfad). This
+is transport-level hardening only — the gateway's pydantic validation stays the
+sole authority over what is accepted.
 """
 from __future__ import annotations
 
@@ -21,6 +22,7 @@ from app.agents.providers.base import (
     ProviderTimeout,
     ProviderUsage,
 )
+from app.agents.providers.json_schema import strict_schema as _strict_schema
 from app.config.settings import get_settings
 
 _API_URL = "https://api.openai.com/v1/responses"
@@ -31,39 +33,6 @@ _API_URL = "https://api.openai.com/v1/responses"
 # never raise the ceiling — and the possible cost — of every call pauschal.
 _STRUCTURED_MAX_TOKENS = 4096
 _LEGACY_MAX_TOKENS = 1024
-
-
-def _strict_schema(schema: dict) -> dict:
-    """Pydantic JSON Schema → OpenAI strict Structured Outputs shape.
-
-    Deterministic, lossless for our models (mirrors the OpenAI SDK's
-    ``to_strict_json_schema``): every object gets ``additionalProperties:
-    false`` and ALL properties required; the unsupported ``default`` keyword is
-    stripped. Optional fields stay expressible because pydantic renders
-    ``T | None`` as ``anyOf: [T, null]`` and list defaults are simply sent as
-    ``[]`` — both remain valid for the gateway's pydantic validation.
-    """
-
-    def walk(node: object) -> object:
-        if isinstance(node, list):
-            return [walk(item) for item in node]
-        if not isinstance(node, dict):
-            return node
-        out: dict = {}
-        for key, value in node.items():
-            if key == "default":  # schema keyword, not supported by strict mode
-                continue
-            if key in ("properties", "$defs"):
-                # keys here are property/definition NAMES, values are schemas
-                out[key] = {name: walk(sub) for name, sub in value.items()}
-            else:
-                out[key] = walk(value)
-        if "properties" in out:
-            out["additionalProperties"] = False
-            out["required"] = list(out["properties"].keys())
-        return out
-
-    return walk(schema)  # type: ignore[return-value]
 
 
 def _response_format(request: ProviderRequest) -> dict:
@@ -102,9 +71,19 @@ def _error_for(resp) -> ProviderError:
         code = "provider_outage"
     else:
         code = "provider_error"
+    headers = getattr(resp, "headers", None) or {}
+    try:
+        retry_after = float(headers.get("retry-after"))
+    except (TypeError, ValueError):
+        retry_after = None
     return ProviderError(
         f"openai {code}", code=code,
         retryable=code in {"rate_limited", "provider_outage", "timeout"},
+        retry_after_seconds=retry_after,
+        request_id=headers.get("x-request-id"),
+        status_code=status or None,
+        error_type=provider_type or provider_code or None,
+        provider_message=error.get("message"),
     )
 
 
@@ -187,6 +166,11 @@ class OpenAIProvider:
             usage=ProviderUsage(
                 input_tokens=int(usage.get("input_tokens", 0)),
                 output_tokens=int(usage.get("output_tokens", 0)),
+                reasoning_tokens=int(
+                    (usage.get("output_tokens_details") or {}).get(
+                        "reasoning_tokens", 0
+                    )
+                ),
             ),
             # Vom Provider gemeldetes Modell (Alias-Auflösung) — Ebene E.
             model=body.get("model"),
@@ -195,4 +179,5 @@ class OpenAIProvider:
                 if body.get("status") == "incomplete"
                 else "stop"
             ),
+            request_id=(getattr(resp, "headers", None) or {}).get("x-request-id"),
         )

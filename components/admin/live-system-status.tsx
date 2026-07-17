@@ -6,6 +6,7 @@ import {
   runLiveSystemPreflight,
   type LiveSystemStatusDto,
 } from "@/lib/live-system-status"
+import { AI_REASON_INFO } from "@/lib/redraft"
 
 const OVERALL_LABEL = {
   available: "KI verfügbar",
@@ -17,6 +18,20 @@ const PREFLIGHT_LABEL = {
   pass: "Bestanden",
   fail: "Fehlgeschlagen",
   not_run: "Nicht durchgeführt",
+} as const
+
+const GENERATION_LABEL = {
+  real_eval: "Live-KI verfügbar",
+  fake_demo: "Demo",
+  unavailable: "Nicht verfügbar",
+  live_unavailable: "Nicht verfügbar",
+} as const
+
+const FIRECRAWL_MODE_LABEL = {
+  live: "Live-Firecrawl",
+  fake: "Demo",
+  disabled: "Nicht verfügbar",
+  not_configured: "Nicht verfügbar",
 } as const
 
 export function LiveSystemStatus() {
@@ -68,7 +83,18 @@ export function LiveSystemStatus() {
       {error && <p className="mt-3 text-xs text-destructive">{error}</p>}
       {status && (
         <div className="mt-4 flex flex-col gap-3">
-          <p className="text-sm font-medium">{OVERALL_LABEL[status.overall_status]}</p>
+          <p className="text-sm font-medium">
+            {GENERATION_LABEL[status.generation_mode]}
+          </p>
+          {status.generation_unavailable_reason && (
+            <p className="text-xs text-muted-foreground">
+              {AI_REASON_INFO[status.generation_unavailable_reason]?.text ??
+                `Nächste Aktion: ${status.generation_unavailable_reason}`}
+            </p>
+          )}
+          <p className="text-xs text-muted-foreground">
+            Routenzustand: {OVERALL_LABEL[status.overall_status]}
+          </p>
           <p className="text-xs text-muted-foreground">Registry: {status.registry_version}</p>
           <div className="overflow-x-auto">
             <table className="w-full min-w-[760px] text-left text-xs">
@@ -79,7 +105,8 @@ export function LiveSystemStatus() {
                   <th className="py-2 pr-3">Angefragt</th>
                   <th className="py-2 pr-3">Tatsächlich</th>
                   <th className="py-2 pr-3">Preflight</th>
-                  <th className="py-2">Kostenstatus</th>
+                  <th className="py-2 pr-3">Kostenstatus</th>
+                  <th className="py-2">Nächste Aktion</th>
                 </tr>
               </thead>
               <tbody>
@@ -97,11 +124,31 @@ export function LiveSystemStatus() {
                       {route.error_class ? ` · ${route.error_class}` : ""}
                       {route.latency_ms != null ? ` · ${route.latency_ms} ms` : ""}
                     </td>
-                    <td className="py-2">{route.cost_status}</td>
+                    <td className="py-2 pr-3">{route.cost_status}</td>
+                    <td className="py-2">
+                      {route.readiness_reason
+                        ? (AI_REASON_INFO[route.readiness_reason]?.ctaLabel ??
+                          route.readiness_reason)
+                        : "Keine"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
+          </div>
+          <div className="rounded-md border border-border/70 p-3">
+            <p className="text-sm font-medium">
+              {FIRECRAWL_MODE_LABEL[status.firecrawl.mode]}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Preflight: {PREFLIGHT_LABEL[status.firecrawl.preflight_status]}
+              {status.firecrawl.error_class
+                ? ` · ${status.firecrawl.error_class}`
+                : ""}
+              {status.firecrawl.latency_ms != null
+                ? ` · ${status.firecrawl.latency_ms} ms`
+                : ""}
+            </p>
           </div>
         </div>
       )}

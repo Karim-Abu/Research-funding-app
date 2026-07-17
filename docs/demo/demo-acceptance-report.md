@@ -65,7 +65,7 @@ Kategorien: 1 Deterministic CI E2E · 2 Functional Import E2E ·
   F1/F2 (Dev) und H1 (Holdout, nie für Prompt-Tuning): automatische Gates +
   Fatal-Gates, blinde Human-Rubrik (Model A/B/C/…), Kosten/Latenz/Varianz,
   Prompt-SHA-Freeze. Ableitung der Modellroute je Rolle im
-  [`model-selection-report`](../evaluation/model-selection-report.md).
+  [`live-model-selection`](../evaluation/live-model-selection.md).
 - Status: opt-in ([`scripts/run_role_model_eval.py`](../../scripts/run_role_model_eval.py));
   ohne Live-Lauf wörtlich **`not_run`**. Der komplette Zyklus (Runs → Blindung
   → Ingest → Aggregation) ist per `--fake`-Dry-Run verifiziert; Dry-Run-Samples

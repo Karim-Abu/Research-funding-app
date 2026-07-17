@@ -98,6 +98,7 @@ export interface A2Suggestion {
   field_id: string
   target_section?: string | null
   generation_kind?: GenerationKind | null
+  execution_mode?: "live" | "fake_demo"
   base_version_id: string
   suggested_text: string
   rationale?: string | null
@@ -107,7 +108,8 @@ export interface A2Suggestion {
     title: string
     url: string
     research_module?: string | null
-    support_status: "research_candidate"
+    support_status: "supports" | "partially_supports"
+    content_review_status: "reviewed"
   }>
   open_issue_ids: string[]
   placeholders: A2Placeholder[]
@@ -183,12 +185,44 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
     ctaLabel: "Provider-Konfiguration prüfen",
   },
   live_provider_key_missing: {
-    text: "Live-KI ist nicht verfügbar, weil Schlüssel, Modellzuordnung oder Preisangaben fehlen. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    text: "Live-KI ist nicht verfügbar. Hinterlegen Sie den API-Schlüssel der konfigurierten Route und führen Sie den Preflight erneut aus.",
     ctaLabel: "Live-Systemstatus prüfen",
   },
+  live_fake_conflict: {
+    text: "Live-KI ist wegen einer widersprüchlichen Konfiguration nicht verfügbar. Setzen Sie AGENT_FAKE_PROVIDER=false und führen Sie den Preflight erneut aus.",
+    ctaLabel: "Konfiguration korrigieren",
+  },
+  live_eval_mode_disabled: {
+    text: "Live-KI ist deaktiviert. Setzen Sie AI_EVAL_MODE=real und führen Sie den synthetischen Preflight erneut aus.",
+    ctaLabel: "Live-Modus aktivieren",
+  },
+  live_model_id_missing: {
+    text: "Live-KI ist nicht verfügbar. Hinterlegen Sie die konkrete AGENT_MODEL_*_ID der Route und führen Sie den Preflight erneut aus.",
+    ctaLabel: "Modellroute konfigurieren",
+  },
+  live_price_metadata_missing: {
+    text: "Live-KI ist nicht verfügbar. Ergänzen Sie geprüfte Preis-Metadaten für die konkrete Modell-ID.",
+    ctaLabel: "Preis-Metadaten prüfen",
+  },
   live_preflight_required: {
-    text: "Live-KI ist erst nach einem erfolgreichen synthetischen Systemtest verfügbar. Es wird kein Demo-Ergebnis als KI ausgegeben.",
+    text: "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus den synthetischen Preflight.",
     ctaLabel: "Live-Systemstatus prüfen",
+  },
+  live_preflight_expired: {
+    text: "Der Live-Preflight ist abgelaufen. Führen Sie ihn im Live-Systemstatus erneut aus.",
+    ctaLabel: "Preflight erneut starten",
+  },
+  live_preflight_failed: {
+    text: "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten Routenfehler im Live-Systemstatus und wiederholen Sie den Test.",
+    ctaLabel: "Routenfehler prüfen",
+  },
+  live_preflight_stale_model: {
+    text: "Die konfigurierte Modell-ID wurde seit dem Preflight geändert. Führen Sie den synthetischen Preflight erneut aus.",
+    ctaLabel: "Preflight erneut starten",
+  },
+  live_actual_model_missing: {
+    text: "Der Provider hat im Preflight keine tatsächliche Modell-ID bestätigt. Prüfen Sie die Route im Live-Systemstatus.",
+    ctaLabel: "Route prüfen",
   },
   no_approved_model_provider: {
     text: "Es ist kein freigegebener KI-Provider aktiv. Die App führt nur regelbasierte Prüfungen aus.",

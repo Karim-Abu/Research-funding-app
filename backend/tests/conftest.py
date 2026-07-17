@@ -119,13 +119,22 @@ def _no_real_provider_keys() -> Iterator[None]:
         yield
         return
     settings = get_settings()
-    saved = settings.openai_api_key, settings.anthropic_api_key
+    saved = (
+        settings.openai_api_key,
+        settings.anthropic_api_key,
+        settings.firecrawl_api_key,
+    )
     settings.openai_api_key = None
     settings.anthropic_api_key = None
+    settings.firecrawl_api_key = None
     try:
         yield
     finally:
-        settings.openai_api_key, settings.anthropic_api_key = saved
+        (
+            settings.openai_api_key,
+            settings.anthropic_api_key,
+            settings.firecrawl_api_key,
+        ) = saved
 
 
 @pytest.fixture

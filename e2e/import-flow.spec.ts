@@ -118,6 +118,26 @@ test("Import-Flow: PDF-only-Start → Übernahme VOR dem Run → Baseline → Fi
   expect(draft.status).toBe("needs_review")
 
   // --- Weiter zur Fix Queue («Nächste Aufgaben») ------------------------------
+  // Die Abschluss-Aktion ist zustandsabhängig: erst nach dem Neuladen kennt
+  // die Seite den abgeschlossenen Lauf, und erst wenn alle Kandidaten
+  // entschieden sind, führt sie zur Fix Queue.
+  await page.reload()
+  await expect(page.getByTestId("import-review")).toBeVisible({ timeout: 60_000 })
+  await expect(page.getByTestId("import-to-fix-queue")).toHaveText(
+    /Nächsten Kandidaten prüfen/
+  )
+  while (await page.getByRole("button", { name: "Ignorieren" }).count()) {
+    const before = await page.getByRole("button", { name: "Ignorieren" }).count()
+    await page.getByRole("button", { name: "Ignorieren" }).first().click()
+    await expect(page.getByRole("button", { name: "Ignorieren" })).toHaveCount(
+      before - 1,
+      { timeout: 20_000 }
+    )
+  }
+  await expect(page.getByTestId("import-to-fix-queue")).toHaveText(
+    /Zur Fix Queue/,
+    { timeout: 20_000 }
+  )
   await page.getByTestId("import-to-fix-queue").click()
   await expect(page).toHaveURL(/\/review/, { timeout: 20_000 })
   await expect(

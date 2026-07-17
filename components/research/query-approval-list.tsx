@@ -149,6 +149,9 @@ export function QueryApprovalList({
 
   return (
     <div className="flex flex-col gap-2" data-testid="query-approval-list">
+      <p className="text-xs text-muted-foreground">
+        Jede Suchanfrage bleibt einzeln firewall-geprüft und freigabepflichtig.
+      </p>
       {error && (
         <p role="alert" className="text-xs text-destructive">
           {error}

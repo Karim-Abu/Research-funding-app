@@ -87,7 +87,19 @@ def _create_project(client, csrf, classification=PUBLIC_DC, title="Market Projec
     return res.json()["project_id"]
 
 
-def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT):
+def _seed_imported_public_source(
+    db,
+    project_id,
+    workspace_id,
+    text=MARKET_TEXT,
+    *,
+    content_review_status="reviewed",
+    support_status="supports",
+    result_status="imported",
+    execution_mode="live",
+    document_status="processed",
+    version_status="processed",
+):
     """Insert a web-imported public SourceDocument(type=url) + version + one fragment."""
     doc_id = str(uuid.uuid4())
     version_id = str(uuid.uuid4())
@@ -96,7 +108,7 @@ def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT)
           "nda_applies": False}
     db.add(SourceDocument(
         source_id=doc_id, project_id=project_id, workspace_id=workspace_id,
-        name="Öffentliche Webquelle", type="url", status="processed",
+        name="Öffentliche Webquelle", type="url", status=document_status,
         data_classification=dc, current_source_version_id=version_id,
         created_by="user-anna",
     ))
@@ -105,7 +117,7 @@ def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT)
         original_content_hash=hashlib.sha256(text.encode()).hexdigest(),
         normalized_content_hash=hashlib.sha256(text.encode()).hexdigest(),
         normalized_text=text, normalizer_version="normalizer-1",
-        processing_status="processed", data_classification=dc,
+        processing_status=version_status, data_classification=dc,
         storage_ref="ref", original_filename="web", byte_size=len(text), mime_type="text/plain",
     ))
     db.add(SourceFragment(
@@ -120,7 +132,7 @@ def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT)
         query_text="public market comparison", normalized_query_hash="unit-test",
         status="succeeded", preferred_domains=[], disallowed_domains=[],
         competence_needs=[], requested_partner_roles=[], max_results=1, max_pages=1,
-        provider="firecrawl", execution_mode="live", result_count=1,
+        provider="firecrawl", execution_mode=execution_mode, result_count=1,
         firewall_data_class="D0_PUBLIC", research_module="competition_alternatives",
         planner_purpose="competitors_alternatives",
     ))
@@ -128,7 +140,9 @@ def _seed_imported_public_source(db, project_id, workspace_id, text=MARKET_TEXT)
         result_id=str(uuid.uuid4()), research_task_id=task_id, workspace_id=workspace_id,
         source_url="https://public.example.test/market-report",
         final_url="https://public.example.test/market-report", title="Public market report",
-        snippet="Public candidate snippet", status="imported",
+        snippet="Public candidate snippet", status=result_status,
+        content_review_status=content_review_status,
+        support_status=support_status,
         source_document_id=doc_id,
     ))
     db.commit()
@@ -176,6 +190,60 @@ def test_source_scope_filters_public_url_only(client, db, web_enabled):
     assert len(sources) == 1 and sources[0].type == "url"
     cands = source_scope.prefilter_fragments(db, sources)
     assert len(cands) == 1 and cands[0].signal_score >= 3
+
+
+@pytest.mark.parametrize(
+    ("content_review_status", "support_status", "result_status"),
+    [
+        ("unreviewed", "not_checked", "imported"),
+        ("reviewed", "does_not_support", "imported"),
+        ("reviewed", "supports", "rejected"),
+    ],
+)
+def test_source_scope_excludes_unreviewed_non_supporting_and_rejected_results(
+    client, db, web_enabled, content_review_status, support_status, result_status
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    _seed_imported_public_source(
+        db,
+        project_id,
+        project.workspace_id,
+        content_review_status=content_review_status,
+        support_status=support_status,
+        result_status=result_status,
+    )
+    assert source_scope.imported_public_sources(
+        db, project_id, project.workspace_id
+    ) == []
+
+
+@pytest.mark.parametrize(
+    ("execution_mode", "document_status", "version_status"),
+    [
+        ("fake_demo", "processed", "processed"),
+        ("live", "processing", "processed"),
+        ("live", "processed", "pending"),
+    ],
+)
+def test_source_scope_excludes_demo_and_incomplete_sources(
+    client, db, web_enabled, execution_mode, document_status, version_status
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    _seed_imported_public_source(
+        db,
+        project_id,
+        project.workspace_id,
+        execution_mode=execution_mode,
+        document_status=document_status,
+        version_status=version_status,
+    )
+    assert source_scope.imported_public_sources(
+        db, project_id, project.workspace_id
+    ) == []
 
 
 def test_prefilter_skips_sources_without_market_terms(client, db, web_enabled):
@@ -253,6 +321,7 @@ def test_no_imported_sources_gives_empty_with_gaps(client, db, web_enabled):
     assert view["status"] == "ready_for_review"
     assert view["item_count"] == 0
     assert view["research_gaps"]  # rule 13: gaps instead of invented content
+    assert "inhaltlich positiv geprüften" in view["research_gaps"][0]
     cmp_row = db.get(MarketComparison, body["resource_id"])
     assert cmp_row.generation_status == "skipped"
 

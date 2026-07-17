@@ -57,6 +57,77 @@ def test_role_and_skill_assets_are_independently_versioned():
     assert "Baseline" in prompt
 
 
+@pytest.mark.parametrize(
+    ("profile_id", "skill_id", "needles"),
+    [
+        (
+            "A2.introduction_public_summary",
+            "a2.executive_summary",
+            ("Problem und Relevanz", "Schweizer Wertschöpfung"),
+        ),
+        (
+            "A2.value_creation_market_logic",
+            "a2.value_creation_3_1",
+            ("heutige Alternative", "wer entscheidet"),
+        ),
+        (
+            "A2.value_creation_market_logic",
+            "a2.market_access_3_2",
+            ("Marktzugangs- und Umsetzungspfad", "Zugangskanäle"),
+        ),
+        (
+            "A2.value_creation_market_logic",
+            "a2.impact_3_3",
+            ("Projektresultat", "Systemgrenze"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.state_of_the_art_4_1",
+            ("Strohmann-Vergleiche", "Projektneuheit nicht vorweg"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.novelty_4_2",
+            ("drei bis fünf", "Best Practice"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.quantifiable_goals_4_3",
+            ("Baseline → Zielwert", "Validierungsmoment"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.preliminary_work_4_4",
+            ("abgeschlossen", "geplanten Arbeitspaketen"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.ipr_4_5_1_to_4_5_4",
+            ("Eine Suche ist keine FTO-Freigabe", "keine Rechtsberatung"),
+        ),
+        (
+            "A2.solution_innovation",
+            "a2.partner_suitability_4_6",
+            ("spezifische Kompetenz", "konkrete Projektaufgabe"),
+        ),
+    ],
+)
+def test_each_a2_skill_contains_field_specific_argumentation(
+    profile_id, skill_id, needles
+):
+    prompt = role_skill_instructions_for(profile_id, skill_id)
+    assert prompt is not None
+    for common in (
+        "vollständigen, direkt bearbeitbaren Ersatztext",
+        "Widersprüchliche Angaben",
+        "`new_claims`",
+        "`research_source_ids`",
+    ):
+        assert common in prompt
+    for needle in needles:
+        assert needle in prompt
+
+
 def test_profile_cannot_select_a_skill_from_another_professional_role():
     with pytest.raises(RoleSkillRegistryError, match="not compatible"):
         get_role_skill_registry().resolve(

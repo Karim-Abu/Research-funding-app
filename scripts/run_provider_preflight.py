@@ -7,8 +7,9 @@ verfügbar (Registry-Route vs. Provider-Echo) → strukturierte Ausgabe
 unterstützt → Rate-Limit-/Quota-Fehler verständlich. Es werden DIESELBEN
 produktiven Adapter benutzt wie in der App (keine parallele Logik).
 
-Opt-in-Guards (ohne sie werden alle Live-Checks ehrlich als ``not_run``
-berichtet — Exit-Code bleibt 0, nie CI-rot):
+Opt-in-Guards (ohne sie werden Konfigurationschecks lokal ausgeführt und
+externe Live-Checks ehrlich als ``not_run`` berichtet — Exit-Code bleibt 0,
+nie CI-rot):
 
 * ``CI`` darf nicht gesetzt sein,
 * ``RUN_REAL_PROVIDER_SMOKE=true`` (expliziter manueller Opt-in).
@@ -33,11 +34,12 @@ _ROOT = Path(__file__).resolve().parents[1]
 _BACKEND = _ROOT / "backend"
 _OUT_DIR = _BACKEND / "var" / "evaluation"
 
+os.chdir(_BACKEND)  # pydantic-settings lädt backend/.env, nie eine Root-Datei.
 sys.path.insert(0, str(_BACKEND))
 
 from app.evaluation.preflight import (  # noqa: E402
     render_report,
-    run_preflight,
+    run_configured_preflight,
     to_json,
 )
 
@@ -50,10 +52,10 @@ def main() -> int:
     if not execute_live:
         print(
             "Hinweis: Kein Opt-in (RUN_REAL_PROVIDER_SMOKE=true fehlt oder CI "
-            "gesetzt) — es werden keine Live-Aufrufe gemacht; alle "
-            "Live-Checks sind not_run."
+            "gesetzt) — es werden keine Live-Aufrufe gemacht; lokale "
+            "Konfigurationschecks laufen weiter."
         )
-    results = run_preflight(execute_live=execute_live)
+    results = run_configured_preflight(execute_live=execute_live)
     report = render_report(results)
     print(report)
     _OUT_DIR.mkdir(parents=True, exist_ok=True)

@@ -1,60 +1,28 @@
 "use client"
 
 import * as React from "react"
-import { Workflow } from "lucide-react"
-import { cn } from "@/lib/utils"
-import { Card, CardContent } from "@/components/ui/card"
+import { FlaskConical } from "lucide-react"
+import { Badge } from "@/components/ui/badge"
+import {
+  Tabs,
+  TabsContent,
+  TabsList,
+  TabsTrigger,
+} from "@/components/ui/tabs"
 import { getKiTeamPhases, kiTeamTexts } from "@/lib/ki-team-data"
-import type { KiTeamRole, RoleMode } from "@/lib/ki-team-data"
-import { Legend } from "./legend"
+import type { KiTeamRole } from "@/lib/ki-team-data"
+import { HumanApprovalsView } from "./static-sections"
 import { PhaseBand } from "./phase-band"
+import { ResponsibilitySummary } from "./responsibility-summary"
+import { RoleCatalog } from "./role-catalog"
 import { RoleDrawer } from "./role-drawer"
-import { StaticSections } from "./static-sections"
 
 const phases = getKiTeamPhases()
 
-/** Umschalter „Einfach | Details" — steuert Karten- und Drawer-Detailgrad. */
-function DetailToggle({
-  detailMode,
-  onChange,
-}: Readonly<{
-  detailMode: boolean
-  onChange: (detail: boolean) => void
-}>) {
-  const options = [
-    { detail: false, label: "Einfach" },
-    { detail: true, label: "Details" },
-  ]
-  return (
-    <fieldset className="flex shrink-0 items-center gap-0.5 rounded-lg border border-border bg-muted p-0.5">
-      <legend className="sr-only">Detailgrad der Anzeige</legend>
-      {options.map((option) => (
-        <button
-          key={option.label}
-          type="button"
-          aria-pressed={detailMode === option.detail}
-          onClick={() => onChange(option.detail)}
-          className={cn(
-            "rounded-md px-3 py-1 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-ring",
-            detailMode === option.detail
-              ? "bg-card text-foreground shadow-sm"
-              : "text-muted-foreground hover:text-foreground"
-          )}
-        >
-          {option.label}
-        </button>
-      ))}
-    </fieldset>
-  )
-}
-
 export function KiTeamScreen() {
-  const [detailMode, setDetailMode] = React.useState(false)
-  const [highlight, setHighlight] = React.useState<RoleMode | null>(null)
   const [openRole, setOpenRole] = React.useState<KiTeamRole | null>(null)
   const [openInstanceId, setOpenInstanceId] = React.useState<string | null>(null)
   const [drawerOpen, setDrawerOpen] = React.useState(false)
-  // Karte, die den Drawer geöffnet hat — erhält nach dem Schliessen den Fokus.
   const finalFocusRef = React.useRef<HTMLElement | null>(null)
 
   const handleOpenRole = (
@@ -74,66 +42,78 @@ export function KiTeamScreen() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-6 px-6 py-8 pb-12">
-      {/* Kopfbereich */}
-      <div className="flex flex-wrap items-start justify-between gap-4">
-        <div>
-          <h1 className="text-xl font-semibold text-foreground">
-            {kiTeamTexts.titel}
-          </h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {kiTeamTexts.untertitel}
-          </p>
-        </div>
-        <DetailToggle detailMode={detailMode} onChange={setDetailMode} />
-      </div>
-
-      {/* Intro-Karte mit Legende */}
-      <Card size="sm">
-        <CardContent className="flex flex-col gap-4">
-          <p className="max-w-prose text-sm leading-relaxed text-foreground">
-            {kiTeamTexts.intro}
-          </p>
-          <div className="flex flex-col gap-2 border-t border-border/60 pt-4">
-            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-              Legende
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 pb-12 sm:gap-8 sm:px-6 lg:px-8">
+      <header className="flex flex-col gap-4">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="min-w-0">
+            <h1 className="text-2xl leading-tight font-semibold text-foreground sm:text-[28px]">
+              {kiTeamTexts.title}
+            </h1>
+            <p className="mt-2 max-w-[70ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
+              {kiTeamTexts.subtitle}
             </p>
-            <Legend highlight={highlight} onHighlight={setHighlight} />
           </div>
-        </CardContent>
-      </Card>
-
-      {/* Ablaufsteuerungs-Hinweis — bewusst keine Rolle als „Chef-Agent". */}
-      <div
-        role="note"
-        className="flex items-start gap-2.5 rounded-lg border border-border bg-muted/40 px-3.5 py-2.5"
-      >
-        <Workflow
-          aria-hidden="true"
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-        />
-        <p className="text-sm text-foreground">
-          {kiTeamTexts.ablaufsteuerungHinweis}
+          <Badge
+            variant="outline"
+            className="min-h-7 w-fit shrink-0 gap-1.5 border-border bg-muted/55 px-3 text-muted-foreground"
+          >
+            <FlaskConical aria-hidden="true" />
+            {kiTeamTexts.prototypeBadge}
+          </Badge>
+        </div>
+        <p className="max-w-3xl text-sm leading-relaxed text-foreground">
+          {kiTeamTexts.intro}
         </p>
-      </div>
+      </header>
 
-      {/* Phasenband */}
-      <PhaseBand
-        phases={phases}
-        detailMode={detailMode}
-        highlight={highlight}
-        openInstanceId={openInstanceId}
-        onOpenRole={handleOpenRole}
-      />
+      <ResponsibilitySummary />
 
-      {/* Statische Erklärsektionen */}
-      <StaticSections />
+      <Tabs defaultValue="workflow" className="gap-5">
+        <TabsList className="grid h-auto w-full grid-cols-3 p-1 sm:w-fit sm:min-w-[31rem]">
+          <TabsTrigger
+            value="workflow"
+            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+          >
+            Im Ablauf
+          </TabsTrigger>
+          <TabsTrigger
+            value="specialists"
+            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+          >
+            Spezialisten
+          </TabsTrigger>
+          <TabsTrigger
+            value="approvals"
+            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+          >
+            Ihre Freigaben
+          </TabsTrigger>
+        </TabsList>
+
+        <TabsContent value="workflow">
+          <PhaseBand
+            phases={phases}
+            openInstanceId={openInstanceId}
+            onOpenRole={handleOpenRole}
+          />
+        </TabsContent>
+
+        <TabsContent value="specialists">
+          <RoleCatalog
+            openInstanceId={openInstanceId}
+            onOpenRole={handleOpenRole}
+          />
+        </TabsContent>
+
+        <TabsContent value="approvals">
+          <HumanApprovalsView />
+        </TabsContent>
+      </Tabs>
 
       <RoleDrawer
         role={openRole}
         open={drawerOpen}
         onOpenChange={handleDrawerOpenChange}
-        detailMode={detailMode}
         finalFocusRef={finalFocusRef}
       />
     </div>
