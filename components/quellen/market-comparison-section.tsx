@@ -34,11 +34,15 @@ type State = "loading" | "idle" | "generating" | "ready" | "error"
 export function MarketComparisonSection({
   projectId,
   sourceNames,
+  disabledReason,
 }: {
   projectId: string
   // Anzeigenamen der Projektquellen (source_id → Name) für den Abschnitt
   // «Verwendete Quellen» — es werden nie rohe IDs angezeigt.
   sourceNames?: Record<string, string>
+  /** Konkreter Grund, warum aktuell kein Vergleich erstellt werden kann —
+   *  deaktiviert «Vergleich erstellen» sichtbar statt still. */
+  disabledReason?: string | null
 }) {
   const [state, setState] = React.useState<State>("loading")
   const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
@@ -113,7 +117,7 @@ export function MarketComparisonSection({
           type="button"
           size="sm"
           variant="outline"
-          disabled={state === "generating"}
+          disabled={state === "generating" || Boolean(disabledReason)}
           onClick={generate}
         >
           {state === "generating" ? (
@@ -131,6 +135,14 @@ export function MarketComparisonSection({
         Nur aus live abgerufenen, vollständig importierten und inhaltlich positiv
         geprüften öffentlichen Quellen — kein automatischer Eintrag in den Antrag.
       </p>
+      {disabledReason && (
+        <p
+          className="mb-3 text-xs text-muted-foreground"
+          data-testid="market-comparison-disabled-reason"
+        >
+          {disabledReason}
+        </p>
+      )}
 
       {error && (
         <p role="alert" className="mb-3 text-sm text-destructive">

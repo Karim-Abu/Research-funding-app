@@ -153,17 +153,24 @@ role_routes:
     comparison: anthropic_haiku_45_candidate
     max_cost_chf: 0.50
     max_latency_seconds: 180
+  # Vorläufige Demo-Route (2026-07-17): technisch begründet durch den Live-
+  # Pilotlauf (A2: Terra 12/12 production_eligible vs. Sonnet 1/12; A3: Sonnet
+  # Recall 34/36 vs. Terra 27/33). Gilt bis zum Abschluss der Blindbewertung —
+  # KEINE endgültige Modellwahl. Fallback wird nie still gezogen, nur auf
+  # expliziten Nutzerwunsch («Mit alternativem Modell versuchen»).
   A2_INNOSUISSE_PROPOSAL_WRITER:
     execution_kind: model_gateway
-    primary: anthropic_sonnet_5_candidate
-    fallback: openai_gpt_56_terra_candidate
+    selection_status: provisional_demo_route
+    primary: openai_gpt_56_terra_candidate
+    fallback: anthropic_sonnet_5_candidate
     comparison: openai_gpt_56_terra_candidate
     max_cost_chf: 2.00
     max_latency_seconds: 240
   A3_INNOSUISSE_CRITICAL_REVIEWER:
     execution_kind: model_gateway
-    primary: openai_gpt_56_terra_candidate
-    fallback: anthropic_sonnet_5_candidate
+    selection_status: provisional_demo_route
+    primary: anthropic_sonnet_5_candidate
+    fallback: openai_gpt_56_terra_candidate
     comparison: openai_gpt_56_sol_candidate
     max_cost_chf: 2.00
     max_latency_seconds: 300

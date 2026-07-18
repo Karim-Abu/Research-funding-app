@@ -60,4 +60,34 @@ describe("LiveSystemStatus", () => {
     ).toBeInTheDocument()
     expect(screen.queryByText(/^Demo$/)).toBeNull()
   })
+
+  it("zeigt je Route und für Firecrawl den Zeitpunkt des letzten Preflights", async () => {
+    const dto = status("real_eval")
+    dto.routes = [{
+      role_id: "A2_INNOSUISSE_PROPOSAL_WRITER",
+      route_key: "openai_gpt_56_terra_candidate",
+      route_alias: "gpt-5.6-terra",
+      provider: "openai_direct",
+      requested_model_id: "gpt-5.6-terra-2026",
+      actual_model_id: "gpt-5.6-terra-2026",
+      configuration_status: "configured",
+      preflight_status: "pass",
+      checked_at: "2026-07-17T08:30:00Z",
+      expires_at: "2026-07-17T14:30:00Z",
+      capabilities: {},
+      cost_status: "priced",
+      checks: [],
+    }]
+    dto.firecrawl = {
+      mode: "live", available: true, preflight_status: "pass",
+      checked_at: "2026-07-17T08:31:00Z", checks: [],
+    }
+    mockedStatus.mockResolvedValue(dto)
+    render(<LiveSystemStatus />)
+    expect(await screen.findByText("Zuletzt geprüft")).toBeInTheDocument()
+    // Route-Zeile: Zeitstempel + Gültigkeit; Firecrawl: eigener Zeitstempel.
+    expect(screen.getByText(/gültig bis/)).toBeInTheDocument()
+    expect(screen.getByText(/Zuletzt geprüft: /)).toBeInTheDocument()
+    expect(screen.queryByText(/^—$/)).toBeNull()
+  })
 })

@@ -5,6 +5,8 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Play, ChevronDown, ChevronRight, XCircle } from "lucide-react"
 import { AppShell } from "@/components/shell/app-shell"
 import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellungen-dialog"
+import { LiveRunBanner } from "@/components/run/live-run-banner"
+import { AI_REASON_INFO, FALLBACK_AI_REASON } from "@/lib/redraft"
 import { SourceTable } from "@/components/quellen/source-table"
 import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
 import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
@@ -295,6 +297,10 @@ function QuellenPageContent() {
   )
 
   const [dialogOpen, setDialogOpen] = React.useState(false)
+  // "live" = der Dialog wurde über «Neuen Live-Lauf erstellen» geöffnet.
+  const [dialogIntent, setDialogIntent] = React.useState<"standard" | "live">(
+    "standard"
+  )
   const [activeScenario, setActiveScenario] = React.useState<DialogScenario>(
     DIALOG_SCENARIOS[0]
   )
@@ -423,6 +429,13 @@ function QuellenPageContent() {
 
   function openDialogWith(scenario: DialogScenario) {
     setActiveScenario(scenario)
+    setDialogIntent("standard")
+    setDialogOpen(true)
+  }
+
+  function openLiveRunDialog() {
+    setActiveScenario(DIALOG_SCENARIOS[0])
+    setDialogIntent("live")
     setDialogOpen(true)
   }
 
@@ -475,7 +488,24 @@ function QuellenPageContent() {
           max_llm_calls: 0,
           max_web_calls: 0,
         }
-        if (useCloud) {
+        if (useCloud && settings.liveRun) {
+          // Expliziter Live-Lauf: eigene Live-Bestätigung (live-run-v1) und
+          // processing_mode=live — nie ein stiller Wechsel eines alten Laufs.
+          const confirmation = await createProcessingConfirmation(
+            projectId,
+            processedVersionIds,
+            "Live-KI-Vorschläge für Textentwürfe vorbereiten",
+            "live"
+          )
+          runSettings = {
+            processing_mode: "live",
+            max_cost_chf: settings.costLimit,
+            max_llm_calls: maxLlmCalls,
+            max_web_calls: maxWebCalls,
+            source_version_ids: processedVersionIds,
+            internal_cloud_confirmation_id: confirmation.confirmation_id,
+          }
+        } else if (useCloud) {
           const confirmation = await createProcessingConfirmation(
             projectId,
             processedVersionIds
@@ -561,6 +591,7 @@ function QuellenPageContent() {
   // Screens; reload() nach einem abgeschlossenen Lauf auf dieser Seite.
   const {
     runId: completedRunId,
+    run: activeRunDto,
     runs: workflowRuns,
     reload: reloadWorkflow,
   } = useActiveRun()
@@ -570,6 +601,9 @@ function QuellenPageContent() {
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
   )
+  // Marktvergleich-Gate: mindestens eine live abgerufene, importierte und
+  // inhaltlich positiv geprüfte Quelle (gemeldet vom Research-Panel).
+  const [marketSourceEligible, setMarketSourceEligible] = React.useState(false)
   // Einmaliger Hinweis aus dem Intake: Projekt gespeichert, Upload offen.
   const [uploadHint, setUploadHint] = React.useState(false)
 
@@ -823,6 +857,28 @@ function QuellenPageContent() {
   // capability (features.runs) enables it (Milestone 4). Mock mode is unaffected.
   const runsEnabled = !liveMode || Boolean(capabilities?.features?.runs)
 
+  // Live-Lauf-Hinweis: der aktive Lauf ist kein Live-Lauf und das Projekt ist
+  // öffentlich/anonymisiert — Primäraktion «Neuen Live-Lauf erstellen». Der
+  // alte Lauf bleibt unverändert; die Klassifikation allein schaltet nie um.
+  const liveEligibleProject =
+    projectOrigin === "synthetic" ||
+    projectOrigin === "anonymized" ||
+    (projectOrigin === "public_source" && effectiveDataClass === "public")
+  const liveRunBannerVisible =
+    liveMode &&
+    Boolean(projectId) &&
+    Boolean(intake) &&
+    runsEnabled &&
+    analysisState !== "running" &&
+    liveEligibleProject &&
+    activeRunDto !== null &&
+    activeRunDto.processing_mode !== "live"
+  const liveRunDisabledReason =
+    capabilities?.generation_mode === "real_eval"
+      ? null
+      : (AI_REASON_INFO[capabilities?.generation_unavailable_reason ?? ""]
+          ?.text ?? AI_REASON_INFO[FALLBACK_AI_REASON].text)
+
   return (
     <>
       <div className="mx-auto max-w-5xl px-6 py-8">
@@ -940,6 +996,17 @@ function QuellenPageContent() {
           </div>
         )}
 
+        {/* Live-Lauf-Angebot für öffentliche/anonymisierte Projekte */}
+        {liveRunBannerVisible && activeRunDto && (
+          <div className="mb-4">
+            <LiveRunBanner
+              processingMode={activeRunDto.processing_mode}
+              disabledReason={liveRunDisabledReason}
+              onCreate={openLiveRunDialog}
+            />
+          </div>
+        )}
+
         {/* Quellen — die Evidenz-Ansicht lebt unter «Analyse & Recherche» */}
         {liveMode ? (
           <div className="flex flex-col gap-6">
@@ -975,6 +1042,7 @@ function QuellenPageContent() {
                 projectId={projectId}
                 dataClass={effectiveDataClass ?? "confidential"}
                 onImported={refreshSources}
+                onEligibilityChange={setMarketSourceEligible}
               />
             )}
             {projectId && capabilities?.features?.market_comparison && (
@@ -983,6 +1051,11 @@ function QuellenPageContent() {
                 sourceNames={Object.fromEntries(
                   liveSources.map((s) => [s.source_id, s.name])
                 )}
+                disabledReason={
+                  marketSourceEligible
+                    ? null
+                    : "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle vorhanden."
+                }
               />
             )}
           </div>
@@ -1106,6 +1179,7 @@ function QuellenPageContent() {
         hasActiveRun={activeScenario.hasActiveRun}
         projectId={liveMode ? (projectId ?? undefined) : undefined}
         projectOrigin={liveMode ? projectOrigin : "synthetic"}
+        intent={dialogIntent}
         onStart={handleAnalysisStart}
         onCancel={() => setDialogOpen(false)}
       />

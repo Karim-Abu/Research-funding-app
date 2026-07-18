@@ -61,6 +61,25 @@ def test_get_agent_registry_is_cached():
     assert get_agent_registry() is get_agent_registry()
 
 
+def test_provisional_demo_route_swaps_a2_a3_primaries():
+    """Demo-Slice 2026-07-17: provisorische Live-Route (bis Blindbewertung) —
+    A2 primär Terra/OpenAI, A3 primär Sonnet/Anthropic; Fallback nur noch auf
+    expliziten Nutzerwunsch (route_preference), nie still."""
+    reg = load_agent_registry()
+    a2 = reg.role_routes["A2_INNOSUISSE_PROPOSAL_WRITER"]
+    assert (a2.primary, a2.fallback) == (
+        "openai_gpt_56_terra_candidate", "anthropic_sonnet_5_candidate"
+    )
+    a3 = reg.role_routes["A3_INNOSUISSE_CRITICAL_REVIEWER"]
+    assert (a3.primary, a3.fallback) == (
+        "anthropic_sonnet_5_candidate", "openai_gpt_56_terra_candidate"
+    )
+    profile = reg.profile("A2.solution_innovation")
+    assert reg.route_keys_for_profile(
+        profile, "A2_INNOSUISSE_PROPOSAL_WRITER", live=True
+    )[0] == "openai_gpt_56_terra_candidate"
+
+
 def test_activated_profiles_carry_prompt_version():
     """Ebene E: die Registry ist die eine Quelle der Wahrheit je Rolle —
     aktivierte Profile tragen ihre Skill-/Prompt-Version aus den

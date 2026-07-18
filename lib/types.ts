@@ -209,4 +209,9 @@ export interface AnalyseSettings {
    * Mandatory user acknowledgement before a cloud_assisted run (Milestone 9D.2).
    */
   cloudConfirmed?: boolean
+  /**
+   * Expliziter Live-Lauf (processing_mode=live) mit Live-Bestätigung —
+   * gesetzt nur vom Dialog-Intent «Neuen Live-Lauf erstellen».
+   */
+  liveRun?: boolean
 }

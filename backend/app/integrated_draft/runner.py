@@ -162,12 +162,14 @@ def _deterministic_name_en_item(field, title_en: str | None) -> FieldDraftItem:
 
 def _a2_item(
     db: Session, run: AnalysisRun, field, config, *, resolver_for: ResolverFor,
+    model_preference: str = "primary",
 ) -> FieldDraftItem:
     draft_id, version_id = _seed_draft(db, run, field, config.char_limit)
     resolver = resolver_for(field.field_id) if resolver_for else None
     outcome = field_drafting.run_a2_field_drafting(
         db, run, field_id=field.field_id, draft_id=draft_id, base_version_id=version_id,
         operation_id="iop-" + uuid.uuid4().hex[:8], provider_resolver=resolver,
+        model_preference=model_preference,
     )
     view = outcome.view or {}
     proposal = view.get("proposal") or view.get("ai_proposal") or {}
@@ -224,6 +226,7 @@ def run_integrated_draft(
     seed_context: SeedContext = None,
     title_en: str | None = None,
     real_eval_confirmation: bool = False,
+    model_preference: str = "primary",
 ) -> DraftPackage:
     """Run all 8 supported draft fields for the F1 case and return a DraftPackage.
 
@@ -256,7 +259,10 @@ def run_integrated_draft(
                 market_run = run
             elif config.profile_id == _PARTNER_PROFILE:
                 partner_run = run
-            items.append(_a2_item(db, run, field, config, resolver_for=resolver_for))
+            items.append(_a2_item(
+                db, run, field, config, resolver_for=resolver_for,
+                model_preference=model_preference,
+            ))
         elif field.field_id == "INTRO.APP.NAME_EN":
             items.append(_deterministic_name_en_item(field, title_en))
         else:  # INTRO.APP.NAME (and any other non-A2 name-like field)

@@ -88,8 +88,11 @@ import {
   getRunFieldSuggestion,
   isA2Field,
   RedraftError,
+  SOLUTION_INNOVATION_FIELD_ID,
+  VALUE_CREATION_FIELD_ID,
   type A2Suggestion,
 } from "@/lib/redraft"
+import { getResearchWorkspace } from "@/lib/research-brief"
 import {
   GENERATION_KIND_BADGE_CLASS,
   generationActionLabel,
@@ -245,6 +248,9 @@ export function LiveEditor({
     string | null
   >(null)
   const [a2Error, setA2Error] = React.useState<string | null>(null)
+  // Transienter Providerfehler auf der Primärroute: zusätzlich zur
+  // Wiederholung darf explizit die Alternativroute angeboten werden.
+  const [a2RetryAlternative, setA2RetryAlternative] = React.useState(false)
   const [a2ReviewOpen, setA2ReviewOpen] = React.useState(false)
   const [a2Accepting, setA2Accepting] = React.useState(false)
   // True, wenn der angezeigte Vorschlag aus dem Analyse-Lauf stammt (statt
@@ -286,11 +292,39 @@ export function LiveEditor({
     }
   }, [comparisonEnabled, marketProjectId])
 
+  // §10 Quellen-Redraft: mindestens eine live abgerufene, importierte und
+  // inhaltlich positiv geprüfte Quelle vorhanden? (Spiegelt den Backend-Filter
+  // retrieve_advisory_research_context — das Backend bleibt autoritativ.)
+  const [reviewedSourcesReady, setReviewedSourcesReady] = React.useState(false)
+  React.useEffect(() => {
+    if (!marketResearchEnabled || !marketProjectId) return
+    let active = true
+    getResearchWorkspace(marketProjectId)
+      .then((ws) => {
+        if (!active) return
+        setReviewedSourcesReady(
+          ws.results.some(
+            (r) =>
+              r.status === "imported" &&
+              r.content_review_status === "reviewed" &&
+              (r.support_status === "supports" ||
+                r.support_status === "partially_supports") &&
+              r.execution_mode !== "fake_demo"
+          )
+        )
+      })
+      .catch(() => undefined)
+    return () => {
+      active = false
+    }
+  }, [marketResearchEnabled, marketProjectId])
+
   function resetA2() {
     setA2Suggestion(null)
     setA2Loading(false)
     setA2UnavailableReason(null)
     setA2Error(null)
+    setA2RetryAlternative(false)
     setA2ReviewOpen(false)
     setA2Accepting(false)
     setA2FromRun(false)
@@ -406,10 +440,13 @@ export function LiveEditor({
     if (selected) void loadRunSuggestion(selected, marker)
   }
 
-  async function generateSuggestion() {
+  async function generateSuggestion(
+    modelPreference?: "primary" | "alternative"
+  ) {
     if (!selected) return
     setA2Loading(true)
     setA2Error(null)
+    setA2RetryAlternative(false)
     setA2UnavailableReason(null)
     try {
       const suggestion = await createRedraft(
@@ -417,7 +454,8 @@ export function LiveEditor({
         selected.field_id,
         baseVersionId,
         undefined,
-        selectedSubsection ?? undefined
+        selectedSubsection ?? undefined,
+        modelPreference
       )
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
@@ -433,6 +471,10 @@ export function LiveEditor({
         setA2UnavailableReason(e.reasonCode)
       } else {
         setA2Error(e instanceof Error ? e.message : "Vorschlag fehlgeschlagen.")
+        // Nur transiente Providerfehler bieten die Alternativroute an.
+        if (e instanceof RedraftError && e.retryWithAlternativeModel) {
+          setA2RetryAlternative(true)
+        }
       }
     } finally {
       setA2Loading(false)
@@ -475,7 +517,7 @@ export function LiveEditor({
   }
 
   // C3 — «Eigene Bearbeitung öffnen»: Sheet schliessen OHNE Ablehnung, den
-  // Zielabschnitt fokussieren; der Vorschlag bleibt über «Vorschlag anzeigen»
+  // Zielabschnitt fokussieren; der Vorschlag bleibt über «Vorschlag prüfen»
   // erreichbar.
   function editSuggestionTarget() {
     setA2ReviewOpen(false)
@@ -1370,22 +1412,70 @@ export function LiveEditor({
                 Fakten bleiben erhalten, fehlende Angaben werden separat
                 ausgewiesen, und nichts wird ohne Ihre Prüfung übernommen.
               </p>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button
                   size="sm"
                   variant="outline"
-                  onClick={generateSuggestion}
+                  onClick={() => generateSuggestion()}
                   disabled={a2Loading || capsBlockedReason !== null}
                 >
                   <Sparkles data-icon="inline-start" />
                   {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
                 </Button>
-                {a2Suggestion && !a2ReviewOpen && (
-                  <Button size="sm" variant="ghost" onClick={() => setA2ReviewOpen(true)}>
-                    Vorschlag anzeigen
-                  </Button>
-                )}
+                {/* §10 — Redraft mit positiv geprüften Live-Quellen. Erst
+                    verfügbar, wenn kein offener Vorschlag vorliegt (ein
+                    offener Vorschlag würde serverseitig wiederverwendet). */}
+                {reviewedSourcesReady &&
+                  !a2Suggestion &&
+                  (selected.field_id === VALUE_CREATION_FIELD_ID ||
+                    selected.field_id === SOLUTION_INNOVATION_FIELD_ID) && (
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => generateSuggestion()}
+                      disabled={a2Loading || capsBlockedReason !== null}
+                      data-testid="research-redraft-action"
+                    >
+                      Mit geprüften Quellen neu formulieren
+                    </Button>
+                  )}
               </div>
+              {a2Suggestion && !a2ReviewOpen && (
+                <div
+                  className="flex flex-col gap-1"
+                  data-testid="a2-suggestion-summary"
+                >
+                  <p className="text-xs font-medium text-foreground">
+                    Prüfung erforderlich
+                  </p>
+                  <p className="text-xs text-muted-foreground">
+                    {a2Suggestion.character_count} /{" "}
+                    {a2Suggestion.character_limit} Zeichen ·{" "}
+                    {(a2Suggestion.section_result?.missing_inputs ??
+                      a2Suggestion.proposal?.missing_inputs ??
+                      []).length}{" "}
+                    offene Angaben ·{" "}
+                    {(a2Suggestion.section_result?.new_claims ?? []).length}{" "}
+                    unbelegte Aussagen
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setA2ReviewOpen(true)}
+                    >
+                      Vorschlag prüfen
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => void dismissSuggestion()}
+                    >
+                      Verwerfen
+                    </Button>
+                  </div>
+                </div>
+              )}
               {a2UnavailableReason && (
                 <A2ReasonNotice reason={a2UnavailableReason} />
               )}
@@ -1411,7 +1501,35 @@ export function LiveEditor({
                     Abschnitt noch nicht erstellt.
                   </p>
                 )}
-              {a2Error && <p role="alert" className="text-xs text-destructive">{a2Error}</p>}
+              {a2Error && (
+                <div className="flex flex-col gap-1.5">
+                  <p role="alert" className="text-xs text-destructive">
+                    {a2Error}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => generateSuggestion()}
+                      disabled={a2Loading}
+                    >
+                      Erneut versuchen
+                    </Button>
+                    {/* Nur bei transientem Providerfehler — nie bei Policy-,
+                        Budget-, Schema- oder Refusal-Fehlern. */}
+                    {a2RetryAlternative && (
+                      <Button
+                        size="xs"
+                        variant="outline"
+                        onClick={() => generateSuggestion("alternative")}
+                        disabled={a2Loading}
+                      >
+                        Mit alternativem Modell versuchen
+                      </Button>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div
@@ -1477,7 +1595,7 @@ export function LiveEditor({
           open={a2ReviewOpen}
           onOpenChange={(o) => {
             // Schliessen (X/ESC) ist KEIN Verwerfen — der Vorschlag bleibt
-            // über «Vorschlag anzeigen» erreichbar; Ablehnen ist explizit.
+            // über «Vorschlag prüfen» erreichbar; Ablehnen ist explizit.
             if (!o) setA2ReviewOpen(false)
           }}
           currentText={currentReviewText}

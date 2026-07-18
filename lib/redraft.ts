@@ -155,12 +155,22 @@ export class RedraftError extends Error {
   readonly code: string
   /** R4.2: maschinenlesbarer Verfügbarkeits-Blockgrund (Katalog-Code) oder null. */
   readonly reasonCode: string | null
-  constructor(status: number, code: string, message: string, reasonCode: string | null = null) {
+  /** Transienter Providerfehler auf der Primärroute — die UI darf zusätzlich
+   *  «Mit alternativem Modell versuchen» anbieten (nie bei Policy/Schema/Budget). */
+  readonly retryWithAlternativeModel: boolean
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    reasonCode: string | null = null,
+    retryWithAlternativeModel = false
+  ) {
     super(message)
     this.name = "RedraftError"
     this.status = status
     this.code = code
     this.reasonCode = reasonCode
+    this.retryWithAlternativeModel = retryWithAlternativeModel
   }
 }
 
@@ -301,13 +311,16 @@ export async function getRunFieldSuggestion(
   }
 }
 
-/** Request a suggestion and resolve once the async operation produces it. */
+/** Request a suggestion and resolve once the async operation produces it.
+ *  modelPreference "alternative" = explizit angeforderte Alternativroute nach
+ *  transientem Providerfehler — nie ein stiller automatischer Fallback. */
 export async function createRedraft(
   runId: string,
   fieldId: string,
   baseVersionId: string,
   guidance?: string,
-  targetSection?: string
+  targetSection?: string,
+  modelPreference?: "primary" | "alternative"
 ): Promise<A2Suggestion> {
   const res = await fetch(
     `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/redrafts`,
@@ -318,6 +331,9 @@ export async function createRedraft(
         base_version_id: baseVersionId,
         ...(guidance ? { guidance } : {}),
         ...(targetSection ? { target_section: targetSection } : {}),
+        ...(modelPreference && modelPreference !== "primary"
+          ? { model_preference: modelPreference }
+          : {}),
       }),
     }
   )
@@ -351,7 +367,8 @@ export async function createRedraft(
               MESSAGES[code] ??
                 reasonMessage(reasonCode) ??
                 "Der Vorschlag konnte nicht erstellt werden.",
-              reasonCode
+              reasonCode,
+              op.error?.retry_with_alternative_model === true
             )
           )
         }

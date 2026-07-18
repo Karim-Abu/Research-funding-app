@@ -34,6 +34,20 @@ const FIRECRAWL_MODE_LABEL = {
   not_configured: "Nicht verfügbar",
 } as const
 
+// Zeitpunkt des letzten Preflights (de-CH); "—" solange keiner lief.
+function formatTimestamp(value?: string | null): string {
+  if (!value) return "—"
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return "—"
+  return date.toLocaleString("de-CH", {
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+  })
+}
+
 export function LiveSystemStatus() {
   const [status, setStatus] = React.useState<LiveSystemStatusDto | null>(null)
   const [error, setError] = React.useState<string | null>(null)
@@ -105,6 +119,7 @@ export function LiveSystemStatus() {
                   <th className="py-2 pr-3">Angefragt</th>
                   <th className="py-2 pr-3">Tatsächlich</th>
                   <th className="py-2 pr-3">Preflight</th>
+                  <th className="py-2 pr-3">Zuletzt geprüft</th>
                   <th className="py-2 pr-3">Kostenstatus</th>
                   <th className="py-2">Nächste Aktion</th>
                 </tr>
@@ -123,6 +138,14 @@ export function LiveSystemStatus() {
                       {PREFLIGHT_LABEL[route.preflight_status]}
                       {route.error_class ? ` · ${route.error_class}` : ""}
                       {route.latency_ms != null ? ` · ${route.latency_ms} ms` : ""}
+                    </td>
+                    <td className="py-2 pr-3">
+                      <div>{formatTimestamp(route.checked_at)}</div>
+                      {route.expires_at && (
+                        <div className="text-muted-foreground">
+                          gültig bis {formatTimestamp(route.expires_at)}
+                        </div>
+                      )}
                     </td>
                     <td className="py-2 pr-3">{route.cost_status}</td>
                     <td className="py-2">
@@ -147,6 +170,12 @@ export function LiveSystemStatus() {
                 : ""}
               {status.firecrawl.latency_ms != null
                 ? ` · ${status.firecrawl.latency_ms} ms`
+                : ""}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Zuletzt geprüft: {formatTimestamp(status.firecrawl.checked_at)}
+              {status.firecrawl.expires_at
+                ? ` · gültig bis ${formatTimestamp(status.firecrawl.expires_at)}`
                 : ""}
             </p>
           </div>

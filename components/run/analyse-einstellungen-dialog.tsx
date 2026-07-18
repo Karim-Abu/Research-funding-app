@@ -52,6 +52,11 @@ interface AnalyseEinstellungenDialogProps {
   // laden und freigeben lassen (öffentliche Projekte, Web-Toggle an).
   projectId?: string
   projectOrigin?: Origin
+  /**
+   * "live" = der Dialog erstellt einen expliziten Live-Lauf
+   * (processing_mode=live) mit eigener Live-Bestätigung. Default: Bestand.
+   */
+  intent?: "standard" | "live"
   onStart?: (settings: AnalyseSettings) => void
   onCancel?: () => void
 }
@@ -73,20 +78,31 @@ export function AnalyseEinstellungenDialog({
   hasActiveRun = false,
   projectId,
   projectOrigin = "synthetic",
+  intent = "standard",
   onStart,
   onCancel,
 }: AnalyseEinstellungenDialogProps) {
-  // Ein realer Modelllauf ist ausschließlich für explizite synthetische oder
-  // anonymisierte Evaluationsfälle verfügbar. FakeProvider ist ein Demo-Pfad,
-  // kein lokaler/institutioneller Modelladapter.
+  // Ein realer Modelllauf ist für synthetische/anonymisierte Evaluationsfälle
+  // sowie — Demo-Slice 2026-07-17 — für öffentliche public_source-Projekte
+  // verfügbar (spiegelt das Backend-Live-Gate). FakeProvider ist ein
+  // Demo-Pfad, kein lokaler/institutioneller Modelladapter.
+  const intentLive = intent === "live"
   const isLocalOnlyClass = !isCloudAllowed(dataClass)
   const evaluationOrigin = projectOrigin === "synthetic" || projectOrigin === "anonymized"
+  const liveEligibleOrigin =
+    evaluationOrigin ||
+    (projectOrigin === "public_source" && dataClass === "public")
   const realEvaluation =
-    serviceAvailability.generationMode === "real_eval" && evaluationOrigin
+    serviceAvailability.generationMode === "real_eval" && liveEligibleOrigin
   const demoMode =
     serviceAvailability.generationMode === "fake_demo" && evaluationOrigin
   const aiAvailable = serviceAvailability.ki && (realEvaluation || demoMode)
   const [ki, setKi] = React.useState(aiAvailable)
+  // Live-Intent: die KI-Unterstützung ist der Zweck des Dialogs — beim Öffnen
+  // einschalten, sobald sie verfügbar ist (Capabilities können nachladen).
+  React.useEffect(() => {
+    if (open && intentLive && aiAvailable) setKi(true)
+  }, [open, intentLive, aiAvailable])
   const [web, setWeb] = React.useState(false) // DEFAULT OFF always
   const [costLimit, setCostLimit] = React.useState("2.00")
   // Erweiterte Einstellungen (nur lead_admin) — echte, gesendete Limits.
@@ -118,9 +134,9 @@ export function AnalyseEinstellungenDialog({
       kiUnavailableReason =
         (reasonCode ? AI_REASON_INFO[reasonCode]?.text : undefined) ??
         AI_REASON_INFO[FALLBACK_AI_REASON].text
-    } else if (!evaluationOrigin) {
+    } else if (!liveEligibleOrigin) {
       kiUnavailableReason =
-        "Nur für synthetische oder anonymisierte Evaluationsfälle verfügbar — dieses Projekt enthält echte Projektdaten."
+        "Nur für öffentliche, synthetische oder anonymisierte Fälle verfügbar — dieses Projekt enthält echte, nicht-öffentliche Projektdaten."
     }
   }
   let webUnavailableReason: string | undefined
@@ -134,6 +150,10 @@ export function AnalyseEinstellungenDialog({
   const cloudOptIn = ki && (realEvaluation || demoMode)
   // Block the start until the user confirms AI processing for this run.
   const cloudConfirmationMissing = cloudOptIn && !cloudConfirmed
+  // Live-Intent: ohne aktivierte und bestätigte Live-KI gibt es keinen
+  // Live-Lauf — nie ein stiller Rückfall auf regelbasierte Verarbeitung.
+  const liveStartBlocked =
+    intentLive && !(ki && aiAvailable && realEvaluation && cloudConfirmed)
 
   // R8 Query-Freigabe: geplante Suchanfragen laden, sobald die Webrecherche für ein
   // öffentliches Projekt aktiviert wird. Ohne Freigaben wird die Recherche-Phase im
@@ -185,6 +205,7 @@ export function AnalyseEinstellungenDialog({
       maxLlmCalls: Number.parseInt(maxLlmCalls, 10) || 25,
       maxWebCalls: Number.parseInt(maxWebCalls, 10) || 5,
       cloudConfirmed: cloudOptIn && cloudConfirmed,
+      liveRun: intentLive,
     })
   }
 
@@ -209,9 +230,13 @@ export function AnalyseEinstellungenDialog({
         className={`flex flex-col gap-0 overflow-hidden p-0 ${widthClasses}`}
       >
         <SheetHeader className="shrink-0 border-b border-border px-6 py-4">
-          <SheetTitle>Analyse starten</SheetTitle>
+          <SheetTitle>
+            {intentLive ? "Neuen Live-Lauf erstellen" : "Analyse starten"}
+          </SheetTitle>
           <SheetDescription>
-            Prüfen Sie kurz die Einstellungen für diesen Durchlauf.
+            {intentLive
+              ? "Prüfen Sie die Einstellungen für diesen Live-Durchlauf mit echter KI."
+              : "Prüfen Sie kurz die Einstellungen für diesen Durchlauf."}
           </SheetDescription>
         </SheetHeader>
 
@@ -266,14 +291,18 @@ export function AnalyseEinstellungenDialog({
             {cloudOptIn && (
               <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/40 p-3 text-sm">
                 <p className="font-medium text-foreground">
-                  {realEvaluation
-                    ? "Evaluationsfall – keine echten vertraulichen Daten"
-                    : "Demo-Vorschlag (kein echtes KI-Modell)"}
+                  {intentLive && realEvaluation
+                    ? "Live-Lauf mit echter KI"
+                    : realEvaluation
+                      ? "Evaluationsfall – keine echten vertraulichen Daten"
+                      : "Demo-Vorschlag (kein echtes KI-Modell)"}
                 </p>
                 <p className="text-muted-foreground">
-                  {realEvaluation
-                    ? "Ein reales Modell darf nur für diesen ausdrücklich bestätigten synthetischen oder anonymisierten Evaluationsfall aufgerufen werden."
-                    : "Der Demo-Generator erstellt klar gekennzeichnete Testausgaben und ruft keinen KI-Provider auf."}
+                  {intentLive && realEvaluation
+                    ? "Echte KI-Modelle dürfen nur für diesen ausdrücklich bestätigten öffentlichen oder verlässlich anonymisierten Fall aufgerufen werden."
+                    : realEvaluation
+                      ? "Ein reales Modell darf nur für diesen ausdrücklich bestätigten synthetischen oder anonymisierten Evaluationsfall aufgerufen werden."
+                      : "Der Demo-Generator erstellt klar gekennzeichnete Testausgaben und ruft keinen KI-Provider auf."}
                 </p>
                 {realEvaluation && (
                   <p className="text-muted-foreground">
@@ -288,16 +317,20 @@ export function AnalyseEinstellungenDialog({
                     onCheckedChange={(c) => setCloudConfirmed(c === true)}
                     className="mt-0.5"
                     aria-label={
-                      realEvaluation
-                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
-                        : "Demo-Generator für diesen Durchlauf aktivieren"
+                      intentLive && realEvaluation
+                        ? "Live-KI für diesen Durchlauf erlauben"
+                        : realEvaluation
+                          ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                          : "Demo-Generator für diesen Durchlauf aktivieren"
                     }
                   />
                   <span className="flex flex-col gap-0.5">
                     <span className="font-medium text-foreground">
-                      {realEvaluation
-                        ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
-                        : "Demo-Generator für diesen Durchlauf aktivieren"}
+                      {intentLive && realEvaluation
+                        ? "Live-KI für diesen Durchlauf erlauben"
+                        : realEvaluation
+                          ? "Reale KI für diesen Evaluationsdurchlauf erlauben"
+                          : "Demo-Generator für diesen Durchlauf aktivieren"}
                     </span>
                     <span className="text-xs text-muted-foreground">
                       {realEvaluation
@@ -513,16 +546,24 @@ export function AnalyseEinstellungenDialog({
 
         {!hasActiveRun && (
           <SheetFooter className="shrink-0 flex-row items-center justify-end gap-2 border-t border-border px-6 py-4">
-            {cloudConfirmationMissing && (
+            {cloudConfirmationMissing ? (
               <p className="mr-auto text-xs text-muted-foreground">
                 Bitte bestätigen Sie die Verarbeitung für diesen Durchlauf.
               </p>
-            )}
+            ) : liveStartBlocked ? (
+              <p className="mr-auto text-xs text-muted-foreground">
+                Für einen Live-Lauf muss die Live-KI verfügbar, aktiviert und
+                bestätigt sein.
+              </p>
+            ) : null}
             <Button variant="outline" onClick={handleCancel}>
               Abbrechen
             </Button>
-            <Button onClick={handleStart} disabled={cloudConfirmationMissing}>
-              Analyse starten
+            <Button
+              onClick={handleStart}
+              disabled={cloudConfirmationMissing || liveStartBlocked}
+            >
+              {intentLive ? "Live-Lauf starten" : "Analyse starten"}
             </Button>
           </SheetFooter>
         )}

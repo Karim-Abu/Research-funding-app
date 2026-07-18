@@ -75,6 +75,10 @@ class ModelRequest:
     # v2 contract identity. A profile selects a default skill; callers set a
     # field-specific skill for A2 subsection drafting.
     skill_id: str | None = None
+    # Route-Auswahl: "auto" = primär mit automatischem Fallback (Bestand);
+    # "primary_only" = nie still auf die Alternativroute wechseln (A2/A3);
+    # "fallback_only" = die explizit vom Nutzer angeforderte Alternativroute.
+    route_preference: str = "auto"
     # Persisted only after whitelist filtering (IDs, hashes and counts). Never
     # pass prompt, source, query or draft text here.
     input_artifact_refs: tuple[dict, ...] = ()
@@ -416,6 +420,18 @@ def _execute(
     )
 
 
+def _select_route_keys(route_keys, preference: str) -> list:
+    """Kein stiller Fallback: "primary_only" schneidet auf die Primärroute,
+    "fallback_only" ist die explizit angeforderte Alternativroute; "auto"
+    behält das etablierte Primär→Fallback-Verhalten."""
+    keys = list(route_keys)
+    if preference == "primary_only":
+        return keys[:1]
+    if preference == "fallback_only":
+        return keys[1:2]
+    return keys[:2]
+
+
 def invoke(
     db: Session,
     request: ModelRequest,
@@ -432,7 +448,10 @@ def invoke(
     route_keys = registry.route_keys_for_profile(
         profile, role_skill.role.role_id, live=live_routing
     )
-    primary = registry.route(route_keys[0])
+    selected_route_keys = _select_route_keys(route_keys, request.route_preference)
+    # Wahrheit der Invocation-Metadaten: bei "fallback_only" wird die
+    # Alternativroute als angefragte Route ausgewiesen, nie die Primärroute.
+    primary = registry.route((selected_route_keys or route_keys)[0])
     primary_requested_model = primary.requested_model_id(settings)
 
     inv = AgentInvocation(
@@ -463,6 +482,13 @@ def invoke(
     )
     db.add(inv)
     db.flush()
+
+    if not selected_route_keys:
+        # "fallback_only" ohne definierte Alternativroute — ehrlicher Fehler
+        # statt stillem Rückfall auf die Primärroute.
+        return _safe(
+            db, inv, "failed", "agent_invocation_failed", "no_alternative_route"
+        )
 
     # Live intent is fail-closed. A deployment may be either an explicit demo
     # or a real-evaluation environment, never both at once.
@@ -577,9 +603,16 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
     generation_kind = generation.for_adapter_name(adapter_name)
     product_adapter = False
     if generation_kind == generation.MODEL_GENERATED:
-        origin = (request.classification or {}).get("origin")
+        # Live-Gate: synthetic/anonymized (Real-Eval) sowie — Demo-Slice
+        # 2026-07-17 — public_source bei sensitivity public. D1/D2/D3/Unknown
+        # bleiben durch ProviderPolicy + Data Policy blockiert.
+        cls = request.classification or {}
+        origin = cls.get("origin")
+        origin_ok = origin in ("synthetic", "anonymized") or (
+            origin == "public_source" and cls.get("sensitivity") == "public"
+        )
         if (
-            origin not in ("synthetic", "anonymized")
+            not origin_ok
             or get_settings().ai_eval_mode != "real"
             or not request.run_confirmation
         ):
@@ -732,9 +765,10 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
 def _execute_routes(db, inv, profile, request, registry, resolver):
     settings = get_settings()
     live_routing = settings.ai_eval_mode == "real"
-    routes = registry.route_keys_for_profile(
-        profile, inv.role_id, live=live_routing
-    )[:2]
+    routes = _select_route_keys(
+        registry.route_keys_for_profile(profile, inv.role_id, live=live_routing),
+        request.route_preference,
+    )
     role_route = (registry.role_routes or {}).get(inv.role_id)
     role_deadline = (
         time.monotonic() + role_route.max_latency_seconds

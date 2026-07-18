@@ -8,7 +8,7 @@ import { RunError } from "./runs"
 
 export const POLICY_VERSION = "1.1.0"
 
-export type ConfirmationProcessingMode = "cloud_assisted" | "local_only"
+export type ConfirmationProcessingMode = "cloud_assisted" | "local_only" | "live"
 
 export interface ProcessingConfirmationCreate {
   processing_mode: ConfirmationProcessingMode

@@ -17,7 +17,9 @@ class ProcessingConfirmationCreate(BaseModel):
 
     # R4.3 (additiv, Owner-Entscheid 2026-07-08): "local_only" = KI-Opt-in für
     # interne/vertrauliche Projekte über den lokalen Verarbeitungspfad.
-    processing_mode: Literal["cloud_assisted", "local_only"]
+    # "live" (Demo-Slice 2026-07-17): expliziter Live-KI-Lauf; verlangt
+    # AI_EVAL_MODE=real und bindet die Bestätigungs-Textversion live-run-v1.
+    processing_mode: Literal["cloud_assisted", "local_only", "live"]
     source_version_ids: list[str] = Field(min_length=1)
     accepted_policy_version: str
     purpose: str

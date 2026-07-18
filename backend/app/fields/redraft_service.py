@@ -24,6 +24,17 @@ from app.runs.transitions import transition_operation
 
 logger = logging.getLogger("app.fields.redraft")
 
+# Sichere Detailgründe, die einen transienten Providerfehler anzeigen — nur
+# dann darf die UI «Mit alternativem Modell versuchen» anbieten. Policy-Blocks,
+# Budget-, Schema- und Refusal-Fehler bleiben ausgeschlossen.
+_TRANSIENT_PROVIDER_REASONS = {
+    "timeout",
+    "provider_unavailable",
+    "model_unavailable",
+    "provider_outage",
+    "provider_error",
+}
+
 
 def _now() -> datetime:
     return datetime.now(timezone.utc)
@@ -88,6 +99,7 @@ def execute_a2_operation(
     field_id: str,
     guidance: str | None = None,
     target_section: str | None = None,
+    model_preference: str = "primary",
 ):
     """Gemeinsamer A2-Kern für Redraft-Executor UND Run-Graph: Operation
     running → A2 → succeeded/failed inkl. result/error-Bookkeeping. Jede
@@ -102,7 +114,7 @@ def execute_a2_operation(
     outcome = field_drafting.run_a2_field_drafting(
         db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
         operation_id=operation_id, guidance=guidance,
-        target_section=target_section,
+        target_section=target_section, model_preference=model_preference,
     )
 
     op = db.get(AsyncOperation, operation_id)
@@ -118,10 +130,26 @@ def execute_a2_operation(
         # R4.2: Verfügbarkeits-Skips (z. B. mode_deterministic_only) tragen
         # den Katalog-Reason; reine Generierungsfehler bleiben generisch.
         mapped = reason_codes.maybe_reason(outcome.reason or "")
+        # Nur transiente Providerfehler auf der Primärroute dürfen den
+        # expliziten Alternativ-Versuch anbieten — nie Policy/Budget/Schema/
+        # Refusal, und nie nachdem die Alternative selbst versucht wurde.
+        retry_alternative = (
+            outcome.status in ("failed", "timed_out")
+            and outcome.safe_detail in _TRANSIENT_PROVIDER_REASONS
+            and model_preference == "primary"
+        )
+        # Volles Problem-Shape — der Operations-Lesecontract verlangt es
+        # (die reduzierte Form machte fehlgeschlagene Redraft-Operationen
+        # unlesbar).
         op.error = {
+            "type": "/problems/redraft_failed",
+            "title": "Redraft Error",
+            "status": 503 if mapped else 500,
             "code": outcome.reason or "ai_unavailable",
             "detail": mapped[1] if mapped else "Es konnte kein Vorschlag erstellt werden.",
+            "correlation_id": op.correlation_id or str(uuid.uuid4()),
             **({"reason_code": mapped[0]} if mapped else {}),
+            **({"retry_with_alternative_model": True} if retry_alternative else {}),
         }
     op.finished_at = _now()
     audit.record(
@@ -136,6 +164,7 @@ def execute_a2_operation(
 def redraft_executor(
     operation_id: str, run_id: str, draft_id: str, base_version_id: str,
     guidance: str | None, field_id: str, target_section: str | None = None,
+    model_preference: str = "primary",
 ) -> None:
     """Background task: run A2 and store the suggestion in operation.result."""
     db = SessionLocal()
@@ -147,7 +176,7 @@ def redraft_executor(
         execute_a2_operation(
             db, operation=op, run=run, draft_id=draft_id,
             base_version_id=base_version_id, field_id=field_id, guidance=guidance,
-            target_section=target_section,
+            target_section=target_section, model_preference=model_preference,
         )
     except Exception:  # noqa: BLE001
         logger.exception("redraft execution failed")
@@ -165,8 +194,14 @@ def _mark_failed(operation_id: str) -> None:
             op.status = "failed"
             op.finished_at = _now()
             op.last_error_code = "REDRAFT_EXECUTION_FAILED"
-            op.error = {"code": "REDRAFT_EXECUTION_FAILED",
-                        "detail": "Es konnte kein Vorschlag erstellt werden."}
+            op.error = {
+                "type": "/problems/redraft_failed",
+                "title": "Redraft Error",
+                "status": 500,
+                "code": "REDRAFT_EXECUTION_FAILED",
+                "detail": "Es konnte kein Vorschlag erstellt werden.",
+                "correlation_id": op.correlation_id or str(uuid.uuid4()),
+            }
             db.commit()
     except Exception:  # noqa: BLE001
         db.rollback()

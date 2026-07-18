@@ -338,7 +338,7 @@ describe("LiveEditor", () => {
       screen.getByDisplayValue(/Abstract über Förderfähigkeit/)
     ).toBeInTheDocument()
 
-    fireEvent.click(screen.getByRole("button", { name: "Vorschlag anzeigen" }))
+    fireEvent.click(screen.getByRole("button", { name: "Vorschlag prüfen" }))
     fireEvent.click(await screen.findByRole("button", { name: "Übernehmen" }))
     await waitFor(() => expect(patched).not.toBeNull())
     // Annahme läuft über den unveränderten updateField-Pfad.

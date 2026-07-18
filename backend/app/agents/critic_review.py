@@ -324,6 +324,8 @@ def _run(db, run, *, provider_resolver, bound_routing=None) -> A3Outcome:
         prompt_version=prompt_version_for(A3_PROFILE_ID), context_text=ctx.context_text,
         context_hash=ctx.context_hash, context_meta=ctx.meta,
         skill_id="a3.critical_review",
+        # Kein stiller Fallback für die provisorische Demo-Route.
+        route_preference="primary_only",
         input_artifact_refs=(
             {
                 "kind": "review_scope",

@@ -339,11 +339,28 @@ def run_field_case(db, provider: str, field_id: str, *, adapter=None) -> dict:
     run, draft_id, base_version_id = _seed_a2_run(db, field_id)
     resolver, proxy = _forcing_resolver(provider, adapter=adapter)
 
+    # A2 läuft ohne stillen Fallback (route_preference primary_only). Liegt der
+    # erzwungene Zielprovider auf der Fallback-Route, wird die Alternativroute
+    # EXPLIZIT angefordert — genau wie im Produkt («Mit alternativem Modell
+    # versuchen»), nie still.
+    from app.agents.registry import get_agent_registry
+    registry = get_agent_registry()
+    role_route = (registry.role_routes or {}).get("A2_INNOSUISSE_PROPOSAL_WRITER")
+    model_preference = "primary"
+    if (
+        role_route is not None
+        and role_route.fallback
+        and registry.route(role_route.fallback).provider == ROUTE_FOR[provider]
+        and registry.route(role_route.primary).provider != ROUTE_FOR[provider]
+    ):
+        model_preference = "alternative"
+
     outcome = field_drafting.run_a2_field_drafting(
         db, run, field_id=field_id, draft_id=draft_id,
         base_version_id=base_version_id,
         operation_id=f"r5_5-{provider}-{uuid.uuid4().hex[:6]}",
         provider_resolver=resolver,
+        model_preference=model_preference,
     )
     db.commit()
 

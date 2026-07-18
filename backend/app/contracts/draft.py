@@ -82,3 +82,6 @@ class RedraftRequest(BaseModel):
     base_version_id: str
     guidance: str | None = Field(default=None, max_length=4000)
     target_section: str | None = Field(default=None, max_length=16)
+    # "alternative" = explizit angeforderte Alternativroute nach transientem
+    # Providerfehler — nie ein stiller automatischer Fallback.
+    model_preference: Literal["primary", "alternative"] = "primary"

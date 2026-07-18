@@ -7,6 +7,7 @@ import pytest
 from sqlalchemy import select
 
 from app.agents import field_drafting
+from app.agents.providers import FakeProvider
 from app.db.models import (
     AnalysisRun,
     DraftSuggestion,
@@ -115,6 +116,77 @@ def test_redraft_result_exposes_concrete_change_metadata_for_review(
     assert section["research_source_ids"] == []
     assert section["role_skill_contract_v2"]["requires_human_review"] is True
     assert op["result"]["proposal"]["human_review_required"] is True
+
+
+def _create_redraft_with_preference(client, csrf, run_id, field_id, base, preference):
+    return client.post(
+        f"/api/v1/runs/{run_id}/fields/{field_id}/redrafts",
+        json={"base_version_id": base, "target_section": TARGET_SECTION,
+              "model_preference": preference},
+        headers=unsafe_headers(csrf),
+    )
+
+
+def test_redraft_accepts_explicit_alternative_model(client, monkeypatch):
+    """§4 Demo-Slice: die Alternativroute läuft nur auf expliziten Wunsch."""
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft_with_preference(
+        client, csrf, run_id, FIELD_ID, base, "alternative")
+    assert res.status_code == 202, res.text
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "succeeded"
+    assert op["result"]["suggested_text"] == SECTION_GOOD_TEXT
+
+
+def test_transient_primary_failure_offers_alternative_retry(client, monkeypatch):
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    resolver = fake_resolver(success_fake(section_bundle()))
+    # Primärroute transient nicht erreichbar (Timeout) — Policy/Schema wären
+    # ausgeschlossen.
+    timeout_resolver = fake_resolver(FakeProvider(mode="timeout"))
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", timeout_resolver)
+    monkeypatch.setattr(
+        field_drafting, "_default_resolver",
+        lambda _config, _target_section=None: timeout_resolver,
+    )
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "failed"
+    assert op["error"]["retry_with_alternative_model"] is True
+    # Der explizite Alternativ-Versuch mit funktionierendem Provider gelingt.
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", resolver)
+    monkeypatch.setattr(
+        field_drafting, "_default_resolver",
+        lambda _config, _target_section=None: resolver,
+    )
+    retry = _create_redraft_with_preference(
+        client, csrf, run_id, FIELD_ID, base, "alternative")
+    assert retry.status_code == 202
+    retry_op = client.get(
+        f"/api/v1/operations/{retry.json()['operation_id']}").json()
+    assert retry_op["status"] == "succeeded"
+
+
+def test_schema_failure_never_offers_alternative(client, monkeypatch):
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    malformed = fake_resolver(FakeProvider(mode="malformed"))
+    monkeypatch.setattr(field_drafting, "_PROVIDER_RESOLVER", malformed)
+    monkeypatch.setattr(
+        field_drafting, "_default_resolver",
+        lambda _config, _target_section=None: malformed,
+    )
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "failed"
+    assert (op["error"] or {}).get("retry_with_alternative_model") is not True
 
 
 def test_redraft_other_field_404(client, monkeypatch):

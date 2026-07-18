@@ -87,36 +87,38 @@ def _attach_real_confirmation(db, run) -> None:
     db.flush()
 
 
+# Provisorische Demo-Route (2026-07-17): A2-Primärroute ist GPT-5.6 Terra
+# (openai_direct); die Hermetik-Adapter spiegeln deshalb den OpenAI-Weg.
 class _PreflightEcho(FakeProvider):
-    name = "anthropic_direct"
+    name = "openai_direct"
 
     def generate(self, request):
         return ProviderResult(
             raw_output='{"pong": true}',
             usage=ProviderUsage(1, 1),
-            model="actual-hermetic-sonnet",
+            model="actual-hermetic-terra",
         )
 
 
 class _LiveA2(FakeProvider):
-    name = "anthropic_direct"
+    name = "openai_direct"
 
     def generate(self, request):
         self.calls += 1
         return ProviderResult(
             raw_output=json.dumps(bundle()),
             usage=ProviderUsage(40, 120),
-            model="actual-hermetic-sonnet",
+            model="actual-hermetic-terra",
         )
 
 
 def _arm_live_a2(db, run, monkeypatch) -> None:
     settings = get_settings()
-    model_id = "requested-hermetic-sonnet"
+    model_id = "requested-hermetic-terra"
     monkeypatch.setattr(settings, "ai_eval_mode", "real")
     monkeypatch.setattr(settings, "agent_fake_provider", False)
-    monkeypatch.setattr(settings, "anthropic_api_key", "anthropic-hermetic")
-    monkeypatch.setattr(settings, "agent_model_claude_sonnet_5_id", model_id)
+    monkeypatch.setattr(settings, "openai_api_key", "openai-hermetic")
+    monkeypatch.setattr(settings, "agent_model_gpt_56_terra_id", model_id)
     monkeypatch.setattr(settings, "agent_model_pricing_chf_per_million", {
         model_id: {
             "input_chf_per_million": 1,
@@ -128,7 +130,7 @@ def _arm_live_a2(db, run, monkeypatch) -> None:
     })
     _attach_real_confirmation(db, run)
     result = preflight_route(
-        "anthropic_sonnet_5_candidate",
+        "openai_gpt_56_terra_candidate",
         settings=settings,
         adapter=_PreflightEcho(),
         execute_live=True,

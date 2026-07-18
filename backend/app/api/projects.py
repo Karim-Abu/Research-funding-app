@@ -10,6 +10,7 @@ from app.contracts.budget_precheck import (
     BudgetPrecheckCheck,
     BudgetPrecheckFigures,
 )
+from app.config.settings import get_settings
 from app.contracts.processing import ProcessingConfirmation, ProcessingConfirmationCreate
 from app.contracts.project import Project, ProjectCreate, ProjectList, ProjectPatch
 from app.db.session import get_db
@@ -137,9 +138,18 @@ def create_processing_confirmation(
                         "synthetische/anonymisierte Evaluationsfälle verfügbar; "
                         "Realprojekte und NDA-Inhalte bleiben blockiert."),
             )
+        if (
+            payload.processing_mode == "live"
+            and get_settings().ai_eval_mode != "real"
+        ):
+            raise ProblemException(
+                status=403, code="live_mode_requires_real_eval", title="Forbidden",
+                detail=("Live-KI ist in dieser Umgebung nicht freigeschaltet. "
+                        "Es sind nur regelbasierte oder Demo-Durchläufe möglich."),
+            )
         route_class = cloud_policy.provider_route_class()
         text_version = cloud_policy.confirmation_text_version_for(
-            project.data_classification
+            project.data_classification, payload.processing_mode
         )
     if payload.accepted_policy_version != POLICY_VERSION:
         raise ProblemException(

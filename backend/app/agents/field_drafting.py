@@ -103,6 +103,9 @@ def _default_resolver(config: A2FieldConfig, target_section: str | None = None):
 class A2Outcome:
     status: str  # succeeded | reused | skipped | blocked | failed
     reason: str = ""
+    # Sicherer Detailgrund der letzten Route (z. B. timeout/provider_outage) —
+    # unterscheidet transiente Providerfehler von Policy-/Schema-Fehlern.
+    safe_detail: str = ""
     suggestion_id: str | None = None
     invocation_id: str | None = None
     view: dict | None = None  # operation.result payload for the frontend
@@ -166,7 +169,7 @@ def availability(run: AnalysisRun, field_id: str) -> tuple[bool, str]:
     )
     if decision.blocked:
         return False, decision.reason
-    if mode == "cloud_assisted" and not is_demo:
+    if mode in ("cloud_assisted", "live") and not is_demo:
         try:
             db = Session.object_session(run)
         except Exception:
@@ -389,6 +392,7 @@ def run_a2_field_drafting(
     guidance: str | None = None,
     target_section: str | None = None,
     provider_resolver=None,
+    model_preference: str = "primary",
 ) -> A2Outcome:
     """Generate + validate + persist an advisory A2 suggestion for an A2-enabled field.
     Never raises. The field→profile/limit/markers binding comes from the registry."""
@@ -401,6 +405,7 @@ def run_a2_field_drafting(
             operation_id=operation_id, guidance=guidance,
             target_section=target_section,
             resolver=provider_resolver or _default_resolver(config, target_section),
+            model_preference=model_preference,
         )
     except Exception:  # defensive: A2 must never break the request/run
         logger.exception("A2 field drafting crashed; run %s field %s", run.run_id, field_id)
@@ -427,7 +432,8 @@ def run_a2_solution_innovation(
 
 
 def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation_id,
-         guidance, target_section, resolver) -> A2Outcome:
+         guidance, target_section, resolver,
+         model_preference: str = "primary") -> A2Outcome:
     field_id = config.field_id
     is_composite = bool(config.mandatory_markers)
     if (
@@ -496,6 +502,12 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
             SECTION_OUTPUT_SCHEMA if target_section is not None else FIELD_OUTPUT_SCHEMA
         ),
         skill_id=skill_id,
+        # Kein stiller Fallback (provisorische Demo-Route): die Alternative
+        # läuft nur auf expliziten Nutzerwunsch («Mit alternativem Modell
+        # versuchen»).
+        route_preference=(
+            "fallback_only" if model_preference == "alternative" else "primary_only"
+        ),
         input_artifact_refs=(
             {
                 "kind": "a2_field_context",
@@ -524,6 +536,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     if isinstance(result, gateway.SafeFailure):
         _audit(db, run, "agent.field_drafting.failed", field_id, {"reason": result.error_code})
         return A2Outcome(status=result.status, reason=result.error_code,
+                         safe_detail=result.safe_detail,
                          invocation_id=result.invocation_id)
 
     claim_check = {

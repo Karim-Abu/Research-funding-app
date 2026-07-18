@@ -3019,6 +3019,7 @@ components:
           type: string
           enum:
           - cloud_assisted
+          - live
         source_version_ids:
           type: array
           minItems: 1
@@ -3315,6 +3316,7 @@ components:
           - deterministic_only
           - cloud_assisted
           - local_only
+          - live
         max_cost_chf:
           type: number
           minimum: 0
@@ -3391,6 +3393,7 @@ components:
           - deterministic_only
           - cloud_assisted
           - local_only
+          - live
         created_at:
           type: string
           format: date-time
@@ -3761,6 +3764,17 @@ components:
           - string
           - 'null'
           maxLength: 4000
+        target_section:
+          type:
+          - string
+          - 'null'
+          maxLength: 16
+        model_preference:
+          type: string
+          enum:
+          - primary
+          - alternative
+          default: primary
     ReviewFinding:
       type: object
       required:

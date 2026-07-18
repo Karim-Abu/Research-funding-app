@@ -18,7 +18,14 @@ export interface AsyncOperationDto {
   progress_percent?: number | null
   result?: Record<string, unknown> | null
   // R4.2: reason_code = maschinenlesbarer Verfügbarkeits-Blockgrund (optional).
-  error?: { code?: string; detail?: string; reason_code?: string } | null
+  // retry_with_alternative_model: transienter Providerfehler — die UI darf
+  // «Mit alternativem Modell versuchen» anbieten (nie bei Policy/Schema/Budget).
+  error?: {
+    code?: string
+    detail?: string
+    reason_code?: string
+    retry_with_alternative_model?: boolean
+  } | null
 }
 
 const TERMINAL: ReadonlyArray<OperationStatus> = ["succeeded", "failed", "cancelled"]

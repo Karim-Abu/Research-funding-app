@@ -373,7 +373,7 @@ def node_draft_fields(state: RunState) -> RunState:
         if _is_cancelled(run):
             return {**state, "cancelled": True}
         mode = run.processing_mode
-        ai_enabled = mode == "cloud_assisted" or (
+        ai_enabled = mode in ("cloud_assisted", "live") or (
             mode == "local_only" and field_drafting.local_ai_confirmed(run)
         )
         if not ai_enabled:
@@ -548,7 +548,10 @@ def _finalize_live_status(db, run: AnalysisRun) -> None:
         select(UsageRecord).where(UsageRecord.run_id == run.run_id)
     ))
     run.actual_cost_chf = sum_priced_chf(usage_records)
-    if run.processing_mode != "cloud_assisted" or get_settings().ai_eval_mode != "real":
+    if (
+        run.processing_mode not in ("cloud_assisted", "live")
+        or get_settings().ai_eval_mode != "real"
+    ):
         run.live_execution_status = None
         run.live_status_reason = None
         return

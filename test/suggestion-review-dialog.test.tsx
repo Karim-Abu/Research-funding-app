@@ -199,6 +199,7 @@ describe("SuggestionReviewDialog", () => {
     const summary = screen.getByTestId("suggestion-summary")
     expect(summary).toHaveTextContent("Erhaltene Fakten: 2")
     expect(summary).toHaveTextContent("Entfernte/umformulierte Aussagen: 1")
+    expect(summary).toHaveTextContent("Neu eingeführte Aussagen: 0")
     expect(summary).toHaveTextContent("Fehlende Angaben: 1")
     expect(summary).toHaveTextContent("Verwendete Belege: 1")
     expect(summary).toHaveTextContent("Research-Quellen: 1")

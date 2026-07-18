@@ -220,6 +220,140 @@ def test_fallback_not_allowed_blocks(db):
     assert isinstance(resp, SafeFailure) and resp.status == "failed"
 
 
+# --- route_preference (Demo-Slice 2026-07-17): kein stiller Fallback ---------
+
+
+def test_primary_only_never_falls_back_silently(db):
+    fakes = {
+        "anthropic_direct": FakeProvider(mode="error"),  # primary fails
+        "openai_direct": FakeProvider(),                 # fallback would succeed
+    }
+    resp = invoke(
+        db, base_request(route_preference="primary_only"),
+        provider_resolver=per_route_resolver(fakes),
+    )
+    assert isinstance(resp, SafeFailure) and resp.status == "failed"
+    assert fakes["openai_direct"].calls == 0
+    attempts = db.scalars(select(AgentInvocationAttempt).where(
+        AgentInvocationAttempt.invocation_id == resp.invocation_id
+    )).all()
+    assert {a.provider for a in attempts} == {"anthropic_direct"}
+
+
+def test_fallback_only_serves_and_records_the_alternative_route(db):
+    fakes = {
+        "anthropic_direct": FakeProvider(),  # primary must stay untouched
+        "openai_direct": FakeProvider(),     # explicit alternative
+    }
+    resp = invoke(
+        db, base_request(route_preference="fallback_only"),
+        provider_resolver=per_route_resolver(fakes),
+    )
+    assert isinstance(resp, ModelResponse)
+    assert resp.provider == "openai_direct"
+    assert fakes["anthropic_direct"].calls == 0
+    inv = db.get(AgentInvocation, resp.invocation_id)
+    # Wahrheit der Metadaten: die Alternativroute ist die angefragte Route.
+    assert inv.provider == "openai_direct"
+
+
+def test_fallback_only_without_alternative_route_fails_honestly(db):
+    adapter = FakeProvider()
+    resp = invoke(
+        db, base_request(route_preference="fallback_only"),
+        provider_resolver=fake_resolver(adapter),
+        registry=_no_fallback_registry(),
+    )
+    assert isinstance(resp, SafeFailure) and resp.status == "failed"
+    assert resp.safe_detail == "no_alternative_route"
+    assert adapter.calls == 0
+
+
+# --- Live-Gate: public_source (Demo-Slice 2026-07-17) ------------------------
+
+
+def _live_settings(monkeypatch):
+    settings = get_settings().model_copy(update={
+        "ai_eval_mode": "real",
+        "agent_model_gpt_56_luna_id": "hermetic-openai-model",
+    })
+    monkeypatch.setattr(gateway, "get_settings", lambda: settings)
+
+
+def test_real_eval_gate_allows_public_source_with_confirmation(db, monkeypatch):
+    _live_settings(monkeypatch)
+    adapter = _RealEvalStub()
+    resp = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "public", "origin": "public_source",
+                "nda_applies": False,
+            },
+            run_confirmation=True,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(resp, ModelResponse)
+    assert resp.generation_kind == "model_generated"
+    assert adapter.calls == 1
+
+
+def test_real_eval_gate_blocks_public_source_without_confirmation(db, monkeypatch):
+    _live_settings(monkeypatch)
+    adapter = _RealEvalStub()
+    resp = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "public", "origin": "public_source",
+                "nda_applies": False,
+            },
+            run_confirmation=False,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(resp, SafeFailure) and resp.status == "blocked"
+    assert resp.safe_detail == "real_eval_gate_blocked"
+    assert adapter.calls == 0
+
+
+def test_real_eval_gate_blocks_internal_public_source(db, monkeypatch):
+    _live_settings(monkeypatch)
+    adapter = _RealEvalStub()
+    resp = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "internal", "origin": "public_source",
+                "nda_applies": False,
+            },
+            run_confirmation=True,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(resp, SafeFailure) and resp.status == "blocked"
+    assert adapter.calls == 0
+
+
+def test_real_eval_gate_still_blocks_real_project_origin(db, monkeypatch):
+    _live_settings(monkeypatch)
+    adapter = _RealEvalStub()
+    resp = invoke(
+        db,
+        base_request(
+            classification={
+                "sensitivity": "public", "origin": "real_project",
+                "nda_applies": False,
+            },
+            run_confirmation=True,
+        ),
+        provider_resolver=fake_resolver(adapter),
+    )
+    assert isinstance(resp, SafeFailure) and resp.status == "blocked"
+    assert adapter.calls == 0
+
+
 def test_provider_unavailable(db):
     resp = invoke(db, base_request(), provider_resolver=lambda _route: None)
     assert isinstance(resp, SafeFailure)

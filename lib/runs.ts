@@ -12,7 +12,7 @@ export type RunStatus =
   | "stopped"
   | "failed"
   | "cancelled"
-export type ProcessingMode = "deterministic_only" | "cloud_assisted" | "local_only"
+export type ProcessingMode = "deterministic_only" | "cloud_assisted" | "local_only" | "live"
 
 export interface RunSettings {
   processing_mode: ProcessingMode

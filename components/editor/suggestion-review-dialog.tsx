@@ -169,6 +169,7 @@ export function SuggestionReviewDialog({
               {[
                 `Erhaltene Fakten: ${section.preserved_facts.length}`,
                 `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims.length}`,
+                `Neu eingeführte Aussagen: ${section.new_claims.length}`,
                 `Fehlende Angaben: ${section.missing_inputs.length}`,
                 `Verwendete Belege: ${suggestion.evidence.length}`,
                 `Research-Quellen: ${suggestion.research_sources?.length ?? 0}`,

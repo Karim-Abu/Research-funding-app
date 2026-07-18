@@ -218,7 +218,7 @@ test("Analyse starten erzeugt echte Feldvorschläge und Critic-Findings", async 
   ).json()
   expect(abstractBefore.current_version.created_by).toBe("template")
 
-  await page.getByRole("button", { name: "Vorschlag anzeigen" }).click()
+  await page.getByRole("button", { name: "Vorschlag prüfen" }).click()
   await page.getByRole("button", { name: "Übernehmen", exact: true }).click()
   // Übernahme abgeschlossen: der Editor meldet die nötige erneute Prüfung.
   await expect(

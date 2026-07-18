@@ -143,11 +143,24 @@ def run_integrated_draft_real(
     _ensure_base_rows(db)
     project = _seed_base_project(db, classification=classification)
     resolver_for, proxies = _build_resolver_for(provider, adapters)
+    # A2 läuft ohne stillen Fallback: liegt der erzwungene Provider auf der
+    # Fallback-Route, wird die Alternativroute explizit angefordert (wie im
+    # Produkt «Mit alternativem Modell versuchen»).
+    registry = get_agent_registry()
+    role_route = (registry.role_routes or {}).get("A2_INNOSUISSE_PROPOSAL_WRITER")
+    model_preference = "primary"
+    if (
+        role_route is not None
+        and role_route.fallback
+        and registry.route(role_route.fallback).provider == ROUTE_FOR[provider]
+        and registry.route(role_route.primary).provider != ROUTE_FOR[provider]
+    ):
+        model_preference = "alternative"
     package = run_integrated_draft(
         db, base_project=project, actor_user_id=ACTOR, case_id="F1",
         provider_mode=provider, data_mode="synthetic_eval",
         resolver_for=resolver_for, seed_context=_seed_context, title_en=_TITLE_EN,
-        real_eval_confirmation=True,
+        real_eval_confirmation=True, model_preference=model_preference,
     )
     db.commit()
 

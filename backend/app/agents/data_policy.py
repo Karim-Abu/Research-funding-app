@@ -70,6 +70,11 @@ def evaluate(
     # Processing mode: deterministic_only / local_only never make an external call.
     if processing_mode in _NO_EXTERNAL_CALL_MODES:
         return PolicyDecision("blocked", "blocked", f"processing_mode_{processing_mode}")
+    # "live" ist der explizit bestätigte Live-Lauf; für die Matrix zählt er als
+    # externer Cloud-Aufruf. Einziger Normalisierungspunkt — die Profil-Listen
+    # (allowed_processing_modes) bleiben unverändert.
+    if processing_mode == "live":
+        processing_mode = "cloud_assisted"
     if processing_mode != "cloud_assisted":
         return PolicyDecision("blocked", "blocked", "processing_mode_not_cloud_assisted")
     if processing_mode not in profile.data_policy.allowed_processing_modes:

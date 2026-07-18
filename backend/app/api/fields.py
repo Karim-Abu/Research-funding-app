@@ -314,7 +314,7 @@ def create_redraft(
     background.add_task(
         redraft_service.redraft_executor, operation.operation_id, run.run_id,
         draft.draft_id, payload.base_version_id, guidance, field_id,
-        payload.target_section,
+        payload.target_section, payload.model_preference,
     )
     return accepted
 

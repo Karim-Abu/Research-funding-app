@@ -15,6 +15,7 @@ function renderDialog(
     projectOrigin?: Origin
     webAvailable?: boolean
     unavailableReason?: string
+    intent?: "standard" | "live"
   } = {}
 ) {
   const generationMode = options.generationMode ?? "real_eval"
@@ -25,6 +26,7 @@ function renderDialog(
       role={role}
       dataClass={dataClass}
       projectOrigin={options.projectOrigin ?? "synthetic"}
+      intent={options.intent}
       serviceAvailability={{
         ki: generationMode !== "unavailable",
         web: options.webAvailable ?? true,
@@ -79,11 +81,11 @@ describe("AnalyseEinstellungenDialog — Deaktivierungs-Gründe (A4)", () => {
     ).toBeInTheDocument()
   })
 
-  it("public real project: KI-Schalter nennt die Evaluationsfall-Bedingung", () => {
+  it("public real project: KI-Schalter nennt die Herkunfts-Bedingung", () => {
     renderDialog("public", vi.fn(), "member", { projectOrigin: "real_project" })
     expect(
       screen.getByText(
-        "Nur für synthetische oder anonymisierte Evaluationsfälle verfügbar — dieses Projekt enthält echte Projektdaten."
+        "Nur für öffentliche, synthetische oder anonymisierte Fälle verfügbar — dieses Projekt enthält echte, nicht-öffentliche Projektdaten."
       )
     ).toBeInTheDocument()
   })
@@ -232,6 +234,44 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
   it("Live-Modus ist eindeutig und nicht gleichzeitig Demo", () => {
     renderDialog("public")
     expect(screen.getByText("Live-KI verfügbar")).toBeInTheDocument()
+    expect(screen.queryByText(/^Demo$/)).toBeNull()
+  })
+
+  it("Live-Intent: eigener Titel, Live-Bestätigung und liveRun-Flag", () => {
+    const onStart = renderDialog("public", vi.fn(), "member", {
+      intent: "live",
+      projectOrigin: "public_source",
+    })
+    expect(screen.getByText("Neuen Live-Lauf erstellen")).toBeInTheDocument()
+    expect(screen.getByText("Live-Lauf mit echter KI")).toBeInTheDocument()
+    const start = screen.getByRole("button", { name: "Live-Lauf starten" })
+    expect(start).toBeDisabled()
+    fireEvent.click(
+      screen.getByLabelText("Live-KI für diesen Durchlauf erlauben")
+    )
+    expect(start).toBeEnabled()
+    fireEvent.click(start)
+    const settings = onStart.mock.calls[0][0] as AnalyseSettings
+    expect(settings.liveRun).toBe(true)
+    expect(settings.ki).toBe(true)
+    expect(settings.cloudConfirmed).toBe(true)
+  })
+
+  it("Live-Intent ohne verfügbare Live-KI: Start bleibt gesperrt mit Grund", () => {
+    renderDialog("public", vi.fn(), "member", {
+      intent: "live",
+      generationMode: "live_unavailable",
+      projectOrigin: "public_source",
+    })
+    expect(
+      screen.getByRole("button", { name: "Live-Lauf starten" })
+    ).toBeDisabled()
+    expect(
+      screen.getByText(
+        "Für einen Live-Lauf muss die Live-KI verfügbar, aktiviert und bestätigt sein."
+      )
+    ).toBeInTheDocument()
+    // Nie ein stiller Demo-Ersatz.
     expect(screen.queryByText(/^Demo$/)).toBeNull()
   })
 

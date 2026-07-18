@@ -165,10 +165,14 @@ export function PublicResearchPanel({
   projectId,
   dataClass = "public",
   onImported,
+  onEligibilityChange,
 }: {
   projectId: string
   dataClass?: DataClass
   onImported?: () => void
+  /** Meldet, ob mindestens eine live abgerufene, importierte und inhaltlich
+   *  positiv geprüfte Quelle vorliegt (Gate für den Marktvergleich). */
+  onEligibilityChange?: (hasEligible: boolean) => void
 }) {
   const blocked = isExternalBlocked(flatToPrivacyClass(dataClass))
   const [workspace, setWorkspace] = React.useState<ResearchWorkspaceDto | null>(null)
@@ -193,6 +197,22 @@ export function PublicResearchPanel({
   React.useEffect(() => {
     if (!blocked) void refresh().catch(() => setError("Der Recherchestatus konnte nicht geladen werden."))
   }, [blocked, refresh])
+
+  // Marktvergleich-Gate: gleiche Bedingungen wie das Backend
+  // (market/source_scope.imported_public_sources) — das Backend bleibt autoritativ.
+  const hasEligibleSource = Boolean(
+    workspace?.results.some(
+      (r) =>
+        r.status === "imported" &&
+        r.content_review_status === "reviewed" &&
+        (r.support_status === "supports" ||
+          r.support_status === "partially_supports") &&
+        r.execution_mode !== "fake_demo"
+    )
+  )
+  React.useEffect(() => {
+    onEligibilityChange?.(hasEligibleSource)
+  }, [hasEligibleSource, onEligibilityChange])
 
   const act = async (operation: () => Promise<unknown>) => {
     setBusy(true)

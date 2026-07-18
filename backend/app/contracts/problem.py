@@ -24,3 +24,7 @@ class Problem(BaseModel):
     # maschinenlesbarer Verfügbarkeits-Blockgrund; detail trägt den
     # freigegebenen deutschen Text (reason_text_de).
     reason_code: str | None = None
+    # Demo-Slice 2026-07-17 (additiv, Extension-Member): transienter
+    # Providerfehler auf der Primärroute — die UI darf «Mit alternativem
+    # Modell versuchen» anbieten (nie bei Policy/Budget/Schema/Refusal).
+    retry_with_alternative_model: bool | None = None

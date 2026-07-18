@@ -31,7 +31,7 @@ RunStage = Literal[
     "targeted_recheck",
     "finalize_run",
 ]
-ProcessingMode = Literal["deterministic_only", "cloud_assisted", "local_only"]
+ProcessingMode = Literal["deterministic_only", "cloud_assisted", "local_only", "live"]
 OperationStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
 

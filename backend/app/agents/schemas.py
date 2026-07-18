@@ -15,7 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_valida
 # Shared classification type (data_policy classification_dimensions).
 Sensitivity = Literal["public", "internal", "confidential"]
 Origin = Literal["public_source", "synthetic", "anonymized", "real_project"]
-ProcessingMode = Literal["deterministic_only", "cloud_assisted", "local_only"]
+ProcessingMode = Literal["deterministic_only", "cloud_assisted", "local_only", "live"]
 WebResearchMode = Literal["off", "validated_public"]
 
 

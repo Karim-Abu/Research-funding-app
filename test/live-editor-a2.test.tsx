@@ -166,7 +166,10 @@ function baseMock(
 
 describe("LiveEditor A2 suggestions", () => {
   // Einzelne Tests schalten für echte Capabilities-Antworten auf «live».
-  afterEach(() => setBackendMode("mock"))
+  afterEach(() => {
+    setBackendMode("mock")
+    window.sessionStorage.clear()
+  })
 
   it("shows the proposal control for the Abstract field (R5.5)", async () => {
     baseMock([abstractDraft()])
@@ -277,6 +280,144 @@ describe("LiveEditor A2 suggestions", () => {
     ).toHaveAttribute("href", "/admin")
     expect(screen.queryByTestId("suggestion-review-sheet")).toBeNull()
     expect(screen.queryByText(/Demo/)).toBeNull()
+  })
+
+  // §4 Demo-Slice — Alternativroute nur nach transientem Providerfehler,
+  // ausschliesslich auf expliziten Klick.
+  it("transienter Providerfehler: «Mit alternativem Modell versuchen» sendet die Alternativroute", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    const bodies: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json(
+          { operation_id: `op${bodies.length}` },
+          { status: 202 }
+        )
+      }),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "failed", created_at: new Date().toISOString(),
+          error: {
+            code: "agent_invocation_failed",
+            detail: "Es konnte kein Vorschlag erstellt werden.",
+            retry_with_alternative_model: true,
+          },
+        })
+      ),
+      http.get("/api/operations/op2", () =>
+        HttpResponse.json({
+          operation_id: "op2", resource_type: "redraft", resource_id: "d-sol",
+          status: "succeeded", created_at: new Date().toISOString(),
+          result: suggestionResult(),
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    expect(
+      await screen.findByRole("button", { name: "Erneut versuchen" })
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Mit alternativem Modell versuchen" })
+    )
+    await screen.findByTestId("suggestion-review-sheet")
+    expect(bodies[0].model_preference).toBeUndefined()
+    expect(bodies[1].model_preference).toBe("alternative")
+  })
+
+  it("Fehler ohne Transient-Flag bietet keine Alternativroute an", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "failed", created_at: new Date().toISOString(),
+          error: {
+            code: "agent_invocation_failed",
+            detail: "Es konnte kein Vorschlag erstellt werden.",
+          },
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    expect(
+      await screen.findByRole("button", { name: "Erneut versuchen" })
+    ).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: "Mit alternativem Modell versuchen" })
+    ).toBeNull()
+  })
+
+  // §10 — Quellen-Redraft nur mit positiv geprüfter Live-Quelle.
+  it("«Mit geprüften Quellen neu formulieren» erscheint nur mit positiv geprüfter Live-Quelle", async () => {
+    setBackendMode("live")
+    const { setActiveProjectId } = await import("@/lib/intake-store")
+    setActiveProjectId("p1")
+    baseMock([solDraft()], {
+      generation_mode: "real_eval",
+      features: { web_research: true },
+    })
+    server.use(
+      http.get("/api/projects/p1/research-workspace", () =>
+        HttpResponse.json({
+          brief: {},
+          queries: [],
+          results: [{
+            result_id: "res1", title: "Swiss health data report",
+            source_url: "https://example.ch/report", domain: "example.ch",
+            retrieved_at: new Date().toISOString(), relevance_reason: "passend",
+            status: "imported", content_review_status: "reviewed",
+            support_status: "supports", execution_mode: "live",
+            source_locations: [],
+          }],
+          provider_mode: "live",
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    expect(
+      await screen.findByTestId("research-redraft-action")
+    ).toHaveTextContent("Mit geprüften Quellen neu formulieren")
+  })
+
+  it("ohne geprüfte Live-Quelle gibt es keinen Quellen-Redraft-Button", async () => {
+    setBackendMode("live")
+    const { setActiveProjectId } = await import("@/lib/intake-store")
+    setActiveProjectId("p1")
+    baseMock([solDraft()], {
+      generation_mode: "real_eval",
+      features: { web_research: true },
+    })
+    server.use(
+      http.get("/api/projects/p1/research-workspace", () =>
+        HttpResponse.json({
+          brief: {},
+          queries: [],
+          results: [{
+            result_id: "res1", title: "Demo-Quelle",
+            source_url: "https://research.example.org/x", domain: "example.org",
+            retrieved_at: new Date().toISOString(), relevance_reason: "Demo",
+            status: "imported", content_review_status: "reviewed",
+            support_status: "supports", execution_mode: "fake_demo",
+            source_locations: [],
+          }],
+          provider_mode: "fake_demo",
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    await screen.findByTestId("a2-suggestion-control")
+    expect(screen.queryByTestId("research-redraft-action")).toBeNull()
   })
 
   it("generates a suggestion, shows side-by-side and accepts it", async () => {
@@ -529,8 +670,8 @@ describe("LiveEditor A2 suggestions", () => {
     await clickGenerate("4.2")
     await screen.findByTestId("suggestion-review-sheet")
     fireEvent.click(screen.getByRole("button", { name: "Close" }))
-    // Sheet zu, aber der Vorschlag ist über «Vorschlag anzeigen» wieder da.
-    const reopen = await screen.findByRole("button", { name: "Vorschlag anzeigen" })
+    // Sheet zu, aber der Vorschlag ist über «Vorschlag prüfen» wieder da.
+    const reopen = await screen.findByRole("button", { name: "Vorschlag prüfen" })
     fireEvent.click(reopen)
     expect(await screen.findByTestId("suggestion-text")).toBeInTheDocument()
   })

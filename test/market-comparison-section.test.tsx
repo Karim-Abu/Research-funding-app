@@ -48,6 +48,29 @@ function comparison(overrides: Record<string, unknown> = {}) {
 }
 
 describe("MarketComparisonSection", () => {
+  it("deaktiviert «Vergleich erstellen» mit konkretem Grund ohne geprüfte Quelle", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(null)
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        disabledReason="Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle vorhanden."
+      />
+    )
+    const button = await screen.findByRole("button", {
+      name: "Vergleich erstellen",
+    })
+    expect(button).toBeDisabled()
+    expect(
+      screen.getByTestId("market-comparison-disabled-reason")
+    ).toHaveTextContent(
+      "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle vorhanden."
+    )
+  })
+
   it("renders the comparison table, quote, status label and research gaps", async () => {
     server.use(
       http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
