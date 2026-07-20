@@ -16,20 +16,6 @@ braucht Owner-Freigabe. Siehe docs/IMPLEMENTATION_DISCOVERY.md §5 (Fehler #2).
 """
 from __future__ import annotations
 
-import pytest
-
-XFAIL_REASON_DERIVE = (
-    "DISCOVERY-RED #2a: Keine Kalendermonats-Ableitung — duration_months bleibt "
-    "None trotz valider Start-/Enddaten (Mandat D2: 01.03.2027–31.08.2028 = 18)."
-)
-XFAIL_REASON_CONFLICT = (
-    "DISCOVERY-RED #2b: Abweichung zwischen Datumsspanne (18 Monate) und "
-    "manueller Dauer (12) wird heute still akzeptiert — Mandat D2 fordert einen "
-    "sichtbaren Konflikt statt Überschreiben/Schweigen."
-)
-
-
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON_DERIVE)
 def test_discovery_red_duration_months_derived_from_dates(client):
     from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, create_project, login, unsafe_headers
 
@@ -48,7 +34,6 @@ def test_discovery_red_duration_months_derived_from_dates(client):
     assert fetched["duration_months"] == 18
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON_CONFLICT)
 def test_discovery_red_duration_divergence_yields_conflict(client):
     from tests.conftest import ANNA_EMAIL, ANNA_PASSWORD, create_project, login, unsafe_headers
 
@@ -64,13 +49,8 @@ def test_discovery_red_duration_divergence_yields_conflict(client):
         },
         headers=unsafe_headers(csrf),
     )
-    assert res.status_code == 200, res.text
+    assert res.status_code == 422, res.text
+    assert res.json()["code"] == "duration_read_only"
 
     fetched = client.get(f"/api/v1/projects/{project_id}").json()
-    # Vorgeschlagener Vertrag (genehmigungspflichtig): entweder ein explizites
-    # Konfliktsignal ODER die abgeleitete Dauer gewinnt sichtbar — nie stille
-    # Übernahme des abweichenden manuellen Werts.
-    has_conflict_signal = bool(
-        res.json().get("duration_conflict") or fetched.get("duration_conflict")
-    )
-    assert has_conflict_signal or fetched["duration_months"] == 18
+    assert fetched["duration_months"] is None

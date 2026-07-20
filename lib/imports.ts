@@ -79,6 +79,16 @@ export interface StructuredImportCandidateDto {
   has_conflict: boolean
   conflict_reason: string | null
   requires_manual_edit: boolean
+  interaction_mode: "actionable" | "comparison_only"
+  derived_duration_months: number | null
+  duration_status: "derived" | "not_derivable" | "review_required" | null
+  duration_reason_code: string | null
+  duration_comparison_status:
+    | "duration_match"
+    | "duration_conflict"
+    | "not_derivable"
+    | "duration_boundary_conflict"
+    | null
 }
 
 export interface StructuredImportSummaryDto {

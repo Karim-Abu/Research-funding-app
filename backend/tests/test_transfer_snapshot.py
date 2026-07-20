@@ -26,7 +26,8 @@ def test_transfer_snapshot_and_working_doc_keep_frozen_partner_budget_and_durati
         "cash_contribution": 5000,
         "total_requested_funding": 50000,
         "total_requested_funding_including_overhead": 55000,
-        "duration_months": 24,
+        "start_date": "2026-01-01",
+        "end_date": "2027-12-31",
     }
     assert client.patch(f"/api/v1/projects/{project_id}", json=before_run, headers=mut(csrf)).status_code == 200
     assert client.post(
@@ -48,7 +49,11 @@ def test_transfer_snapshot_and_working_doc_keep_frozen_partner_budget_and_durati
     assert client.get(f"/api/v1/runs/{run_id}").json()["status"] == "completed"
 
     # Later project/partner edits must become stale, never leak into this run.
-    changed = {**before_run, "direct_total_project_costs_excluding_overhead": 999999, "duration_months": 36}
+    changed = {
+        **before_run,
+        "direct_total_project_costs_excluding_overhead": 999999,
+        "end_date": "2028-12-31",
+    }
     assert client.patch(f"/api/v1/projects/{project_id}", json=changed, headers=mut(csrf)).status_code == 200
     assert client.patch(
         f"/api/v1/partners/{partner['partner_id']}",

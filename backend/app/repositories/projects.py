@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.contracts.project import Project as ProjectSchema
 from app.contracts.project import ProjectCreate, ProjectPatch
 from app.db.models import Project
+from app.projects.duration import derive_project_duration
 from app.workflow_summary import calculate as calculate_workflow_summary
 
 
@@ -72,7 +73,6 @@ _PATCHABLE_FIELDS = (
     "total_requested_funding",
     "total_requested_funding_including_overhead",
     "budget_exception_basis",
-    "duration_months",
     "status",
 )
 
@@ -88,6 +88,7 @@ def apply_patch(db: Session, project: Project, patch: ProjectPatch) -> Project:
 
 
 def to_contract(db: Session, project: Project) -> ProjectSchema:
+    duration = derive_project_duration(project.start_date, project.end_date)
     return ProjectSchema(
         project_id=project.project_id,
         workspace_id=project.workspace_id,
@@ -110,7 +111,9 @@ def to_contract(db: Session, project: Project) -> ProjectSchema:
             project.total_requested_funding_including_overhead
         ),
         budget_exception_basis=project.budget_exception_basis,
-        duration_months=project.duration_months,
+        duration_months=duration.duration_months,
+        duration_status=duration.status,
+        duration_reason_code=duration.reason_code,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,

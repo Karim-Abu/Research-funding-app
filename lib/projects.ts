@@ -37,6 +37,11 @@ export interface ProjectDto {
   total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
   duration_months?: number | null
+  duration_status: "derived" | "not_derivable" | "review_required"
+  duration_reason_code:
+    | "duration_derived"
+    | "duration_dates_missing"
+    | "duration_boundary_conflict"
   status: ProjectStatus
   created_at: string
   updated_at: string
@@ -52,7 +57,6 @@ export interface ProjectBudgetPatch {
   total_requested_funding?: number | null
   total_requested_funding_including_overhead?: number | null
   budget_exception_basis?: string | null
-  duration_months?: number | null
 }
 
 export interface ProjectMetadataPatch extends ProjectBudgetPatch {
@@ -133,6 +137,8 @@ export async function createProjectFromIntake(
       created_at: now,
       updated_at: now,
       active_run_id: null,
+      duration_status: "not_derivable",
+      duration_reason_code: "duration_dates_missing",
       ...payload,
     }
   }

@@ -22,6 +22,7 @@ from app.db.models import (
     StructuredImportCandidate,
 )
 from app.registry.loader import Registry
+from app.projects.duration import derive_project_duration
 from app.repositories import audit
 from app.repositories import partners as partners_repo
 from app.review.invalidation import invalidate_approvals
@@ -69,6 +70,7 @@ def _project_dict(
     *,
     schema_version: str = SNAPSHOT_SCHEMA_VERSION,
 ) -> dict:
+    duration = derive_project_duration(project.start_date, project.end_date)
     result = {
         "project_id": project.project_id,
         "funding_instrument_profile_id": project.funding_instrument_profile_id,
@@ -92,7 +94,9 @@ def _project_dict(
             project.total_requested_funding_including_overhead
         ),
         "budget_exception_basis": project.budget_exception_basis,
-        "duration_months": project.duration_months,
+        "duration_months": duration.duration_months,
+        "duration_status": duration.status,
+        "duration_reason_code": duration.reason_code,
         "structured_answers": structured_answers or {},
     }
     if schema_version == SNAPSHOT_SCHEMA_VERSION:
@@ -126,7 +130,11 @@ def current_inputs(
 
 
 def mark_current_runs_stale(
-    db: Session, *, project: Project, actor_user_id: str
+    db: Session,
+    *,
+    project: Project,
+    actor_user_id: str,
+    reason: str = "structured_import_changed",
 ) -> list[str]:
     """Persistente Recheck-Markierung; der immutable Snapshot bleibt intakt."""
     rows = list(
@@ -152,7 +160,7 @@ def mark_current_runs_stale(
             action="run.recheck_required",
             target_type="run",
             target_id=run.run_id,
-            detail={"reason": "structured_import_changed"},
+            detail={"reason": reason},
         )
         changed.append(run.run_id)
     db.flush()

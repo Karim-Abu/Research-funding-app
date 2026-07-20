@@ -54,7 +54,8 @@ from app.ingestion.parsers import ParserError
 from app.repositories import audit
 from app.repositories import drafts as drafts_repo
 from app.repositories import partners as partners_repo
-from app.repositories import projects as projects_repo
+from app.projects.duration import compare_imported_duration, derive_project_duration
+from app.projects.service import mutate_project
 from app.runs import project_snapshot
 from app.storage import get_storage
 
@@ -645,6 +646,21 @@ def _structured_current_state(
     if candidate.candidate_kind in {"project_metadata", "budget"}:
         project = db.get(Project, candidate.project_id)
         field = _PROJECT_TARGET_FIELDS.get(candidate.target_key)
+        if candidate.target_key == "project.duration_months":
+            if project is None:
+                return None, None
+            duration = derive_project_duration(project.start_date, project.end_date)
+            current_json = (
+                {"duration_months": duration.duration_months}
+                if duration.duration_months is not None
+                else None
+            )
+            imported = payload.get("duration_months")
+            comparison = compare_imported_duration(
+                project.start_date, project.end_date, imported
+            )
+            conflict = None if comparison == "duration_match" else comparison
+            return current_json, conflict
         current = getattr(project, field) if project is not None and field else None
         current_json = {field: _json_value(current)} if field and current is not None else None
         if current_json is not None and current_json != payload:
@@ -677,6 +693,18 @@ def to_structured_contract(
 ) -> StructuredImportCandidateSchema:
     effective = _effective_payload(candidate)
     current, conflict = _structured_current_state(db, candidate, effective)
+    is_duration = candidate.target_key == "project.duration_months"
+    duration = None
+    duration_comparison = None
+    if is_duration:
+        project = db.get(Project, candidate.project_id)
+        if project is not None:
+            duration = derive_project_duration(project.start_date, project.end_date)
+            duration_comparison = compare_imported_duration(
+                project.start_date,
+                project.end_date,
+                effective.get("duration_months"),
+            )
     return StructuredImportCandidateSchema(
         candidate_id=candidate.candidate_id,
         source_id=candidate.source_id,
@@ -695,7 +723,14 @@ def to_structured_contract(
         current_value_json=current,
         has_conflict=conflict is not None,
         conflict_reason=conflict,
-        requires_manual_edit=candidate.confidence == "uncertain",
+        requires_manual_edit=(
+            candidate.confidence == "uncertain" and not is_duration
+        ),
+        interaction_mode="comparison_only" if is_duration else "actionable",
+        derived_duration_months=(duration.duration_months if duration else None),
+        duration_status=(duration.status if duration else None),
+        duration_reason_code=(duration.reason_code if duration else None),
+        duration_comparison_status=duration_comparison,
     )
 
 
@@ -708,6 +743,13 @@ def decide_structured_candidate(
     edited_payload_json: dict[str, Any] | None = None,
     confirm_overwrite: bool = False,
 ) -> StructuredImportCandidate:
+    if candidate.target_key == "project.duration_months":
+        raise _problem(
+            422,
+            "duration_read_only",
+            "Unprocessable Entity",
+            "Die PDF-Dauer dient nur dem Vergleich mit der aus den Projektdaten abgeleiteten Dauer.",
+        )
     if candidate.decision in _STRUCTURED_TERMINAL_DECISIONS:
         raise _problem(
             409,
@@ -793,7 +835,13 @@ def decide_structured_candidate(
         field = _PROJECT_TARGET_FIELDS[candidate.target_key]
         before = _json_value(getattr(project, field))
         patch = ProjectPatch(**validated)
-        projects_repo.apply_patch(db, project, patch)
+        mutate_project(
+            db,
+            project=project,
+            patch=patch,
+            actor_user_id=actor_user_id,
+            stale_reason="structured_import_changed",
+        )
         changed = before != _json_value(getattr(project, field))
     elif candidate.candidate_kind == "partner":
         matches = _matching_partners(db, candidate, validated)
@@ -829,7 +877,7 @@ def decide_structured_candidate(
     candidate.decided_by = actor_user_id
     candidate.decided_at = datetime.now(timezone.utc)
     candidate.applied_resource_id = applied_resource_id
-    if changed:
+    if changed and candidate.candidate_kind not in {"project_metadata", "budget"}:
         project_snapshot.mark_current_runs_stale(
             db, project=project, actor_user_id=actor_user_id
         )

@@ -367,8 +367,9 @@ class TestStructuredApi:
     def test_golden_acceptance_persists_existing_models_and_new_snapshot(self, client):
         csrf, project_id, _, by_target = _setup(client)
         accepted_targets = [
+            "project.start_date",
+            "project.end_date",
             *EXPECTED_BUDGET,
-            "project.duration_months",
             "partner.research.01",
             "partner.implementation.01",
             "partner.implementation.02",
@@ -381,6 +382,19 @@ class TestStructuredApi:
 
         project = client.get(f"/api/v1/projects/{project_id}").json()
         assert project["duration_months"] == 18
+        refreshed = client.get(
+            f"/api/v1/projects/{project_id}/structured-imports"
+        ).json()
+        duration = next(
+            item
+            for item in refreshed
+            if item["target_key"] == "project.duration_months"
+        )
+        assert duration["interaction_mode"] == "comparison_only"
+        assert duration["duration_comparison_status"] == "duration_match"
+        rejected = _decide(client, csrf, duration)
+        assert rejected.status_code == 422
+        assert rejected.json()["code"] == "duration_read_only"
         assert project["direct_total_project_costs_excluding_overhead"] == 309734
         assert project["implementation_own_contribution"] == 142680
         assert project["cash_contribution"] == 20000

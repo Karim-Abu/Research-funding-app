@@ -127,14 +127,6 @@ function parseAmount(raw: string): number | null | "invalid" {
   return value
 }
 
-function parseDuration(raw: string): number | null | "invalid" {
-  const trimmed = raw.trim()
-  if (trimmed === "") return null
-  const value = Number(trimmed)
-  if (!Number.isInteger(value) || value < 1) return "invalid"
-  return value
-}
-
 export function BudgetForm({
   projectId,
   importSummary,
@@ -149,6 +141,9 @@ export function BudgetForm({
   const [loadError, setLoadError] = React.useState(false)
   const [precheck, setPrecheck] = React.useState<BudgetPrecheckDto | null>(null)
   const [precheckUnavailable, setPrecheckUnavailable] = React.useState(false)
+  const [durationStatus, setDurationStatus] = React.useState<
+    ProjectDto["duration_status"]
+  >("not_derivable")
 
   const loadPrecheck = React.useCallback(async () => {
     try {
@@ -182,6 +177,7 @@ export function BudgetForm({
         budget_exception_basis: project.budget_exception_basis ?? "",
         duration_months: toFormValue(project.duration_months),
       })
+      setDurationStatus(project.duration_status)
       setLoadError(false)
     } catch {
       setLoadError(true)
@@ -208,12 +204,6 @@ export function BudgetForm({
       }
       patch[field.key] = parsed
     }
-    const duration = parseDuration(form.duration_months)
-    if (duration === "invalid") {
-      setError("Bitte geben Sie die Projektdauer als ganze Monate (mindestens 1) ein.")
-      return
-    }
-    patch.duration_months = duration
     patch.budget_exception_basis = form.budget_exception_basis.trim() || null
 
     setBusy(true)
@@ -273,15 +263,18 @@ export function BudgetForm({
             />
           </div>
         ))}
-        <div>
-          <Label htmlFor="budget-duration">Projektdauer (Monate)</Label>
-          <Input
-            id="budget-duration"
-            value={form.duration_months}
-            onChange={(e) => set({ duration_months: e.target.value })}
-            placeholder="z. B. 24"
-            inputMode="numeric"
-          />
+        <div className="rounded-md border bg-accent/10 p-3">
+          <Label>Abgeleitete Projektdauer</Label>
+          <p className="mt-1 text-sm font-medium">
+            {form.duration_months ? `${form.duration_months} Monate` : "Nicht ableitbar"}
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            {durationStatus === "review_required"
+              ? "Start und Ende müssen auf vollständigen Monatsgrenzen liegen."
+              : durationStatus === "not_derivable"
+                ? "Bitte erfassen Sie Start- und Enddatum."
+                : "Aus Start- und Enddatum berechnet; nicht separat bearbeitbar."}
+          </p>
         </div>
         <div>
           <Label htmlFor="budget-exception">Begründung für Ausnahme (optional)</Label>

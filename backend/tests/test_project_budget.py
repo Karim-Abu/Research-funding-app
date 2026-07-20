@@ -29,7 +29,8 @@ BUDGET_PATCH = {
     "cash_contribution": 5000,
     "total_requested_funding": 50000,
     "budget_exception_basis": "Start-up-Ausnahme",
-    "duration_months": 24,
+    "start_date": "2027-01-01",
+    "end_date": "2028-12-31",
 }
 
 
@@ -184,15 +185,16 @@ def test_budget_patch_roundtrip(client):
         assert fetched[field] == value
 
 
-def test_budget_patch_rejects_invalid_duration(client):
+def test_budget_patch_rejects_read_only_duration(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = create_project(client, csrf)
     res = client.patch(
         f"/api/v1/projects/{project_id}",
-        json={"duration_months": 0},
+        json={"duration_months": 24},
         headers=unsafe_headers(csrf),
     )
     assert res.status_code == 422
+    assert res.json()["code"] == "duration_read_only"
 
 
 # --- (5b) Budget-Vorprüfung (read-only, run-unabhängig) -----------------------

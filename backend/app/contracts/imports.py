@@ -107,6 +107,18 @@ class StructuredImportCandidate(BaseModel):
     has_conflict: bool = False
     conflict_reason: str | None = None
     requires_manual_edit: bool = False
+    interaction_mode: Literal["actionable", "comparison_only"] = "actionable"
+    derived_duration_months: int | None = None
+    duration_status: Literal[
+        "derived", "not_derivable", "review_required"
+    ] | None = None
+    duration_reason_code: str | None = None
+    duration_comparison_status: Literal[
+        "duration_match",
+        "duration_conflict",
+        "not_derivable",
+        "duration_boundary_conflict",
+    ] | None = None
 
 
 class StructuredImportDecisionRequest(BaseModel):

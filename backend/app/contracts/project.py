@@ -41,7 +41,9 @@ class ProjectPatch(BaseModel):
         default=None, ge=0
     )
     budget_exception_basis: str | None = None
-    duration_months: int | None = Field(default=None, ge=1)
+    # Compatibility input member only. Presence is rejected by the central
+    # mutation service with the stable ``duration_read_only`` problem code.
+    duration_months: int | None = None
     # Status transitions (e.g. archivieren) — same enum as the Project contract.
     status: Literal["draft", "active", "archived"] | None = None
 
@@ -78,6 +80,12 @@ class Project(ProjectCreate):
     total_requested_funding_including_overhead: float | None = None
     budget_exception_basis: str | None = None
     duration_months: int | None = None
+    duration_status: Literal["derived", "not_derivable", "review_required"]
+    duration_reason_code: Literal[
+        "duration_derived",
+        "duration_dates_missing",
+        "duration_boundary_conflict",
+    ]
     status: Literal["draft", "active", "archived"]
     created_at: datetime
     updated_at: datetime

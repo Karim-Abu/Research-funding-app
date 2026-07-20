@@ -386,9 +386,13 @@ export function ImportReview() {
   )
   const structuredOpen = structuredCandidates.filter(
     (candidate) =>
-      candidate.decision === "pending" || candidate.decision === "conflict"
+      candidate.interaction_mode === "actionable" &&
+      (candidate.decision === "pending" || candidate.decision === "conflict")
   )
-  const totalCandidates = candidates.length + structuredCandidates.length
+  const actionableStructured = structuredCandidates.filter(
+    (candidate) => candidate.interaction_mode === "actionable"
+  )
+  const totalCandidates = candidates.length + actionableStructured.length
   const allDecided =
     totalCandidates > 0 && open.length === 0 && structuredOpen.length === 0
   const openCount = open.length + structuredOpen.length
@@ -1016,7 +1020,10 @@ function StructuredCandidateRow({
   onEdit: () => void
   onIgnore: () => void
 }>) {
-  const open = candidate.decision === "pending" || candidate.decision === "conflict"
+  const comparisonOnly = candidate.interaction_mode === "comparison_only"
+  const open =
+    !comparisonOnly &&
+    (candidate.decision === "pending" || candidate.decision === "conflict")
   const uncertain = candidate.confidence === "uncertain"
   return (
     <Card
@@ -1038,6 +1045,7 @@ function StructuredCandidateRow({
             >
               {uncertain ? "Unsicher" : "Inhalt erkannt"}
             </Badge>
+            {comparisonOnly && <Badge variant="outline">Nur Vergleich</Badge>}
             {candidate.source_location && (
               <span className="text-xs text-muted-foreground">
                 Fundseite: {candidate.source_location}
@@ -1082,6 +1090,19 @@ function StructuredCandidateRow({
           </div>
         )}
       </div>
+      {comparisonOnly && (
+        <p className="text-xs text-muted-foreground">
+          {candidate.duration_comparison_status === "duration_match"
+            ? "PDF-Wert und abgeleitete Dauer stimmen überein."
+            : candidate.duration_comparison_status === "duration_conflict"
+              ? "Der PDF-Wert weicht von der abgeleiteten Projektdauer ab."
+              : candidate.duration_comparison_status === "duration_boundary_conflict"
+                ? "Die Datumsgrenzen decken keine vollständigen Kalendermonate ab."
+                : "Ohne vollständiges Start- und Enddatum ist kein Vergleich möglich."}
+          {candidate.derived_duration_months !== null &&
+            ` Abgeleitet: ${candidate.derived_duration_months} Monate.`}
+        </p>
+      )}
       {candidate.has_conflict && open && (
         <p className="text-xs text-orange-700 dark:text-orange-300">
           Der aktuelle Wert weicht vom PDF ab. Eine Übernahme verlangt eine

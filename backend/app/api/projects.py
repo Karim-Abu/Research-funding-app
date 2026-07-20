@@ -16,6 +16,7 @@ from app.contracts.project import Project, ProjectCreate, ProjectList, ProjectPa
 from app.db.session import get_db
 from app.registry import get_registry
 from app.repositories import audit, controls, idempotency, projects
+from app.projects.service import mutate_project
 from app.repositories import processing_confirmations as confirmations_repo
 from app.rules.engine import evaluate_rule
 from app.rules.inputs import inputs_from_snapshot
@@ -328,7 +329,12 @@ def update_project(
             title="Resource not found",
             detail="Project not found.",
         )
-    projects.apply_patch(db, project, payload)
+    mutate_project(
+        db,
+        project=project,
+        patch=payload,
+        actor_user_id=context.user.id,
+    )
     audit.record(
         db,
         workspace_id=context.user.workspace_id,
