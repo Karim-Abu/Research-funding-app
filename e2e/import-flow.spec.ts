@@ -200,14 +200,40 @@ async function waitForImportUploadReady(page: Page) {
   })
 }
 
+async function gotoImportUploadReady(page: Page) {
+  // Nach einem harten Seitenload muss der neue In-Memory-CSRF-Token aus dem
+  // Session-Bootstrap vorhanden sein, bevor ein XHR-Upload starten darf.
+  const sessionReady = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === "GET" &&
+      url.pathname === "/api/session" &&
+      response.status() === 200
+    )
+  })
+  await page.goto("/import")
+  await sessionReady
+  await waitForImportUploadReady(page)
+}
+
 test("Import-Upload zeigt nachvollziehbare Phasen bis zum Review", async ({ page }) => {
   // Unter Suite-Last (OneDrive/SQLite) kann die Verarbeitung länger dauern.
   test.setTimeout(120_000)
   await login(page)
   await createIdeaProject(page, "E2E Import-Phasen")
 
-  await page.goto("/import")
-  await waitForImportUploadReady(page)
+  await gotoImportUploadReady(page)
+  // Fachliches Ende: Die Kandidaten wurden serverseitig erzeugt und
+  // persistiert. Den Wait vor dem Upload registrieren, damit auch eine
+  // schnelle Response nicht verpasst wird.
+  const mappingCompleted = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/projects\/[^/]+\/imports$/.test(url.pathname) &&
+      response.status() === 201
+    )
+  })
   await page.getByTestId("import-file-input").setInputFiles(FIXTURE_PDF)
 
   // Phasenanzeige: Parsing ist phasenbasiert sichtbar (kein Fake-Prozent).
@@ -216,7 +242,9 @@ test("Import-Upload zeigt nachvollziehbare Phasen bis zum Review", async ({ page
   })
   await expect(page.getByText("Text wird extrahiert")).toBeVisible()
 
-  await expect(page.getByTestId("import-review")).toBeVisible({ timeout: 60_000 })
+  await mappingCompleted
+  await expect(page.getByTestId("import-progress")).toBeHidden()
+  await expect(page.getByTestId("import-review")).toBeVisible()
   await expect(page.getByTestId("import-candidate")).toHaveCount(8)
 })
 
@@ -226,20 +254,28 @@ test("Import-Upload-Fehler: Ursache, Erneut versuchen und Technische Details", a
   await login(page)
   await createIdeaProject(page, "E2E Import-Fehler")
 
-  await page.goto("/import")
-  await waitForImportUploadReady(page)
+  await gotoImportUploadReady(page)
+  const uploadRejected = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/projects\/[^/]+\/sources\/files$/.test(url.pathname) &&
+      response.status() === 415
+    )
+  })
   await page.getByTestId("import-file-input").setInputFiles({
     name: "kaputt.pdf",
     mimeType: "application/pdf",
     buffer: Buffer.from("definitiv kein pdf inhalt"),
   })
+  await uploadRejected
 
   // Ursachen-spezifische Meldung (Signatur passt nicht zur Endung) statt
   // einer generischen Sammel-Fehlermeldung. Grosszügiges Fenster: unter
   // Suite-Last kann der Upload-Roundtrip die 20s knapp überschreiten.
   await expect(
     page.getByText(/wird nicht unterstützt oder der Inhalt passt nicht zur Dateiendung/)
-  ).toBeVisible({ timeout: 45_000 })
+  ).toBeVisible()
   await expect(
     page.getByRole("button", { name: "Erneut versuchen" })
   ).toBeVisible()
@@ -248,9 +284,19 @@ test("Import-Upload-Fehler: Ursache, Erneut versuchen und Technische Details", a
   await page.getByRole("button", { name: "Technische Details" }).click()
   await expect(page.getByText("unsupported_media_type")).toBeVisible()
 
+  const retryRejected = page.waitForResponse((response) => {
+    const url = new URL(response.url())
+    return (
+      response.request().method() === "POST" &&
+      /\/api\/projects\/[^/]+\/sources\/files$/.test(url.pathname) &&
+      response.status() === 415
+    )
+  })
+
   // Retry mit derselben Datei führt ehrlich erneut zum selben Fehler.
   await page.getByRole("button", { name: "Erneut versuchen" }).click()
+  await retryRejected
   await expect(
     page.getByText(/wird nicht unterstützt oder der Inhalt passt nicht zur Dateiendung/)
-  ).toBeVisible({ timeout: 20_000 })
+  ).toBeVisible()
 })
