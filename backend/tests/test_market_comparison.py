@@ -433,7 +433,40 @@ def test_item_status_update(client, db, web_enabled):
     assert res.json()["code"] == "demo_comparison_not_acceptable"
 
 
-def test_capability_reflects_market_comparison(client, web_enabled):
+def test_capability_reflects_market_comparison(client, db, web_enabled):
+    """Live-Konfiguration allein reicht seit dem Live-Preflight-Vertrag nicht:
+    ein Live-Provider gilt erst nach einem erfolgreichen, persistierten
+    Preflight als betriebsbereit (kein stiller Übergang). Die Fixture seedet
+    diesen Preflight realistisch über denselben Persistenzpfad wie der
+    Admin-Endpoint — die Preflight-Pflicht selbst bleibt unangetastet."""
+    from app.evaluation.preflight import (
+        PASS,
+        PreflightCheck,
+        ProviderPreflight,
+        persist_route_preflight,
+    )
+
     login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    # Ohne persistierten Preflight: ehrlich nicht betriebsbereit.
+    caps = client.get("/api/v1/capabilities").json()
+    assert caps["features"]["market_comparison"] is False
+    assert caps["features"]["web_research"] is False
+
+    persist_route_preflight(
+        db,
+        ProviderPreflight(
+            provider="firecrawl", mode="live", route_key="firecrawl",
+            checks=[
+                PreflightCheck(
+                    "api_reachable", PASS, "Firecrawl-Suche hat geantwortet."
+                )
+            ],
+            latency_ms=42,
+        ),
+        triggered_by="user-anna",
+    )
+    db.commit()
+
     caps = client.get("/api/v1/capabilities").json()
     assert caps["features"]["market_comparison"] is True
+    assert caps["features"]["web_research"] is True

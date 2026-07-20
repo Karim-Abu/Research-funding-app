@@ -269,6 +269,32 @@ def test_edited_query_is_bound_to_brief_and_invalidates_old_approval(client, db,
     assert db.get(SearchQueryApproval, old["approval_id"]).status == "expired"
 
 
+def test_legacy_market_preview_success_returns_new_pending_approval(client, db, web_fake):
+    """Regression (RUN 2A Slice 0): der projektbezogene Preview-Endpoint
+    ``/projects/{id}/market-research/queries/preview`` — der Erfolgspfad des
+    Bearbeitens im Analyse-Dialog — crashte mit AttributeError, weil
+    ``preview_query`` eine ``ResearchQueryView`` liefert (Feld ``query_text``,
+    nicht ``sanitized_query``). Pinnt den Erfolgspfad des Legacy-Adapters."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _project(client, csrf)
+    old = _plan(client, csrf, pid)["queries"][0]
+    res = client.post(
+        f"/api/v1/projects/{pid}/market-research/queries/preview",
+        json={
+            "query_text": "manufacturing quality assurance market growth Switzerland",
+            "purpose": "market_size",
+        },
+        headers=unsafe_headers(csrf),
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["public_safe"] is True
+    assert body["approval_id"] and body["approval_id"] != old["approval_id"]
+    assert body["query_text"]
+    db.expire_all()
+    assert db.get(SearchQueryApproval, body["approval_id"]).status == "pending"
+
+
 # --- Guard: keine zweite Planner-/Runner-Implementierung -----------------------
 
 

@@ -106,8 +106,9 @@ def test_empty_package_zero_counts(client):
 
 def test_per_area_counts_and_human_review(client):
     """per_area_counts gruppiert offene Findings nach Feldbereich; Findings ohne
-    Feldbezug laufen unter 'general'. human_review_count zählt needs_input-
-    Assessments (deterministische Basis aus dem Run)."""
+    Feldbezug laufen unter 'general'. human_review_count zählt seit RUN 2A
+    Slice 1 die OFFENEN Human-Review-/Confirmation-Issues (requires_human_review
+    + human_confirmation_pending) — nicht pauschal needs_input-Assessments."""
     _csrf, _pid, run_id = setup_completed_run(client)
     status = get_status(client, run_id)
     pkg = get_review(client, run_id)
@@ -119,10 +120,22 @@ def test_per_area_counts_and_human_review(client):
     }
     assert set(status["per_area_counts"].keys()) == expected_areas
 
-    needs_input = [
-        a for a in pkg["requirements"] if a["status"] == "needs_input"
+    review_issue_types = {"human_confirmation_pending", "requires_human_review"}
+    open_review_issues = [
+        issue
+        for a in pkg["requirements"]
+        for issue in a["open_issues"]
+        if issue["status"] == "open" and issue["issue_type"] in review_issue_types
     ]
-    assert status["human_review_count"] == len(needs_input)
+    assert status["human_review_count"] == len(open_review_issues)
+    # Ein erfüllter Hybrid-Check mit offener Bestätigung zählt hier, bleibt
+    # aber im Compliance-Status «fulfilled».
+    fulfilled_with_review = [
+        a for a in pkg["requirements"]
+        if a["status"] == "fulfilled"
+        and any(i["issue_type"] == "human_confirmation_pending" for i in a["open_issues"])
+    ]
+    assert fulfilled_with_review, "Setup erzeugt mindestens einen Hybrid-Pass"
 
 
 def test_status_view_is_read_only(client):

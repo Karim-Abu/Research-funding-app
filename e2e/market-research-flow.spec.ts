@@ -267,15 +267,20 @@ test("Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung",
   )
   expect(first.status).toBe("rejected")
 
-  // 6. Marktvergleich ohne echte Webquellen: die UI weist die Evidenzlücke
-  //    ehrlich aus — es wird KEIN Vergleich aus Demo-Ergebnissen fabriziert.
+  // 6. Marktvergleich ohne echte Webquellen: seit dem Quellen-Gate ist
+  //    «Vergleich erstellen» sichtbar deaktiviert (konkreter Grund) — es wird
+  //    KEIN Vergleich aus Demo-Ergebnissen fabriziert.
   await page.goto("/quellen")
   const section = page.getByTestId("market-comparison-section")
   await expect(section).toBeVisible({ timeout: 20_000 })
-  await section.getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ }).click()
   await expect(
-    section.getByText(/keine live abgerufenen und inhaltlich positiv geprüften/i)
-  ).toBeVisible({ timeout: 30_000 })
+    section.getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ })
+  ).toBeDisabled()
+  await expect(
+    section.getByTestId("market-comparison-disabled-reason")
+  ).toContainText(
+    "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle"
+  )
   await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   // Kein Provider-Branding in der Standard-UI.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)

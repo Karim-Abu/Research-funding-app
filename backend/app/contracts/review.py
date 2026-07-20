@@ -55,8 +55,11 @@ class ReviewStatusView(BaseModel):
 
     Additiv und read-only; Zahlen kommen aus denselben Zählfunktionen wie das
     ReviewPackage (``review.package.counts`` / ``approval_status``) — keine
-    parallele Zähllogik. ``human_review_count`` zählt Requirement-Assessments
-    mit Status ``needs_input`` (menschliche Angabe/Prüfung nötig).
+    parallele Zähllogik. ``human_review_count`` zählt die OFFENEN
+    Human-Review-/Confirmation-Issues (``requires_human_review`` +
+    ``human_confirmation_pending``) — nicht pauschal needs_input-Assessments;
+    ein erfüllter Hybrid-Check mit offener Bestätigung zählt hier, bleibt aber
+    in allen Compliance-Zählern «fulfilled» (RUN 2A Slice 1).
     """
 
     model_config = ConfigDict(extra="forbid")

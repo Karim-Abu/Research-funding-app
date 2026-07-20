@@ -165,14 +165,37 @@ def test_run_d0_persists_and_returns_candidates(client, web_fake):
     # R8 Freigabepflicht: der Lauf braucht freigegebene Queries (plan → approve → run).
     csrf = _login(client)
     pid = _create_project(client, csrf, _D0)
-    approval_ids = _plan_and_approve_all(client, csrf, pid)
+    approve_research_brief(client, csrf, pid)
+    plan = client.post(f"/api/v1/projects/{pid}/market-research/plan", json={},
+                       headers=unsafe_headers(csrf))
+    assert plan.status_code == 200, plan.text
+    planned = plan.json()["queries"]
+    # Semantische Pinnung statt absoluter Zahl: seit der SOTA-Erweiterung
+    # («Markt, Wettbewerb, State of the Art») plant der Planner genau EINE
+    # öffentliche Query je Zweck — inklusive state_of_the_art.
+    purposes = [q["purpose"] for q in planned]
+    assert len(purposes) == len(set(purposes)), "Zwecke müssen dedupliziert sein"
+    assert set(purposes) == {
+        "market_size",
+        "competitors_alternatives",
+        "regulatory_demand_drivers",
+        "state_of_the_art",
+    }
+    approval_ids = [q["approval_id"] for q in planned if q["approval_id"]]
+    assert len(approval_ids) == len(planned), "jede Query braucht eine Freigabe"
+    for approval_id in approval_ids:
+        ok = client.post(f"/api/v1/search-query-approvals/{approval_id}/approve",
+                         headers=unsafe_headers(csrf))
+        assert ok.status_code == 200, ok.text
+
     res = client.post(f"/api/v1/projects/{pid}/market-research/run",
                        json=_topic_payload(approval_ids=approval_ids),
                        headers=_headers(csrf))
     assert res.status_code == 200, res.text
     body = res.json()
-    assert body["result_count"] == 9  # 3 Briefmodule × 3 Demo-Treffer
-    assert len(body["candidates"]) == 9
+    # Der deterministische Fake-Provider liefert 3 Treffer je freigegebener Query.
+    assert body["result_count"] == 3 * len(approval_ids)
+    assert len(body["candidates"]) == body["result_count"]
     assert all(c["human_review_required"] is True for c in body["candidates"])
     assert all(c["confidence"] in ("low", "medium") for c in body["candidates"])
     assert body["provider"] == "fake"

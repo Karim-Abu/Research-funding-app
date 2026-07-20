@@ -174,13 +174,14 @@ def read_status_view(db: Session, run: AnalysisRun) -> ReviewStatusView:
     blocker, warning, _stale_findings = review_package.counts(db, run)
     status = review_package.approval_status(db, run, scope_hash)
 
-    human_review = db.scalars(
-        select(RequirementAssessment).where(
-            RequirementAssessment.run_id == run.run_id,
-            RequirementAssessment.status == "needs_input",
-        )
-    )
-    human_review_count = sum(1 for _ in human_review)
+    # RUN 2A Slice 1: offene menschliche Prüfungen/Bestätigungen kommen aus der
+    # EINEN Zählquelle (offene Review-Issues minus menschlich bestätigte
+    # Anforderungen) — nicht pauschal aus needs_input-Assessments. Ein
+    # erfüllter Hybrid-Check mit offener Bestätigung zählt hier, bleibt aber in
+    # allen Compliance-Zählern «fulfilled».
+    from app.repositories.requirements import open_human_review_count
+
+    human_review_count = open_human_review_count(db, run.run_id)
 
     per_area: dict[str, int] = {}
     for finding in db.scalars(

@@ -166,11 +166,13 @@ export function SuggestionReviewDialog({
               className="flex flex-wrap gap-1.5"
               data-testid="suggestion-summary"
             >
+              {/* Fallbacks: Feld-Level-Vorschläge tragen nicht alle
+                  Section-Listen — fehlende Liste = 0, nie ein Renderfehler. */}
               {[
-                `Erhaltene Fakten: ${section.preserved_facts.length}`,
-                `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims.length}`,
-                `Neu eingeführte Aussagen: ${section.new_claims.length}`,
-                `Fehlende Angaben: ${section.missing_inputs.length}`,
+                `Erhaltene Fakten: ${section.preserved_facts?.length ?? 0}`,
+                `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims?.length ?? 0}`,
+                `Neu eingeführte Aussagen: ${section.new_claims?.length ?? 0}`,
+                `Fehlende Angaben: ${section.missing_inputs?.length ?? 0}`,
                 `Verwendete Belege: ${suggestion.evidence.length}`,
                 `Research-Quellen: ${suggestion.research_sources?.length ?? 0}`,
                 `Zeichen: ${charCount(currentText)} → ${charCount(suggestion.suggested_text)}`,
@@ -363,15 +365,18 @@ export function SuggestionReviewDialog({
 
           {section && (
             <div className="grid gap-3 md:grid-cols-2">
-              <ReviewList title="Erhaltene Fakten" items={section.preserved_facts} />
+              <ReviewList
+                title="Erhaltene Fakten"
+                items={section.preserved_facts ?? []}
+              />
               <ReviewList
                 title="Entfernte oder umformulierte Claims"
-                items={section.removed_or_reframed_claims}
+                items={section.removed_or_reframed_claims ?? []}
               />
-              <ReviewList title="Neue Claims" items={section.new_claims} />
+              <ReviewList title="Neue Claims" items={section.new_claims ?? []} />
               <ReviewList
                 title="Fehlende Inputs"
-                items={section.missing_inputs.map((item) =>
+                items={(section.missing_inputs ?? []).map((item) =>
                   item.reason ? `${item.label}: ${item.reason}` : item.label
                 )}
               />

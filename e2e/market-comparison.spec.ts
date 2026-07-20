@@ -93,10 +93,18 @@ test("market comparison UI: Quellen section shows the honest empty state", async
   await expect(section).toBeVisible({ timeout: 20_000 })
   await expect(section).toContainText("Markt- und Konkurrenzvergleich")
 
-  await page.getByRole("button", { name: "Vergleich erstellen" }).click()
+  // Quellen-Gate: ohne eine live abgerufene, importierte und inhaltlich
+  // positiv geprüfte Quelle ist «Vergleich erstellen» sichtbar deaktiviert —
+  // mit konkretem Grund statt eines leeren Demo-Vergleichs (CLAUDEX:
+  // deaktivierte Buttons erklären sich).
   await expect(
-    section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
-  ).toBeVisible({ timeout: 20_000 })
+    section.getByRole("button", { name: "Vergleich erstellen" })
+  ).toBeDisabled()
+  await expect(
+    section.getByTestId("market-comparison-disabled-reason")
+  ).toContainText(
+    "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle"
+  )
   await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   // No provider/model branding anywhere on the page.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)

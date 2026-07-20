@@ -88,3 +88,104 @@ describe("LiveRequirements actions (M10.2)", () => {
     expect(screen.queryByRole("button", { name: "Beleg ansehen" })).toBeNull()
   })
 })
+
+describe("LiveRequirements — Compliance ≠ Human Review (RUN 2A Slice 1)", () => {
+  it("zeigt einen erfüllten Hybrid-Check als Erfüllt mit offener Bestätigung, nie als Teilweise erfüllt", async () => {
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-share",
+            requirement_id: "REQ.INNO.BUDGET.IMPLEMENTATION_SHARE_40_60",
+            title: "Umsetzungspartner-Beitrag 40–60 %",
+            status: "fulfilled",
+            basis: "hybrid",
+            reasoning: "Beitrag 52% liegt im Band 40–60%.",
+            review_status: "required",
+            display_mode: "requirement",
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    const rowToggle = await screen.findByRole("button", {
+      name: /Umsetzungspartner-Beitrag/,
+    })
+
+    // Primärstatus = Compliance; Sekundärbadge = Reviewzustand — die Zeile
+    // selbst zeigt nie «Teilweise erfüllt» für eine bestandene Mathematikregel.
+    expect(rowToggle).toHaveTextContent(
+      "Maschinell geprüft · Menschliche Bestätigung offen"
+    )
+    expect(rowToggle).not.toHaveTextContent("Teilweise erfüllt")
+    // Gruppenzähler: der erfüllte Hybrid-Check zählt als erfüllt.
+    expect(screen.getByText("1 / 1 erfüllt")).toBeInTheDocument()
+  })
+
+  it("bestätigte Prüfung zeigt Menschlich bestätigt und keine offene Markierung", async () => {
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-cash",
+            requirement_id: "REQ.INNO.BUDGET.CASH_MIN5",
+            title: "Barbeitrag mindestens 5 %",
+            status: "fulfilled",
+            basis: "hybrid",
+            reasoning: "Barbeitrag 5% erfüllt das Minimum.",
+            review_status: "confirmed",
+            display_mode: "requirement",
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    const rowToggle = await screen.findByRole("button", {
+      name: /Barbeitrag mindestens/,
+    })
+    expect(
+      screen.queryByText("Maschinell geprüft · Menschliche Bestätigung offen")
+    ).toBeNull()
+    fireEvent.click(rowToggle)
+    expect(await screen.findByText("Menschlich bestätigt")).toBeInTheDocument()
+  })
+
+  it("Guidance-Hinweise laufen in die Hinweise-Sektion und zählen in keiner Quote", async () => {
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-share",
+            requirement_id: "REQ.INNO.BUDGET.IMPLEMENTATION_SHARE_40_60",
+            title: "Umsetzungspartner-Beitrag 40–60 %",
+            status: "fulfilled",
+            basis: "hybrid",
+            reasoning: "Beitrag 52% liegt im Band 40–60%.",
+            review_status: "required",
+            display_mode: "requirement",
+          }),
+          assessment({
+            assessment_id: "as-guidance",
+            requirement_id: "REQ.INNO.BUDGET.NO_FINANCIAL_CAP",
+            title: "Keine formale finanzielle Obergrenze",
+            status: "fulfilled",
+            basis: "semantic_assessment",
+            reasoning: "Keine formale Obergrenze; Angabe vorhanden.",
+            review_status: "not_required",
+            display_mode: "guidance",
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    await screen.findByRole("button", { name: /Umsetzungspartner-Beitrag/ })
+
+    const notes = screen.getByTestId("guidance-notes")
+    expect(notes).toHaveTextContent("Keine formale finanzielle Obergrenze")
+    // Nicht in den zählenden Gruppen: die Quote bleibt 1 / 1 (ohne Guidance).
+    expect(screen.getByText("1 / 1 erfüllt")).toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /Keine formale finanzielle Obergrenze/ })
+    ).toBeNull()
+  })
+})

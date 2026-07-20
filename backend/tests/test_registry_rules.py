@@ -132,10 +132,19 @@ def test_advisory_range_outside_is_warning():
 # --- aggregation (RuleOutcome -> RequirementAssessment) --------------------
 
 
-def test_aggregate_hybrid_pass_is_partial():
+def test_aggregate_hybrid_pass_is_fulfilled_with_confirmation_issue():
+    """RUN 2A Slice 1 (Owner-Entscheid): ein maschinell bestandener Hybrid-Check
+    ist ``fulfilled`` — die offene menschliche Bestätigung läuft als separates
+    ``human_confirmation_pending``-Issue (review_status), nie als Herabstufung.
+    (Ersetzt den früheren Pin ``hybrid pass ⇒ partial``.)"""
     req = _req("REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH")
     out = evaluate_rule(reg.rule_for(req), RuleInputs(partners=[_impl(swiss_value_creation=True)]), rule_version=RV)
-    assert aggregate_status(req, out) == "partial"
+    assert aggregate_status(req, out) == "fulfilled"
+    result = aggregate(req, out)
+    assert result.status == "fulfilled"
+    assert result.issue is not None
+    assert result.issue.issue_type == "human_confirmation_pending"
+    assert result.issue.severity == "info"
 
 
 def test_aggregate_blocker_fail_is_blocked():

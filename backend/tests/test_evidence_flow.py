@@ -121,8 +121,9 @@ def test_evidence_does_not_change_m4_statuses(client):
         for a in client.get(f"/api/v1/runs/{run_id}/requirements").json()
     }
     # Deterministic M4 results preserved — evidence is supplementary.
-    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "partial"
-    assert statuses["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"] == "partial"
+    # RUN 2A Slice 1: Hybrid-Pass ist fulfilled (Bestätigung = separate Dimension).
+    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "fulfilled"
+    assert statuses["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"] == "fulfilled"
 
 
 def test_reproducible_across_runs(client):

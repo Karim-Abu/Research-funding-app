@@ -95,18 +95,59 @@ def _database() -> Iterator[None]:
     Base.metadata.drop_all(engine)
 
 
+# RUN 2A Slice 0 (Test-Hermetik): Die mandatorische Suite darf sich nie auf
+# eine lokale ``backend/.env`` verlassen — weder Keys noch Modell-IDs,
+# Preistabellen oder Live-/Fake-Flags. Diese Defaults entsprechen exakt den
+# Settings-Felddefaults (= CI-Zustand ohne .env). Tests, die abweichende Werte
+# brauchen, setzen sie selbst via ``monkeypatch`` (siehe z. B. ``web_enabled``).
+HERMETIC_PROVIDER_DEFAULTS: dict[str, object] = {
+    "openai_api_key": None,
+    "anthropic_api_key": None,
+    "firecrawl_api_key": None,
+    "firecrawl_privacy_mode": None,
+    "agent_fake_provider": False,
+    "ai_eval_mode": "off",
+    "agent_institutional_route_approved": False,
+    "agent_quality_ceiling_enabled": False,
+    "agent_model_gpt_56_luna_id": None,
+    "agent_model_gpt_56_terra_id": None,
+    "agent_model_gpt_56_sol_id": None,
+    "agent_model_claude_haiku_45_id": None,
+    "agent_model_claude_sonnet_5_id": None,
+    "agent_model_claude_fable_5_id": None,
+    "agent_model_pricing_chf_per_million": {},
+    "web_research_enabled": False,
+    "web_research_fake_provider": False,
+    "d2_web_research_enabled": False,
+    "demo_data_enabled": False,
+}
+
+
+def apply_hermetic_provider_defaults(settings) -> dict[str, object]:
+    """Normalisiert das Settings-Singleton auf die hermetischen Defaults und
+    gibt die vorherigen Werte (für Restore) zurück."""
+    saved = {name: getattr(settings, name) for name in HERMETIC_PROVIDER_DEFAULTS}
+    for name, value in HERMETIC_PROVIDER_DEFAULTS.items():
+        setattr(settings, name, {} if value == {} else value)
+    return saved
+
+
 @pytest.fixture(autouse=True)
 def _no_real_provider_keys() -> Iterator[None]:
-    """R5.5b-Guard: mandatorische Tests erreichen NIE echte Provider.
+    """R5.5b-Guard + RUN-2A-Hermetik: mandatorische Tests erreichen NIE echte
+    Provider und sehen NIE lokale ``.env``-Konfiguration.
 
     Liegen echte Keys in ``backend/.env``, macht ``default_provider_resolver``
     die realen Adapter ``available()`` — Module mit eigenem
     ``_PROVIDER_RESOLVER``-Default (z. B. evidence_mapping im A1-Graph-Node)
     würden dann still echte, bezahlte Calls aus der normalen Suite feuern
     (vor R5.5b unsichtbar, weil reale Antworten schema-invalid blieben).
-    Darum werden die Keys pro Test genullt. Tests, die Keys brauchen, setzen
+    Zusätzlich (RUN 2A Slice 0): auch Modell-IDs, Preistabelle und
+    Live-/Fake-Flags werden pro Test auf die Felddefaults gesetzt, damit die
+    Suite auf jeder Maschine identisch zu CI läuft (Regressionsbeweis:
+    ``tests/test_env_hermetic.py``). Tests, die Keys/Flags brauchen, setzen
     Dummies selbst via ``monkeypatch``; die bewusst env-gated Real-Smokes
-    (``RUN_REAL_PROVIDER_SMOKE=true``, nie CI) behalten die echten Keys.
+    (``RUN_REAL_PROVIDER_SMOKE=true``, nie CI) behalten die echte Umgebung.
 
     Bewusst **ohne** ``monkeypatch``: würde diese autouse-Fixture ``monkeypatch``
     anfordern, würde dessen Fixture vor ``client`` aufgebaut und damit (LIFO)
@@ -119,22 +160,12 @@ def _no_real_provider_keys() -> Iterator[None]:
         yield
         return
     settings = get_settings()
-    saved = (
-        settings.openai_api_key,
-        settings.anthropic_api_key,
-        settings.firecrawl_api_key,
-    )
-    settings.openai_api_key = None
-    settings.anthropic_api_key = None
-    settings.firecrawl_api_key = None
+    saved = apply_hermetic_provider_defaults(settings)
     try:
         yield
     finally:
-        (
-            settings.openai_api_key,
-            settings.anthropic_api_key,
-            settings.firecrawl_api_key,
-        ) = saved
+        for name, value in saved.items():
+            setattr(settings, name, value)
 
 
 @pytest.fixture

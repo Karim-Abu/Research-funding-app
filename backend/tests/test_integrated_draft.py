@@ -135,12 +135,17 @@ def _make_seed_ctx(seeded_ids: list[str]):
             ordinal=0, original_text=text, normalized_text=text, start_offset=0,
             end_offset=len(text), content_hash="fh",
         ))
+        # Erwartete Semantik seit der Live-Verschärfung: in den A2-Kontext
+        # gelangt eine importierte Quelle erst nach positivem menschlichem
+        # Content-Review (reviewed + supports/partially_supports) aus einem
+        # Live-Task — retrieve_advisory_research_context filtert entsprechend.
         db.add(ResearchResult(
             result_id="rr-imported-" + uuid.uuid4().hex[:8],
             research_task_id=task_id, workspace_id=project.workspace_id,
             source_url="https://research.example.org/imported/1",
             title="Übernommene öffentliche Quelle", snippet="Importierter Auszug.",
             provider_rank=2, status="imported", source_document_id=source_id,
+            content_review_status="reviewed", support_status="supports",
         ))
         db.flush()
         seeded_ids.append(rid)

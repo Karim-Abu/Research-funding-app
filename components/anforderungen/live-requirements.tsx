@@ -54,6 +54,9 @@ interface LiveRow {
   category: string
   evidenceState: EvidenceState
   humanState: HumanState
+  /** RUN 2A Slice 1: Guidance-Hinweise laufen in eine getrennte Sektion und
+   *  zählen in keiner Quote, keinem Filter und keiner Gruppe. */
+  displayMode: "requirement" | "guidance"
   openPoints: string[]
   /** First linked anchor — target of the "Beleg ansehen" deep link. */
   firstAnchorId: string | null
@@ -67,12 +70,17 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     a.evidence_links.find((l) => l.status === "active")?.anchor_id ??
     a.evidence_links[0]?.anchor_id ??
     null
+  // RUN 2A Slice 1: die Review-Dimension kommt aus dem Contract
+  // (review_status) — ein erfüllter Hybrid-Check bleibt «Erfüllt» und zeigt
+  // die offene Bestätigung als Sekundärinformation, nie als Herabstufung.
   const humanState: HumanState =
-    a.basis === "human_override"
+    a.basis === "human_override" || a.review_status === "confirmed"
       ? "confirmed"
-      : bucket === "fulfilled"
-        ? "not_required"
-        : "needed"
+      : a.review_status === "required"
+        ? "needed"
+        : a.review_status === "not_required" || bucket === "fulfilled"
+          ? "not_required"
+          : "needed"
   const openPoints = a.open_issues
     .map((i) => i.recommended_next_action || i.description)
     .filter((t): t is string => Boolean(t?.trim()))
@@ -85,6 +93,7 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     category: categorize(a.requirement_id),
     evidenceState,
     humanState,
+    displayMode: a.display_mode === "guidance" ? "guidance" : "requirement",
     openPoints,
     firstAnchorId,
   }
@@ -174,7 +183,10 @@ export function LiveRequirements({
     )
   }
 
-  const rows = items.map(toRow)
+  const allRows = items.map(toRow)
+  // Guidance zählt nirgends mit: eigene Sektion, keine Quote, kein Filter.
+  const guidanceRows = allRows.filter((r) => r.displayMode === "guidance")
+  const rows = allRows.filter((r) => r.displayMode === "requirement")
   const stale = items.some((a) => a.stale)
   const summary = summarize(rows)
 
@@ -323,6 +335,32 @@ export function LiveRequirements({
               )}
             </>
           )}
+
+          {/* RUN 2A Slice 1: Guidance-Hinweise (Registry severity=info) —
+              reine Information, getrennt von den zählenden Anforderungen. */}
+          {guidanceRows.length > 0 && (
+            <section
+              className="rounded-lg border border-border bg-muted/20 px-5 py-4"
+              data-testid="guidance-notes"
+            >
+              <h2 className="text-sm font-semibold text-foreground">Hinweise</h2>
+              <p className="mt-0.5 text-xs text-muted-foreground">
+                Informationen ohne Erfüllungspflicht — sie zählen in keiner
+                Quote und blockieren nichts.
+              </p>
+              <ul className="mt-2 flex flex-col gap-1.5">
+                {guidanceRows.map((row) => (
+                  <li key={row.id} className="text-sm text-foreground">
+                    <span className="font-medium">{row.title}</span>
+                    <span className="text-muted-foreground">
+                      {" "}
+                      — {row.reasoning}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </section>
+          )}
         </div>
       </div>
 
@@ -411,7 +449,9 @@ function LiveRequirementRow({
         )}
         {row.humanState === "needed" && (
           <span className="hidden shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground sm:inline">
-            Prüfung nötig
+            {row.bucket === "fulfilled"
+              ? "Maschinell geprüft · Menschliche Bestätigung offen"
+              : "Prüfung nötig"}
           </span>
         )}
       </button>

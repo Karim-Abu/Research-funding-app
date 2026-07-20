@@ -83,13 +83,16 @@ export interface SectionResult {
   target_section: string
   suggested_text: string
   rationale: string
-  preserved_facts: string[]
-  removed_or_reframed_claims: string[]
-  new_claims: string[]
-  missing_inputs: AIMissingInput[]
-  evidence_anchor_ids: string[]
-  research_source_ids: string[]
-  open_issue_ids: string[]
+  // Die Listen sind nur bei Abschnitts-Vorschlägen (PortalSectionDraftBundle)
+  // garantiert; Feld-Level-Vorschläge (PortalFieldDraftBundle) tragen sie
+  // nicht — Konsumenten müssen mit fehlenden Listen umgehen (?? []).
+  preserved_facts?: string[]
+  removed_or_reframed_claims?: string[]
+  new_claims?: string[]
+  missing_inputs?: AIMissingInput[]
+  evidence_anchor_ids?: string[]
+  research_source_ids?: string[]
+  open_issue_ids?: string[]
 }
 
 export interface A2Suggestion {

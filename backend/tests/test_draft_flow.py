@@ -233,7 +233,8 @@ def test_evidence_link_foreign_anchor_404_and_stale_base_409(client):
 def test_graph_drafts_do_not_change_m4_assessments(client):
     _csrf, _pid, run_id = _setup_run(client)
     statuses = {a["requirement_id"]: a["status"] for a in client.get(f"/api/v1/runs/{run_id}/requirements").json()}
-    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "partial"
+    # RUN 2A Slice 1: Hybrid-Pass ist fulfilled (Bestätigung = separate Dimension).
+    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "fulfilled"
 
 
 # --- draft carry-over (Slice 2, Council E1-A) --------------------------------

@@ -86,9 +86,14 @@ def test_eligible_partners_produce_partial_assessments(client):
     assessments = res.json()
     statuses = _status_map(assessments)
 
-    # Partner eligibility satisfied at machine level + hybrid basis → partial.
-    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "partial"
-    assert statuses["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"] == "partial"
+    # RUN 2A Slice 1 (Owner-Entscheid): maschinell bestanden + hybrid ⇒
+    # fulfilled; die offene menschliche Bestätigung ist die separate Dimension
+    # review_status (nie eine Herabstufung auf «partial»).
+    assert statuses["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"] == "fulfilled"
+    assert statuses["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"] == "fulfilled"
+    by_id = {a["requirement_id"]: a for a in assessments}
+    assert by_id["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"]["review_status"] == "required"
+    assert by_id["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"]["review_status"] == "required"
     # Budget inputs are not captured in M4 → honest needs_input (never guessed).
     assert statuses["REQ.INNO.BUDGET.CASH_MIN5"] == "needs_input"
     # MAX18 (applies only without an implementation partner) is omitted.
@@ -100,7 +105,8 @@ def test_eligible_partners_produce_partial_assessments(client):
         assert a["basis"] in {"deterministic_rule",
                               "semantic_assessment", "hybrid"}
         assert a["stale"] is False
-    # Non-fulfilled requirements carry an OpenIssue with a recommended action.
+    # Der erfüllte Hybrid-Check trägt weiterhin sein separates
+    # Bestätigungs-Issue (human_confirmation_pending) mit empfohlener Aktion.
     partial = next(
         a for a in assessments
         if a["requirement_id"] == "REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"

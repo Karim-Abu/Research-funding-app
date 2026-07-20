@@ -15,6 +15,11 @@ export type AssessmentBasis =
   | "hybrid"
   | "human_override"
 export type IssueSeverity = "blocker" | "warning" | "info"
+// RUN 2A Slice 1 (additiv): offene/bestätigte menschliche Prüfung als separate
+// Dimension — ändert den Compliance-Status nie. Guidance-Hinweise (severity
+// info in der Registry) zählen in keiner Quote und werden getrennt angezeigt.
+export type ReviewStatus = "not_required" | "required" | "confirmed"
+export type DisplayMode = "requirement" | "guidance"
 
 export interface OpenIssueDto {
   issue_id: string
@@ -42,6 +47,15 @@ export interface RequirementAssessmentDto {
   open_issues: OpenIssueDto[]
   // Additive (Slice 4): registry-declared portal fields this requirement affects.
   affected_field_ids?: string[]
+  // Additive (RUN 2A Slice 1): separate Review-Dimension + Guidance-Anzeige.
+  review_status?: ReviewStatus
+  display_mode?: DisplayMode
+}
+
+export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
+  not_required: "Keine Bestätigung nötig",
+  required: "Menschliche Bestätigung offen",
+  confirmed: "Menschlich bestätigt",
 }
 
 // German user-facing labels (recommended in the milestone spec).

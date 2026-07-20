@@ -115,10 +115,15 @@ test("M4 requirements & rules precheck end-to-end", async ({ page }) => {
     requirement_id: string
     status: string
     stale: boolean
+    review_status?: string
   }>
   const byId = Object.fromEntries(assessments.map((a) => [a.requirement_id, a]))
-  expect(byId["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"].status).toBe("partial")
-  expect(byId["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"].status).toBe("partial")
+  // RUN 2A Slice 1: maschinell bestanden + hybrid ⇒ fulfilled; die offene
+  // menschliche Bestätigung ist die separate Dimension review_status.
+  expect(byId["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"].status).toBe("fulfilled")
+  expect(byId["REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH"].review_status).toBe("required")
+  expect(byId["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"].status).toBe("fulfilled")
+  expect(byId["REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"].review_status).toBe("required")
   expect(byId["REQ.INNO.BUDGET.CASH_MIN5"].status).toBe("needs_input")
   for (const a of assessments) {
     expect(["fulfilled", "partial", "open", "needs_input", "blocked"]).toContain(

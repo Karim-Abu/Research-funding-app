@@ -201,14 +201,17 @@ def preview_market_query(
             detail="Diese Query gehört zu keinem freigegebenen Recherchemodul.",
         )
     try:
-        approval = brief_service.preview_query(
+        # preview_query liefert eine ResearchQueryView (nicht die Approval-Row);
+        # query_text ist darin bereits der bereinigte (sanitized) Text.
+        view = brief_service.preview_query(
             db, brief, context.user.id, module=module, planner_purpose=purpose,
             query_text=payload.query_text,
         )
         db.commit()
         return QueryCandidateDto(
-            query_text=approval.sanitized_query, purpose=purpose, public_safe=True,
-            approval_required=True, approval_id=approval.approval_id,
+            query_text=view.query_text, purpose=purpose,
+            public_safe=view.status != "blocked" and view.approval_id is not None,
+            approval_required=True, approval_id=view.approval_id,
         )
     except brief_service.BriefError as exc:
         db.rollback()

@@ -230,16 +230,19 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     ).toHaveCount(0)
 
     // Markt-/Konkurrenzvergleich: im Demo-Modus gibt es keine echten
-    // Webquellen — es wird KEIN Marktvergleich fabriziert; die Evidenzlücke
-    // wird ehrlich ausgewiesen (kein Fake-Output als «Marktanalyse»).
+    // Webquellen — seit dem Quellen-Gate ist «Vergleich erstellen» dann
+    // sichtbar deaktiviert (konkreter Grund statt eines fabrizierten leeren
+    // Vergleichs; kein Fake-Output als «Marktanalyse»).
     const section = page.getByTestId("market-comparison-section")
     await expect(section).toBeVisible({ timeout: 20_000 })
-    await section
-      .getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ })
-      .click()
     await expect(
-      section.getByText(/Demo-Recherche enthält keine echten Webquellen/)
-    ).toBeVisible({ timeout: 30_000 })
+      section.getByRole("button", { name: /Vergleich erstellen|Neu erstellen/ })
+    ).toBeDisabled()
+    await expect(
+      section.getByTestId("market-comparison-disabled-reason")
+    ).toContainText(
+      "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle"
+    )
     await expect(page.getByTestId("market-comparison-table")).toHaveCount(0)
   })
 
