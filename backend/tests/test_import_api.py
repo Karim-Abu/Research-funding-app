@@ -125,7 +125,17 @@ class TestCreateCandidates:
             "Abstract"
         )
         project = client.get(f"/api/v1/projects/{project_id}").json()
-        assert project["primary_application_source_id"] == source_id
+        # The review fixture already selected its text application. A later PDF
+        # import must never replace that explicit primary source.
+        assert project["primary_application_source_id"] != source_id
+        assert project["primary_application_status"] == "configured"
+
+    def test_first_successfully_mapped_import_becomes_primary(self, client):
+        _, project_id, _ = _setup_without_run(client)
+        project = client.get(f"/api/v1/projects/{project_id}").json()
+        sources = client.get(f"/api/v1/projects/{project_id}/sources").json()
+        assert len(sources) == 1
+        assert project["primary_application_source_id"] == sources[0]["source_id"]
         assert project["primary_application_status"] == "configured"
 
     def test_recreate_is_idempotent_no_duplicate_rows(self, client):
