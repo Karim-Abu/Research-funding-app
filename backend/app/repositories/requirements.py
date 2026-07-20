@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.requirement import OpenIssue as OpenIssueSchema
 from app.contracts.requirement import RequirementAssessment as AssessmentSchema
+from app.contracts.requirement import RuleEvidence
 from app.db.models import HumanDecision, OpenIssue, RequirementAssessment
 from app.registry import get_registry
 from app.repositories import evidence as evidence_repo
@@ -107,7 +108,8 @@ def to_contracts(
     links = evidence_repo.links_by_assessment(db, run_id)
     all_links = [link for group in links.values() for link in group]
     link_statuses = evidence_repo.link_support_statuses(db, run_id, all_links)
-    registry_requirements = get_registry().requirements
+    registry = get_registry()
+    registry_requirements = registry.requirements
     confirmed_ids = _confirmed_assessment_ids(db, run_id)
     out: list[AssessmentSchema] = []
     for assessment in list_for_run(db, run_id):
@@ -127,6 +129,7 @@ def to_contracts(
                     evidence_repo.to_link_contract(
                         link,
                         support_status=link_statuses.get(link.evidence_link_id),
+                        db=db,
                     )
                     for link in links.get(assessment.assessment_id, [])
                 ],
@@ -141,6 +144,23 @@ def to_contracts(
                     if requirement_def is not None and is_guidance(requirement_def)
                     else "requirement"
                 ),
+                rule_evidence=[
+                    RuleEvidence(
+                        rule_id=rule.rule_id,
+                        registry_version=registry.rule_registry_version,
+                        source_ref=source_ref,
+                        source_title=registry.sources[source_ref].title,
+                        source_url=registry.sources[source_ref].url,
+                        source_path=registry.sources[source_ref].path,
+                        last_verified=registry.sources[source_ref].last_verified,
+                        evidence_quote=rule.description,
+                    )
+                    for rule_id in (
+                        requirement_def.linked_rule_ids if requirement_def else []
+                    )
+                    if (rule := registry.rules.get(rule_id)) is not None
+                    for source_ref in rule.source_refs
+                ],
             )
         )
     return out

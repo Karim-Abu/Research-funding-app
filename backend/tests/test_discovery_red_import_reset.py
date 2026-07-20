@@ -16,43 +16,58 @@ Siehe docs/IMPLEMENTATION_DISCOVERY.md §5 (Fehler #1).
 """
 from __future__ import annotations
 
-import pytest
+from tests.review_helpers import mut
 
-XFAIL_REASON_RESET = (
-    "DISCOVERY-RED #1a: Reset-Endpoint existiert nicht — Import-Entscheidungen "
-    "sind heute endgültig (Mandat D1 fordert Zurücksetzen auf pending)."
-)
-XFAIL_REASON_REDECIDE = (
-    "DISCOVERY-RED #1b: Re-Decide nach Entscheid liefert heute 409 "
-    "import_already_decided (gepinnt in test_import_api.py); Mandat D1 fordert "
-    "eine revidierbare Entscheidung."
-)
+def _scope(candidate):
+    return {
+        "project_id": candidate["project_id"],
+        "source_id": candidate["source_id"],
+        "expected_revision_id": candidate["current_revision_id"],
+    }
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON_RESET)
-def test_discovery_red_decided_candidate_can_be_reset_to_pending(client):
+def test_discovery_red_decided_candidate_can_restore_pdf_value(client):
     from tests.review_helpers import ABSTRACT, mut
     from tests.test_import_api import _decide, _setup_without_run
 
-    csrf, _project_id, by_field = _setup_without_run(client)
-    cid = by_field[ABSTRACT]["import_candidate_id"]
+    csrf, project_id, by_field = _setup_without_run(client)
+    candidate = by_field[ABSTRACT]
+    candidate["project_id"] = project_id
+    cid = candidate["import_candidate_id"]
     assert _decide(client, csrf, cid, decision="ignored").status_code == 200
 
-    # Vorgeschlagener Vertrag (genehmigungspflichtig): Entscheidung zurücksetzen.
-    res = client.post(f"/api/v1/imports/{cid}/reset", headers=mut(csrf))
+    current = client.get(f"/api/v1/projects/{project_id}/imports").json()
+    candidate = next(item for item in current if item["import_candidate_id"] == cid)
+    candidate["project_id"] = project_id
+    res = client.post(
+        f"/api/v1/imports/{cid}/reset",
+        json=_scope(candidate),
+        headers=mut(csrf),
+    )
     assert res.status_code == 200, res.text
-    assert res.json()["decision"] == "pending"
+    assert res.json()["decision"] == "accepted"
+    assert res.json()["acceptance_state"] == "accepted_original"
 
 
-@pytest.mark.xfail(strict=True, reason=XFAIL_REASON_REDECIDE)
 def test_discovery_red_redecide_after_decision_is_possible(client):
     from tests.review_helpers import ABSTRACT
     from tests.test_import_api import _decide, _setup_without_run
 
-    csrf, _project_id, by_field = _setup_without_run(client)
-    cid = by_field[ABSTRACT]["import_candidate_id"]
-    assert _decide(client, csrf, cid, decision="ignored").status_code == 200
+    csrf, project_id, by_field = _setup_without_run(client)
+    candidate = by_field[ABSTRACT]
+    cid = candidate["import_candidate_id"]
+    decided = _decide(client, csrf, cid, decision="ignored")
+    assert decided.status_code == 200
 
-    res = _decide(client, csrf, cid, decision="saved_as_source")
+    res = client.patch(
+        f"/api/v1/imports/{cid}/decision",
+        json={
+            "decision": "saved_as_source",
+            "project_id": project_id,
+            "source_id": candidate["source_id"],
+            "expected_revision_id": decided.json()["current_revision_id"],
+        },
+        headers=mut(csrf),
+    )
     assert res.status_code == 200, res.text
     assert res.json()["decision"] == "saved_as_source"

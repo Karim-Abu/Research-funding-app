@@ -16,9 +16,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AnalysisRun,
+    ImportCandidate,
     Partner,
     Project,
     RunProjectSnapshot,
+    SourceDocument,
     StructuredImportCandidate,
 )
 from app.registry.loader import Registry
@@ -61,7 +63,7 @@ def _accepted_answers(db: Session, project: Project) -> dict:
     return answers
 
 
-SNAPSHOT_SCHEMA_VERSION = "run-project-v2"
+SNAPSHOT_SCHEMA_VERSION = "run-project-v3"
 
 
 def _project_dict(
@@ -69,6 +71,9 @@ def _project_dict(
     structured_answers: dict | None = None,
     *,
     schema_version: str = SNAPSHOT_SCHEMA_VERSION,
+    primary_application_source_id: str | None = None,
+    primary_application_source_version_id: str | None = None,
+    primary_application_status: str = "not_configured",
 ) -> dict:
     duration = derive_project_duration(project.start_date, project.end_date)
     result = {
@@ -104,6 +109,11 @@ def _project_dict(
         # No RiskRegister persistence exists yet. Null is an honest, immutable
         # input that lets A3 flag the gap without inventing a register.
         result["risk_register"] = None
+        result["primary_application_source_id"] = primary_application_source_id
+        result["primary_application_source_version_id"] = (
+            primary_application_source_version_id
+        )
+        result["primary_application_status"] = primary_application_status
     return result
 
 
@@ -122,8 +132,43 @@ def current_inputs(
     partner_rows = partners_repo.list_by_project(
         db, project.project_id, project.workspace_id
     )
+    primary_source = (
+        db.get(SourceDocument, project.primary_application_source_id)
+        if project.primary_application_source_id
+        else None
+    )
+    import_source_ids = set(
+        db.scalars(
+            select(StructuredImportCandidate.source_id).where(
+                StructuredImportCandidate.project_id == project.project_id
+            )
+        )
+    )
+    import_source_ids.update(
+        db.scalars(
+            select(ImportCandidate.source_id).where(
+                ImportCandidate.project_id == project.project_id
+            )
+        )
+    )
+    primary_status = (
+        "configured"
+        if primary_source is not None
+        else "needs_selection"
+        if len(import_source_ids) > 1
+        else "not_configured"
+    )
     return _project_dict(
-        project, _accepted_answers(db, project), schema_version=schema_version
+        project,
+        _accepted_answers(db, project),
+        schema_version=schema_version,
+        primary_application_source_id=(
+            primary_source.source_id if primary_source else None
+        ),
+        primary_application_source_version_id=(
+            primary_source.current_source_version_id if primary_source else None
+        ),
+        primary_application_status=primary_status,
     ), [
         partners_repo.snapshot_dict(p, schema_version=schema_version) for p in partner_rows
     ]
@@ -168,9 +213,18 @@ def mark_current_runs_stale(
 
 
 def build_and_persist(
-    db: Session, *, run_id: str, project: Project, registry: Registry
+    db: Session,
+    *,
+    run_id: str,
+    project: Project,
+    registry: Registry,
+    primary_application_source_version_id: str | None = None,
 ) -> RunProjectSnapshot:
     project_json, partners_json = current_inputs(db, project)
+    if primary_application_source_version_id is not None:
+        project_json["primary_application_source_version_id"] = (
+            primary_application_source_version_id
+        )
     snapshot = RunProjectSnapshot(
         run_id=run_id,
         project_id=project.project_id,

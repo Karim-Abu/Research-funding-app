@@ -47,6 +47,14 @@ export interface ImportCandidateDto {
   decision: ImportDecision
   decided_at: string | null
   accepted_draft_version_id: string | null
+  current_revision_id: string
+  revision_number: number
+  acceptance_state: "accepted_original" | "accepted_modified" | null
+  allowed_actions: Array<
+    "edit" | "reset" | "undo" | "accept" | "ignore" | "save_as_source"
+  >
+  conflict_reason: string | null
+  idempotent_replay: boolean
 }
 
 export type StructuredCandidateKind =
@@ -89,6 +97,11 @@ export interface StructuredImportCandidateDto {
     | "not_derivable"
     | "duration_boundary_conflict"
     | null
+  current_revision_id: string
+  revision_number: number
+  acceptance_state: "accepted_original" | "accepted_modified" | null
+  allowed_actions: Array<"edit" | "reset" | "undo" | "accept" | "ignore">
+  idempotent_replay: boolean
 }
 
 export interface StructuredImportSummaryDto {
@@ -221,6 +234,9 @@ export async function decideImportCandidate(
     /** «Bearbeitet übernommen» (nur bei accepted). */
     edited_text?: string
     confirm_overwrite?: boolean
+    project_id?: string
+    source_id?: string
+    expected_revision_id?: string
   }
 ): Promise<ImportCandidateDto> {
   const res = await fetch(
@@ -239,12 +255,84 @@ export async function decideImportCandidate(
   return (await res.json()) as ImportCandidateDto
 }
 
+export async function reviseImportCandidate(
+  candidateId: string,
+  payload: {
+    decision: "accepted" | "saved_as_source" | "ignored"
+    project_id: string
+    source_id: string
+    expected_revision_id: string
+    run_id?: string
+    edited_text?: string
+    confirm_overwrite?: boolean
+  }
+): Promise<ImportCandidateDto> {
+  return mutateImport<ImportCandidateDto>(
+    `/api/imports/${encodeURIComponent(candidateId)}/decision`,
+    "PATCH",
+    payload
+  )
+}
+
+async function mutateImport<T>(
+  path: string,
+  method: "POST" | "PATCH",
+  payload: Record<string, unknown>
+): Promise<T> {
+  const res = await fetch(path, {
+    method,
+    headers: {
+      "Content-Type": "application/json",
+      "Idempotency-Key": idempotencyKey(),
+      ...csrfHeaders(),
+    },
+    body: JSON.stringify(payload),
+  })
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as T
+}
+
+export async function resetImportCandidate(
+  candidate: ImportCandidateDto,
+  projectId: string,
+  runId?: string
+): Promise<ImportCandidateDto> {
+  return mutateImport(
+    `/api/imports/${encodeURIComponent(candidate.import_candidate_id)}/reset`,
+    "POST",
+    {
+      project_id: projectId,
+      source_id: candidate.source_id,
+      expected_revision_id: candidate.current_revision_id,
+      ...(runId ? { run_id: runId } : {}),
+    }
+  )
+}
+
+export async function undoImportCandidate(
+  candidate: ImportCandidateDto,
+  projectId: string
+): Promise<ImportCandidateDto> {
+  return mutateImport(
+    `/api/imports/${encodeURIComponent(candidate.import_candidate_id)}/undo`,
+    "POST",
+    {
+      project_id: projectId,
+      source_id: candidate.source_id,
+      expected_revision_id: candidate.current_revision_id,
+    }
+  )
+}
+
 export async function decideStructuredImportCandidate(
   candidateId: string,
   payload: {
     decision: "accepted" | "ignored"
     edited_payload_json?: Record<string, unknown>
     confirm_overwrite?: boolean
+    project_id?: string
+    source_id?: string
+    expected_revision_id?: string
   }
 ): Promise<StructuredImportCandidateDto> {
   const res = await fetch(
@@ -261,4 +349,52 @@ export async function decideStructuredImportCandidate(
   )
   if (!res.ok) throw await toError(res)
   return (await res.json()) as StructuredImportCandidateDto
+}
+
+export async function reviseStructuredImportCandidate(
+  candidateId: string,
+  payload: {
+    decision: "accepted" | "ignored"
+    project_id: string
+    source_id: string
+    expected_revision_id: string
+    edited_payload_json?: Record<string, unknown>
+    confirm_overwrite?: boolean
+  }
+): Promise<StructuredImportCandidateDto> {
+  return mutateImport(
+    `/api/structured-imports/${encodeURIComponent(candidateId)}/decision`,
+    "PATCH",
+    payload
+  )
+}
+
+export async function resetStructuredImportCandidate(
+  candidate: StructuredImportCandidateDto,
+  projectId: string
+): Promise<StructuredImportCandidateDto> {
+  return mutateImport(
+    `/api/structured-imports/${encodeURIComponent(candidate.candidate_id)}/reset`,
+    "POST",
+    {
+      project_id: projectId,
+      source_id: candidate.source_id,
+      expected_revision_id: candidate.current_revision_id,
+    }
+  )
+}
+
+export async function undoStructuredImportCandidate(
+  candidate: StructuredImportCandidateDto,
+  projectId: string
+): Promise<StructuredImportCandidateDto> {
+  return mutateImport(
+    `/api/structured-imports/${encodeURIComponent(candidate.candidate_id)}/undo`,
+    "POST",
+    {
+      project_id: projectId,
+      source_id: candidate.source_id,
+      expected_revision_id: candidate.current_revision_id,
+    }
+  )
 }

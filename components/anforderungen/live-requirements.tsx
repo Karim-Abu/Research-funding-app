@@ -24,6 +24,7 @@ import {
   listRequirements,
   STALE_NOTICE,
   type RequirementAssessmentDto,
+  type RuleEvidenceDto,
 } from "@/lib/requirements"
 import {
   REQ_FALLBACK,
@@ -60,6 +61,7 @@ interface LiveRow {
   openPoints: string[]
   /** First linked anchor — target of the "Beleg ansehen" deep link. */
   firstAnchorId: string | null
+  ruleEvidence: RuleEvidenceDto[]
 }
 
 function toRow(a: RequirementAssessmentDto): LiveRow {
@@ -96,6 +98,7 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     displayMode: a.display_mode === "guidance" ? "guidance" : "requirement",
     openPoints,
     firstAnchorId,
+    ruleEvidence: a.rule_evidence ?? [],
   }
 }
 
@@ -500,6 +503,33 @@ function LiveRequirementRow({
                   </li>
                 ))}
               </ul>
+            </div>
+          )}
+
+          {row.ruleEvidence.length > 0 && (
+            <div className="flex flex-col gap-2" data-testid="rule-evidence">
+              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                Regelgrundlage
+              </p>
+              {row.ruleEvidence.map((evidence) => (
+                <div
+                  key={`${evidence.rule_id}:${evidence.source_ref}`}
+                  className="rounded-md border border-border bg-card px-3 py-2"
+                >
+                  <p className="text-xs font-medium text-foreground">
+                    {evidence.evidence_label}
+                  </p>
+                  <p className="mt-1 text-sm leading-relaxed text-foreground">
+                    {evidence.evidence_quote}
+                  </p>
+                  <p className="mt-1 text-xs text-muted-foreground">
+                    {evidence.source_title} · Registry {evidence.registry_version}
+                    {evidence.last_verified
+                      ? ` · geprüft ${evidence.last_verified}`
+                      : ""}
+                  </p>
+                </div>
+              ))}
             </div>
           )}
 

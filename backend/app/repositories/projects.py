@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from app.contracts.project import Project as ProjectSchema
 from app.contracts.project import ProjectCreate, ProjectPatch
-from app.db.models import Project
+from app.db.models import ImportCandidate, Project, StructuredImportCandidate
 from app.projects.duration import derive_project_duration
 from app.workflow_summary import calculate as calculate_workflow_summary
 
@@ -89,6 +89,26 @@ def apply_patch(db: Session, project: Project, patch: ProjectPatch) -> Project:
 
 def to_contract(db: Session, project: Project) -> ProjectSchema:
     duration = derive_project_duration(project.start_date, project.end_date)
+    candidate_sources = set(
+        db.scalars(
+            select(ImportCandidate.source_id).where(
+                ImportCandidate.project_id == project.project_id
+            )
+        )
+    ) | set(
+        db.scalars(
+            select(StructuredImportCandidate.source_id).where(
+                StructuredImportCandidate.project_id == project.project_id
+            )
+        )
+    )
+    primary_status = (
+        "configured"
+        if project.primary_application_source_id
+        else "needs_selection"
+        if len(candidate_sources) > 1
+        else "not_configured"
+    )
     return ProjectSchema(
         project_id=project.project_id,
         workspace_id=project.workspace_id,
@@ -114,6 +134,8 @@ def to_contract(db: Session, project: Project) -> ProjectSchema:
         duration_months=duration.duration_months,
         duration_status=duration.status,
         duration_reason_code=duration.reason_code,
+        primary_application_source_id=project.primary_application_source_id,
+        primary_application_status=primary_status,
         status=project.status,
         created_at=project.created_at,
         updated_at=project.updated_at,

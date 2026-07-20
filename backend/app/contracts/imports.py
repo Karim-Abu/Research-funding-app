@@ -55,6 +55,16 @@ class ImportCandidate(BaseModel):
     decision: ImportDecision
     decided_at: datetime | None = None
     accepted_draft_version_id: str | None = None
+    current_revision_id: str
+    revision_number: int = Field(ge=1)
+    acceptance_state: Literal[
+        "accepted_original", "accepted_modified"
+    ] | None = None
+    allowed_actions: list[
+        Literal["edit", "reset", "undo", "accept", "ignore", "save_as_source"]
+    ] = Field(default_factory=list)
+    conflict_reason: str | None = None
+    idempotent_replay: bool = False
 
 
 class ImportCandidatesCreate(BaseModel):
@@ -77,6 +87,19 @@ class ImportDecisionRequest(BaseModel):
     # «Bearbeitet übernommen» (nur bei accepted): der editierte Text.
     edited_text: str | None = None
     # Explizite Bestätigung, wenn ein bearbeiteter Draft überschrieben würde.
+    confirm_overwrite: bool = False
+    project_id: str | None = None
+    source_id: str | None = None
+    expected_revision_id: str | None = None
+
+
+class ImportUndoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    source_id: str
+    expected_revision_id: str
+    run_id: str | None = None
     confirm_overwrite: bool = False
 
 
@@ -119,6 +142,15 @@ class StructuredImportCandidate(BaseModel):
         "not_derivable",
         "duration_boundary_conflict",
     ] | None = None
+    current_revision_id: str
+    revision_number: int = Field(ge=1)
+    acceptance_state: Literal[
+        "accepted_original", "accepted_modified"
+    ] | None = None
+    allowed_actions: list[
+        Literal["edit", "reset", "undo", "accept", "ignore"]
+    ] = Field(default_factory=list)
+    idempotent_replay: bool = False
 
 
 class StructuredImportDecisionRequest(BaseModel):
@@ -126,6 +158,18 @@ class StructuredImportDecisionRequest(BaseModel):
 
     decision: Literal["accepted", "ignored"]
     edited_payload_json: dict[str, Any] | None = None
+    confirm_overwrite: bool = False
+    project_id: str | None = None
+    source_id: str | None = None
+    expected_revision_id: str | None = None
+
+
+class StructuredImportUndoRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    project_id: str
+    source_id: str
+    expected_revision_id: str
     confirm_overwrite: bool = False
 
 

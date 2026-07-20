@@ -40,6 +40,7 @@ def _source(client, project_id, csrf):
         headers=_mut(csrf),
     )
     assert res.status_code == 201 and res.json()["status"] == "processed", res.text
+    return res.json()["source_id"]
 
 
 def _partner(client, project_id, csrf, **fields):
@@ -64,7 +65,13 @@ def _start_run(client, project_id, csrf):
 def _setup_and_run(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = create_project(client, csrf)
-    _source(client, project_id, csrf)
+    source_id = _source(client, project_id, csrf)
+    selected = client.put(
+        f"/api/v1/projects/{project_id}/primary-application",
+        json={"source_id": source_id, "expected_primary_source_id": None},
+        headers=_mut(csrf),
+    )
+    assert selected.status_code == 200, selected.text
     _partner(client, project_id, csrf, name="Industrie AG",
              partner_type="implementation_partner", country="CH", swiss_value_creation=True)
     _partner(client, project_id, csrf, name="ETH Zürich",

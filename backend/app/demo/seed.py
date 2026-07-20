@@ -425,6 +425,12 @@ def seed_demo_data(*, reset: bool = False, evaluation: bool = False) -> None:
             db.commit()
             for source in demo.sources:
                 _ensure_source(db, project, source)
+            # Demo projects model a preconfigured application: the first fixture
+            # source is the application overview, while later files remain
+            # supplementary drafting context under the RUN-2B scope policy.
+            if project.primary_application_source_id is None and demo.sources:
+                project.primary_application_source_id = demo.sources[0].source_id
+                db.commit()
             run = _ensure_run(db, project, demo, settings)
             if demo.draft_edits:
                 _apply_draft_edits(db, run, demo)

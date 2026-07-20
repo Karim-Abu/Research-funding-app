@@ -55,6 +55,9 @@ class EvidenceAnchor(BaseModel):
     coverage: float | None = None
     source_accessed_at: datetime | None = None
     support_status: SupportStatus | None = None
+    scope: Literal["application", "external", "drafting_context"] = "application"
+    rejection_reason_code: str | None = None
+    rejection_text_de: str | None = None
 
 
 class EvidenceLink(BaseModel):
@@ -69,3 +72,8 @@ class EvidenceLink(BaseModel):
     claim_id: str | None = None
     claim_text: str | None = None
     support_status: SupportStatus | None = None
+    run_id: str
+    source_id: str | None = None
+    source_version_id: str | None = None
+    fragment_id: str | None = None
+    scope: Literal["application", "external", "drafting_context"] = "application"

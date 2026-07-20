@@ -81,7 +81,16 @@ def _setup(client, *, title: str = "Empty import target"):
 
 
 def _decide(client, csrf: str, candidate: dict, **overrides):
-    payload = {"decision": "accepted", **overrides}
+    with SessionLocal() as db:
+        row = db.get(StructuredImportCandidate, candidate["candidate_id"])
+        assert row is not None
+        payload = {
+            "decision": "accepted",
+            "project_id": row.project_id,
+            "source_id": row.source_id,
+            "expected_revision_id": row.current_revision_id,
+            **overrides,
+        }
     return client.post(
         f"/api/v1/structured-imports/{candidate['candidate_id']}/decision",
         json=payload,

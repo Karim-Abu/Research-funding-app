@@ -54,6 +54,14 @@ def _create_candidates(client, csrf, project_id: str, source_id: str):
 
 
 def _decide(client, csrf, candidate_id: str, **payload):
+    with SessionLocal() as db:
+        candidate = db.get(ImportCandidate, candidate_id)
+        payload.setdefault("project_id", candidate.project_id if candidate else "missing")
+        payload.setdefault("source_id", candidate.source_id if candidate else "missing")
+        payload.setdefault(
+            "expected_revision_id",
+            candidate.current_revision_id if candidate else "missing",
+        )
     return client.post(
         f"/api/v1/imports/{candidate_id}/decision", json=payload, headers=mut(csrf)
     )
@@ -100,7 +108,7 @@ def _start_run(client, csrf, project_id: str) -> str:
 
 class TestCreateCandidates:
     def test_upload_and_map_creates_pending_candidates(self, client):
-        _, _, _, _, by_field = _setup_with_candidates(client)
+        _, project_id, _, source_id, by_field = _setup_with_candidates(client)
         assert len(by_field) == 8
         assert all(c["decision"] == "pending" for c in by_field.values())
         abstract = by_field[ABSTRACT]
@@ -116,6 +124,9 @@ class TestCreateCandidates:
         assert abstract["section_metadata"][0]["original_excerpt"].startswith(
             "Abstract"
         )
+        project = client.get(f"/api/v1/projects/{project_id}").json()
+        assert project["primary_application_source_id"] == source_id
+        assert project["primary_application_status"] == "configured"
 
     def test_recreate_is_idempotent_no_duplicate_rows(self, client):
         csrf, project_id, _, source_id, by_field = _setup_with_candidates(client)
@@ -204,13 +215,27 @@ class TestDecisions:
         assert res.json()["decision"] == "saved_as_source"
         assert res.json()["decided_at"] is not None
 
-    def test_already_decided_cannot_be_redecided(self, client):
-        csrf, _, _, _, by_field = _setup_with_candidates(client)
-        cid = by_field[ABSTRACT]["import_candidate_id"]
-        assert _decide(client, csrf, cid, decision="ignored").status_code == 200
+    def test_post_stays_initial_only_and_patch_creates_revision(self, client):
+        csrf, project_id, _, _, by_field = _setup_with_candidates(client)
+        candidate = by_field[ABSTRACT]
+        cid = candidate["import_candidate_id"]
+        first = _decide(client, csrf, cid, decision="ignored")
+        assert first.status_code == 200
         res = _decide(client, csrf, cid, decision="saved_as_source")
         assert res.status_code == 409
         assert res.json()["code"] == "import_already_decided"
+        revised = client.patch(
+            f"/api/v1/imports/{cid}/decision",
+            json={
+                "decision": "saved_as_source",
+                "project_id": project_id,
+                "source_id": candidate["source_id"],
+                "expected_revision_id": first.json()["current_revision_id"],
+            },
+            headers=mut(csrf),
+        )
+        assert revised.status_code == 200, revised.text
+        assert revised.json()["revision_number"] == first.json()["revision_number"] + 1
 
     def test_accept_without_run_stages_the_decision(self, client):
         # Fachliche Korrektur: «zuerst Analyse starten» ist KEINE Voraussetzung

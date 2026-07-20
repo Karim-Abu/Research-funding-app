@@ -28,7 +28,8 @@ BUDGET_52_5 = {
     "implementation_own_contribution": 47000,
     "cash_contribution": 5000,
     "total_requested_funding": 48000,
-    "duration_months": 24,
+    "start_date": "2026-01-01",
+    "end_date": "2027-12-31",
 }
 
 

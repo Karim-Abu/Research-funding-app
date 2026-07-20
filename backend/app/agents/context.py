@@ -26,6 +26,7 @@ from app.db.models import (
     ToolInvocation,
 )
 from app.registry.loader import PortalFieldDef, get_registry
+from app.evidence.scope_policy import application_source, source_scope
 
 A1_FIELD_PREFIXES = ("INTRO.", "ORG.", "VC.", "SOL.", "PS.")
 
@@ -39,6 +40,8 @@ class FragmentBlock:
     page: int | None
     section: str | None
     text: str
+    scope: str = "drafting_context"
+    used_as_requirement_evidence: bool = False
 
 
 @dataclass
@@ -81,7 +84,12 @@ def _ordered_snapshot_versions(
 
 
 def retrieve_source_fragments(
-    db: Session, run: AnalysisRun, *, max_fragments: int, char_budget: int
+    db: Session,
+    run: AnalysisRun,
+    *,
+    max_fragments: int,
+    char_budget: int,
+    formal_evidence_only: bool = False,
 ) -> tuple[list[FragmentBlock], dict]:
     """Deterministic, de-duplicated, budget-limited snapshot fragments.
 
@@ -91,7 +99,12 @@ def retrieve_source_fragments(
     """
     ordered: list[FragmentBlock] = []
     seen_fragments: set[str] = set()
-    for version, document in _ordered_snapshot_versions(db, run):
+    if formal_evidence_only:
+        primary = application_source(db, run)
+        source_pairs = [primary] if primary is not None else []
+    else:
+        source_pairs = _ordered_snapshot_versions(db, run)
+    for version, document in source_pairs:
         fragments = list(
             db.scalars(
                 select(SourceFragment).where(
@@ -101,6 +114,12 @@ def retrieve_source_fragments(
         )
         fragments.sort(key=lambda f: f.ordinal)
         title = document.name if document is not None else version.source_version_id
+        scope, used_as_requirement_evidence = source_scope(
+            db,
+            run,
+            document=document,
+            source_version_id=version.source_version_id,
+        )
         for frag in fragments:
             if frag.fragment_id in seen_fragments:
                 continue
@@ -114,6 +133,8 @@ def retrieve_source_fragments(
                     page=frag.page,
                     section=frag.section,
                     text=frag.normalized_text,
+                    scope=scope,
+                    used_as_requirement_evidence=used_as_requirement_evidence,
                 )
             )
 
@@ -226,7 +247,9 @@ def _render_context_text(blocks: list[FragmentBlock]) -> str:
             loc += f" section={block.section}"
         lines.append(
             f"[fragment_id={block.fragment_id} source_version_id="
-            f"{block.source_version_id} title={block.source_title!r} {loc}]\n{block.text}"
+            f"{block.source_version_id} title={block.source_title!r} {loc} "
+            f"scope={block.scope} used_as_requirement_evidence="
+            f"{str(block.used_as_requirement_evidence).lower()}]\n{block.text}"
         )
     return "\n\n".join(lines)
 
@@ -298,6 +321,7 @@ def assemble_evidence_mapping_context(
     blocks, meta = retrieve_source_fragments(
         db, run, max_fragments=max_fragments,
         char_budget=settings.a1_context_char_budget,
+        formal_evidence_only=True,
     )
     requirement_defs = lookup_requirement_definition(run)
     field_defs = lookup_portal_field_profile(run)

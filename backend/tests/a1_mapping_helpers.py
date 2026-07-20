@@ -13,6 +13,7 @@ from app.agents.providers.base import ProviderUsage
 from app.db.models import (
     AnalysisRun,
     ExtractedFact,
+    RunProjectSnapshot,
     RunSourceSnapshot,
     SourceDocument,
     SourceFragment,
@@ -85,6 +86,20 @@ def build_run(
         processing_mode=processing_mode, effective_data_classification=cls,
         snapshot_versions={"normalizer_version": NORMALIZER},
         recheck_required=False, semantic_findings_stale=False,
+    ))
+    db.add(RunProjectSnapshot(
+        run_id=run_id,
+        project_id=project_id,
+        project_json={
+            "snapshot_schema_version": "run-project-v3",
+            "primary_application_source_id": doc_id,
+            "primary_application_source_version_id": sv_id,
+            "primary_application_status": "configured",
+        },
+        partners_json=[],
+        content_hash="scope-fixture",
+        requirement_registry_version="1.0.0",
+        rule_registry_version="1.1.0",
     ))
     if in_snapshot:
         db.add(RunSourceSnapshot(

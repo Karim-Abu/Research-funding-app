@@ -42,6 +42,8 @@ export interface ProjectDto {
     | "duration_derived"
     | "duration_dates_missing"
     | "duration_boundary_conflict"
+  primary_application_source_id?: string | null
+  primary_application_status: "configured" | "not_configured" | "needs_selection"
   status: ProjectStatus
   created_at: string
   updated_at: string
@@ -139,6 +141,7 @@ export async function createProjectFromIntake(
       active_run_id: null,
       duration_status: "not_derivable",
       duration_reason_code: "duration_dates_missing",
+      primary_application_status: "not_configured",
       ...payload,
     }
   }
@@ -176,6 +179,31 @@ export async function patchProject(
     body: JSON.stringify(patch),
   })
   if (!res.ok) throw new Error("project_update_failed")
+  return (await res.json()) as ProjectDto
+}
+
+export async function selectPrimaryApplication(
+  projectId: string,
+  sourceId: string,
+  expectedPrimarySourceId: string | null
+): Promise<ProjectDto> {
+  const csrf = getCsrfToken()
+  const res = await fetch(
+    `/api/projects/${encodeURIComponent(projectId)}/primary-application`,
+    {
+      method: "PUT",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": idempotencyKey(),
+        ...(csrf ? { "X-CSRF-Token": csrf } : {}),
+      },
+      body: JSON.stringify({
+        source_id: sourceId,
+        expected_primary_source_id: expectedPrimarySourceId,
+      }),
+    }
+  )
+  if (!res.ok) throw new Error("primary_application_update_failed")
   return (await res.json()) as ProjectDto
 }
 

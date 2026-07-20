@@ -10,7 +10,7 @@ from app.api.errors import ProblemException
 from app.config.settings import Settings
 from app.contracts.run import AsyncAccepted, RunCreate
 from app.db.models import AnalysisRun, AsyncOperation, UsageRecord
-from app.db.models import SourceVersion
+from app.db.models import SourceDocument, SourceVersion
 from app.policy.classification import resolve_effective_classification
 from app.registry import get_registry
 from app.repositories import audit, controls
@@ -176,6 +176,29 @@ def prepare_run(
             allow_empty=allow_intake_only,
         )
 
+    primary_source_version_id = None
+    if project.primary_application_source_id:
+        primary_source = db.get(
+            SourceDocument, project.primary_application_source_id
+        )
+        primary_source_version_id = (
+            primary_source.current_source_version_id if primary_source else None
+        )
+        chosen_ids = {version.source_version_id for version in versions}
+        if (
+            primary_source is None
+            or primary_source.project_id != project.project_id
+            or primary_source.workspace_id != project.workspace_id
+            or primary_source_version_id is None
+            or primary_source_version_id not in chosen_ids
+        ):
+            raise ProblemException(
+                status=422,
+                code="primary_application_version_required",
+                title="Unprocessable Entity",
+                detail="Die eingefrorene Quellenauswahl muss die aktuelle Version des Primärantrags enthalten.",
+            )
+
     actual_run_id = run_id or str(uuid.uuid4())
     run = AnalysisRun(
         run_id=actual_run_id,
@@ -190,6 +213,8 @@ def prepare_run(
         snapshot_versions={
             **SNAPSHOT_VERSIONS,
             "source_version_ids": [v.source_version_id for v in versions],
+            "primary_application_source_id": project.primary_application_source_id,
+            "primary_application_source_version_id": primary_source_version_id,
             "requirement_registry_version": registry.requirement_registry_version,
             "rule_registry_version": registry.rule_registry_version,
             # Ebene E: Prompt-/Skill-Versionen und Modellrouten je Agentrolle
@@ -214,7 +239,11 @@ def prepare_run(
 
     snapshot_service.persist_snapshot(db, actual_run_id, versions)
     project_snapshot.build_and_persist(
-        db, run_id=actual_run_id, project=project, registry=registry
+        db,
+        run_id=actual_run_id,
+        project=project,
+        registry=registry,
+        primary_application_source_version_id=primary_source_version_id,
     )
     db.add(build_policy_snapshot(actual_run_id,
            payload.settings, settings, cloud_decision))

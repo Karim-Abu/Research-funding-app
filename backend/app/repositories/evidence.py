@@ -24,6 +24,7 @@ from app.db.models import (
 )
 from app.evidence.discovery import RETRIEVAL_ALGORITHM_VERSION, CandidateSpec
 from app.evidence.verification import VerificationOutcome
+from app.evidence.eligibility import rejection_text_de
 
 _EPOCH = datetime.min.replace(tzinfo=timezone.utc)
 
@@ -60,6 +61,7 @@ def upsert_candidate(
         match_type="exact_normalized",
         retrieval_score=spec.retrieval_score,
         status="proposed",
+        scope="application",
         retrieval_algorithm_version=RETRIEVAL_ALGORITHM_VERSION,
         generation_origin="deterministic_lexical",
     )
@@ -127,6 +129,7 @@ def upsert_agent_candidate(
         match_type="exact_normalized",
         retrieval_score=0.0,
         status="proposed",
+        scope="application",
         retrieval_algorithm_version=spec.prompt_version or spec.profile_id,
         generation_origin="agent_a1_evidence_mapping",
         agent_invocation_id=spec.agent_invocation_id,
@@ -208,6 +211,10 @@ def upsert_anchor(
         coverage=None,
         normalizer_version=version.normalizer_version if version else "",
         verification_status=outcome.verification_status,
+        scope=candidate.scope,
+        rejection_reason_code=(
+            outcome.reason if outcome.verification_status == "rejected" else None
+        ),
         human_checked_by=None,
         human_checked_at=None,
         source_accessed_at=source_accessed_at,
@@ -456,12 +463,23 @@ def to_anchor_contract(
         coverage=anchor.coverage,
         source_accessed_at=anchor.source_accessed_at,
         support_status=support_status,
+        scope=anchor.scope,
+        rejection_reason_code=anchor.rejection_reason_code,
+        rejection_text_de=(
+            rejection_text_de(anchor.rejection_reason_code)
+            if anchor.rejection_reason_code
+            else None
+        ),
     )
 
 
 def to_link_contract(
-    link: EvidenceLink, support_status: str | None = None
+    link: EvidenceLink,
+    support_status: str | None = None,
+    *,
+    db: Session | None = None,
 ) -> LinkSchema:
+    anchor = db.get(EvidenceAnchor, link.anchor_id) if db is not None else None
     return LinkSchema(
         evidence_link_id=link.evidence_link_id,
         anchor_id=link.anchor_id,
@@ -472,4 +490,9 @@ def to_link_contract(
         claim_id=link.claim_id,
         claim_text=link.claim_text,
         support_status=support_status,
+        run_id=link.run_id,
+        source_id=anchor.source_id if anchor else None,
+        source_version_id=anchor.source_version_id if anchor else None,
+        fragment_id=anchor.fragment_id if anchor else None,
+        scope=anchor.scope if anchor else "application",
     )

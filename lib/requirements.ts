@@ -35,6 +35,18 @@ export interface OpenIssueDto {
   created_at: string
 }
 
+export interface RuleEvidenceDto {
+  rule_id: string
+  registry_version: string
+  source_ref: string
+  source_title: string
+  source_url?: string | null
+  source_path?: string | null
+  last_verified?: string | null
+  evidence_quote: string
+  evidence_label: "Kuratierter Registry-Auszug"
+}
+
 export interface RequirementAssessmentDto {
   assessment_id: string
   requirement_id: string
@@ -50,6 +62,7 @@ export interface RequirementAssessmentDto {
   // Additive (RUN 2A Slice 1): separate Review-Dimension + Guidance-Anzeige.
   review_status?: ReviewStatus
   display_mode?: DisplayMode
+  rule_evidence?: RuleEvidenceDto[]
 }
 
 export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {

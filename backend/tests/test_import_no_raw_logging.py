@@ -37,6 +37,17 @@ EXEC_SUMMARY = "INTRO.APP.EXECUTIVE_SUMMARY"
 NAME = "INTRO.APP.NAME"
 
 
+def _scope(candidate_id: str) -> dict[str, str]:
+    with SessionLocal() as db:
+        candidate = db.get(ImportCandidate, candidate_id)
+        assert candidate is not None and candidate.current_revision_id is not None
+        return {
+            "project_id": candidate.project_id,
+            "source_id": candidate.source_id,
+            "expected_revision_id": candidate.current_revision_id,
+        }
+
+
 # --- Minimaler PDF-Writer (Muster spike/make_fixture.py, eine Seite) ---------
 
 
@@ -154,7 +165,12 @@ def test_import_path_never_logs_marker_content(client, caplog):
     # 1) Übernahme (Happy Path).
     res = client.post(
         f"/api/v1/imports/{by_field[ABSTRACT]['import_candidate_id']}/decision",
-        json={"decision": "accepted", "run_id": run_id}, headers=mut(csrf),
+        json={
+            **_scope(by_field[ABSTRACT]["import_candidate_id"]),
+            "decision": "accepted",
+            "run_id": run_id,
+        },
+        headers=mut(csrf),
     )
     assert res.status_code == 200, res.text
 
@@ -162,7 +178,12 @@ def test_import_path_never_logs_marker_content(client, caplog):
     clean_field(client, csrf, run_id, EXEC_SUMMARY, "Manuell bearbeitete Fassung.")
     res = client.post(
         f"/api/v1/imports/{by_field[EXEC_SUMMARY]['import_candidate_id']}/decision",
-        json={"decision": "accepted", "run_id": run_id}, headers=mut(csrf),
+        json={
+            **_scope(by_field[EXEC_SUMMARY]["import_candidate_id"]),
+            "decision": "accepted",
+            "run_id": run_id,
+        },
+        headers=mut(csrf),
     )
     assert res.status_code == 409
     assert not detail_contains(res.text, MARKERS)
@@ -172,6 +193,7 @@ def test_import_path_never_logs_marker_content(client, caplog):
     res = client.post(
         f"/api/v1/imports/{by_field[EXEC_SUMMARY]['import_candidate_id']}/decision",
         json={
+            **_scope(by_field[EXEC_SUMMARY]["import_candidate_id"]),
             "decision": "accepted",
             "edited_text": f"Editierte Fassung mit {MARKER_EDITED}.",
         },
@@ -188,7 +210,11 @@ def test_import_path_never_logs_marker_content(client, caplog):
     # 3) Doppel-Entscheid (409 already decided).
     res = client.post(
         f"/api/v1/imports/{by_field[ABSTRACT]['import_candidate_id']}/decision",
-        json={"decision": "ignored"}, headers=mut(csrf),
+        json={
+            **_scope(by_field[ABSTRACT]["import_candidate_id"]),
+            "decision": "ignored",
+        },
+        headers=mut(csrf),
     )
     assert res.status_code == 409
     assert not detail_contains(res.text, MARKERS)
@@ -196,7 +222,11 @@ def test_import_path_never_logs_marker_content(client, caplog):
     # 4) Ignorieren (Rest-Pfad).
     res = client.post(
         f"/api/v1/imports/{by_field[NAME]['import_candidate_id']}/decision",
-        json={"decision": "ignored"}, headers=mut(csrf),
+        json={
+            **_scope(by_field[NAME]["import_candidate_id"]),
+            "decision": "ignored",
+        },
+        headers=mut(csrf),
     )
     assert res.status_code == 200, res.text
 

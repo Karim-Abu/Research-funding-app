@@ -23,6 +23,11 @@ function projectBody(overrides: Record<string, unknown> = {}) {
     created_at: now,
     updated_at: now,
     active_run_id: null,
+    duration_months: null,
+    duration_status: "not_derivable",
+    duration_reason_code: "duration_dates_missing",
+    primary_application_source_id: null,
+    primary_application_status: "not_configured",
     ...overrides,
   }
 }
@@ -102,9 +107,6 @@ describe("BudgetForm", () => {
       target: { value: "5000,50" },
     })
     // total_requested_funding stays empty → must be null, not 0.
-    fireEvent.change(screen.getByLabelText("Projektdauer (Monate)"), {
-      target: { value: "24" },
-    })
     fireEvent.change(
       screen.getByLabelText("Begründung für Ausnahme (optional)"),
       { target: { value: "   " } } // whitespace only → null
@@ -120,20 +122,26 @@ describe("BudgetForm", () => {
       cash_contribution: 5000.5,
       total_requested_funding: null,
       total_requested_funding_including_overhead: null,
-      duration_months: 24,
       budget_exception_basis: null,
     })
   })
 
-  it("rejects a non-integer duration without sending a PATCH", async () => {
+  it("shows derived duration read-only and never offers a duration input", async () => {
+    server.use(
+      http.get("/api/projects/p-1", () =>
+        HttpResponse.json(
+          projectBody({
+            duration_months: 18,
+            duration_status: "derived",
+            duration_reason_code: "duration_derived",
+          })
+        )
+      )
+    )
     render(<BudgetForm projectId="p-1" />)
-    fireEvent.change(screen.getByLabelText("Projektdauer (Monate)"), {
-      target: { value: "0" },
-    })
-    fireEvent.click(screen.getByRole("button", { name: "Budget speichern" }))
-    expect(
-      await screen.findByText(/Projektdauer als ganze Monate/)
-    ).toBeInTheDocument()
+    expect(await screen.findByText("18 Monate")).toBeInTheDocument()
+    expect(screen.getByText(/nicht separat bearbeitbar/)).toBeInTheDocument()
+    expect(screen.queryByLabelText("Projektdauer (Monate)")).toBeNull()
   })
 
   it("zeigt die Vorprüfung mit Identität, Anteilen und «Erfüllt»", async () => {

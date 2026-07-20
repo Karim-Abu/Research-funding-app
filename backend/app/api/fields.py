@@ -437,7 +437,7 @@ def create_evidence_link(
     db.commit()
     statuses = evidence_repo.link_support_statuses(db, run.run_id, [link])
     return evidence_repo.to_link_contract(
-        link, support_status=statuses.get(link.evidence_link_id)
+        link, support_status=statuses.get(link.evidence_link_id), db=db
     )
 
 

@@ -99,8 +99,12 @@ def create(
 
 
 def replace(db: Session, partner: Partner, data: PartnerCreate) -> Partner:
-    for field, value in _payload_values(data).items():
+    values = _payload_values(data)
+    changed = any(getattr(partner, field) != value for field, value in values.items())
+    for field, value in values.items():
         setattr(partner, field, value)
+    if changed:
+        partner.revision_number += 1
     db.add(partner)
     db.flush()
     return partner
@@ -115,6 +119,7 @@ def to_contract(partner: Partner) -> PartnerSchema:
     return PartnerSchema(
         partner_id=partner.partner_id,
         project_id=partner.project_id,
+        revision_number=partner.revision_number,
         name=partner.name,
         partner_type=partner.partner_type,
         project_role=partner.project_role,
@@ -149,7 +154,7 @@ def snapshot_dict(partner: Partner, *, schema_version: str = "run-project-v2") -
         "personnel_independence_status": partner.personnel_independence_status,
         "financial_independence_status": partner.financial_independence_status,
     }
-    if schema_version == "run-project-v2":
+    if schema_version in {"run-project-v2", "run-project-v3"}:
         # Organisation data needed for section 4.6. Contact/representative PII is
         # deliberately excluded from the model-facing immutable snapshot.
         base.update({

@@ -37,13 +37,18 @@ from app.db.models import (
     AnalysisRun,
     DraftVersion,
     ImportCandidate,
+    ImportCandidateRevision,
     Partner,
+    PortalFieldDraft,
     Project,
+    ProjectFieldRevision,
     SourceDocument,
     SourceVersion,
     StructuredImportCandidate,
+    StructuredImportCandidateRevision,
 )
 from app.exports.generators.common import EXPORT_FIELD_LABELS
+from app.drafts import build_template
 from app.imports.mapping import (
     MAPPING_VERSION,
     STRUCTURED_MAPPING_VERSION,
@@ -52,6 +57,7 @@ from app.imports.mapping import (
 )
 from app.ingestion.parsers import ParserError
 from app.repositories import audit
+from app.registry import get_registry
 from app.repositories import drafts as drafts_repo
 from app.repositories import partners as partners_repo
 from app.projects.duration import compare_imported_duration, derive_project_duration
@@ -66,8 +72,298 @@ _TERMINAL_DECISIONS = ("accepted", "saved_as_source", "ignored")
 _STRUCTURED_TERMINAL_DECISIONS = ("accepted", "ignored")
 
 
+def _record_narrative_revision(
+    db: Session,
+    candidate: ImportCandidate,
+    *,
+    status: str,
+    action: str,
+    actor_user_id: str | None,
+    user_text: str | None = None,
+    run_id: str | None = None,
+    previous_draft_version_id: str | None = None,
+    applied_draft_version_id: str | None = None,
+) -> ImportCandidateRevision:
+    number = candidate.revision_number + 1
+    revision = ImportCandidateRevision(
+        revision_id=str(uuid.uuid4()),
+        import_candidate_id=candidate.import_candidate_id,
+        revision_number=number,
+        status=status,
+        action=action,
+        user_text=user_text,
+        run_id=run_id,
+        previous_draft_version_id=previous_draft_version_id,
+        applied_draft_version_id=applied_draft_version_id,
+        actor_user_id=actor_user_id,
+    )
+    db.add(revision)
+    db.flush()
+    candidate.revision_number = number
+    candidate.current_revision_id = revision.revision_id
+    db.flush()
+    return revision
+
+
+def _record_structured_revision(
+    db: Session,
+    candidate: StructuredImportCandidate,
+    *,
+    status: str,
+    action: str,
+    actor_user_id: str | None,
+    user_payload_json: dict | None = None,
+    previous_target_json: dict | None = None,
+    target_resource_id: str | None = None,
+    previous_target_revision_number: int | None = None,
+    applied_target_revision_number: int | None = None,
+    project_field_revision_id: str | None = None,
+) -> StructuredImportCandidateRevision:
+    number = candidate.revision_number + 1
+    revision = StructuredImportCandidateRevision(
+        revision_id=str(uuid.uuid4()),
+        candidate_id=candidate.candidate_id,
+        revision_number=number,
+        status=status,
+        action=action,
+        user_payload_json=user_payload_json,
+        previous_target_json=previous_target_json,
+        target_resource_id=target_resource_id,
+        previous_target_revision_number=previous_target_revision_number,
+        applied_target_revision_number=applied_target_revision_number,
+        project_field_revision_id=project_field_revision_id,
+        actor_user_id=actor_user_id,
+    )
+    db.add(revision)
+    db.flush()
+    candidate.revision_number = number
+    candidate.current_revision_id = revision.revision_id
+    db.flush()
+    return revision
+
+
 def _problem(status: int, code: str, title: str, detail: str) -> ProblemException:
     return ProblemException(status=status, code=code, title=title, detail=detail)
+
+
+def validate_mutation_scope(
+    candidate: ImportCandidate | StructuredImportCandidate,
+    *,
+    project_id: str | None,
+    source_id: str | None,
+    expected_revision_id: str | None,
+    require_preconditions: bool,
+) -> None:
+    if require_preconditions and (
+        project_id is None or source_id is None or expected_revision_id is None
+    ):
+        raise _problem(
+            422,
+            "import_revision_precondition_required",
+            "Unprocessable Entity",
+            "Projekt, Quelle und erwartete Revision müssen angegeben werden.",
+        )
+    if (
+        (project_id is not None and project_id != candidate.project_id)
+        or (source_id is not None and source_id != candidate.source_id)
+    ):
+        raise _problem(
+            409,
+            "import_project_source_mismatch",
+            "Conflict",
+            "Der Importkandidat gehört nicht zum angegebenen Projekt oder zur angegebenen Quelle.",
+        )
+    if (
+        expected_revision_id is not None
+        and expected_revision_id != candidate.current_revision_id
+    ):
+        raise _problem(
+            409,
+            "import_revision_conflict",
+            "Conflict",
+            "Die Importentscheidung wurde zwischenzeitlich geändert. Bitte laden Sie den aktuellen Stand neu.",
+        )
+
+
+def _current_narrative_revision(
+    db: Session, candidate: ImportCandidate
+) -> ImportCandidateRevision:
+    revision = db.get(ImportCandidateRevision, candidate.current_revision_id)
+    if revision is None:
+        raise _problem(
+            409,
+            "import_revision_conflict",
+            "Conflict",
+            "Für diesen Importkandidaten fehlt der aktuelle Revisionsstand.",
+        )
+    return revision
+
+
+def revise_candidate(
+    db: Session,
+    *,
+    candidate: ImportCandidate,
+    decision: str,
+    run: AnalysisRun | None,
+    confirm_overwrite: bool,
+    actor_user_id: str,
+    edited_text: str | None,
+) -> tuple[ImportCandidate, bool]:
+    if candidate.decision == "pending":
+        raise _problem(
+            409,
+            "import_invalid_transition",
+            "Conflict",
+            "Eine offene Importentscheidung muss zuerst übernommen oder verworfen werden.",
+        )
+    row = decide_candidate(
+        db,
+        candidate=candidate,
+        decision=decision,
+        run=run,
+        confirm_overwrite=confirm_overwrite,
+        actor_user_id=actor_user_id,
+        edited_text=edited_text,
+        allow_terminal=True,
+        revision_action="edit",
+    )
+    return row, False
+
+
+def reset_candidate(
+    db: Session,
+    *,
+    candidate: ImportCandidate,
+    run: AnalysisRun | None,
+    confirm_overwrite: bool,
+    actor_user_id: str,
+) -> tuple[ImportCandidate, bool]:
+    if candidate.decision == "accepted" and candidate.edited_text is None:
+        if run is None or candidate.accepted_draft_version_id is None:
+            return candidate, True
+        draft_version = db.get(DraftVersion, candidate.accepted_draft_version_id)
+        draft = (
+            db.get(PortalFieldDraft, draft_version.draft_id)
+            if draft_version is not None
+            else None
+        )
+        if draft is not None and draft.current_version_id == candidate.accepted_draft_version_id:
+            return candidate, True
+    row = decide_candidate(
+        db,
+        candidate=candidate,
+        decision="accepted",
+        run=run,
+        confirm_overwrite=confirm_overwrite,
+        actor_user_id=actor_user_id,
+        edited_text=None,
+        allow_terminal=True,
+        revision_action="reset",
+    )
+    return row, False
+
+
+def undo_candidate(
+    db: Session,
+    *,
+    candidate: ImportCandidate,
+    actor_user_id: str,
+) -> tuple[ImportCandidate, bool]:
+    current_revision = _current_narrative_revision(db, candidate)
+    if candidate.decision == "pending" and current_revision.action == "undo":
+        return candidate, True
+    if candidate.decision == "pending":
+        raise _problem(
+            409,
+            "import_invalid_transition",
+            "Conflict",
+            "Eine noch offene Importentscheidung kann nicht zurückgenommen werden.",
+        )
+
+    applied_id = candidate.accepted_draft_version_id
+    if candidate.decision == "accepted" and applied_id is not None:
+        applied = db.get(DraftVersion, applied_id)
+        draft = db.get(PortalFieldDraft, applied.draft_id) if applied else None
+        if draft is None or draft.current_version_id != applied_id:
+            candidate.decision = "conflict"
+            revision = _record_narrative_revision(
+                db,
+                candidate,
+                status="conflict",
+                action="undo_conflict",
+                actor_user_id=actor_user_id,
+                applied_draft_version_id=applied_id,
+            )
+            audit.record(
+                db,
+                workspace_id=candidate.workspace_id,
+                actor_user_id=actor_user_id,
+                action="import.candidate_undo_conflict",
+                target_type="import_candidate",
+                target_id=candidate.import_candidate_id,
+                detail={
+                    "revision_id": revision.revision_id,
+                    "status": "conflict",
+                    "reason_code": "manual_resolution_required",
+                },
+            )
+            db.flush()
+            raise _problem(
+                409,
+                "import_revision_conflict",
+                "Conflict",
+                "Der Zieltext wurde später geändert und bleibt erhalten. Bitte lösen Sie den Konflikt manuell.",
+            )
+        previous = db.get(DraftVersion, current_revision.previous_draft_version_id)
+        if previous is not None:
+            restore_text = previous.text
+        else:
+            field = get_registry().portal_fields.get(candidate.field_id)
+            if field is None:
+                raise _problem(
+                    409,
+                    "import_invalid_transition",
+                    "Conflict",
+                    "Für dieses Feld kann kein vorheriger Entwurfsstand wiederhergestellt werden.",
+                )
+            restore_text = build_template(field, get_registry())
+        run = db.get(AnalysisRun, draft.run_id)
+        if run is None:
+            raise _problem(404, "import_candidate_not_found", "Not found", "Run not found.")
+        drafts_repo.apply_update(
+            db,
+            run,
+            draft,
+            base_version_id=draft.current_version_id,
+            text=restore_text,
+            source_operation_id=None,
+            actor_user_id=actor_user_id,
+            origin="user",
+        )
+
+    candidate.decision = "pending"
+    candidate.decided_by = actor_user_id
+    candidate.decided_at = datetime.now(timezone.utc)
+    candidate.edited_text = None
+    candidate.accepted_draft_version_id = None
+    revision = _record_narrative_revision(
+        db,
+        candidate,
+        status="pending",
+        action="undo",
+        actor_user_id=actor_user_id,
+    )
+    audit.record(
+        db,
+        workspace_id=candidate.workspace_id,
+        actor_user_id=actor_user_id,
+        action="import.candidate_undone",
+        target_type="import_candidate",
+        target_id=candidate.import_candidate_id,
+        detail={"revision_id": revision.revision_id, "status": "pending"},
+    )
+    db.flush()
+    return candidate, False
 
 
 def list_candidates(db: Session, project_id: str) -> list[ImportCandidate]:
@@ -205,6 +501,14 @@ def create_candidates(
                 decision="pending",
             ))
             db.add(candidates[-1])
+            db.flush()
+            _record_narrative_revision(
+                db,
+                candidates[-1],
+                status="pending",
+                action="detected",
+                actor_user_id=None,
+            )
 
     structured_by_key = {
         (row.candidate_kind, row.target_key): row for row in structured_existing
@@ -229,6 +533,14 @@ def create_candidates(
             decision="pending",
         )
         db.add(row)
+        db.flush()
+        _record_structured_revision(
+            db,
+            row,
+            status="pending",
+            action="detected",
+            actor_user_id=None,
+        )
         structured_created.append(row)
     db.flush()
     audit.record(
@@ -257,6 +569,39 @@ def create_candidates(
             "warnings": list(result.warnings),
         },
     )
+    # The first successfully mapped Innolink application becomes the primary
+    # application. Legacy ambiguous projects (multiple prior import sources)
+    # remain unconfigured until an explicit selection is made.
+    existing_import_sources = set(
+        db.scalars(
+            select(ImportCandidate.source_id).where(
+                ImportCandidate.project_id == source.project_id,
+                ImportCandidate.source_id != source.source_id,
+            )
+        )
+    ) | set(
+        db.scalars(
+            select(StructuredImportCandidate.source_id).where(
+                StructuredImportCandidate.project_id == source.project_id,
+                StructuredImportCandidate.source_id != source.source_id,
+            )
+        )
+    )
+    mapped_any = bool(candidates or structured_created or existing or structured_existing)
+    project = db.get(Project, source.project_id)
+    if (
+        mapped_any
+        and project is not None
+        and project.primary_application_source_id is None
+        and not existing_import_sources
+    ):
+        project.primary_application_source_id = source.source_id
+        project_snapshot.mark_current_runs_stale(
+            db,
+            project=project,
+            actor_user_id=actor_user_id,
+            reason="primary_application_configured",
+        )
     return candidates
 
 
@@ -277,8 +622,10 @@ def decide_candidate(
     confirm_overwrite: bool,
     actor_user_id: str,
     edited_text: str | None = None,
+    allow_terminal: bool = False,
+    revision_action: str = "decision",
 ) -> ImportCandidate:
-    if candidate.decision in _TERMINAL_DECISIONS:
+    if candidate.decision in _TERMINAL_DECISIONS and not allow_terminal:
         raise _problem(
             409, "import_already_decided", "Conflict",
             "Dieser Kandidat wurde bereits entschieden.",
@@ -309,11 +656,22 @@ def decide_candidate(
         # Das Dokument liegt bereits als Quelle vor; «Als Quelle speichern»
         # protokolliert die Entscheidung, ohne einen Entwurf zu verändern.
         _mark_decided(candidate, decision, actor_user_id)
+        revision = _record_narrative_revision(
+            db,
+            candidate,
+            status=decision,
+            action=revision_action,
+            actor_user_id=actor_user_id,
+        )
         audit.record(
             db, workspace_id=candidate.workspace_id, actor_user_id=actor_user_id,
             action="import.candidate_decided", target_type="import_candidate",
             target_id=candidate.import_candidate_id,
-            detail={"decision": decision, "field_id": candidate.field_id},
+            detail={
+                "revision_id": revision.revision_id,
+                "status": decision,
+                "target_id": candidate.field_id,
+            },
         )
         db.flush()
         return candidate
@@ -334,15 +692,22 @@ def decide_candidate(
         # konsumiert. Kein Draft-Write ohne Run — Drafts sind run-gebunden.
         candidate.edited_text = edited_text
         _mark_decided(candidate, "accepted", actor_user_id)
+        revision = _record_narrative_revision(
+            db,
+            candidate,
+            status="accepted",
+            action=revision_action,
+            actor_user_id=actor_user_id,
+            user_text=edited_text,
+        )
         audit.record(
             db, workspace_id=candidate.workspace_id, actor_user_id=actor_user_id,
             action="import.candidate_decided", target_type="import_candidate",
             target_id=candidate.import_candidate_id,
             detail={
-                "decision": "accepted",
-                "field_id": candidate.field_id,
-                "staged": True,
-                "edited": edited_text is not None,
+                "revision_id": revision.revision_id,
+                "status": "accepted",
+                "target_id": candidate.field_id,
             },
         )
         db.flush()
@@ -355,13 +720,36 @@ def decide_candidate(
         )
 
     current = db.get(DraftVersion, draft.current_version_id)
-    if current is not None and current.created_by != "template" and not confirm_overwrite:
+    is_own_applied_version = (
+        candidate.accepted_draft_version_id is not None
+        and draft.current_version_id == candidate.accepted_draft_version_id
+    )
+    if (
+        current is not None
+        and current.created_by != "template"
+        and not is_own_applied_version
+        and not confirm_overwrite
+    ):
         candidate.decision = "conflict"
+        revision = _record_narrative_revision(
+            db,
+            candidate,
+            status="conflict",
+            action="conflict",
+            actor_user_id=actor_user_id,
+            run_id=run.run_id,
+            previous_draft_version_id=draft.current_version_id,
+        )
         audit.record(
             db, workspace_id=candidate.workspace_id, actor_user_id=actor_user_id,
             action="import.candidate_conflict", target_type="import_candidate",
             target_id=candidate.import_candidate_id,
-            detail={"field_id": candidate.field_id},
+            detail={
+                "revision_id": revision.revision_id,
+                "status": "conflict",
+                "target_id": candidate.field_id,
+                "reason_code": "draft_changed",
+            },
         )
         db.flush()
         raise _problem(
@@ -370,6 +758,7 @@ def decide_candidate(
             "Übernehmen ersetzt den aktuellen Text — bitte explizit bestätigen.",
         )
 
+    previous_draft_version_id = draft.current_version_id
     drafts_repo.apply_update(
         db, run, draft,
         base_version_id=draft.current_version_id,
@@ -381,16 +770,26 @@ def decide_candidate(
     candidate.edited_text = edited_text
     _mark_decided(candidate, "accepted", actor_user_id)
     candidate.accepted_draft_version_id = draft.current_version_id
+    revision = _record_narrative_revision(
+        db,
+        candidate,
+        status="accepted",
+        action=revision_action,
+        actor_user_id=actor_user_id,
+        user_text=edited_text,
+        run_id=run.run_id,
+        previous_draft_version_id=previous_draft_version_id,
+        applied_draft_version_id=draft.current_version_id,
+    )
     audit.record(
         db, workspace_id=candidate.workspace_id, actor_user_id=actor_user_id,
         action="import.candidate_decided", target_type="import_candidate",
         target_id=candidate.import_candidate_id,
         detail={
-            "decision": "accepted",
-            "field_id": candidate.field_id,
+            "revision_id": revision.revision_id,
+            "status": "accepted",
+            "target_id": candidate.field_id,
             "draft_version_id": draft.current_version_id,
-            "overwrite_confirmed": confirm_overwrite,
-            "edited": edited_text is not None,
         },
     )
     db.flush()
@@ -689,7 +1088,10 @@ def _structured_current_state(
 
 
 def to_structured_contract(
-    db: Session, candidate: StructuredImportCandidate
+    db: Session,
+    candidate: StructuredImportCandidate,
+    *,
+    idempotent_replay: bool = False,
 ) -> StructuredImportCandidateSchema:
     effective = _effective_payload(candidate)
     current, conflict = _structured_current_state(db, candidate, effective)
@@ -705,6 +1107,14 @@ def to_structured_contract(
                 project.end_date,
                 effective.get("duration_months"),
             )
+    if is_duration:
+        allowed_actions = []
+    elif candidate.decision == "accepted":
+        allowed_actions = ["edit", "reset", "undo"]
+    elif candidate.decision == "ignored":
+        allowed_actions = ["reset", "undo"]
+    else:
+        allowed_actions = ["accept", "ignore"]
     return StructuredImportCandidateSchema(
         candidate_id=candidate.candidate_id,
         source_id=candidate.source_id,
@@ -731,6 +1141,18 @@ def to_structured_contract(
         duration_status=(duration.status if duration else None),
         duration_reason_code=(duration.reason_code if duration else None),
         duration_comparison_status=duration_comparison,
+        current_revision_id=candidate.current_revision_id or "",
+        revision_number=candidate.revision_number,
+        acceptance_state=(
+            "accepted_modified"
+            if candidate.decision == "accepted"
+            and candidate.edited_payload_json is not None
+            else "accepted_original"
+            if candidate.decision == "accepted"
+            else None
+        ),
+        allowed_actions=allowed_actions,
+        idempotent_replay=idempotent_replay,
     )
 
 
@@ -742,6 +1164,8 @@ def decide_structured_candidate(
     actor_user_id: str,
     edited_payload_json: dict[str, Any] | None = None,
     confirm_overwrite: bool = False,
+    allow_terminal: bool = False,
+    revision_action: str = "decision",
 ) -> StructuredImportCandidate:
     if candidate.target_key == "project.duration_months":
         raise _problem(
@@ -750,7 +1174,7 @@ def decide_structured_candidate(
             "Unprocessable Entity",
             "Die PDF-Dauer dient nur dem Vergleich mit der aus den Projektdaten abgeleiteten Dauer.",
         )
-    if candidate.decision in _STRUCTURED_TERMINAL_DECISIONS:
+    if candidate.decision in _STRUCTURED_TERMINAL_DECISIONS and not allow_terminal:
         raise _problem(
             409,
             "structured_import_already_decided",
@@ -768,6 +1192,13 @@ def decide_structured_candidate(
         candidate.decision = "ignored"
         candidate.decided_by = actor_user_id
         candidate.decided_at = datetime.now(timezone.utc)
+        revision = _record_structured_revision(
+            db,
+            candidate,
+            status="ignored",
+            action=revision_action,
+            actor_user_id=actor_user_id,
+        )
         audit.record(
             db,
             workspace_id=candidate.workspace_id,
@@ -776,9 +1207,9 @@ def decide_structured_candidate(
             target_type="structured_import_candidate",
             target_id=candidate.candidate_id,
             detail={
-                "decision": "ignored",
-                "candidate_kind": candidate.candidate_kind,
-                "target_key": candidate.target_key,
+                "revision_id": revision.revision_id,
+                "status": "ignored",
+                "target_id": candidate.target_key,
             },
         )
         db.flush()
@@ -805,6 +1236,15 @@ def decide_structured_candidate(
         )
     if conflict and not confirm_overwrite:
         candidate.decision = "conflict"
+        revision = _record_structured_revision(
+            db,
+            candidate,
+            status="conflict",
+            action="conflict",
+            actor_user_id=actor_user_id,
+            user_payload_json=edited_payload_json,
+            previous_target_json=current,
+        )
         audit.record(
             db,
             workspace_id=candidate.workspace_id,
@@ -813,9 +1253,10 @@ def decide_structured_candidate(
             target_type="structured_import_candidate",
             target_id=candidate.candidate_id,
             detail={
-                "candidate_kind": candidate.candidate_kind,
-                "target_key": candidate.target_key,
-                "reason": conflict,
+                "revision_id": revision.revision_id,
+                "status": "conflict",
+                "target_id": candidate.target_key,
+                "reason_code": conflict,
             },
         )
         db.flush()
@@ -831,22 +1272,34 @@ def decide_structured_candidate(
         raise _problem(404, "not_found", "Resource not found", "Project not found.")
     changed = False
     applied_resource_id = project.project_id
+    previous_target_json = current
+    previous_target_revision_number = None
+    applied_target_revision_number = None
+    project_field_revision_id = None
     if candidate.candidate_kind in {"project_metadata", "budget"}:
         field = _PROJECT_TARGET_FIELDS[candidate.target_key]
         before = _json_value(getattr(project, field))
         patch = ProjectPatch(**validated)
-        mutate_project(
+        _, field_revisions = mutate_project(
             db,
             project=project,
             patch=patch,
             actor_user_id=actor_user_id,
             stale_reason="structured_import_changed",
+            revision_source="import",
         )
         changed = before != _json_value(getattr(project, field))
+        field_revision = field_revisions.get(field)
+        if field_revision is not None:
+            project_field_revision_id = field_revision.revision_id
+            applied_target_revision_number = field_revision.revision_number
+            previous_target_revision_number = field_revision.revision_number - 1
     elif candidate.candidate_kind == "partner":
         matches = _matching_partners(db, candidate, validated)
         if matches:
             partner = matches[0]
+            previous_target_json = _partner_contract_payload(partner, safe=False)
+            previous_target_revision_number = partner.revision_number
             merged = _partner_contract_payload(partner, safe=False)
             merged.update(
                 {key: value for key, value in validated.items() if value is not None}
@@ -866,6 +1319,7 @@ def decide_structured_candidate(
             )
             changed = True
         applied_resource_id = partner.partner_id
+        applied_target_revision_number = partner.revision_number
     else:
         previous = _latest_answer(db, candidate)
         changed = current != validated
@@ -881,6 +1335,23 @@ def decide_structured_candidate(
         project_snapshot.mark_current_runs_stale(
             db, project=project, actor_user_id=actor_user_id
         )
+    revision = _record_structured_revision(
+        db,
+        candidate,
+        status="accepted",
+        action=revision_action,
+        actor_user_id=actor_user_id,
+        user_payload_json=edited_payload_json,
+        previous_target_json=previous_target_json,
+        target_resource_id=applied_resource_id,
+        previous_target_revision_number=previous_target_revision_number,
+        applied_target_revision_number=applied_target_revision_number,
+        project_field_revision_id=project_field_revision_id,
+    )
+    if project_field_revision_id is not None:
+        project_field_revision = db.get(ProjectFieldRevision, project_field_revision_id)
+        if project_field_revision is not None:
+            project_field_revision.source_revision_id = revision.revision_id
     audit.record(
         db,
         workspace_id=candidate.workspace_id,
@@ -889,16 +1360,264 @@ def decide_structured_candidate(
         target_type="structured_import_candidate",
         target_id=candidate.candidate_id,
         detail={
-            "decision": "accepted",
-            "candidate_kind": candidate.candidate_kind,
-            "target_key": candidate.target_key,
-            "applied_resource_id": applied_resource_id,
-            "edited": edited_payload_json is not None,
-            "changed": changed,
+            "revision_id": revision.revision_id,
+            "status": "accepted",
+            "target_id": candidate.target_key,
+            "target_resource_id": applied_resource_id,
         },
     )
     db.flush()
     return candidate
+
+
+def _current_structured_revision(
+    db: Session, candidate: StructuredImportCandidate
+) -> StructuredImportCandidateRevision:
+    revision = db.get(
+        StructuredImportCandidateRevision, candidate.current_revision_id
+    )
+    if revision is None:
+        raise _problem(
+            409,
+            "import_revision_conflict",
+            "Conflict",
+            "Für diesen Importkandidaten fehlt der aktuelle Revisionsstand.",
+        )
+    return revision
+
+
+def revise_structured_candidate(
+    db: Session,
+    *,
+    candidate: StructuredImportCandidate,
+    decision: str,
+    actor_user_id: str,
+    edited_payload_json: dict[str, Any] | None,
+    confirm_overwrite: bool,
+) -> tuple[StructuredImportCandidate, bool]:
+    if candidate.decision == "pending":
+        raise _problem(
+            409,
+            "import_invalid_transition",
+            "Conflict",
+            "Eine offene Importentscheidung muss zuerst übernommen oder verworfen werden.",
+        )
+    row = decide_structured_candidate(
+        db,
+        candidate=candidate,
+        decision=decision,
+        actor_user_id=actor_user_id,
+        edited_payload_json=edited_payload_json,
+        confirm_overwrite=confirm_overwrite,
+        allow_terminal=True,
+        revision_action="edit",
+    )
+    return row, False
+
+
+def reset_structured_candidate(
+    db: Session,
+    *,
+    candidate: StructuredImportCandidate,
+    actor_user_id: str,
+    confirm_overwrite: bool,
+) -> tuple[StructuredImportCandidate, bool]:
+    effective = _effective_payload(candidate)
+    _, conflict = _structured_current_state(db, candidate, candidate.payload_json)
+    if (
+        candidate.decision == "accepted"
+        and candidate.edited_payload_json is None
+        and effective == candidate.payload_json
+        and conflict is None
+    ):
+        return candidate, True
+    revision = _current_structured_revision(db, candidate)
+    target_is_own_revision = False
+    if revision.project_field_revision_id is not None:
+        field = _PROJECT_TARGET_FIELDS[candidate.target_key]
+        latest = db.scalar(
+            select(ProjectFieldRevision)
+            .where(
+                ProjectFieldRevision.project_id == candidate.project_id,
+                ProjectFieldRevision.field_name == field,
+            )
+            .order_by(ProjectFieldRevision.revision_number.desc())
+            .limit(1)
+        )
+        target_is_own_revision = (
+            latest is not None
+            and latest.revision_id == revision.project_field_revision_id
+        )
+    elif candidate.candidate_kind == "partner" and revision.target_resource_id:
+        partner = db.get(Partner, revision.target_resource_id)
+        target_is_own_revision = (
+            partner is not None
+            and partner.revision_number == revision.applied_target_revision_number
+        )
+    row = decide_structured_candidate(
+        db,
+        candidate=candidate,
+        decision="accepted",
+        actor_user_id=actor_user_id,
+        edited_payload_json=None,
+        confirm_overwrite=confirm_overwrite or target_is_own_revision,
+        allow_terminal=True,
+        revision_action="reset",
+    )
+    return row, False
+
+
+def _structured_undo_conflict(
+    db: Session,
+    candidate: StructuredImportCandidate,
+    actor_user_id: str,
+) -> None:
+    candidate.decision = "conflict"
+    revision = _record_structured_revision(
+        db,
+        candidate,
+        status="conflict",
+        action="undo_conflict",
+        actor_user_id=actor_user_id,
+        target_resource_id=candidate.applied_resource_id,
+    )
+    audit.record(
+        db,
+        workspace_id=candidate.workspace_id,
+        actor_user_id=actor_user_id,
+        action="structured_import.candidate_undo_conflict",
+        target_type="structured_import_candidate",
+        target_id=candidate.candidate_id,
+        detail={
+            "revision_id": revision.revision_id,
+            "status": "conflict",
+            "reason_code": "manual_resolution_required",
+        },
+    )
+    db.flush()
+    raise _problem(
+        409,
+        "import_revision_conflict",
+        "Conflict",
+        "Der Zielwert wurde später geändert und bleibt erhalten. Bitte lösen Sie den Konflikt manuell.",
+    )
+
+
+def undo_structured_candidate(
+    db: Session,
+    *,
+    candidate: StructuredImportCandidate,
+    actor_user_id: str,
+) -> tuple[StructuredImportCandidate, bool]:
+    revision = _current_structured_revision(db, candidate)
+    if candidate.decision == "pending" and revision.action == "undo":
+        return candidate, True
+    if candidate.decision == "pending":
+        raise _problem(
+            409,
+            "import_invalid_transition",
+            "Conflict",
+            "Eine noch offene Importentscheidung kann nicht zurückgenommen werden.",
+        )
+    project = db.get(Project, candidate.project_id)
+    if project is None:
+        raise _problem(
+            404, "import_candidate_not_found", "Not found", "Project not found."
+        )
+
+    if candidate.decision == "accepted" and candidate.candidate_kind in {
+        "project_metadata",
+        "budget",
+    }:
+        field = _PROJECT_TARGET_FIELDS[candidate.target_key]
+        if revision.project_field_revision_id is not None:
+            latest = db.scalar(
+                select(ProjectFieldRevision)
+                .where(
+                    ProjectFieldRevision.project_id == candidate.project_id,
+                    ProjectFieldRevision.field_name == field,
+                )
+                .order_by(ProjectFieldRevision.revision_number.desc())
+                .limit(1)
+            )
+            if latest is None or latest.revision_id != revision.project_field_revision_id:
+                _structured_undo_conflict(db, candidate, actor_user_id)
+            restore = revision.previous_target_json or {field: None}
+            mutate_project(
+                db,
+                project=project,
+                patch=ProjectPatch(**restore),
+                actor_user_id=actor_user_id,
+                stale_reason="structured_import_undone",
+                revision_source="import_undo",
+                source_revision_id=revision.revision_id,
+            )
+    elif candidate.decision == "accepted" and candidate.candidate_kind == "partner":
+        partner = (
+            db.get(Partner, revision.target_resource_id)
+            if revision.target_resource_id
+            else None
+        )
+        if (
+            partner is None
+            or partner.revision_number != revision.applied_target_revision_number
+        ):
+            _structured_undo_conflict(db, candidate, actor_user_id)
+        if revision.previous_target_json is None:
+            partners_repo.delete(db, partner)
+        else:
+            partners_repo.replace(
+                db, partner, PartnerCreate(**revision.previous_target_json)
+            )
+        project_snapshot.mark_current_runs_stale(
+            db,
+            project=project,
+            actor_user_id=actor_user_id,
+            reason="structured_import_undone",
+        )
+    elif candidate.decision == "accepted" and candidate.candidate_kind == "answer":
+        latest = db.scalar(
+            select(StructuredImportCandidate)
+            .where(
+                StructuredImportCandidate.project_id == candidate.project_id,
+                StructuredImportCandidate.target_key == candidate.target_key,
+                StructuredImportCandidate.decision == "accepted",
+            )
+            .order_by(StructuredImportCandidate.decided_at.desc())
+            .limit(1)
+        )
+        if latest is not None and latest.candidate_id != candidate.candidate_id:
+            _structured_undo_conflict(db, candidate, actor_user_id)
+        project_snapshot.mark_current_runs_stale(
+            db,
+            project=project,
+            actor_user_id=actor_user_id,
+            reason="structured_import_undone",
+        )
+
+    candidate.decision = "pending"
+    candidate.decided_by = actor_user_id
+    candidate.decided_at = datetime.now(timezone.utc)
+    candidate.edited_payload_json = None
+    candidate.applied_resource_id = None
+    undo_revision = _record_structured_revision(
+        db,
+        candidate,
+        status="pending",
+        action="undo",
+        actor_user_id=actor_user_id,
+    )
+    audit.record(
+        db,
+        workspace_id=candidate.workspace_id,
+        actor_user_id=actor_user_id,
+        action="structured_import.candidate_undone",
+        target_type="structured_import_candidate",
+        target_id=candidate.candidate_id,
+        detail={"revision_id": undo_revision.revision_id, "status": "pending"},
+    )
+    db.flush()
+    return candidate, False
 
 
 def structured_summary(db: Session, project_id: str) -> StructuredImportSummary:
@@ -960,7 +1679,15 @@ def structured_summary(db: Session, project_id: str) -> StructuredImportSummary:
     )
 
 
-def to_contract(candidate: ImportCandidate) -> ImportCandidateSchema:
+def to_contract(
+    candidate: ImportCandidate, *, idempotent_replay: bool = False
+) -> ImportCandidateSchema:
+    if candidate.decision == "accepted":
+        allowed_actions = ["edit", "reset", "undo"]
+    elif candidate.decision in {"ignored", "saved_as_source"}:
+        allowed_actions = ["reset", "undo"]
+    else:
+        allowed_actions = ["accept", "ignore", "save_as_source"]
     return ImportCandidateSchema(
         import_candidate_id=candidate.import_candidate_id,
         source_id=candidate.source_id,
@@ -976,4 +1703,20 @@ def to_contract(candidate: ImportCandidate) -> ImportCandidateSchema:
         decision=candidate.decision,
         decided_at=candidate.decided_at,
         accepted_draft_version_id=candidate.accepted_draft_version_id,
+        current_revision_id=candidate.current_revision_id or "",
+        revision_number=candidate.revision_number,
+        acceptance_state=(
+            "accepted_modified"
+            if candidate.decision == "accepted" and candidate.edited_text is not None
+            else "accepted_original"
+            if candidate.decision == "accepted"
+            else None
+        ),
+        allowed_actions=allowed_actions,
+        conflict_reason=(
+            "manual_resolution_required"
+            if candidate.decision == "conflict"
+            else None
+        ),
+        idempotent_replay=idempotent_replay,
     )

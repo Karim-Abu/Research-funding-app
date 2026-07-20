@@ -21,8 +21,8 @@ from tests.conftest import (
 )
 
 SOURCE_TEXT = (
-    "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. "
-    "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden."
+    "Industrie AG ist als Umsetzungspartner in der Schweiz wertschöpfend tätig. "
+    "ETH ist als beitragsberechtigter Schweizer Forschungspartner eingebunden."
 )
 ABSTRACT = "INTRO.APP.ABSTRACT"
 
@@ -36,11 +36,20 @@ def _mut(csrf):
 def _setup_run(client):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = create_project(client, csrf)
-    client.post(
+    source = client.post(
         f"/api/v1/projects/{project_id}/sources/text",
         json={"name": "Quelle", "text": SOURCE_TEXT, "data_classification": VALID_CLASSIFICATION},
         headers=_mut(csrf),
+    ).json()
+    selected = client.put(
+        f"/api/v1/projects/{project_id}/primary-application",
+        json={
+            "source_id": source["source_id"],
+            "expected_primary_source_id": None,
+        },
+        headers=_mut(csrf),
     )
+    assert selected.status_code == 200, selected.text
     for partner in (
         {"name": "Industrie AG", "partner_type": "implementation_partner", "country": "CH", "swiss_value_creation": True},
         {"name": "ETH", "partner_type": "research_partner", "country": "CH", "research_partner_eligibility_status": "eligible"},

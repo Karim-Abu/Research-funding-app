@@ -39,6 +39,22 @@ class OpenIssue(BaseModel):
     created_at: datetime
 
 
+class RuleEvidence(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    rule_id: str
+    registry_version: str
+    source_ref: str
+    source_title: str
+    source_url: str | None = None
+    source_path: str | None = None
+    last_verified: str | None = None
+    evidence_quote: str
+    evidence_label: Literal["Kuratierter Registry-Auszug"] = (
+        "Kuratierter Registry-Auszug"
+    )
+
+
 class RequirementAssessment(BaseModel):
     assessment_id: str
     requirement_id: str
@@ -59,3 +75,4 @@ class RequirementAssessment(BaseModel):
     # Additive (RUN 2A Slice 1): Guidance-Hinweise werden getrennt angezeigt
     # und zählen in keiner Erfüllungsquote/keinem Filter.
     display_mode: DisplayMode = "requirement"
+    rule_evidence: list[RuleEvidence] = []

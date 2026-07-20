@@ -44,3 +44,4 @@ class PartnerCreate(BaseModel):
 class Partner(PartnerCreate):
     partner_id: str
     project_id: str
+    revision_number: int = Field(ge=1)

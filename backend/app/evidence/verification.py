@@ -21,6 +21,8 @@ from app.db.models import (
     SourceFragment,
     SourceVersion,
 )
+from app.evidence.eligibility import validate_requirement_quote
+from app.evidence.scope_policy import candidate_in_application_scope
 
 
 @dataclass(frozen=True)
@@ -45,6 +47,21 @@ def verify_candidate(
     if match_type != "exact_normalized":
         return VerificationOutcome(
             "unverified", match_type, None, None, "non_exact_match_type"
+        )
+
+    allowed, scope_reason = candidate_in_application_scope(
+        db,
+        run,
+        source_id=candidate.source_id,
+        source_version_id=candidate.source_version_id,
+    )
+    if not allowed:
+        return VerificationOutcome(
+            "rejected",
+            match_type,
+            None,
+            None,
+            scope_reason or "application_scope_invalid",
         )
 
     # The source version must belong to this run's immutable snapshot.
@@ -84,6 +101,14 @@ def verify_candidate(
     if text[start:end] != candidate.proposed_quote:
         return VerificationOutcome(
             "unverified", match_type, None, None, "quote_not_at_position"
+        )
+
+    eligibility_reason = validate_requirement_quote(
+        candidate.target_requirement_id, candidate.proposed_quote
+    )
+    if eligibility_reason is not None:
+        return VerificationOutcome(
+            "rejected", match_type, start, end, eligibility_reason
         )
 
     return VerificationOutcome(

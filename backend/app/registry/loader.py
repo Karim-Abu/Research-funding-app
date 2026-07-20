@@ -80,6 +80,7 @@ class RuleDef:
     rule_id: str
     requirement_id: str | None
     title: str
+    description: str
     category: str
     execution_mode: str
     severity: str
@@ -96,6 +97,17 @@ class RuleDef:
     source_version: str | None = None
     last_checked: str | None = None  # ISO-Datum YYYY-MM-DD
     validity_status: str | None = None
+    source_refs: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True)
+class RegistrySource:
+    source_ref: str
+    title: str
+    url: str | None
+    path: str | None
+    source_type: str
+    last_verified: str | None
 
 
 @dataclass(frozen=True)
@@ -156,6 +168,7 @@ class Registry:
     requirements: dict[str, RequirementDef]
     rules: dict[str, RuleDef]
     portal_fields: dict[str, PortalFieldDef]
+    sources: dict[str, RegistrySource]
     # The M4-evaluable subset: active, user-facing requirements whose linked
     # rules are all known official core rules (the 12 REQ.INNO.* requirements).
     evaluable_requirement_ids: tuple[str, ...]
@@ -228,6 +241,7 @@ def _parse_rules(raw: dict[str, Any]) -> dict[str, RuleDef]:
             rule_id=rule_id,
             requirement_id=entry.get("requirement_id"),
             title=entry.get("title", rule_id),
+            description=str(entry.get("description", "")),
             category=entry.get("category", ""),
             execution_mode=entry.get("execution_mode", ""),
             severity=entry.get("severity", "info"),
@@ -241,8 +255,30 @@ def _parse_rules(raw: dict[str, Any]) -> dict[str, RuleDef]:
             source_version=metadata["source_version"],
             last_checked=metadata["last_checked"],
             validity_status=metadata["validity_status"],
+            source_refs=tuple(str(ref) for ref in (entry.get("source_refs") or [])),
         )
     return rules
+
+
+def _parse_sources(raw: dict[str, Any]) -> dict[str, RegistrySource]:
+    entries = raw.get("sources")
+    if not isinstance(entries, dict):
+        raise RegistryError("Rule registry has no sources mapping.")
+    sources: dict[str, RegistrySource] = {}
+    for source_ref, entry in entries.items():
+        if not isinstance(entry, dict):
+            raise RegistryError(f"Registry source {source_ref!r} is not a mapping.")
+        sources[str(source_ref)] = RegistrySource(
+            source_ref=str(source_ref),
+            title=str(entry.get("title", source_ref)),
+            url=str(entry["url"]) if entry.get("url") else None,
+            path=str(entry["path"]) if entry.get("path") else None,
+            source_type=str(entry.get("source_type", "")),
+            last_verified=(
+                str(entry["last_verified"]) if entry.get("last_verified") else None
+            ),
+        )
+    return sources
 
 
 def _parse_requirements(raw: dict[str, Any]) -> dict[str, RequirementDef]:
@@ -327,6 +363,15 @@ def load_registry() -> Registry:
     rules = _parse_rules(rules_raw)
     requirements = _parse_requirements(reqs_raw)
     portal_fields = _parse_portal_fields(rules_raw)
+    sources = _parse_sources(rules_raw)
+
+    for rule in rules.values():
+        unknown_sources = set(rule.source_refs) - set(sources)
+        if unknown_sources:
+            raise RegistryError(
+                f"Rule {rule.rule_id!r} references unknown sources: "
+                f"{sorted(unknown_sources)!r}."
+            )
 
     # Referential integrity + build the evaluable subset deterministically.
     evaluable: list[str] = []
@@ -359,6 +404,7 @@ def load_registry() -> Registry:
         requirements=requirements,
         rules=rules,
         portal_fields=portal_fields,
+        sources=sources,
         evaluable_requirement_ids=tuple(evaluable),
     )
 

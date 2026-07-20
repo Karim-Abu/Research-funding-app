@@ -314,6 +314,204 @@ paths:
       - member
       - lead_admin
       x-audit-required: true
+  /api/v1/projects/{project_id}/primary-application:
+    put:
+      summary: Select the primary Innolink application source
+      operationId: selectPrimaryApplication
+      tags:
+      - Projects
+      parameters:
+      - name: project_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PrimaryApplicationUpdate'
+      responses:
+        '200':
+          description: Primary application selected or idempotently retained
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Project'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
+  /api/v1/imports/{candidate_id}/decision:
+    post: &narrative_import_decision
+      summary: Decide an open narrative import candidate
+      operationId: decideImportCandidate
+      tags:
+      - Imports
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportDecisionRequest'
+      responses:
+        '200':
+          description: Import decision applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCandidate'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
+    patch:
+      <<: *narrative_import_decision
+      summary: Revise a narrative import decision
+      operationId: reviseImportCandidate
+  /api/v1/imports/{candidate_id}/reset:
+    post: &narrative_import_control
+      summary: Reapply the immutable PDF value to a narrative candidate
+      operationId: resetImportCandidate
+      tags:
+      - Imports
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ImportUndoRequest'
+      responses:
+        '200':
+          description: Import candidate reset or replayed idempotently
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ImportCandidate'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
+  /api/v1/imports/{candidate_id}/undo:
+    post:
+      <<: *narrative_import_control
+      summary: Undo a narrative import decision and reopen the candidate
+      operationId: undoImportCandidate
+  /api/v1/structured-imports/{candidate_id}/decision:
+    post: &structured_import_decision
+      summary: Decide an open structured import candidate
+      operationId: decideStructuredImportCandidate
+      tags:
+      - Imports
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StructuredImportDecisionRequest'
+      responses:
+        '200':
+          description: Structured import decision applied
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredImportCandidate'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
+    patch:
+      <<: *structured_import_decision
+      summary: Revise a structured import decision
+      operationId: reviseStructuredImportCandidate
+  /api/v1/structured-imports/{candidate_id}/reset:
+    post: &structured_import_control
+      summary: Reapply the immutable PDF value to a structured candidate
+      operationId: resetStructuredImportCandidate
+      tags:
+      - Imports
+      parameters:
+      - name: candidate_id
+        in: path
+        required: true
+        schema:
+          type: string
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StructuredImportUndoRequest'
+      responses:
+        '200':
+          description: Structured candidate reset or replayed idempotently
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StructuredImportCandidate'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
+  /api/v1/structured-imports/{candidate_id}/undo:
+    post:
+      <<: *structured_import_control
+      summary: Undo a structured import decision and reopen the candidate
+      operationId: undoStructuredImportCandidate
   /api/v1/projects/{project_id}/partners:
     get:
       summary: List partners
@@ -2647,6 +2845,56 @@ components:
           - number
           - 'null'
           minimum: 0
+        title_en:
+          type:
+          - string
+          - 'null'
+        start_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        end_date:
+          type:
+          - string
+          - 'null'
+          format: date
+        direct_total_project_costs_excluding_overhead: &nullable_nonnegative_number
+          type:
+          - number
+          - 'null'
+          minimum: 0
+        implementation_own_contribution: *nullable_nonnegative_number
+        cash_contribution: *nullable_nonnegative_number
+        total_requested_funding: *nullable_nonnegative_number
+        total_requested_funding_including_overhead: *nullable_nonnegative_number
+        budget_exception_basis:
+          type:
+          - string
+          - 'null'
+        duration_months:
+          description: Compatibility member; writes are rejected with duration_read_only.
+          type:
+          - integer
+          - 'null'
+        status:
+          type: string
+          enum:
+          - draft
+          - active
+          - archived
+    PrimaryApplicationUpdate:
+      type: object
+      required:
+      - source_id
+      properties:
+        source_id:
+          type: string
+        expected_primary_source_id:
+          type:
+          - string
+          - 'null'
+      additionalProperties: false
     Project:
       allOf:
       - $ref: '#/components/schemas/ProjectCreate'
@@ -2655,6 +2903,9 @@ components:
         - project_id
         - workspace_id
         - status
+        - duration_status
+        - duration_reason_code
+        - primary_application_status
         - created_at
         - updated_at
         properties:
@@ -2678,6 +2929,55 @@ components:
             type:
             - string
             - 'null'
+          title_en:
+            type:
+            - string
+            - 'null'
+          start_date:
+            type:
+            - string
+            - 'null'
+            format: date
+          end_date:
+            type:
+            - string
+            - 'null'
+            format: date
+          direct_total_project_costs_excluding_overhead: *nullable_nonnegative_number
+          implementation_own_contribution: *nullable_nonnegative_number
+          cash_contribution: *nullable_nonnegative_number
+          total_requested_funding: *nullable_nonnegative_number
+          total_requested_funding_including_overhead: *nullable_nonnegative_number
+          budget_exception_basis:
+            type:
+            - string
+            - 'null'
+          duration_months:
+            type:
+            - integer
+            - 'null'
+          duration_status:
+            type: string
+            enum:
+            - derived
+            - not_derivable
+            - review_required
+          duration_reason_code:
+            type: string
+            enum:
+            - duration_derived
+            - duration_dates_missing
+            - duration_boundary_conflict
+          primary_application_source_id:
+            type:
+            - string
+            - 'null'
+          primary_application_status:
+            type: string
+            enum:
+            - configured
+            - not_configured
+            - needs_selection
           workflow_summary:
             $ref: '#/components/schemas/WorkflowSummary'
     ProjectList:
@@ -2775,6 +3075,14 @@ components:
           - exception
           - needs_input
           - null
+        department:
+          type:
+          - string
+          - 'null'
+        review_comment:
+          type:
+          - string
+          - 'null'
     Partner:
       allOf:
       - $ref: '#/components/schemas/PartnerCreate'
@@ -2782,11 +3090,15 @@ components:
         required:
         - partner_id
         - project_id
+        - revision_number
         properties:
           partner_id:
             type: string
           project_id:
             type: string
+          revision_number:
+            type: integer
+            minimum: 1
     SourceDocument:
       type: object
       required:
@@ -3199,6 +3511,240 @@ components:
           type:
           - string
           - 'null'
+    ImportDecisionRequest:
+      type: object
+      required:
+      - decision
+      - project_id
+      - source_id
+      - expected_revision_id
+      properties:
+        decision:
+          type: string
+          enum: [accepted, saved_as_source, ignored]
+        run_id:
+          type: [string, 'null']
+        edited_text:
+          type: [string, 'null']
+        confirm_overwrite:
+          type: boolean
+          default: false
+        project_id:
+          type: [string, 'null']
+        source_id:
+          type: [string, 'null']
+        expected_revision_id:
+          type: [string, 'null']
+      additionalProperties: false
+    ImportUndoRequest:
+      type: object
+      required: [project_id, source_id, expected_revision_id]
+      properties:
+        project_id:
+          type: string
+        source_id:
+          type: string
+        expected_revision_id:
+          type: string
+        run_id:
+          type: [string, 'null']
+        confirm_overwrite:
+          type: boolean
+          default: false
+      additionalProperties: false
+    ImportCandidate:
+      type: object
+      required:
+      - import_candidate_id
+      - source_id
+      - field_id
+      - label
+      - extracted_text
+      - confidence
+      - decision
+      - current_revision_id
+      - revision_number
+      properties:
+        import_candidate_id:
+          type: string
+        source_id:
+          type: string
+        field_id:
+          type: string
+        label:
+          type: string
+        extracted_text:
+          type: string
+        edited_text:
+          type: [string, 'null']
+        confidence:
+          type: string
+          enum: [found, uncertain]
+        source_location:
+          type: [string, 'null']
+        mapping_version:
+          type: string
+        mapping_status:
+          type: string
+          enum: [content_detected, empty, legacy_migrated, uncertain]
+        section_metadata:
+          type: array
+          items:
+            type: object
+            additionalProperties: true
+        decision:
+          type: string
+          enum: [pending, conflict, accepted, saved_as_source, ignored]
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        accepted_draft_version_id:
+          type: [string, 'null']
+        current_revision_id:
+          type: string
+        revision_number:
+          type: integer
+          minimum: 1
+        acceptance_state:
+          type: [string, 'null']
+          enum: [accepted_original, accepted_modified, null]
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [edit, reset, undo, accept, ignore, save_as_source]
+        conflict_reason:
+          type: [string, 'null']
+        idempotent_replay:
+          type: boolean
+      additionalProperties: false
+    StructuredImportDecisionRequest:
+      type: object
+      required:
+      - decision
+      - project_id
+      - source_id
+      - expected_revision_id
+      properties:
+        decision:
+          type: string
+          enum: [accepted, ignored]
+        edited_payload_json:
+          type: [object, 'null']
+          additionalProperties: true
+        confirm_overwrite:
+          type: boolean
+          default: false
+        project_id:
+          type: [string, 'null']
+        source_id:
+          type: [string, 'null']
+        expected_revision_id:
+          type: [string, 'null']
+      additionalProperties: false
+    StructuredImportUndoRequest:
+      type: object
+      required: [project_id, source_id, expected_revision_id]
+      properties:
+        project_id:
+          type: string
+        source_id:
+          type: string
+        expected_revision_id:
+          type: string
+        confirm_overwrite:
+          type: boolean
+          default: false
+      additionalProperties: false
+    StructuredImportCandidate:
+      type: object
+      required:
+      - candidate_id
+      - source_id
+      - candidate_kind
+      - target_key
+      - label
+      - payload_json
+      - effective_payload_json
+      - confidence
+      - mapping_version
+      - decision
+      - current_revision_id
+      - revision_number
+      properties:
+        candidate_id:
+          type: string
+        source_id:
+          type: string
+        candidate_kind:
+          type: string
+          enum: [project_metadata, partner, budget, answer]
+        target_key:
+          type: string
+        label:
+          type: string
+        payload_json:
+          type: object
+          additionalProperties: true
+        edited_payload_json:
+          type: [object, 'null']
+          additionalProperties: true
+        effective_payload_json:
+          type: object
+          additionalProperties: true
+        confidence:
+          type: string
+          enum: [found, uncertain]
+        source_location:
+          type: [string, 'null']
+        mapping_version:
+          type: string
+        decision:
+          type: string
+          enum: [pending, accepted, ignored, conflict]
+        decided_at:
+          type: [string, 'null']
+          format: date-time
+        applied_resource_id:
+          type: [string, 'null']
+        current_value_json:
+          type: [object, 'null']
+          additionalProperties: true
+        has_conflict:
+          type: boolean
+        conflict_reason:
+          type: [string, 'null']
+        requires_manual_edit:
+          type: boolean
+        interaction_mode:
+          type: string
+          enum: [actionable, comparison_only]
+        derived_duration_months:
+          type: [integer, 'null']
+        duration_status:
+          type: [string, 'null']
+          enum: [derived, not_derivable, review_required, null]
+        duration_reason_code:
+          type: [string, 'null']
+        duration_comparison_status:
+          type: [string, 'null']
+          enum: [duration_match, duration_conflict, not_derivable, duration_boundary_conflict, null]
+        current_revision_id:
+          type: string
+        revision_number:
+          type: integer
+          minimum: 1
+        acceptance_state:
+          type: [string, 'null']
+          enum: [accepted_original, accepted_modified, null]
+        allowed_actions:
+          type: array
+          items:
+            type: string
+            enum: [edit, reset, undo, accept, ignore]
+        idempotent_replay:
+          type: boolean
+      additionalProperties: false
     EvidenceLinkCreate:
       type: object
       required:
@@ -3218,6 +3764,7 @@ components:
       - target_id
       - status
       - created_at
+      - run_id
       properties:
         evidence_link_id:
           type: string
@@ -3265,6 +3812,17 @@ components:
           - conflict_or_uncertain
           - human_review_required
           - null
+        run_id:
+          type: string
+        source_id:
+          type: [string, 'null']
+        source_version_id:
+          type: [string, 'null']
+        fragment_id:
+          type: [string, 'null']
+        scope:
+          type: string
+          enum: [application, external, drafting_context]
       additionalProperties: false
     ServiceTestResult:
       type: object
@@ -3548,6 +4106,42 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/OpenIssue'
+        rule_evidence:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuleEvidence'
+    RuleEvidence:
+      type: object
+      required:
+      - rule_id
+      - registry_version
+      - source_ref
+      - source_title
+      - evidence_quote
+      - evidence_label
+      properties:
+        rule_id:
+          type: string
+        registry_version:
+          type: string
+        source_ref:
+          type: string
+        source_title:
+          type: string
+        source_url:
+          type: [string, 'null']
+          format: uri
+        source_path:
+          type: [string, 'null']
+        last_verified:
+          type: [string, 'null']
+          format: date
+        evidence_quote:
+          type: string
+        evidence_label:
+          type: string
+          const: Kuratierter Registry-Auszug
+      additionalProperties: false
     EvidenceAnchor:
       type: object
       required:
@@ -3655,6 +4249,13 @@ components:
           - conflict_or_uncertain
           - human_review_required
           - null
+        scope:
+          type: string
+          enum: [application, external, drafting_context]
+        rejection_reason_code:
+          type: [string, 'null']
+        rejection_text_de:
+          type: [string, 'null']
       additionalProperties: false
     PortalFieldDraft:
       type: object

@@ -18,11 +18,11 @@ from sqlalchemy.orm import Session
 
 from app.db.models import (
     AnalysisRun,
-    RunSourceSnapshot,
     SourceDocument,
     SourceFragment,
     SourceVersion,
 )
+from app.evidence.scope_policy import application_source
 from app.evidence.tokenize import content_terms
 from app.registry import get_registry
 
@@ -83,18 +83,8 @@ def _ordered_sources(
 ) -> list[tuple[SourceVersion, SourceDocument | None]]:
     """Frozen sources of the run snapshot in explicit canonical order:
     (SourceVersion.created_at, source_id) — computed in code, never DB order."""
-    rows = db.scalars(
-        select(RunSourceSnapshot).where(RunSourceSnapshot.run_id == run.run_id)
-    ).all()
-    pairs: list[tuple[SourceVersion, SourceDocument | None]] = []
-    for row in rows:
-        version = db.get(SourceVersion, row.source_version_id)
-        if version is None or version.normalized_text is None:
-            continue
-        document = db.get(SourceDocument, version.source_document_id)
-        pairs.append((version, document))
-    pairs.sort(key=lambda pair: (pair[0].created_at, pair[0].source_document_id))
-    return pairs
+    primary = application_source(db, run)
+    return [primary] if primary is not None else []
 
 
 def discover_candidates(

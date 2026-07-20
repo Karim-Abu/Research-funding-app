@@ -13,8 +13,8 @@ from tests.conftest import (
 )
 
 SOURCE_TEXT = (
-    "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. "
-    "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden."
+    "Industrie AG ist als Umsetzungspartner in der Schweiz wertschöpfend tätig. "
+    "ETH ist als beitragsberechtigter Schweizer Forschungspartner eingebunden."
 )
 ABSTRACT = "INTRO.APP.ABSTRACT"
 NAME = "INTRO.APP.NAME"
@@ -45,7 +45,7 @@ def setup_completed_run(
     """Create a project + source + partners and a synchronously completed run."""
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = create_project(client, csrf, title)
-    client.post(
+    source = client.post(
         f"/api/v1/projects/{project_id}/sources/text",
         json={
             "name": "Quelle",
@@ -53,7 +53,16 @@ def setup_completed_run(
             "data_classification": VALID_CLASSIFICATION,
         },
         headers=mut(csrf),
+    ).json()
+    selected = client.put(
+        f"/api/v1/projects/{project_id}/primary-application",
+        json={
+            "source_id": source["source_id"],
+            "expected_primary_source_id": None,
+        },
+        headers=mut(csrf),
     )
+    assert selected.status_code == 200, selected.text
     partners = [_IMPL_PARTNER]
     if with_research_partner:
         partners.append(_RESEARCH_PARTNER)

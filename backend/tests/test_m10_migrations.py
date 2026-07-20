@@ -23,8 +23,10 @@ _KEY_TABLES = {
     "review_findings", "search_query_approvals", "market_comparisons",
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
+    "import_candidate_revisions", "structured_import_candidate_revisions",
+    "project_field_revisions",
 }
-_HEAD = "e4a7c2f9b6d1"  # nachvollziehbare Firecrawl-Live-Recherche.
+_HEAD = "f7b9d2c4a681"  # RUN 2B revisions and formal evidence scope.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -109,6 +111,16 @@ def test_fresh_db_upgrade_head(tmp_path):
     assert "source_url" in _columns(db, "source_documents")
     assert _LIVE_RESEARCH_RESULT_COLUMNS <= _columns(db, "research_results")
     assert "generation_kind" in _columns(db, "market_comparisons")
+    assert {"primary_application_source_id", "field_revision_number"} <= _project_columns(db)
+    assert "revision_number" in _columns(db, "partners")
+    assert {"current_revision_id", "revision_number"} <= _columns(
+        db, "import_candidates"
+    )
+    assert {"current_revision_id", "revision_number"} <= _columns(
+        db, "structured_import_candidates"
+    )
+    assert {"scope", "rejection_reason_code"} <= _columns(db, "evidence_candidates")
+    assert {"scope", "rejection_reason_code"} <= _columns(db, "evidence_anchors")
     assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
     assert {
         "requested_model_id", "actual_model_id", "retry_index",
@@ -191,6 +203,14 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
+    assert {
+        "import_candidate_revisions",
+        "structured_import_candidate_revisions",
+        "project_field_revisions",
+    } <= _tables(db)
+    assert {"current_revision_id", "revision_number"} <= _columns(
+        db, "import_candidates"
+    )
     # Row preservation across the roundtrip: bestehende Zeilen (usage_records,
     # ImportCandidate mit edited_text, Partner mit review_comment) müssen den
     # Downgrade + Upgrade der Head-Migration unverändert überleben; die
@@ -235,9 +255,9 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_RUN_COLUMNS <= _columns(db, "analysis_runs")
     assert {"agent_invocation_attempts", "provider_preflight_results"} <= _tables(db)
-    assert "source_url" not in _columns(db, "source_documents")
-    assert not (_LIVE_RESEARCH_RESULT_COLUMNS & _columns(db, "research_results"))
-    assert "generation_kind" not in _columns(db, "market_comparisons")
+    assert "source_url" in _columns(db, "source_documents")
+    assert _LIVE_RESEARCH_RESULT_COLUMNS <= _columns(db, "research_results")
+    assert "generation_kind" in _columns(db, "market_comparisons")
     assert "actual_model_id" in _columns(db, "agent_invocations")
     assert "research_briefs" in _tables(db)
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
@@ -267,6 +287,19 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert "cash_contribution" in _project_columns(db)
     assert "duration_months" in _project_columns(db)
     assert "run_quality_summaries" in _tables(db)
+    assert not {
+        "import_candidate_revisions",
+        "structured_import_candidate_revisions",
+        "project_field_revisions",
+    } & _tables(db)
+    assert not {"current_revision_id", "revision_number"} & _columns(
+        db, "import_candidates"
+    )
+    assert "revision_number" not in _columns(db, "partners")
+    assert "primary_application_source_id" not in _project_columns(db)
+    assert not {"scope", "rejection_reason_code"} & _columns(
+        db, "evidence_candidates"
+    )
     con = sqlite3.connect(db)
     try:
         kept = con.execute(
@@ -298,6 +331,16 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "mapping_status", "section_metadata",
     } <= _columns(db, "import_candidates")
     assert "review_comment" in _columns(db, "partners")
+    assert {"current_revision_id", "revision_number"} <= _columns(
+        db, "import_candidates"
+    )
+    assert "revision_number" in _columns(db, "partners")
+    assert {"primary_application_source_id", "field_revision_number"} <= _project_columns(db)
+    assert {
+        "import_candidate_revisions",
+        "structured_import_candidate_revisions",
+        "project_field_revisions",
+    } <= _tables(db)
     con = sqlite3.connect(db)
     try:
         usage = con.execute(
@@ -313,6 +356,13 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
             "SELECT name, review_comment FROM partners WHERE partner_id='prt-rt'"
         ).fetchone()
         phase_rows = con.execute("SELECT COUNT(*) FROM run_phases").fetchone()
+        import_revision = con.execute(
+            "SELECT revision_number, status, action, user_text "
+            "FROM import_candidate_revisions WHERE import_candidate_id='cand-rt'"
+        ).fetchone()
+        partner_revision = con.execute(
+            "SELECT revision_number FROM partners WHERE partner_id='prt-rt'"
+        ).fetchone()
     finally:
         con.close()
     # Frühere Revisionen werden vom -1-Roundtrip nicht berührt.
@@ -324,6 +374,8 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "candidate row mutated in roundtrip"
     )
     assert phase_rows == (1,), "run phase row lost in mapping-metadata roundtrip"
+    assert import_revision == (1, "accepted", "legacy_migrated", "Bearbeitet")
+    assert partner_revision == (1,)
     assert partner == ("Industrie AG", "Begründung"), (
         "partner row mutated in roundtrip"
     )

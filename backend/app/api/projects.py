@@ -12,16 +12,24 @@ from app.contracts.budget_precheck import (
 )
 from app.config.settings import get_settings
 from app.contracts.processing import ProcessingConfirmation, ProcessingConfirmationCreate
-from app.contracts.project import Project, ProjectCreate, ProjectList, ProjectPatch
+from app.contracts.project import (
+    PrimaryApplicationUpdate,
+    Project,
+    ProjectCreate,
+    ProjectList,
+    ProjectPatch,
+)
 from app.db.session import get_db
 from app.registry import get_registry
 from app.repositories import audit, controls, idempotency, projects
 from app.projects.service import mutate_project
 from app.repositories import processing_confirmations as confirmations_repo
+from app.repositories import sources as sources_repo
 from app.rules.engine import evaluate_rule
 from app.rules.inputs import inputs_from_snapshot
 from app.runs import cloud_policy
 from app.runs.policy import POLICY_VERSION
+from app.runs import project_snapshot
 from app.runs.project_snapshot import current_inputs
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
@@ -345,3 +353,93 @@ def update_project(
     )
     db.commit()
     return projects.to_contract(db, project)
+
+
+@router.put("/projects/{project_id}/primary-application", response_model=Project)
+def select_primary_application(
+    project_id: str,
+    payload: PrimaryApplicationUpdate,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=8, max_length=128
+    ),
+) -> Project:
+    project = projects.get_scoped(db, project_id, context.user.workspace_id)
+    if project is None:
+        raise ProblemException(
+            status=404,
+            code="not_found",
+            title=_NOT_FOUND,
+            detail="Project not found.",
+        )
+    scope = (
+        f"{context.user.workspace_id}:{context.user.id}:"
+        "PUT:/projects/primary-application"
+    )
+    fingerprint = idempotency.fingerprint(
+        "PUT",
+        f"/projects/{project_id}/primary-application",
+        payload.model_dump_json(),
+    )
+    existing = idempotency.get(db, scope, idempotency_key)
+    if existing is not None:
+        if existing.request_fingerprint != fingerprint:
+            raise ProblemException(
+                status=409,
+                code="idempotency_conflict",
+                title="Conflict",
+                detail="Idempotency-Key was reused with a different request.",
+            )
+        return Project(**existing.response_body)
+    if project.primary_application_source_id != payload.expected_primary_source_id:
+        raise ProblemException(
+            status=409,
+            code="primary_application_conflict",
+            title="Conflict",
+            detail="Die primäre Antragsquelle wurde zwischenzeitlich geändert.",
+        )
+    source = sources_repo.get_scoped(
+        db, payload.source_id, context.user.workspace_id
+    )
+    if (
+        source is None
+        or source.project_id != project_id
+        or source.status != "processed"
+        or not source.current_source_version_id
+    ):
+        raise ProblemException(
+            status=422,
+            code="primary_application_source_invalid",
+            title="Unprocessable Entity",
+            detail="Als Primärantrag kann nur eine verarbeitete Quelle dieses Projekts gewählt werden.",
+        )
+    if project.primary_application_source_id != source.source_id:
+        project.primary_application_source_id = source.source_id
+        project_snapshot.mark_current_runs_stale(
+            db,
+            project=project,
+            actor_user_id=context.user.id,
+            reason="primary_application_changed",
+        )
+    result = projects.to_contract(db, project)
+    idempotency.save(
+        db,
+        scope=scope,
+        key=idempotency_key,
+        request_fingerprint=fingerprint,
+        response_status=200,
+        response_body=result.model_dump(mode="json"),
+        resource_id=project.project_id,
+    )
+    audit.record(
+        db,
+        workspace_id=project.workspace_id,
+        actor_user_id=context.user.id,
+        action="project.primary_application_changed",
+        target_type="project",
+        target_id=project.project_id,
+        detail={"source_id": source.source_id},
+    )
+    db.commit()
+    return result

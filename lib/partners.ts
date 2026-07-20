@@ -43,6 +43,7 @@ export interface PartnerInput {
 export interface PartnerDto extends PartnerInput {
   partner_id: string
   project_id: string
+  revision_number: number
 }
 
 export class PartnerError extends Error {

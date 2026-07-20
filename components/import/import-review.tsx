@@ -43,6 +43,12 @@ import {
   getImportCandidates,
   getStructuredImportCandidates,
   ImportError,
+  resetImportCandidate,
+  resetStructuredImportCandidate,
+  reviseImportCandidate,
+  reviseStructuredImportCandidate,
+  undoImportCandidate,
+  undoStructuredImportCandidate,
   type ImportCandidateDto,
   type StructuredImportCandidateDto,
 } from "@/lib/imports"
@@ -287,7 +293,8 @@ export function ImportReview() {
     setError(null)
     setBusyId(candidate.import_candidate_id)
     try {
-      const updated = await decideImportCandidate(candidate.import_candidate_id, {
+      if (!projectId) return
+      const payload = {
         decision,
         // Mit aktivem Run schreibt «Übernehmen» direkt in den Run-Draft;
         // ohne Run wird die Übernahme vorgemerkt (Konsum beim nächsten Lauf).
@@ -296,7 +303,27 @@ export function ImportReview() {
           ? { edited_text: editedText }
           : {}),
         ...(confirmOverwrite ? { confirm_overwrite: true } : {}),
-      })
+        ...(candidate.current_revision_id
+          ? {
+              project_id: projectId,
+              source_id: candidate.source_id,
+              expected_revision_id: candidate.current_revision_id,
+            }
+          : {}),
+      }
+      const isRevision =
+        candidate.decision === "accepted" ||
+        candidate.decision === "ignored" ||
+        candidate.decision === "saved_as_source"
+      const updated =
+        isRevision && candidate.current_revision_id
+          ? await reviseImportCandidate(candidate.import_candidate_id, {
+              ...payload,
+              project_id: projectId,
+              source_id: candidate.source_id,
+              expected_revision_id: candidate.current_revision_id,
+            })
+          : await decideImportCandidate(candidate.import_candidate_id, payload)
       setCandidates((prev) =>
         prev.map((c) =>
           c.import_candidate_id === updated.import_candidate_id ? updated : c
@@ -335,11 +362,30 @@ export function ImportReview() {
     setError(null)
     setBusyId(candidate.candidate_id)
     try {
-      const updated = await decideStructuredImportCandidate(candidate.candidate_id, {
+      if (!projectId) return
+      const payload = {
         decision,
         ...(editedPayload ? { edited_payload_json: editedPayload } : {}),
         ...(confirmOverwrite ? { confirm_overwrite: true } : {}),
-      })
+        ...(candidate.current_revision_id
+          ? {
+              project_id: projectId,
+              source_id: candidate.source_id,
+              expected_revision_id: candidate.current_revision_id,
+            }
+          : {}),
+      }
+      const isRevision =
+        candidate.decision === "accepted" || candidate.decision === "ignored"
+      const updated =
+        isRevision && candidate.current_revision_id
+          ? await reviseStructuredImportCandidate(candidate.candidate_id, {
+              ...payload,
+              project_id: projectId,
+              source_id: candidate.source_id,
+              expected_revision_id: candidate.current_revision_id,
+            })
+          : await decideStructuredImportCandidate(candidate.candidate_id, payload)
       setStructuredCandidates((prev) =>
         prev.map((item) =>
           item.candidate_id === updated.candidate_id ? updated : item
@@ -375,6 +421,66 @@ export function ImportReview() {
           )
         )
       }
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function controlNarrative(
+    candidate: ImportCandidateDto,
+    action: "reset" | "undo"
+  ) {
+    if (!projectId) return
+    setBusyId(candidate.import_candidate_id)
+    setError(null)
+    try {
+      const updated =
+        action === "reset"
+          ? await resetImportCandidate(candidate, projectId, runId ?? undefined)
+          : await undoImportCandidate(candidate, projectId)
+      setCandidates((current) =>
+        current.map((item) =>
+          item.import_candidate_id === updated.import_candidate_id ? updated : item
+        )
+      )
+    } catch (err) {
+      const [narrative, structured] = await Promise.all([
+        getImportCandidates(projectId),
+        getStructuredImportCandidates(projectId),
+      ])
+      setCandidates(narrative)
+      setStructuredCandidates(structured)
+      setError(toUploadErrorInfo(err, "Die Importentscheidung konnte nicht geändert werden."))
+    } finally {
+      setBusyId(null)
+    }
+  }
+
+  async function controlStructured(
+    candidate: StructuredImportCandidateDto,
+    action: "reset" | "undo"
+  ) {
+    if (!projectId) return
+    setBusyId(candidate.candidate_id)
+    setError(null)
+    try {
+      const updated =
+        action === "reset"
+          ? await resetStructuredImportCandidate(candidate, projectId)
+          : await undoStructuredImportCandidate(candidate, projectId)
+      setStructuredCandidates((current) =>
+        current.map((item) =>
+          item.candidate_id === updated.candidate_id ? updated : item
+        )
+      )
+    } catch (err) {
+      const [narrative, structured] = await Promise.all([
+        getImportCandidates(projectId),
+        getStructuredImportCandidates(projectId),
+      ])
+      setCandidates(narrative)
+      setStructuredCandidates(structured)
+      setError(toUploadErrorInfo(err, "Die Importentscheidung konnte nicht geändert werden."))
     } finally {
       setBusyId(null)
     }
@@ -654,6 +760,8 @@ export function ImportReview() {
                           })
                         }
                         onIgnore={() => void decideStructured(candidate, "ignored")}
+                        onReset={() => void controlStructured(candidate, "reset")}
+                        onUndo={() => void controlStructured(candidate, "undo")}
                       />
                     ))}
                   </div>
@@ -687,6 +795,8 @@ export function ImportReview() {
                     text: candidate.extracted_text,
                   })
                 }
+                onReset={() => void controlNarrative(candidate, "reset")}
+                onUndo={() => void controlNarrative(candidate, "undo")}
               />
             ))}
           </div>
@@ -1013,18 +1123,28 @@ function StructuredCandidateRow({
   onAccept,
   onEdit,
   onIgnore,
+  onReset,
+  onUndo,
 }: Readonly<{
   candidate: StructuredImportCandidateDto
   busy: boolean
   onAccept: () => void
   onEdit: () => void
   onIgnore: () => void
+  onReset: () => void
+  onUndo: () => void
 }>) {
   const comparisonOnly = candidate.interaction_mode === "comparison_only"
   const open =
     !comparisonOnly &&
     (candidate.decision === "pending" || candidate.decision === "conflict")
   const uncertain = candidate.confidence === "uncertain"
+  const allowedActions = candidate.allowed_actions ??
+    (candidate.decision === "accepted"
+      ? ["edit", "reset", "undo"]
+      : candidate.decision === "ignored"
+        ? ["reset", "undo"]
+        : [])
   return (
     <Card
       className={cn(
@@ -1075,6 +1195,25 @@ function StructuredCandidateRow({
             <Button size="sm" variant="ghost" disabled={busy} onClick={onIgnore}>
               Ignorieren
             </Button>
+          </div>
+        )}
+        {!open && !comparisonOnly && (
+          <div className="flex flex-wrap gap-2">
+            {allowedActions.includes("edit") && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onEdit}>
+                Bearbeiten
+              </Button>
+            )}
+            {allowedActions.includes("reset") && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onReset}>
+                PDF-Wert wiederherstellen
+              </Button>
+            )}
+            {allowedActions.includes("undo") && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onUndo}>
+                Übernahme zurücknehmen
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -1299,6 +1438,8 @@ function CandidateRow({
   busy,
   onDecide,
   onEdit,
+  onReset,
+  onUndo,
 }: Readonly<{
   candidate: ImportCandidateDto
   expanded: boolean
@@ -1306,8 +1447,16 @@ function CandidateRow({
   busy: boolean
   onDecide: (decision: "accepted" | "saved_as_source" | "ignored") => void
   onEdit: () => void
+  onReset: () => void
+  onUndo: () => void
 }>) {
   const uncertain = candidate.confidence === "uncertain"
+  const allowedActions = candidate.allowed_actions ??
+    (candidate.decision === "accepted"
+      ? ["edit", "reset", "undo"]
+      : candidate.decision === "ignored" || candidate.decision === "saved_as_source"
+        ? ["reset", "undo"]
+        : [])
   const openForDecision =
     candidate.decision === "pending" || candidate.decision === "conflict"
   const empty = !candidate.extracted_text.trim()
@@ -1427,6 +1576,25 @@ function CandidateRow({
               nur den Ausschnitt als relevanten Hintergrund und übernimmt keinen
               Text.
             </p>
+          </div>
+        )}
+        {!openForDecision && (
+          <div className="flex max-w-xl shrink-0 flex-wrap justify-end gap-2">
+            {allowedActions.includes("edit") && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onEdit}>
+                Bearbeiten
+              </Button>
+            )}
+            {allowedActions.includes("reset") && (
+              <Button size="sm" variant="outline" disabled={busy} onClick={onReset}>
+                PDF-Wert wiederherstellen
+              </Button>
+            )}
+            {allowedActions.includes("undo") && (
+              <Button size="sm" variant="ghost" disabled={busy} onClick={onUndo}>
+                Übernahme zurücknehmen
+              </Button>
+            )}
           </div>
         )}
       </div>

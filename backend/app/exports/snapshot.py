@@ -564,7 +564,7 @@ def build_snapshot(
         )
     ]
     links = [
-        evidence_repo.to_link_contract(link).model_dump(mode="json")
+        evidence_repo.to_link_contract(link, db=db).model_dump(mode="json")
         for link in db.scalars(
             select(EvidenceLink)
             .where(EvidenceLink.run_id == run.run_id)

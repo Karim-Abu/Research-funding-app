@@ -127,6 +127,14 @@ class Project(Base):
     )
     budget_exception_basis: Mapped[str | None] = mapped_column(String, nullable=True)
     duration_months: Mapped[int | None] = mapped_column(nullable=True)
+    primary_application_source_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
+    )
+    # Monotonic resource revision for project-owned import targets. The
+    # per-field history lives in ProjectFieldRevision.
+    field_revision_number: Mapped[int] = mapped_column(
+        nullable=False, default=0, server_default="0"
+    )
     # Contract enum: draft | active | archived
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
     active_run_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -362,6 +370,10 @@ class ImportCandidate(Base):
     accepted_draft_version_id: Mapped[str | None] = mapped_column(
         String, nullable=True
     )
+    current_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    revision_number: Mapped[int] = mapped_column(
+        nullable=False, default=0, server_default="0"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -419,6 +431,101 @@ class StructuredImportCandidate(Base):
     supersedes_candidate_id: Mapped[str | None] = mapped_column(
         ForeignKey("structured_import_candidates.candidate_id"), nullable=True
     )
+    current_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    revision_number: Mapped[int] = mapped_column(
+        nullable=False, default=0, server_default="0"
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ImportCandidateRevision(Base):
+    """Versioned narrative decision. ``user_text`` is D2 and stays here."""
+
+    __tablename__ = "import_candidate_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "import_candidate_id",
+            "revision_number",
+            name="uq_import_candidate_revision_number",
+        ),
+    )
+
+    revision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    import_candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("import_candidates.import_candidate_id"), nullable=False, index=True
+    )
+    revision_number: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    user_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    run_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    applied_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class StructuredImportCandidateRevision(Base):
+    """Versioned structured decision. Payload values remain D2-only here."""
+
+    __tablename__ = "structured_import_candidate_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "candidate_id",
+            "revision_number",
+            name="uq_structured_import_candidate_revision_number",
+        ),
+    )
+
+    revision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    candidate_id: Mapped[str] = mapped_column(
+        ForeignKey("structured_import_candidates.candidate_id"),
+        nullable=False,
+        index=True,
+    )
+    revision_number: Mapped[int] = mapped_column(nullable=False)
+    status: Mapped[str] = mapped_column(String, nullable=False)
+    action: Mapped[str] = mapped_column(String, nullable=False)
+    user_payload_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    previous_target_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    target_resource_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    previous_target_revision_number: Mapped[int | None] = mapped_column(nullable=True)
+    applied_target_revision_number: Mapped[int | None] = mapped_column(nullable=True)
+    project_field_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
+class ProjectFieldRevision(Base):
+    """Immutable current-value history for an importable project field."""
+
+    __tablename__ = "project_field_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "project_id",
+            "field_name",
+            "revision_number",
+            name="uq_project_field_revision_number",
+        ),
+    )
+
+    revision_id: Mapped[str] = mapped_column(String, primary_key=True)
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str] = mapped_column(
+        ForeignKey("projects.project_id"), nullable=False, index=True
+    )
+    field_name: Mapped[str] = mapped_column(String, nullable=False)
+    revision_number: Mapped[int] = mapped_column(nullable=False)
+    value_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    source: Mapped[str] = mapped_column(String, nullable=False)
+    source_revision_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    actor_user_id: Mapped[str | None] = mapped_column(String, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
     )
@@ -708,6 +815,9 @@ class Partner(Base):
     # Kurze menschliche Begründung, Pflicht bei explizit unklar/nicht
     # bestätigt (API-Konsistenzregel) — fliesst NICHT in Run-Snapshots/Regeln.
     review_comment: Mapped[str | None] = mapped_column(Text, nullable=True)
+    revision_number: Mapped[int] = mapped_column(
+        nullable=False, default=1, server_default="1"
+    )
     created_by: Mapped[str] = mapped_column(ForeignKey("users.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
@@ -877,6 +987,10 @@ class EvidenceCandidate(Base):
     retrieval_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     # Domain Model: proposed | accepted | rejected | needs_human_review.
     status: Mapped[str] = mapped_column(String, nullable=False, default="proposed")
+    scope: Mapped[str] = mapped_column(
+        String, nullable=False, default="application", server_default="application"
+    )
+    rejection_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
     retrieval_algorithm_version: Mapped[str] = mapped_column(String, nullable=False)
     # Set by the verify stage to the anchor produced for this candidate's quote.
     anchor_id: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -934,6 +1048,10 @@ class EvidenceAnchor(Base):
     normalizer_version: Mapped[str] = mapped_column(String, nullable=False)
     # Contract enum: unverified | exact_verified | human_verified | rejected
     verification_status: Mapped[str] = mapped_column(String, nullable=False)
+    scope: Mapped[str] = mapped_column(
+        String, nullable=False, default="application", server_default="application"
+    )
+    rejection_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
     human_checked_by: Mapped[str | None] = mapped_column(String, nullable=True)
     human_checked_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True

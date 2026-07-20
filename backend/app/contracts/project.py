@@ -48,6 +48,11 @@ class ProjectPatch(BaseModel):
     status: Literal["draft", "active", "archived"] | None = None
 
 
+class PrimaryApplicationUpdate(BaseModel):
+    source_id: str
+    expected_primary_source_id: str | None = None
+
+
 class WorkflowSummary(BaseModel):
     bearbeitungsstand_percent: int = Field(ge=0, le=100)
     current_step: int = Field(ge=1, le=8)
@@ -85,6 +90,10 @@ class Project(ProjectCreate):
         "duration_derived",
         "duration_dates_missing",
         "duration_boundary_conflict",
+    ]
+    primary_application_source_id: str | None = None
+    primary_application_status: Literal[
+        "configured", "not_configured", "needs_selection"
     ]
     status: Literal["draft", "active", "archived"]
     created_at: datetime

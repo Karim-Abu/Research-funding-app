@@ -16,7 +16,7 @@ from tests.a1_mapping_helpers import (
     success_fake,
 )
 
-QUOTE = "The Swiss implementation partner is based in Zurich."
+QUOTE = "Acme AG is the Swiss implementation partner based in Zurich."
 
 
 @pytest.fixture

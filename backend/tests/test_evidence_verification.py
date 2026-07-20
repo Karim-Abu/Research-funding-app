@@ -6,6 +6,7 @@ import uuid
 from app.db.models import (
     AnalysisRun,
     EvidenceCandidate,
+    RunProjectSnapshot,
     RunSourceSnapshot,
     SourceDocument,
     SourceFragment,
@@ -53,6 +54,20 @@ def _build(db, *, version_text, frag_text, frag_start=0, normalizer="normalizer-
         effective_data_classification=VALID_CLASSIFICATION,
         snapshot_versions={"normalizer_version": run_norm},
         recheck_required=False, semantic_findings_stale=False,
+    ))
+    db.add(RunProjectSnapshot(
+        run_id=run_id,
+        project_id=project_id,
+        project_json={
+            "snapshot_schema_version": "run-project-v3",
+            "primary_application_source_id": doc_id,
+            "primary_application_source_version_id": sv_id,
+            "primary_application_status": "configured",
+        },
+        partners_json=[],
+        content_hash="scope-fixture",
+        requirement_registry_version="1.0.0",
+        rule_registry_version="1.1.0",
     ))
     if in_snapshot:
         db.add(RunSourceSnapshot(

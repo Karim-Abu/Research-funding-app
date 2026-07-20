@@ -61,6 +61,16 @@ def run_verification(db: Session, run: AnalysisRun) -> dict[str, int]:
     candidates = evidence_repo.list_candidates_for_run(db, run.run_id)
     for candidate in candidates:
         outcome = verification.verify_candidate(db, run, candidate)
+        candidate.status = (
+            "accepted"
+            if outcome.verification_status == "exact_verified"
+            else "rejected"
+            if outcome.verification_status == "rejected"
+            else "needs_human_review"
+        )
+        candidate.rejection_reason_code = (
+            outcome.reason if outcome.verification_status == "rejected" else None
+        )
         anchor = evidence_repo.upsert_anchor(db, run, candidate, outcome)
         candidate.anchor_id = anchor.anchor_id
         counts[outcome.verification_status] = (

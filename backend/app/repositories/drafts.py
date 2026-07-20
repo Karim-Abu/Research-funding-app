@@ -463,7 +463,7 @@ def to_contract(
         open_issue_count=draft.open_issue_count,
         evidence_links=[
             evidence_repo.to_link_contract(
-                link, support_status=link_statuses.get(link.evidence_link_id)
+                link, support_status=link_statuses.get(link.evidence_link_id), db=db
             )
             for link in links
         ],
