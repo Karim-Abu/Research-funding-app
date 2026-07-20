@@ -37,6 +37,13 @@ next-env.d.ts
 private_inputs/
 *.original.pdf
 
+# Local AI/editor state and raw prompt packs
+.claude/settings.local.json
+.claude/Prompt/
+
+# Local runtime logs (repository root)
+/*.log
+
 # Laufzeit-Logs der Evaluation-Server (von verify_all/Dev-Servern beschrieben)
 backend.evaluation.stdout.log
 backend.evaluation.stderr.log
