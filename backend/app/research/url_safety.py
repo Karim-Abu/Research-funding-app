@@ -15,7 +15,7 @@ import ipaddress
 import socket
 from dataclasses import dataclass, field
 from typing import Callable
-from urllib.parse import urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 # Content types we accept for import (textual / document sources only).
 ALLOWED_CONTENT_TYPES = ("text/html", "text/plain", "application/pdf", "application/xhtml+xml")
@@ -106,3 +106,21 @@ def content_type_allowed(content_type: str | None) -> bool:
         return False
     base = content_type.split(";", 1)[0].strip().lower()
     return base in ALLOWED_CONTENT_TYPES
+
+
+def canonical_public_url(url: str) -> str:
+    """Canonical identity for exact URL de-duplication; never performs I/O."""
+    parts = urlsplit(url)
+    scheme = parts.scheme.lower()
+    host = (parts.hostname or "").lower()
+    port = parts.port
+    netloc = host
+    if port and not ((scheme == "https" and port == 443) or (scheme == "http" and port == 80)):
+        netloc = f"{host}:{port}"
+    path = parts.path or "/"
+    tracking = {"fbclid", "gclid", "mc_cid", "mc_eid"}
+    query = urlencode([
+        (key, value) for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if key.lower() not in tracking and not key.lower().startswith("utm_")
+    ])
+    return urlunsplit((scheme, netloc, path, query, ""))

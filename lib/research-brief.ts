@@ -68,6 +68,9 @@ export interface ResearchResultDto {
   coverage_status?: string
   support_status?: string
   content_review_status?: string
+  content_safety_status?: "not_checked" | "passed" | "quarantined" | "human_released"
+  quarantine_reason_code?: string | null
+  possible_duplicate_source_id?: string | null
   retrieved_at: string
   relevance_reason: string
   status: "candidate" | "imported" | "rejected" | "failed"
@@ -88,7 +91,13 @@ export interface ResearchResultDto {
     possible_project_role: string
     why_potentially_relevant: string
     evidence_url: string
-    status: "eligibility_verified" | "likely_eligible" | "needs_human_check" | "candidate_not_eligibility_confirmed"
+    status:
+      | "not_checked"
+      | "reference_match"
+      | "human_review_required"
+      | "verified_against_official_source"
+      | "stale"
+      | "candidate_not_eligibility_confirmed"
     competence_gap?: string | null
     track_record_links?: string[]
     eligibility_reference_date?: string | null
@@ -100,6 +109,30 @@ export interface ResearchWorkspaceDto {
   queries: ResearchQueryDto[]
   results: ResearchResultDto[]
   provider_mode: "fake_demo" | "live" | "unavailable"
+}
+
+export interface ResearchHandoffDto {
+  project_id: string
+  workspace_id: string
+  research_brief_id?: string | null
+  research_run_ids: string[]
+  research_task_ids: string[]
+  approval_ids: string[]
+  current_source_version_ids: string[]
+  external_evidence_anchor_ids: string[]
+  current_market_comparison_id?: string | null
+  market_comparison_status?: string | null
+  market_comparison_stale_reason?: string | null
+  sources: Array<{
+    source_id: string
+    source_version_id: string
+    research_task_id: string
+    approval_id: string
+    content_review_status: string
+    content_safety_status: string
+    stale: boolean
+    stale_reason?: string | null
+  }>
 }
 
 function headers(): Record<string, string> {
@@ -123,6 +156,25 @@ export function getResearchWorkspace(projectId: string): Promise<ResearchWorkspa
   return fetch(`/api/projects/${encodeURIComponent(projectId)}/research-workspace`).then(
     (response) => checked<ResearchWorkspaceDto>(response)
   )
+}
+
+export function getResearchHandoff(projectId: string): Promise<ResearchHandoffDto> {
+  return fetch(`/api/projects/${encodeURIComponent(projectId)}/research-handoff`).then(
+    (response) => checked<ResearchHandoffDto>(response)
+  )
+}
+
+export function createExternalAnchor(
+  resultId: string, fragmentId: string, quote: string
+): Promise<{ anchor_id: string; source_version_id: string; fragment_id: string }> {
+  return fetch(`/api/research-results/${encodeURIComponent(resultId)}/external-anchors`, {
+    method: "POST",
+    headers: {
+      ...headers(),
+      "Idempotency-Key": crypto.randomUUID().replace(/-/g, ""),
+    },
+    body: JSON.stringify({ fragment_id: fragmentId, quote }),
+  }).then((response) => checked(response))
 }
 
 export function suggestResearchBrief(projectId: string): Promise<ResearchBriefDto> {
@@ -177,10 +229,12 @@ export function previewBriefQuery(
 
 export function reviewResearchResult(
   resultId: string,
-  decision: "supports" | "partially_supports" | "does_not_support"
+  decision: "supports" | "partially_supports" | "does_not_support",
+  confirmUntrustedContent = false
 ): Promise<{ result_id: string; status: "imported" | "rejected"; content_review_status: string; support_status: string }> {
   return fetch(`/api/research-results/${encodeURIComponent(resultId)}/review`, {
-    method: "POST", headers: headers(), body: JSON.stringify({ decision }),
+    method: "POST", headers: headers(),
+    body: JSON.stringify({ decision, confirm_untrusted_content: confirmUntrustedContent }),
   }).then((response) => checked(response))
 }
 
@@ -188,7 +242,12 @@ export function runResearchBrief(
   briefId: string, approvalIds: string[]
 ): Promise<{ task_ids: string[]; result_count: number; execution_mode: string }> {
   return fetch(`/api/research-briefs/${encodeURIComponent(briefId)}/run`, {
-    method: "POST", headers: headers(), body: JSON.stringify({ approval_ids: approvalIds }),
+    method: "POST",
+    headers: {
+      ...headers(),
+      "Idempotency-Key": crypto.randomUUID().replace(/-/g, ""),
+    },
+    body: JSON.stringify({ approval_ids: approvalIds }),
   }).then((response) => checked<{
     task_ids: string[]
     result_count: number

@@ -11,13 +11,16 @@ from __future__ import annotations
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
-from app.db.models import Project, ResearchResult, ResearchTask, SourceDocument
+from app.db.models import (
+    Project, ResearchResult, ResearchTask, SourceDocument, SourceVersion,
+)
 from app.ingestion.pipeline import process_source_version
 from app.repositories import sources as sources_repo
-from app.research import cost_guard, recording
+from app.research import content_safety, cost_guard, recording
 from app.research.policy import evaluate_web_research
 from app.research.providers import (
     CreditExceeded,
@@ -26,7 +29,9 @@ from app.research.providers import (
     ProviderUnavailable,
     get_web_provider,
 )
-from app.research.url_safety import validate_public_url
+from app.research.url_safety import (
+    canonical_public_url, content_type_allowed, validate_public_url,
+)
 from app.security.data_class import DataClass, derive_data_class
 
 logger = logging.getLogger("app.research.import")
@@ -127,7 +132,36 @@ def import_result(
         raise ImportBlocked("web_research_blocked",
                             "Import ist für diese Datenklasse gesperrt.", status=422)
 
-    check = validate_public_url(result.source_url, resolver=get_web_provider(settings)[1])
+    provider, dns_resolver = get_web_provider(settings)
+    canonical_candidate = canonical_public_url(result.source_url)
+    existing_url_result = db.scalar(
+        select(ResearchResult)
+        .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+        .where(
+            ResearchTask.project_id == project.project_id,
+            ResearchTask.workspace_id == project.workspace_id,
+            ResearchResult.canonical_url == canonical_candidate,
+            ResearchResult.source_document_id.is_not(None),
+            ResearchResult.status == "imported",
+        )
+        .order_by(ResearchResult.created_at)
+    )
+    if existing_url_result is not None:
+        existing_doc = db.get(SourceDocument, existing_url_result.source_document_id)
+        if existing_doc is not None:
+            result.status = "imported"
+            result.canonical_url = canonical_candidate
+            result.final_url = existing_url_result.final_url
+            result.source_document_id = existing_doc.source_id
+            recording.record_audit(
+                db, workspace_id=task.workspace_id, actor_user_id=actor_user_id,
+                action="research_result.import_replayed", research_task_id=task.research_task_id,
+                detail={"result_id": result.result_id, "source_id": existing_doc.source_id,
+                        "reason": "canonical_url_match"},
+            )
+            return existing_doc
+
+    check = validate_public_url(result.source_url, resolver=dns_resolver)
     recording.record_control(
         db, workspace_id=task.workspace_id, project_id=task.project_id,
         research_task_id=task.research_task_id, control_id="CTRL.SSRF_PREVENTION",
@@ -147,7 +181,6 @@ def import_result(
         raise ImportBlocked("cost_guard_blocked", "Das Budget für Importe ist erreicht.",
                             status=429)
 
-    provider, dns_resolver = get_web_provider(settings)
     if not provider.available():
         raise ImportBlocked("provider_unavailable",
                             "Der Recherchedienst ist derzeit nicht verfügbar.", status=503)
@@ -159,12 +192,50 @@ def import_result(
     )
     try:
         fetched = provider.fetch(result.source_url, max_bytes=settings.web_fetch_max_bytes)
-    except (ProviderUnavailable, ProviderTimeout, ProviderError, CreditExceeded) as exc:
+    except ProviderUnavailable as exc:
+        result.safe_error_detail = "Der Recherchedienst ist nicht verf\u00fcgbar."
+        raise ImportBlocked(
+            exc.code, result.safe_error_detail, status=503
+        ) from exc
+    except ProviderTimeout as exc:
+        result.safe_error_detail = "Der Abruf der Quelle hat zu lange gedauert."
+        raise ImportBlocked(
+            exc.code, result.safe_error_detail, status=504
+        ) from exc
+    except CreditExceeded as exc:
+        result.safe_error_detail = "Das Provider-Budget f\u00fcr den Abruf ist erreicht."
+        raise ImportBlocked(
+            exc.code, result.safe_error_detail, status=429
+        ) from exc
+    except ProviderError as exc:
         result.safe_error_detail = "Die Quelle konnte nicht abgerufen werden."
-        raise ImportBlocked("fetch_failed", "Die Quelle konnte nicht abgerufen werden.",
+        raise ImportBlocked(exc.code, "Die Quelle konnte nicht abgerufen werden.",
                             status=502) from exc
 
-    # Re-validate the final URL after any provider-side redirects.
+    # Re-validate every provider-reported redirect and the final URL. A changed
+    # final URL without a complete provider chain is unverifiable and fails closed;
+    # this service intentionally does not grow a second HTTP crawler.
+    canonical_final = canonical_public_url(fetched.final_url)
+    if canonical_final != canonical_candidate and not fetched.redirect_chain_verified:
+        raise ImportBlocked(
+            "redirect_chain_unverified",
+            "Die Weiterleitungskette der Quelle konnte nicht gepr\u00fcft werden.",
+            status=422,
+        )
+    if len(fetched.redirect_chain) > 10:
+        raise ImportBlocked(
+            "redirect_limit_exceeded",
+            "Die Quelle hat zu viele Weiterleitungen.",
+            status=422,
+        )
+    for target in fetched.redirect_chain:
+        redirect_check = validate_public_url(target, resolver=dns_resolver)
+        if not redirect_check.ok:
+            raise ImportBlocked(
+                "unsafe_redirect_url",
+                "Eine Weiterleitungsadresse hat die Sicherheitspr\u00fcfung nicht bestanden.",
+                status=422,
+            )
     final_check = validate_public_url(fetched.final_url, resolver=dns_resolver)
     recording.record_control(
         db, workspace_id=task.workspace_id, project_id=task.project_id,
@@ -177,9 +248,63 @@ def import_result(
                             "Die Zieladresse hat die Sicherheitsprüfung nicht bestanden.",
                             status=422)
 
+    if not content_type_allowed(fetched.content_type):
+        raise ImportBlocked(
+            "unsupported_content_type",
+            "Der Inhaltstyp der Quelle ist nicht f\u00fcr den Import zugelassen.",
+            status=422,
+        )
     data = fetched.text.encode("utf-8")
-    if len(data) > settings.web_fetch_max_bytes:
-        data = data[: settings.web_fetch_max_bytes]
+    if fetched.byte_size > settings.web_fetch_max_bytes or len(data) > settings.web_fetch_max_bytes:
+        raise ImportBlocked(
+            "source_too_large", "Die Quelle \u00fcberschreitet das Importlimit.", status=413
+        )
+
+    # Exact hashes are safe idempotent identity. Near hashes are advisory only.
+    existing_hash_version = db.scalar(
+        select(SourceVersion)
+        .join(SourceDocument, SourceDocument.source_id == SourceVersion.source_document_id)
+        .where(
+            SourceDocument.project_id == project.project_id,
+            SourceDocument.workspace_id == project.workspace_id,
+            SourceDocument.type == "url",
+            SourceVersion.original_content_hash == fetched.content_hash,
+        )
+        .order_by(SourceVersion.created_at)
+    )
+    if existing_hash_version is not None:
+        existing_doc = db.get(SourceDocument, existing_hash_version.source_document_id)
+        if existing_doc is not None:
+            result.status = "imported"
+            result.final_url = fetched.final_url
+            result.canonical_url = canonical_final
+            result.fetched_content_type = fetched.content_type
+            result.fetched_content_hash = fetched.content_hash
+            result.source_document_id = existing_doc.source_id
+            recording.record_audit(
+                db, workspace_id=task.workspace_id, actor_user_id=actor_user_id,
+                action="research_result.import_replayed", research_task_id=task.research_task_id,
+                detail={"result_id": result.result_id, "source_id": existing_doc.source_id,
+                        "reason": "content_hash_match"},
+            )
+            return existing_doc
+
+    safety_status, quarantine_reason = content_safety.scan_untrusted_text(fetched.text)
+    simhash = content_safety.similarity_hash(fetched.text)
+    possible_duplicate_version = None
+    for candidate_version in db.scalars(
+        select(SourceVersion)
+        .join(SourceDocument, SourceDocument.source_id == SourceVersion.source_document_id)
+        .where(
+            SourceDocument.project_id == project.project_id,
+            SourceDocument.workspace_id == project.workspace_id,
+            SourceDocument.type == "url",
+            SourceVersion.similarity_hash.is_not(None),
+        )
+    ):
+        if content_safety.possible_duplicate(simhash, candidate_version.similarity_hash):
+            possible_duplicate_version = candidate_version
+            break
     from app.storage import get_storage
 
     ref = get_storage().put(data)
@@ -197,6 +322,25 @@ def import_result(
         original_filename=name, byte_size=len(data), mime_type="text/plain",
         status="uploaded",
     )
+    version.retrieval_provenance = {
+        "canonical_url": canonical_final,
+        "original_url": result.source_url,
+        "title": fetched.title or result.title,
+        "publisher": fetched.publisher or result.publisher,
+        "retrieved_at": datetime.now(timezone.utc).isoformat(),
+        "provider": fetched.provider,
+        "execution_mode": task.execution_mode,
+        "research_task_id": task.research_task_id,
+        "query_approval_id": task.firewall_approval_id,
+        "content_type": fetched.content_type,
+        "content_hash": fetched.content_hash,
+    }
+    version.content_review_status = "unreviewed"
+    version.content_safety_status = safety_status
+    version.quarantine_reason_code = quarantine_reason
+    version.similarity_hash = simhash
+    if possible_duplicate_version is not None:
+        version.possible_duplicate_source_id = possible_duplicate_version.source_document_id
     recording.record_tool(
         db, workspace_id=task.workspace_id, research_task_id=task.research_task_id,
         tool_id=_FETCH_TOOL, caller="orchestrator",
@@ -212,6 +356,15 @@ def import_result(
 
     result.status = "imported"
     result.final_url = fetched.final_url
+    result.canonical_url = canonical_final
+    result.fetched_content_type = fetched.content_type
+    result.fetched_content_hash = fetched.content_hash
+    result.content_safety_status = safety_status
+    result.quarantine_reason_code = quarantine_reason
+    result.possible_duplicate_source_id = version.possible_duplicate_source_id
+    if task.purpose == "partner_research_org_topic":
+        result.partner_candidate_status = "research_partner_candidate"
+        result.eligibility_status = "not_checked"
     result.title = fetched.title or result.title
     result.publisher = fetched.publisher or result.publisher
     result.published_at = _parse_provider_date(fetched.published_at) or result.published_at

@@ -194,6 +194,7 @@ def upsert_anchor(
     anchor = EvidenceAnchor(
         anchor_id=str(uuid.uuid4()),
         run_id=run.run_id,
+        project_id=run.project_id,
         workspace_id=run.workspace_id,
         source_version_id=candidate.source_version_id,
         source_id=candidate.source_id,

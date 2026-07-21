@@ -7,18 +7,26 @@ from typing import Protocol, runtime_checkable
 
 class ProviderUnavailable(Exception):
     """Provider not configured / not reachable (safe, expected)."""
+    code = "provider_unavailable"
+    retryable = False
 
 
 class ProviderTimeout(Exception):
     """Provider exceeded the configured timeout."""
+    code = "provider_timeout"
+    retryable = True
 
 
 class ProviderError(Exception):
     """Provider returned an error response."""
+    code = "provider_error"
+    retryable = False
 
 
 class CreditExceeded(Exception):
     """Provider credit / budget limit reached."""
+    code = "provider_credit_exceeded"
+    retryable = False
 
 
 @dataclass(frozen=True)
@@ -59,6 +67,9 @@ class FetchOutcome:
     content_hash: str
     provider: str
     redirect_chain: list[str] = field(default_factory=list)
+    # True only when the provider supplied the complete redirect chain. A changed
+    # final URL without this proof is rejected fail-closed by the import service.
+    redirect_chain_verified: bool = False
     latency_ms: int = 0
     credits_used: float | None = None
     title: str | None = None

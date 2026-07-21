@@ -4,7 +4,13 @@
 
 import { getCsrfToken } from "./session"
 
-export type ComparisonStatus = "draft" | "ready_for_review" | "stale" | "failed"
+export type ComparisonStatus =
+  | "draft"
+  | "ready_for_review"
+  | "limited"
+  | "insufficient_external_evidence"
+  | "stale"
+  | "failed"
 export type ItemCategory =
   | "competitor"
   | "alternative_solution"
@@ -61,11 +67,17 @@ export interface MarketComparisonItemDto {
   centralization?: "centralized" | "decentralized" | "hybrid" | "unclear"
   data_access_model?: string | null
   swiss_relevance?: string | null
+  core_problem_or_benefit?: string | null
+  relevant_functions?: string[]
+  price_business_model?: string
+  uncertainty?: string | null
   relation_to_project: ItemRelation
   confidence_label: ConfidenceLabel
   status: ItemStatus
   source_document_ids: string[]
   evidence_quotes: EvidenceQuoteDto[]
+  external_evidence_anchor_ids?: string[]
+  cell_evidence?: Record<string, string[]>
   coverage_status?: "exact_quote_verified" | null
   support_status?: SupportStatus | null
 }
@@ -73,9 +85,20 @@ export interface MarketComparisonItemDto {
 export interface MarketComparisonDto {
   comparison_id: string
   project_id: string
+  workspace_id?: string
   status: ComparisonStatus
   comparison_version: number
   generation_status?: string | null
+  research_brief_id?: string | null
+  research_task_ids?: string[]
+  query_approval_ids?: string[]
+  source_version_ids?: string[]
+  provider?: string | null
+  model_ref?: string | null
+  prompt_version?: string | null
+  context_hash?: string | null
+  stale_reason?: string | null
+  consequences?: string[]
   research_gaps: string[]
   warnings: string[]
   item_count: number

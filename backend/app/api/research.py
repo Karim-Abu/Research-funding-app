@@ -9,25 +9,40 @@ The data policy still gates the external call.
 from __future__ import annotations
 
 import uuid
+from datetime import datetime, timezone
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
 from app.contracts.research import (
+    ExternalAnchorCreate,
+    ExternalAnchorView,
+    ResearchHandoffSource,
+    ResearchHandoffView,
     ResearchResult as ResearchResultContract,
     ResearchTask as ResearchTaskContract,
     ResearchTaskCreate,
 )
 from app.contracts.run import AsyncAccepted
+from app.contracts.research_brief import (
+    PartnerEligibilityReviewInput, PartnerEligibilityReviewView,
+)
 from app.contracts.source import SourceDocument
 from app.config.settings import Settings
-from app.db.models import ResearchBrief, SearchQueryApproval
+from app.db.models import (
+    EvidenceAnchor, MarketComparison, ResearchBrief, ResearchResult, ResearchTask,
+    SearchQueryApproval, SourceDocument as SourceDocumentModel, SourceFragment,
+    SourceVersion,
+)
 from app.db.session import get_db
 from app.repositories import idempotency
 from app.repositories import projects as projects_repo
 from app.repositories import sources as sources_repo
 from app.research import import_service, service
+from app.market import verify as market_verify
 from app.research.executor import research_executor
 from app.security.deps import (
     AuthContext,
@@ -289,3 +304,198 @@ def import_research_result(
     )
     db.commit()
     return contract
+
+
+@router.post(
+    "/research-results/{result_id}/external-anchors",
+    response_model=ExternalAnchorView,
+)
+def create_external_anchor(
+    result_id: str,
+    payload: ExternalAnchorCreate,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> ExternalAnchorView:
+    """Verify one user-selected passage from an imported, reviewed source.
+
+    The resulting existing EvidenceAnchor is selectable by RUN 3C, but remains
+    ``scope=external`` and can never satisfy application requirements.
+    """
+    result = service.get_result(db, result_id, context.user.workspace_id)
+    if result is None or result.status != "imported" or not result.source_document_id:
+        raise ProblemException(
+            status=409, code="external_anchor_source_not_ready", title="Anchor refused",
+            detail="Nur \u00fcbernommene und gepr\u00fcfte Quellen k\u00f6nnen verankert werden.",
+        )
+    task = service.get_task(db, result.research_task_id, context.user.workspace_id)
+    if task is None:
+        raise ProblemException(
+            status=404, code="not_found", title="Resource not found",
+            detail="Research task not found.",
+        )
+    project = _require_project(db, task.project_id, context.user.workspace_id)
+    fragment = db.get(SourceFragment, payload.fragment_id)
+    if fragment is None:
+        raise ProblemException(
+            status=404, code="fragment_not_found", title="Anchor refused",
+            detail="Die ausgew\u00e4hlte Fundstelle wurde nicht gefunden.",
+        )
+    ref = market_verify.verify_quote(
+        db, fragment=fragment, source_document_id=result.source_document_id,
+        quote=payload.quote, project_id=project.project_id,
+        workspace_id=project.workspace_id, research_task_id=task.research_task_id,
+    )
+    anchor_id = ref.get("linked_evidence_anchor_id") if ref else None
+    if not anchor_id:
+        raise ProblemException(
+            status=422, code="external_anchor_exact_match_required", title="Anchor refused",
+            detail="Die Passage ist keine exakte Fundstelle der aktuellen Quellenversion.",
+        )
+    db.commit()
+    return ExternalAnchorView(
+        anchor_id=anchor_id, project_id=project.project_id,
+        workspace_id=project.workspace_id, research_task_id=task.research_task_id,
+        source_id=result.source_document_id,
+        source_version_id=ref["source_version_id"], fragment_id=ref["fragment_id"],
+    )
+
+
+@router.post(
+    "/research-results/{result_id}/partner-eligibility-review",
+    response_model=PartnerEligibilityReviewView,
+)
+def review_partner_eligibility(
+    result_id: str,
+    payload: PartnerEligibilityReviewInput,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+) -> PartnerEligibilityReviewView:
+    result = service.get_result(db, result_id, context.user.workspace_id)
+    if result is None:
+        raise ProblemException(
+            status=404, code="not_found", title="Resource not found",
+            detail="Research result not found.",
+        )
+    task = service.get_task(db, result.research_task_id, context.user.workspace_id)
+    document = db.get(SourceDocumentModel, result.source_document_id) if result.source_document_id else None
+    anchor = db.get(EvidenceAnchor, payload.anchor_id)
+    current_version_id = document.current_source_version_id if document else None
+    source_host = (urlparse(result.final_url or result.source_url).hostname or "").casefold()
+    official_host = (urlparse(payload.official_url).hostname or "").casefold()
+    valid = (
+        task is not None
+        and task.purpose == "partner_research_org_topic"
+        and result.status == "imported"
+        and result.content_review_status == "reviewed"
+        and document is not None
+        and anchor is not None
+        and anchor.workspace_id == context.user.workspace_id
+        and anchor.project_id == task.project_id
+        and anchor.research_task_id == task.research_task_id
+        and anchor.source_id == document.source_id
+        and anchor.source_version_id == current_version_id
+        and anchor.scope == "external"
+        and anchor.verification_status in ("exact_verified", "human_verified")
+        and bool(source_host and official_host and (
+            source_host == official_host
+            or source_host.endswith(f".{official_host}")
+            or official_host.endswith(f".{source_host}")
+        ))
+    )
+    if not valid:
+        raise ProblemException(
+            status=409, code="partner_eligibility_evidence_invalid", title="Review refused",
+            detail="Die Best\u00e4tigung ben\u00f6tigt eine aktuelle offizielle Fundstelle derselben Quelle.",
+        )
+    now = datetime.now(timezone.utc)
+    result.partner_candidate_status = "research_partner_candidate"
+    result.eligibility_status = "verified_against_official_source"
+    result.eligibility_anchor_id = anchor.anchor_id
+    result.eligibility_source_version_id = anchor.source_version_id
+    result.eligibility_official_url = payload.official_url
+    result.eligibility_source_location = payload.source_location.strip()
+    result.eligibility_last_checked = now
+    result.eligibility_reviewed_by = context.user.id
+    result.eligibility_reviewed_at = now
+    db.commit()
+    return PartnerEligibilityReviewView(
+        result_id=result.result_id,
+        eligibility_status="verified_against_official_source",
+        anchor_id=anchor.anchor_id,
+        source_version_id=anchor.source_version_id,
+        last_checked=now,
+    )
+
+
+@router.get(
+    "/projects/{project_id}/research-handoff",
+    response_model=ResearchHandoffView,
+)
+def research_handoff(
+    project_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> ResearchHandoffView:
+    """Version-pinned, snippet-free RUN-3C input inventory."""
+    project = _require_project(db, project_id, context.user.workspace_id)
+    rows = list(db.execute(
+        select(ResearchResult, ResearchTask, SourceDocumentModel, SourceVersion)
+        .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+        .join(SourceDocumentModel, SourceDocumentModel.source_id == ResearchResult.source_document_id)
+        .join(SourceVersion, SourceVersion.source_version_id == SourceDocumentModel.current_source_version_id)
+        .where(
+            ResearchTask.project_id == project.project_id,
+            ResearchTask.workspace_id == project.workspace_id,
+            ResearchResult.status == "imported",
+            ResearchTask.execution_mode == "live",
+        )
+        .order_by(ResearchResult.created_at)
+    ).all())
+    source_views: list[ResearchHandoffSource] = []
+    task_ids: set[str] = set()
+    approval_ids: set[str] = set()
+    version_ids: set[str] = set()
+    brief_ids: set[str] = set()
+    for result, task, document, version in rows:
+        if not task.firewall_approval_id:
+            continue
+        task_ids.add(task.research_task_id)
+        approval_ids.add(task.firewall_approval_id)
+        version_ids.add(version.source_version_id)
+        if task.research_brief_id:
+            brief_ids.add(task.research_brief_id)
+        source_views.append(ResearchHandoffSource(
+            source_id=document.source_id,
+            source_version_id=version.source_version_id,
+            research_task_id=task.research_task_id,
+            approval_id=task.firewall_approval_id,
+            content_review_status=version.content_review_status,
+            content_safety_status=version.content_safety_status,
+            stale=False,
+            stale_reason=None,
+        ))
+    anchor_ids = list(db.scalars(select(EvidenceAnchor.anchor_id).where(
+        EvidenceAnchor.project_id == project.project_id,
+        EvidenceAnchor.workspace_id == project.workspace_id,
+        EvidenceAnchor.scope == "external",
+        EvidenceAnchor.verification_status.in_(("exact_verified", "human_verified")),
+        EvidenceAnchor.source_version_id.in_(version_ids) if version_ids else False,
+    ).order_by(EvidenceAnchor.created_at, EvidenceAnchor.anchor_id)))
+    comparison = db.scalar(select(MarketComparison).where(
+        MarketComparison.project_id == project.project_id,
+        MarketComparison.workspace_id == project.workspace_id,
+    ).order_by(MarketComparison.created_at.desc()))
+    return ResearchHandoffView(
+        project_id=project.project_id,
+        workspace_id=project.workspace_id,
+        research_brief_id=next(iter(brief_ids)) if len(brief_ids) == 1 else None,
+        research_run_ids=sorted(task_ids),
+        research_task_ids=sorted(task_ids),
+        approval_ids=sorted(approval_ids),
+        current_source_version_ids=sorted(version_ids),
+        external_evidence_anchor_ids=anchor_ids,
+        current_market_comparison_id=comparison.comparison_id if comparison else None,
+        market_comparison_status=comparison.status if comparison else None,
+        market_comparison_stale_reason=comparison.stale_reason if comparison else None,
+        sources=source_views,
+    )

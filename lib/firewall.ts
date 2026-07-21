@@ -57,6 +57,10 @@ function csrfHeaders(): Record<string, string> {
   return csrf ? { "X-CSRF-Token": csrf } : {}
 }
 
+function idempotencyKey(): string {
+  return crypto.randomUUID().replace(/-/g, "")
+}
+
 async function toError(res: Response): Promise<FirewallError> {
   let code = "error"
   try {
@@ -94,7 +98,10 @@ async function decide(
 ): Promise<ApprovalStatus> {
   const res = await fetch(
     `/api/search-query-approvals/${encodeURIComponent(approvalId)}/${verb}`,
-    { method: "POST", headers: { ...csrfHeaders() } }
+    {
+      method: "POST",
+      headers: { "Idempotency-Key": idempotencyKey(), ...csrfHeaders() },
+    }
   )
   if (!res.ok) throw await toError(res)
   return (await res.json()) as ApprovalStatus

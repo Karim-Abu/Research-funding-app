@@ -28,6 +28,7 @@ LinkTargetType = Literal[
     "draft_claim",
     "review_finding",
     "extracted_fact",
+    "market_comparison_item",
 ]
 LinkStatus = Literal["active", "stale", "removed"]
 
@@ -72,7 +73,7 @@ class EvidenceLink(BaseModel):
     claim_id: str | None = None
     claim_text: str | None = None
     support_status: SupportStatus | None = None
-    run_id: str
+    run_id: str | None
     source_id: str | None = None
     source_version_id: str | None = None
     fragment_id: str | None = None

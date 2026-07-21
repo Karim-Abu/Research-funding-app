@@ -89,3 +89,46 @@ class ResearchResult(BaseModel):
     professional_evidence: list[ProfessionalEvidence] = Field(default_factory=list)
     partner_role_suggestions: list[PartnerRoleSuggestion] = Field(default_factory=list)
     identity_match_status: IdentityMatchStatus = "not_applicable"
+
+
+class ExternalAnchorCreate(BaseModel):
+    fragment_id: str = Field(min_length=1)
+    quote: str = Field(min_length=1)
+
+
+class ExternalAnchorView(BaseModel):
+    anchor_id: str
+    project_id: str
+    workspace_id: str
+    research_task_id: str
+    source_id: str
+    source_version_id: str
+    fragment_id: str
+    scope: Literal["external"] = "external"
+    verification_status: Literal["exact_verified"] = "exact_verified"
+
+
+class ResearchHandoffSource(BaseModel):
+    source_id: str
+    source_version_id: str
+    research_task_id: str
+    approval_id: str
+    content_review_status: str
+    content_safety_status: str
+    stale: bool = False
+    stale_reason: str | None = None
+
+
+class ResearchHandoffView(BaseModel):
+    project_id: str
+    workspace_id: str
+    research_brief_id: str | None = None
+    research_run_ids: list[str] = Field(default_factory=list)
+    research_task_ids: list[str] = Field(default_factory=list)
+    approval_ids: list[str] = Field(default_factory=list)
+    current_source_version_ids: list[str] = Field(default_factory=list)
+    external_evidence_anchor_ids: list[str] = Field(default_factory=list)
+    current_market_comparison_id: str | None = None
+    market_comparison_status: str | None = None
+    market_comparison_stale_reason: str | None = None
+    sources: list[ResearchHandoffSource] = Field(default_factory=list)

@@ -379,6 +379,9 @@ def delete_source(
             detail="The source is referenced by an analysis run and cannot be deleted.",
         )
     storage = get_storage()
+    from app.research.staleness import mark_source_dependents_stale
+
+    mark_source_dependents_stale(db, source_id=doc.source_id, reason="source_deleted")
     refs = sources_repo.physically_delete(db, doc)
     audit.record(
         db, workspace_id=context.user.workspace_id, actor_user_id=context.user.id,

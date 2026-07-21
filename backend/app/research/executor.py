@@ -295,6 +295,11 @@ def research_executor(task_id: str, operation_id: str) -> None:
                     retrieved_at=_now(),
                     status="candidate",
                     identity_match_status="not_applicable",
+                    partner_candidate_status=(
+                        "research_partner_candidate"
+                        if task.purpose == "partner_research_org_topic" else None
+                    ),
+                    eligibility_status="not_checked",
                 ))
                 kept += 1
 

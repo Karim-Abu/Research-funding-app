@@ -47,15 +47,15 @@ def match_eligibility(organization: str, evidence_url: str) -> EligibilityMatch:
         )
         if exact_name and domain_match:
             return EligibilityMatch(
-                "eligibility_verified", entry["name"], data["reference_status"],
+                "reference_match", entry["name"], data["reference_status"],
                 data["source_url"],
             )
         if domain_match:
             domain_only = entry["name"]
     if domain_only:
         return EligibilityMatch(
-            "likely_eligible", domain_only, data["reference_status"], data["source_url"]
+            "reference_match", domain_only, data["reference_status"], data["source_url"]
         )
     return EligibilityMatch(
-        "needs_human_check", None, data["reference_status"], data["source_url"]
+        "human_review_required", None, data["reference_status"], data["source_url"]
     )

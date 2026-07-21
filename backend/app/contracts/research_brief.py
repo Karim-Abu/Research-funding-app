@@ -120,8 +120,9 @@ class ResearchPartnerCandidateView(BaseModel):
     why_potentially_relevant: str
     evidence_url: str
     status: Literal[
-        "eligibility_verified", "likely_eligible", "needs_human_check"
-    ] = "needs_human_check"
+        "not_checked", "reference_match", "human_review_required",
+        "verified_against_official_source", "stale",
+    ] = "not_checked"
     competence_gap: str | None = None
     track_record_links: list[str] = Field(default_factory=list)
     eligibility_reference_date: str | None = None
@@ -146,6 +147,9 @@ class ResearchResultView(BaseModel):
     coverage_status: str = "not_checked"
     support_status: str = "not_checked"
     content_review_status: str = "unreviewed"
+    content_safety_status: str = "not_checked"
+    quarantine_reason_code: str | None = None
+    possible_duplicate_source_id: str | None = None
     retrieved_at: datetime
     relevance_reason: str
     status: Literal["candidate", "imported", "rejected", "failed"]
@@ -157,6 +161,7 @@ class ResearchResultView(BaseModel):
 
 class ResearchResultReviewInput(BaseModel):
     decision: Literal["supports", "partially_supports", "does_not_support"]
+    confirm_untrusted_content: bool = False
 
 
 class ResearchResultReviewView(BaseModel):
@@ -164,6 +169,20 @@ class ResearchResultReviewView(BaseModel):
     status: Literal["imported", "rejected"]
     content_review_status: str
     support_status: str
+
+
+class PartnerEligibilityReviewInput(BaseModel):
+    anchor_id: str = Field(min_length=1)
+    official_url: str = Field(min_length=1)
+    source_location: str = Field(min_length=1)
+
+
+class PartnerEligibilityReviewView(BaseModel):
+    result_id: str
+    eligibility_status: Literal["verified_against_official_source"]
+    anchor_id: str
+    source_version_id: str
+    last_checked: datetime
 
 
 class ResearchWorkspace(BaseModel):

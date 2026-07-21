@@ -333,6 +333,9 @@ export function PublicResearchPanel({
                 <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{!result.coverage_status || result.coverage_status === "not_checked" ? "nicht geprüft" : result.coverage_status}</dd></div>
                 <div><dt className="font-medium">Inhaltliche Stützung</dt><dd>{supportLabel(result.support_status ?? "not_checked")}</dd></div>
               </dl>
+              {result.content_safety_status === "quarantined" && <p className="mt-2 rounded border border-status-partial/40 bg-status-partial/10 p-2 text-xs">{"Nicht vertrauensw\u00fcrdiges Inhaltssignal: Die Seite muss vor der Verwendung ausdr\u00fccklich gepr\u00fcft werden."}</p>}
+              {result.status === "imported" && result.content_safety_status === "quarantined" && <Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports", true))}>{"Ausdr\u00fccklich gepr\u00fcft und unterst\u00fctzend"}</Button>}
+              {result.possible_duplicate_source_id && <p className="mt-2 text-xs text-muted-foreground">{"M\u00f6gliches Duplikat erkannt; die Quellen wurden nicht automatisch zusammengef\u00fchrt."}</p>}
               {result.partner_candidate && <dl className="mt-2 grid gap-1 rounded bg-muted p-2 text-xs">
                 <div><dt className="font-medium">Organisation/Forschungsgruppe</dt><dd>{result.partner_candidate.organization_or_group}</dd></div>
                 <div><dt className="font-medium">Standort</dt><dd>{result.partner_candidate.location ?? "unbestätigt"}</dd></div>
@@ -369,6 +372,14 @@ function supportLabel(value: string): string {
 }
 
 function eligibilityLabel(value: string): string {
+  const run3bLabels: Record<string, string> = {
+    not_checked: "Eignung nicht gepr\u00fcft",
+    reference_match: "Referenztreffer, keine Eignungsbest\u00e4tigung",
+    human_review_required: "Offizielle Fundstelle und menschliche Pr\u00fcfung erforderlich",
+    verified_against_official_source: "An aktueller offizieller Fundstelle menschlich gepr\u00fcft",
+    stale: "Pr\u00fcfung veraltet; die Quelle hat sich ge\u00e4ndert",
+  }
+  if (run3bLabels[value]) return run3bLabels[value]
   return ({ eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert", likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt", needs_human_check: "Kein belastbarer Nachweis – menschlich prüfen", candidate_not_eligibility_confirmed: "Kein belastbarer Nachweis – menschlich prüfen" } as Record<string, string>)[value] ?? "Kein belastbarer Nachweis – menschlich prüfen"
 }
 

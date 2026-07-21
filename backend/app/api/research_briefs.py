@@ -1,7 +1,7 @@
 """Public-safe research brief API over the existing research executor."""
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
@@ -20,6 +20,7 @@ from app.contracts.research_brief import (
 from app.db.models import ResearchBrief
 from app.db.session import get_db
 from app.repositories import projects as projects_repo
+from app.repositories import idempotency
 from app.research import brief_service
 from app.security.deps import AuthContext, require_session, require_unsafe_guards
 
@@ -164,12 +165,37 @@ def run_research_brief(
     payload: ResearchRunRequest,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(
+        None, alias="Idempotency-Key", min_length=8, max_length=128
+    ),
 ) -> ResearchRunResponse:
+    fingerprint = idempotency.fingerprint(
+        "POST", f"/research-briefs/{brief_id}/run", payload.model_dump_json()
+    )
+    scope = f"{context.user.workspace_id}:{context.user.id}:POST:/research-briefs/{brief_id}/run"
+    if idempotency_key:
+        replay = idempotency.get(db, scope, idempotency_key)
+        if replay is not None:
+            if replay.request_fingerprint != fingerprint:
+                raise ProblemException(
+                    status=409, code="idempotency_conflict", title="Conflict",
+                    detail="Idempotency-Key reused with a different request.",
+                )
+            return ResearchRunResponse(**replay.response_body)
     try:
-        return brief_service.run(
+        response = brief_service.run(
             db, _brief(db, brief_id, context.user.workspace_id),
             context.user.id, payload.approval_ids,
         )
+        if idempotency_key:
+            idempotency.save(
+                db, scope=scope, key=idempotency_key,
+                request_fingerprint=fingerprint, response_status=200,
+                response_body=response.model_dump(mode="json"),
+                resource_id=brief_id,
+            )
+            db.commit()
+        return response
     except (brief_service.BriefError, brief_service.service.ResearchBlocked) as exc:
         db.rollback()
         if isinstance(exc, brief_service.BriefError):
@@ -192,6 +218,7 @@ def review_research_result(
         result = brief_service.review_result(
             db, result_id=result_id, workspace_id=context.user.workspace_id,
             actor_user_id=context.user.id, decision=payload.decision,
+            confirm_untrusted_content=payload.confirm_untrusted_content,
         )
         db.commit()
         return result

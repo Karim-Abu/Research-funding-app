@@ -198,6 +198,18 @@ export function MarketComparisonSection({
         </div>
       )}
 
+      {comparison?.status === "insufficient_external_evidence" && (
+        <p className="mb-3 text-sm text-status-partial" role="status">
+          {"Zu wenige extern gepr\u00fcfte Quellen: Es wurden keine Vergleichsaussagen erzeugt."}
+        </p>
+      )}
+
+      {comparison?.status === "limited" && (
+        <p className="mb-3 text-xs text-status-partial" role="status">
+          Begrenzter Vergleich: Es liegen nur zwei geeignete externe Quellen vor.
+        </p>
+      )}
+
       {comparison && comparison.items.length === 0 && state === "ready" && (
         <p className="text-sm text-muted-foreground">
           Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv
@@ -272,6 +284,8 @@ function ItemRow({
           <dt>Zentralität</dt><dd>{CENTRALIZATION_LABELS[item.centralization ?? "unclear"]}</dd>
           <dt>Daten/Zugriff</dt><dd>{item.data_access_model ?? "—"}</dd>
           <dt>Schweizer Bezug</dt><dd>{item.swiss_relevance ?? "unbestätigt"}</dd>
+          <dt>Preis/Modell</dt><dd>{item.price_business_model ?? "nicht oeffentlich belegt"}</dd>
+          <dt>Funktionen</dt><dd>{item.relevant_functions?.join(", ") || "nicht oeffentlich belegt"}</dd>
         </dl>
       </td>
       <td className="py-2 pr-3">

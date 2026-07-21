@@ -496,6 +496,10 @@ class MarketComparisonItemRecord(BaseModel):
     centralization: Literal["centralized", "decentralized", "hybrid", "unclear"] = "unclear"
     data_access_model: str | None = None
     swiss_relevance: str | None = None
+    core_problem_or_benefit: str | None = None
+    relevant_functions: list[str] = []
+    price_business_model: str | None = None
+    uncertainty: str | None = None
     relation_to_project: MarketRelation = "unclear"
     source_fragment_id: str | None = None
     source_document_id: str | None = None

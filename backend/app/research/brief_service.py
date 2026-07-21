@@ -33,6 +33,7 @@ from app.db.models import (
     SearchQueryApproval,
     SourceDocument,
     SourceFragment,
+    SourceVersion,
 )
 from app.market_research.planner import MarketTopic, plan_market_queries
 from app.partner_research.planner import QUERY_PURPOSES, PartnerTopic, plan_partner_queries
@@ -108,23 +109,6 @@ def _normalized_payload(payload: ResearchBriefInput) -> dict:
         "competence_needs": [_clean(v) for v in payload.competence_needs if _clean(v)],
         "modules": list(dict.fromkeys(payload.modules)),
     }
-
-
-def _apply_goal_legacy_projection(data: dict) -> dict:
-    """Keep the existing RUN-2 planner usable until RUN 3B replaces its inputs."""
-    if not data["research_goal"]:
-        return data
-    projected = dict(data)
-    tags = list(data["search_tags"])
-    if not projected["application_domain"]:
-        projected["application_domain"] = data["research_goal"][:120]
-    if not projected["technology_class"]:
-        projected["technology_class"] = (tags[0] if tags else data["research_goal"])[:120]
-    if tags and not projected["target_customer_segments"]:
-        projected["target_customer_segments"] = tags[:8]
-    if tags and not projected["competence_needs"]:
-        projected["competence_needs"] = tags[:12]
-    return projected
 
 
 def _content_hash(data: dict) -> str:
@@ -351,7 +335,6 @@ def save(
     data = _normalized_payload(payload)
     _validate_draft(data)
     _validate_public_safe(db, project, actor_user_id, data)
-    data = _apply_goal_legacy_projection(data)
     current = latest(db, project)
     wanted_hash = _content_hash(data)
     if current is not None and current.content_hash == wanted_hash:
@@ -417,19 +400,34 @@ def approve(db: Session, brief: ResearchBrief, actor_user_id: str) -> ResearchBr
 
 
 def _market_topic(brief: ResearchBrief) -> MarketTopic:
+    # RUN 3B: current briefs are planned from the explicitly approved public-safe
+    # goal/tags. Legacy ontology fields are only a compatibility input for briefs
+    # that predate ``research_goal``.
+    goal = (brief.research_goal or "").strip()
+    tags = [str(value).strip() for value in (brief.search_tags or []) if str(value).strip()]
+    legacy = not goal
     return MarketTopic(
-        application_domain=brief.application_domain,
-        technology_area=brief.technology_class,
-        target_customers=", ".join(brief.target_customer_segments or []),
+        application_domain=goal or brief.application_domain,
+        technology_area=", ".join(tags) if tags else (
+            brief.technology_class if legacy else goal
+        ),
+        target_customers=", ".join(
+            brief.target_customer_segments if legacy else tags
+        ),
         region=brief.region,
     )
 
 
 def _partner_topic(brief: ResearchBrief) -> PartnerTopic:
+    goal = (brief.research_goal or "").strip()
+    tags = [str(value).strip() for value in (brief.search_tags or []) if str(value).strip()]
+    legacy = not goal
     return PartnerTopic(
-        application_domain=brief.application_domain,
-        technology_area=brief.technology_class,
-        competence_areas=list(brief.competence_needs or []),
+        application_domain=goal or brief.application_domain,
+        technology_area=", ".join(tags) if tags else (
+            brief.technology_class if legacy else goal
+        ),
+        competence_areas=list(brief.competence_needs or []) if legacy else tags,
         region=brief.region,
     )
 
@@ -512,10 +510,14 @@ def plan_queries(
 
 
 def _brief_terms(brief: ResearchBrief) -> set[str]:
-    text = " ".join([
-        brief.application_domain, brief.technology_class, brief.region,
-        *(brief.target_customer_segments or []), *(brief.competence_needs or []),
-    ])
+    goal = (brief.research_goal or "").strip()
+    if goal:
+        text = " ".join([goal, brief.region, *(brief.search_tags or [])])
+    else:
+        text = " ".join([
+            brief.application_domain, brief.technology_class, brief.region,
+            *(brief.target_customer_segments or []), *(brief.competence_needs or []),
+        ])
     return {m.group(0).casefold() for m in _WORD.finditer(text)}
 
 
@@ -704,6 +706,7 @@ def _freshness_label(published_at: datetime | None) -> str:
 def review_result(
     db: Session, *, result_id: str, workspace_id: str, actor_user_id: str,
     decision: str,
+    confirm_untrusted_content: bool = False,
 ) -> ResearchResultReviewView:
     result = db.get(ResearchResult, result_id)
     if result is None or result.workspace_id != workspace_id:
@@ -714,12 +717,33 @@ def review_result(
             "Nur übernommene Quellen können inhaltlich geprüft werden.",
             status=409,
         )
+    if result.content_safety_status == "quarantined" and not confirm_untrusted_content:
+        raise BriefError(
+            "untrusted_content_confirmation_required",
+            "Die quarant\u00e4nisierte Quelle muss vor der Verwendung ausdr\u00fccklich gepr\u00fcft werden.",
+            status=409,
+        )
     result.content_review_status = "reviewed"
     result.support_status = decision
+    if result.content_safety_status == "quarantined":
+        result.content_safety_status = "human_released"
+    document = db.get(SourceDocument, result.source_document_id)
+    version = (
+        db.get(SourceVersion, document.current_source_version_id)
+        if document is not None and document.current_source_version_id else None
+    )
+    if version is not None:
+        version.content_review_status = "reviewed"
+        version.content_safety_status = result.content_safety_status
     if decision == "does_not_support":
         # Preserve the SourceDocument and audit trail, but exclude it from A2's
         # imported-result query by changing only the research selection state.
         result.status = "rejected"
+        from app.research.staleness import mark_source_dependents_stale
+
+        mark_source_dependents_stale(
+            db, source_id=result.source_document_id, reason="content_review_rejected"
+        )
     audit.record(
         db, workspace_id=workspace_id, actor_user_id=actor_user_id,
         action="research_result.content_reviewed",
@@ -804,6 +828,9 @@ def workspace(db: Session, project: Project) -> ResearchWorkspace:
             coverage_status=result.coverage_status,
             support_status=result.support_status,
             content_review_status=result.content_review_status,
+            content_safety_status=result.content_safety_status,
+            quarantine_reason_code=result.quarantine_reason_code,
+            possible_duplicate_source_id=result.possible_duplicate_source_id,
             retrieved_at=result.retrieved_at, relevance_reason=_relevance(task, approved),
             status=result.status, execution_mode=task.execution_mode,
             source_document_id=result.source_document_id,
@@ -811,11 +838,11 @@ def workspace(db: Session, project: Project) -> ResearchWorkspace:
             partner_candidate=(ResearchPartnerCandidateView(
                 organization_or_group=partner_candidate.organization,
                 location=(
-                    "Schweiz" if eligibility and eligibility.status != "needs_human_check"
+                    "Schweiz" if result.eligibility_status == "verified_against_official_source"
                     else partner_candidate.country_or_region
                 ),
                 location_status=(
-                    "verified" if eligibility and eligibility.status != "needs_human_check"
+                    "verified" if result.eligibility_status == "verified_against_official_source"
                     else "unverified"
                 ),
                 expertise_keywords=partner_candidate.expertise_keywords,
@@ -824,7 +851,11 @@ def workspace(db: Session, project: Project) -> ResearchWorkspace:
                     task, brief_by_id.get(task.research_brief_id or "")
                 ),
                 evidence_url=partner_candidate.evidence_url,
-                status=eligibility.status,
+                status=(
+                    result.eligibility_status
+                    if result.eligibility_status != "not_checked"
+                    else (eligibility.status if eligibility else "human_review_required")
+                ),
                 competence_gap=(
                     ", ".join(brief_by_id[task.research_brief_id].competence_needs or [])
                     if task.research_brief_id in brief_by_id else None

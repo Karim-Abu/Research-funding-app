@@ -91,6 +91,7 @@ class FakeWebProvider:
             content_hash=hashlib.sha256(data).hexdigest(),
             provider=self.name,
             redirect_chain=[url],
+            redirect_chain_verified=True,
             latency_ms=1,
             credits_used=0.0,
         )

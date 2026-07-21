@@ -10,7 +10,10 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-ComparisonStatus = Literal["draft", "ready_for_review", "stale", "failed"]
+ComparisonStatus = Literal[
+    "draft", "ready_for_review", "limited", "insufficient_external_evidence",
+    "stale", "failed",
+]
 ItemCategory = Literal[
     "competitor", "alternative_solution", "substitute", "incumbent_process",
     "reference_solution", "market_size_claim", "customer_problem", "unknown",
@@ -42,11 +45,17 @@ class MarketComparisonItem(BaseModel):
     centralization: Literal["centralized", "decentralized", "hybrid", "unclear"] = "unclear"
     data_access_model: str | None = None
     swiss_relevance: str | None = None
+    core_problem_or_benefit: str | None = None
+    relevant_functions: list[str] = []
+    price_business_model: str = "nicht \u00f6ffentlich belegt"
+    uncertainty: str | None = None
     relation_to_project: ItemRelation
     confidence_label: ConfidenceLabel
     status: ItemStatus
     source_document_ids: list[str] = []
     evidence_quotes: list[EvidenceQuote] = []
+    external_evidence_anchor_ids: list[str] = []
+    cell_evidence: dict[str, list[str]] = {}
     coverage_status: Literal["exact_quote_verified"] | None = None
     support_status: Literal["unreviewed", "supports", "partial", "does_not_support"] | None = None
 
@@ -54,10 +63,21 @@ class MarketComparisonItem(BaseModel):
 class MarketComparison(BaseModel):
     comparison_id: str
     project_id: str
+    workspace_id: str
     status: ComparisonStatus
     comparison_version: int
     generation_status: str | None = None
     generation_kind: Literal["fake_demo", "model_generated", "rule_template"] | None = None
+    research_brief_id: str | None = None
+    research_task_ids: list[str] = []
+    query_approval_ids: list[str] = []
+    source_version_ids: list[str] = []
+    provider: str | None = None
+    model_ref: str | None = None
+    prompt_version: str | None = None
+    context_hash: str | None = None
+    stale_reason: str | None = None
+    consequences: list[str] = []
     research_gaps: list[str] = []
     warnings: list[str] = []
     item_count: int = 0

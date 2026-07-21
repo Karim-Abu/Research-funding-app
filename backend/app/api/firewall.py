@@ -10,7 +10,7 @@ sanitized query, a coarse risk label and category-only redaction summary are ret
 """
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Header
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException
@@ -23,6 +23,7 @@ from app.contracts.firewall import (
 )
 from app.db.models import SearchQueryApproval
 from app.db.session import get_db
+from app.repositories import idempotency
 from app.repositories import projects as projects_repo
 from app.security import approval_service
 from app.security.deps import AuthContext, require_unsafe_guards, settings_dep
@@ -95,8 +96,26 @@ def preview_search_query(
 
 
 def _decide(
-    approval_id: str, *, approve: bool, context: AuthContext, db: Session
+    approval_id: str, *, approve: bool, context: AuthContext, db: Session,
+    idempotency_key: str | None,
 ) -> ApprovalStatusResponse:
+    verb = "approve" if approve else "reject"
+    fingerprint = idempotency.fingerprint(
+        "POST", f"/search-query-approvals/{approval_id}/{verb}", ""
+    )
+    scope = (
+        f"{context.user.workspace_id}:{context.user.id}:POST:"
+        f"/search-query-approvals/{approval_id}/{verb}"
+    )
+    if idempotency_key:
+        replay = idempotency.get(db, scope, idempotency_key)
+        if replay is not None:
+            if replay.request_fingerprint != fingerprint:
+                raise ProblemException(
+                    status=409, code="idempotency_conflict", title="Conflict",
+                    detail="Idempotency-Key reused with a different request.",
+                )
+            return ApprovalStatusResponse(**replay.response_body)
     approval: SearchQueryApproval | None = approval_service.get_scoped(
         db, approval_id, context.user.workspace_id
     )
@@ -113,8 +132,7 @@ def _decide(
         raise ProblemException(
             status=exc.status, code=exc.code, title="Approval conflict", detail=exc.detail,
         ) from exc
-    db.commit()
-    return ApprovalStatusResponse(
+    response = ApprovalStatusResponse(
         approval_id=approval.approval_id,
         status=approval.status,
         decision=approval.decision,
@@ -122,6 +140,16 @@ def _decide(
         sanitized_query=approval.sanitized_query,
         redaction_summary=_summary(approval.redaction_summary),
     )
+    db.commit()
+    if idempotency_key:
+        idempotency.save(
+            db, scope=scope, key=idempotency_key,
+            request_fingerprint=fingerprint, response_status=200,
+            response_body=response.model_dump(mode="json"),
+            resource_id=approval.approval_id,
+        )
+        db.commit()
+    return response
 
 
 @router.post(
@@ -132,8 +160,14 @@ def approve_search_query(
     approval_id: str,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(
+        None, alias="Idempotency-Key", min_length=8, max_length=128
+    ),
 ) -> ApprovalStatusResponse:
-    return _decide(approval_id, approve=True, context=context, db=db)
+    return _decide(
+        approval_id, approve=True, context=context, db=db,
+        idempotency_key=idempotency_key,
+    )
 
 
 @router.post(
@@ -144,5 +178,11 @@ def reject_search_query(
     approval_id: str,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(
+        None, alias="Idempotency-Key", min_length=8, max_length=128
+    ),
 ) -> ApprovalStatusResponse:
-    return _decide(approval_id, approve=False, context=context, db=db)
+    return _decide(
+        approval_id, approve=False, context=context, db=db,
+        idempotency_key=idempotency_key,
+    )

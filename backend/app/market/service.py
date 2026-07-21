@@ -70,13 +70,17 @@ def create_comparison(
     sources = source_scope.imported_public_sources(
         db, project.project_id, project.workspace_id
     )
+    lineage = source_scope.provenance(db, sources)
 
     comparison = MarketComparison(
         comparison_id=actual_id,
         project_id=project.project_id,
         workspace_id=project.workspace_id,
         run_id=None,
-        research_task_ids=[],
+        research_task_ids=lineage["research_task_ids"],
+        research_brief_id=lineage["research_brief_id"],
+        query_approval_ids=lineage["query_approval_ids"],
+        source_version_ids=lineage["source_version_ids"],
         status="draft",
         research_gaps=[],
         warnings=[],
@@ -197,10 +201,21 @@ def comparison_to_contract(
     return MarketComparisonContract(
         comparison_id=comparison.comparison_id,
         project_id=comparison.project_id,
+        workspace_id=comparison.workspace_id,
         status=comparison.status,
         comparison_version=comparison.comparison_version,
         generation_status=comparison.generation_status,
         generation_kind=comparison.generation_kind,
+        research_brief_id=comparison.research_brief_id,
+        research_task_ids=list(comparison.research_task_ids or []),
+        query_approval_ids=list(comparison.query_approval_ids or []),
+        source_version_ids=list(comparison.source_version_ids or []),
+        provider=comparison.provider,
+        model_ref=comparison.model_ref,
+        prompt_version=comparison.prompt_version,
+        context_hash=comparison.context_hash,
+        stale_reason=comparison.stale_reason,
+        consequences=list(comparison.consequences or []),
         research_gaps=list(comparison.research_gaps or []),
         warnings=list(comparison.warnings or []),
         item_count=_item_count(db, comparison.comparison_id),
@@ -236,11 +251,19 @@ def item_to_contract(item: MarketComparisonItem) -> MarketComparisonItemContract
         centralization=(item.comparison_dimensions or {}).get("centralization", "unclear"),
         data_access_model=(item.comparison_dimensions or {}).get("data_access_model"),
         swiss_relevance=(item.comparison_dimensions or {}).get("swiss_relevance"),
+        core_problem_or_benefit=(item.comparison_dimensions or {}).get("core_problem_or_benefit"),
+        relevant_functions=list((item.comparison_dimensions or {}).get("relevant_functions") or []),
+        price_business_model=(item.comparison_dimensions or {}).get(
+            "price_business_model", "nicht \u00f6ffentlich belegt"
+        ),
+        uncertainty=item.uncertainty,
         relation_to_project=item.relation_to_project,
         confidence_label=item.confidence_label,
         status=item.status,
         source_document_ids=list(item.source_document_ids or []),
         evidence_quotes=quotes,
+        external_evidence_anchor_ids=list(item.evidence_anchor_ids or []),
+        cell_evidence=dict(item.cell_evidence or {}),
         coverage_status=item.coverage_status,
         support_status=item.support_status,
     )

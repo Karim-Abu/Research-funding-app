@@ -272,6 +272,22 @@ class SourceVersion(Base):
     original_filename: Mapped[str] = mapped_column(String, nullable=False)
     byte_size: Mapped[int] = mapped_column(nullable=False)
     mime_type: Mapped[str] = mapped_column(String, nullable=False)
+    # RUN 3B: normalized, allow-listed web retrieval provenance only. Full
+    # provider responses and search snippets are never stored here.
+    retrieval_provenance: Mapped[dict] = mapped_column(
+        JSON, nullable=False, default=dict
+    )
+    content_review_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_applicable"
+    )
+    content_safety_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    quarantine_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    similarity_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    possible_duplicate_source_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
     processing_started_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -1022,8 +1038,12 @@ class EvidenceAnchor(Base):
     )
 
     anchor_id: Mapped[str] = mapped_column(String, primary_key=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
+    )
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    research_task_id: Mapped[str | None] = mapped_column(
+        String, nullable=True, index=True
     )
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     source_version_id: Mapped[str] = mapped_column(String, nullable=False)
@@ -1076,8 +1096,8 @@ class EvidenceLink(Base):
     )
 
     evidence_link_id: Mapped[str] = mapped_column(String, primary_key=True)
-    run_id: Mapped[str] = mapped_column(
-        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    run_id: Mapped[str | None] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=True, index=True
     )
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     anchor_id: Mapped[str] = mapped_column(
@@ -1862,6 +1882,7 @@ class ResearchResult(Base):
     workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
     source_url: Mapped[str] = mapped_column(String, nullable=False)
     final_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    canonical_url: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
     title: Mapped[str] = mapped_column(String, nullable=False)
     snippet: Mapped[str | None] = mapped_column(Text, nullable=True)
     publisher: Mapped[str | None] = mapped_column(String, nullable=True)
@@ -1888,6 +1909,30 @@ class ResearchResult(Base):
     provider_rank: Mapped[int | None] = mapped_column(nullable=True)
     retrieved_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+    fetched_content_type: Mapped[str | None] = mapped_column(String, nullable=True)
+    fetched_content_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    content_safety_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    quarantine_reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    possible_duplicate_source_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    partner_candidate_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_status: Mapped[str] = mapped_column(
+        String, nullable=False, default="not_checked"
+    )
+    eligibility_anchor_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_source_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_official_url: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_source_location: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_last_checked: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    eligibility_reviewed_by: Mapped[str | None] = mapped_column(String, nullable=True)
+    eligibility_reviewed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
     )
     # candidate | imported | rejected | failed
     status: Mapped[str] = mapped_column(String, nullable=False, default="candidate")
@@ -1927,6 +1972,9 @@ class MarketComparison(Base):
     # Comparison is decoupled from any analysis run (rule: no run coupling).
     run_id: Mapped[str | None] = mapped_column(String, nullable=True)
     research_task_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    research_brief_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    query_approval_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # draft | ready_for_review | stale | failed
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
     # Comparison-level open questions / caveats from the structuring step (advisory).
@@ -1934,6 +1982,12 @@ class MarketComparison(Base):
     warnings: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     comparison_version: Mapped[int] = mapped_column(nullable=False, default=1)
     source_scope_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    provider: Mapped[str | None] = mapped_column(String, nullable=True)
+    model_ref: Mapped[str | None] = mapped_column(String, nullable=True)
+    prompt_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    context_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    stale_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    consequences: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # Once-per-comparison generation guard: null | succeeded | failed | skipped.
     generation_status: Mapped[str | None] = mapped_column(String, nullable=True)
     # fake_demo | model_generated | deterministic; truthful provenance is required
@@ -1988,6 +2042,9 @@ class MarketComparisonItem(Base):
     source_document_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     # list of verified-quote reference dicts (rule 6). Never search snippets.
     verified_quote_refs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    evidence_anchor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    cell_evidence: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    uncertainty: Mapped[str | None] = mapped_column(Text, nullable=True)
     # Lösungstyp, Zentralität, Daten-/Zugriffsmodell und Schweizer Bezug.
     comparison_dimensions: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
     # Exakte Fundstelle und fachliche Stützung bleiben getrennt.

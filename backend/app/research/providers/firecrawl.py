@@ -150,7 +150,7 @@ class FirecrawlProvider:
         payload = response_payload.get("data") or {}
         if not isinstance(payload, dict):
             raise ProviderError("firecrawl scrape returned invalid data")
-        text = (payload.get("markdown") or payload.get("content") or "")[:max_bytes]
+        text = payload.get("markdown") or payload.get("content") or ""
         if not text.strip():
             raise ProviderError("firecrawl scrape returned no content")
         meta = payload.get("metadata") or {}
@@ -158,14 +158,29 @@ class FirecrawlProvider:
             meta = {}
         final_url = meta.get("sourceURL") or meta.get("url") or url
         data = text.encode("utf-8")
+        if len(data) > max_bytes:
+            raise ProviderError("firecrawl scrape content exceeds size limit")
+        supplied_chain = meta.get("redirectChain")
+        redirect_chain = (
+            [str(value) for value in supplied_chain if value]
+            if isinstance(supplied_chain, list) else [url]
+        )
+        chain_verified = bool(
+            isinstance(supplied_chain, list)
+            and redirect_chain
+            and redirect_chain[0] == url
+        )
+        if chain_verified and redirect_chain[-1] != final_url:
+            redirect_chain.append(final_url)
         return FetchOutcome(
             text=text,
             final_url=final_url,
-            content_type="text/html",
+            content_type=str(meta.get("contentType") or "text/html"),
             byte_size=len(data),
             content_hash=hashlib.sha256(data).hexdigest(),
             provider=self.name,
-            redirect_chain=[url, final_url],
+            redirect_chain=redirect_chain,
+            redirect_chain_verified=chain_verified,
             latency_ms=int((time.monotonic() - start) * 1000),
             credits_used=response_payload.get("creditsUsed"),
             title=meta.get("title"),

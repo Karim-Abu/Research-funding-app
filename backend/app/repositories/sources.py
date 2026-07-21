@@ -50,6 +50,7 @@ def create_version(
     status: str = "uploaded",
     source_version_id: str | None = None,
 ) -> SourceVersion:
+    previous_version_id = document.current_source_version_id
     version = SourceVersion(
         source_version_id=source_version_id or str(uuid.uuid4()),
         source_document_id=document.source_id,
@@ -65,6 +66,12 @@ def create_version(
     db.add(version)
     db.flush()
     document.current_source_version_id = version.source_version_id
+    if previous_version_id:
+        from app.research.staleness import mark_source_dependents_stale
+
+        mark_source_dependents_stale(
+            db, source_id=document.source_id, reason="source_version_changed"
+        )
     db.flush()
     return version
 

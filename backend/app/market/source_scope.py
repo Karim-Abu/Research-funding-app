@@ -84,6 +84,8 @@ def imported_public_sources(
             SourceDocument.type == "url",
             SourceDocument.status == "processed",
             SourceVersion.processing_status == "processed",
+            SourceVersion.content_review_status == "reviewed",
+            SourceVersion.content_safety_status.in_(("passed", "human_released")),
             ResearchResult.status == "imported",
             ResearchResult.content_review_status == "reviewed",
             ResearchResult.support_status.in_(("supports", "partially_supports")),
@@ -162,3 +164,33 @@ def source_scope_hash(sources: list[SourceDocument]) -> str:
         f"{d.source_id}:{d.current_source_version_id}" for d in sources
     )
     return hashlib.sha256("\n".join(parts).encode("utf-8")).hexdigest()
+
+
+def provenance(db: Session, sources: list[SourceDocument]) -> dict:
+    """Allow-listed, versioned lineage for a comparison; never includes snippets."""
+    source_ids = [document.source_id for document in sources]
+    if not source_ids:
+        return {
+            "research_task_ids": [], "query_approval_ids": [],
+            "research_brief_id": None, "source_version_ids": [],
+        }
+    rows = list(db.execute(
+        select(ResearchResult, ResearchTask)
+        .join(ResearchTask, ResearchTask.research_task_id == ResearchResult.research_task_id)
+        .where(
+            ResearchResult.source_document_id.in_(source_ids),
+            ResearchResult.status == "imported",
+        )
+    ).all())
+    tasks = sorted({task.research_task_id for _result, task in rows})
+    approvals = sorted({task.firewall_approval_id for _result, task in rows if task.firewall_approval_id})
+    briefs = sorted({task.research_brief_id for _result, task in rows if task.research_brief_id})
+    return {
+        "research_task_ids": tasks,
+        "query_approval_ids": approvals,
+        "research_brief_id": briefs[0] if len(briefs) == 1 else None,
+        "source_version_ids": sorted({
+            document.current_source_version_id for document in sources
+            if document.current_source_version_id
+        }),
+    }

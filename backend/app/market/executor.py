@@ -7,6 +7,8 @@ Never raises; never mutates drafts/assessments/approvals; never invents content.
 """
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
 import threading
 import uuid
@@ -91,6 +93,10 @@ def _fake_bundle(candidates) -> str:
             "weaknesses": None,
             "differentiation_relevance": "Hinweis aus öffentlicher Quelle — fachlich zu prüfen.",
             "relation_to_project": "unclear",
+            "core_problem_or_benefit": None,
+            "relevant_functions": [],
+            "price_business_model": None,
+            "uncertainty": "Nur die zitierte \u00f6ffentliche Fundstelle ist belegt.",
             "source_fragment_id": c.fragment_id,
             "source_document_id": c.source_document_id,
             "quote": quote,
@@ -140,7 +146,9 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             op = db.get(AsyncOperation, operation_id)
             if comparison is None or op is None:
                 return
-            if comparison.status in ("ready_for_review", "failed"):
+            if comparison.status in (
+                "ready_for_review", "limited", "insufficient_external_evidence", "failed"
+            ):
                 return
             project = db.get(Project, comparison.project_id)
             op.status = "running"
@@ -159,7 +167,10 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
                     db, comparison, operation_id,
                     "Demo-Recherche enthält keine echten Webquellen; es wurde kein Marktvergleich erzeugt.",
                 )
-                comparison.warnings = ["Demo-Recherche – keine echten Webquellen"]
+                comparison.warnings = [
+                    "insufficient_external_evidence",
+                    "demo_sources_not_evidence",
+                ]
                 db.commit()
                 return
             guard = cost_guard.pre_check_generation(comparison)
@@ -171,6 +182,25 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             sources = source_scope.imported_public_sources(
                 db, comparison.project_id, comparison.workspace_id
             )
+            lineage = source_scope.provenance(db, sources)
+            comparison.research_task_ids = lineage["research_task_ids"]
+            comparison.research_brief_id = lineage["research_brief_id"]
+            comparison.query_approval_ids = lineage["query_approval_ids"]
+            comparison.source_version_ids = lineage["source_version_ids"]
+            comparison.source_scope_hash = source_scope.source_scope_hash(sources)
+            if len(sources) < 2:
+                _complete_empty(
+                    db, comparison, operation_id,
+                    "Weniger als zwei gepr\u00fcfte externe Quellen: kein belastbarer Vergleich.",
+                    status="insufficient_external_evidence",
+                    warning="insufficient_external_evidence",
+                )
+                comparison.research_gaps = [
+                    "Weniger als zwei extern gepruefte Quellen; keine live abgerufenen "
+                    "und inhaltlich positiv gepr\u00fcften Quellen fuer einen belastbaren Vergleich."
+                ]
+                db.commit()
+                return
             candidates = source_scope.prefilter_fragments(db, sources)
             if not candidates:
                 _complete_empty(
@@ -195,6 +225,9 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
                     for c in candidates
                 ],
             }
+            comparison.context_hash = hashlib.sha256(
+                json.dumps(payload, ensure_ascii=False, sort_keys=True).encode("utf-8")
+            ).hexdigest()
             try:
                 validate_payload("MarketComparisonInput@v1", payload)
             except (ValidationError, SchemaNotImplementedError):
@@ -225,9 +258,16 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
                 return
 
             persisted = _persist(db, comparison, candidates, result)
-            comparison.status = "ready_for_review"
+            comparison.status = "limited" if len(sources) == 2 else "ready_for_review"
             comparison.generation_status = "succeeded"
             comparison.generation_kind = result.generation_kind
+            comparison.provider = result.provider
+            comparison.model_ref = result.actual_model_id or result.model_id
+            comparison.prompt_version = result.prompt_version
+            if len(sources) == 2:
+                comparison.warnings = list(dict.fromkeys([
+                    *(comparison.warnings or []), "limited_external_evidence",
+                ]))
             recording.record_audit(
                 db, workspace_id=comparison.workspace_id, actor_user_id=None,
                 action="market_comparison.succeeded", comparison_id=comparison.comparison_id,
@@ -268,6 +308,7 @@ def _persist(db, comparison, candidates, response) -> None:
 
         verified_refs: list[dict] = []
         source_doc_ids: list[str] = []
+        item_id = str(uuid.uuid4())
         cand = by_fragment.get(rec.source_fragment_id) if rec.source_fragment_id else None
         if cand is not None and rec.quote:
             fragment = db.get(SourceFragment, cand.fragment_id)
@@ -275,6 +316,10 @@ def _persist(db, comparison, candidates, response) -> None:
                 ref = verify.verify_quote(
                     db, fragment=fragment,
                     source_document_id=cand.source_document_id, quote=rec.quote,
+                    project_id=comparison.project_id,
+                    workspace_id=comparison.workspace_id,
+                    research_task_id=_research_task_id(db, cand.source_document_id),
+                    target_id=item_id,
                 )
                 if ref is not None:
                     from app.db.models import ResearchResult
@@ -293,8 +338,26 @@ def _persist(db, comparison, candidates, response) -> None:
             continue
         confidence, status = "source_backed", "proposed"
 
+        anchor_ids = [
+            ref["linked_evidence_anchor_id"] for ref in verified_refs
+            if ref.get("linked_evidence_anchor_id")
+        ]
+        factual_cells = {
+            key: anchor_ids for key, value in {
+                "name": name,
+                "description": rec.description,
+                "target_customer_segment": rec.target_customer_segment,
+                "offering_summary": rec.offering_summary,
+                "strengths": rec.strengths,
+                "weaknesses": rec.weaknesses,
+                "differentiation_relevance": rec.differentiation_relevance,
+                "core_problem_or_benefit": rec.core_problem_or_benefit,
+                "relevant_functions": rec.relevant_functions,
+                "price_business_model": rec.price_business_model,
+            }.items() if value
+        }
         db.add(MarketComparisonItem(
-            item_id=str(uuid.uuid4()),
+            item_id=item_id,
             comparison_id=comparison.comparison_id,
             workspace_id=comparison.workspace_id,
             name=name,
@@ -311,11 +374,17 @@ def _persist(db, comparison, candidates, response) -> None:
             status=status,
             source_document_ids=source_doc_ids,
             verified_quote_refs=verified_refs,
+            evidence_anchor_ids=anchor_ids,
+            cell_evidence=factual_cells,
+            uncertainty=rec.uncertainty,
             comparison_dimensions={
                 "solution_type": rec.solution_type,
                 "centralization": rec.centralization,
                 "data_access_model": rec.data_access_model,
                 "swiss_relevance": rec.swiss_relevance,
+                "core_problem_or_benefit": rec.core_problem_or_benefit,
+                "relevant_functions": list(rec.relevant_functions or []),
+                "price_business_model": rec.price_business_model or "nicht \u00f6ffentlich belegt",
             },
             coverage_status="exact_quote_verified",
             support_status="unreviewed",
@@ -324,20 +393,39 @@ def _persist(db, comparison, candidates, response) -> None:
 
     comparison.research_gaps = list(dict.fromkeys(gaps))
     comparison.warnings = list(out.warnings or [])
+    comparison.consequences = _consequences(count, comparison.research_gaps)[:5]
     return count
 
 
-def _complete_empty(db, comparison, operation_id, gap: str) -> None:
-    comparison.status = "ready_for_review"
+def _complete_empty(
+    db, comparison, operation_id, gap: str, *,
+    status: str = "insufficient_external_evidence", warning: str | None = None,
+) -> None:
+    comparison.status = status
     comparison.generation_status = "skipped"
     comparison.research_gaps = [gap]
-    comparison.warnings = []
+    comparison.warnings = [warning] if warning else []
     recording.record_audit(
         db, workspace_id=comparison.workspace_id, actor_user_id=None,
         action="market_comparison.empty", comparison_id=comparison.comparison_id,
         detail={"reason": "no_source_backed_items"},
     )
     _finish_operation(db, operation_id, "succeeded")
+
+
+def _research_task_id(db, source_document_id: str) -> str | None:
+    from app.db.models import ResearchResult
+    return db.scalar(select(ResearchResult.research_task_id).where(
+        ResearchResult.source_document_id == source_document_id,
+        ResearchResult.status == "imported",
+    ).order_by(ResearchResult.created_at))
+
+
+def _consequences(item_count: int, gaps: list[str]) -> list[str]:
+    result = [f"{item_count} quellengebundene Vergleichseintr\u00e4ge fachlich pr\u00fcfen."]
+    if gaps:
+        result.append("Offene Belegl\u00fccken vor der Verwendung im Antrag schliessen.")
+    return result
 
 
 def _fail(db, comparison, operation_id, code: str, detail: str) -> None:
@@ -357,7 +445,9 @@ def _safe_fail(comparison_id: str, operation_id: str, code: str) -> None:
     db = SessionLocal()
     try:
         comparison = db.get(MarketComparison, comparison_id)
-        if comparison is not None and comparison.status not in ("ready_for_review", "failed"):
+        if comparison is not None and comparison.status not in (
+            "ready_for_review", "limited", "insufficient_external_evidence", "failed"
+        ):
             comparison.status = "failed"
             comparison.generation_status = "failed"
             comparison.error_code = code
