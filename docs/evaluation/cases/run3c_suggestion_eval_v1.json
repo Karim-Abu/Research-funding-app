@@ -1,0 +1,171 @@
+{
+  "schema_version": "Run3CSuggestionEval@v1",
+  "data_classification": "F1_synthetic",
+  "description": "Synthetische Offline-Faelle fuer die providerunabhaengige Claim-Extraktion und das serverseitige Grounding.",
+  "cases": [
+    {
+      "case_id": "AI-Q01",
+      "category": "plain_rewrite",
+      "suggestion_text": "Der Lösungsansatz wird klar und nachvollziehbar beschrieben.",
+      "original_text": "Der Lösungsansatz ist nachvollziehbar beschrieben.",
+      "structured_project_data": {},
+      "anchors": [],
+      "expected_claim_types": [],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q02",
+      "category": "number_from_original",
+      "suggestion_text": "Das Vorhaben dauert 18 Monate.",
+      "original_text": "Die geplante Projektdauer beträgt 18 Monate.",
+      "structured_project_data": {},
+      "anchors": [],
+      "expected_claim_types": ["number"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q03",
+      "category": "trl_from_structured_input",
+      "suggestion_text": "Die Ausgangslage entspricht TRL 5.",
+      "original_text": "",
+      "structured_project_data": {"technology_readiness_level": "TRL 5"},
+      "anchors": [],
+      "expected_claim_types": ["number"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q04",
+      "category": "number_from_selected_anchor",
+      "suggestion_text": "Die veröffentlichte Wachstumsrate beträgt 12 Prozent.",
+      "original_text": "Keine Wachstumsrate angegeben.",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q04", "quote": "Die veröffentlichte Wachstumsrate beträgt 12 Prozent."}],
+      "expected_claim_types": ["number", "external_fact"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q05",
+      "category": "undeclared_unsupported_number",
+      "suggestion_text": "Der Marktanteil beträgt 37 Prozent.",
+      "original_text": "Der Marktanteil ist nicht bekannt.",
+      "structured_project_data": {},
+      "anchors": [],
+      "provider_claim_map": [],
+      "expected_claim_types": ["number", "external_fact"],
+      "expected_unsupported_values": ["37 Prozent", "Der Marktanteil beträgt 37 Prozent."]
+    },
+    {
+      "case_id": "AI-Q06",
+      "category": "organization_from_anchor",
+      "suggestion_text": "Die Musterwerke AG bietet eine Vergleichslösung an.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q06", "quote": "Musterwerke AG bietet eine Vergleichslösung an."}],
+      "expected_claim_types": ["organization"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q07",
+      "category": "undeclared_organization",
+      "suggestion_text": "Die Unbekannt Systeme GmbH ist Projektpartnerin.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [],
+      "provider_claim_map": [],
+      "expected_claim_types": ["organization"],
+      "expected_unsupported_values": ["Unbekannt Systeme GmbH"]
+    },
+    {
+      "case_id": "AI-Q08",
+      "category": "named_product",
+      "suggestion_text": "Das Produkt DataNova wird als Alternative betrachtet.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q08", "quote": "DataNova ist ein öffentlich beschriebenes Produkt."}],
+      "expected_claim_types": ["product"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q09",
+      "category": "specific_market_assertion",
+      "suggestion_text": "Das Marktvolumen ist öffentlich nicht beziffert.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q09", "quote": "Das Marktvolumen ist öffentlich nicht beziffert."}],
+      "expected_claim_types": ["external_fact"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q10",
+      "category": "unsupported_legal_claim",
+      "suggestion_text": "Diese Zertifizierung ist gesetzlich vorgeschrieben.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [],
+      "provider_claim_map": [],
+      "expected_claim_types": ["external_fact"],
+      "expected_unsupported_values": ["Diese Zertifizierung ist gesetzlich vorgeschrieben."]
+    },
+    {
+      "case_id": "AI-Q11",
+      "category": "date_from_original",
+      "suggestion_text": "Der Projektstart ist am 01.03.2027.",
+      "original_text": "Startdatum: 01.03.2027",
+      "structured_project_data": {},
+      "anchors": [],
+      "expected_claim_types": ["number"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q12",
+      "category": "currency_from_anchor",
+      "suggestion_text": "Der publizierte Listenpreis beträgt CHF 4200.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q12", "quote": "Der publizierte Listenpreis beträgt CHF 4200."}],
+      "expected_claim_types": ["number"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q13",
+      "category": "section_numbers_are_not_facts",
+      "suggestion_text": "4.2 Neuheit ist beschrieben. 4.3 Ziele bleiben offen.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [],
+      "expected_claim_types": [],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q14",
+      "category": "unsupported_year",
+      "suggestion_text": "Die Markteinführung erfolgte 2024.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [],
+      "provider_claim_map": [],
+      "expected_claim_types": ["number"],
+      "expected_unsupported_values": ["2024"]
+    },
+    {
+      "case_id": "AI-Q15",
+      "category": "acronym_organization",
+      "suggestion_text": "Die ETH Zürich publizierte die Referenzstudie.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q15", "quote": "Die ETH Zürich publizierte die Referenzstudie."}],
+      "expected_claim_types": ["organization"],
+      "expected_unsupported_values": []
+    },
+    {
+      "case_id": "AI-Q16",
+      "category": "unicode_product_name",
+      "suggestion_text": "Die Plattform ÖkoMatrix ist als öffentliche Alternative dokumentiert.",
+      "original_text": "",
+      "structured_project_data": {},
+      "anchors": [{"anchor_id": "anchor-q16", "quote": "ÖkoMatrix ist eine öffentlich dokumentierte Plattform."}],
+      "expected_claim_types": ["product"],
+      "expected_unsupported_values": []
+    }
+  ]
+}
