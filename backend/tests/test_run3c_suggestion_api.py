@@ -141,3 +141,24 @@ def test_manifest_suggestion_rejects_partial_legacy_patch(client, monkeypatch):
     assert operation["status"] == "succeeded"
     assert response.status_code == 422
     assert response.json()["code"] == "whole_suggestion_required"
+
+
+def test_run3c_runtime_openapi_exposes_additive_context_and_accept_contract(client):
+    schema = client.get("/openapi.json").json()
+    context_path = "/api/v1/runs/{run_id}/fields/{field_id}/suggestion-context-options"
+    accept_path = (
+        "/api/v1/runs/{run_id}/fields/{field_id}/suggestions/"
+        "{suggestion_id}/accept"
+    )
+    assert "get" in schema["paths"][context_path]
+    assert "post" in schema["paths"][accept_path]
+    accept_parameters = schema["paths"][accept_path]["post"]["parameters"]
+    key = next(item for item in accept_parameters if item["name"] == "Idempotency-Key")
+    assert key["required"] is True
+    redraft_parameters = schema["paths"][
+        "/api/v1/runs/{run_id}/fields/{field_id}/redrafts"
+    ]["post"]["parameters"]
+    legacy_key = next(
+        item for item in redraft_parameters if item["name"] == "Idempotency-Key"
+    )
+    assert legacy_key["required"] is False
