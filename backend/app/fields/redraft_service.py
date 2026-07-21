@@ -100,6 +100,10 @@ def execute_a2_operation(
     guidance: str | None = None,
     target_section: str | None = None,
     model_preference: str = "primary",
+    improvement_mode: str = "clearer",
+    selected_anchor_ids: list[str] | None = None,
+    language: str | None = None,
+    manifest_mode: bool = False,
 ):
     """Gemeinsamer A2-Kern für Redraft-Executor UND Run-Graph: Operation
     running → A2 → succeeded/failed inkl. result/error-Bookkeeping. Jede
@@ -115,6 +119,9 @@ def execute_a2_operation(
         db, run, field_id=field_id, draft_id=draft_id, base_version_id=base_version_id,
         operation_id=operation_id, guidance=guidance,
         target_section=target_section, model_preference=model_preference,
+        improvement_mode=improvement_mode,
+        selected_anchor_ids=selected_anchor_ids or [], language=language,
+        manifest_mode=manifest_mode,
     )
 
     op = db.get(AsyncOperation, operation_id)
@@ -165,6 +172,10 @@ def redraft_executor(
     operation_id: str, run_id: str, draft_id: str, base_version_id: str,
     guidance: str | None, field_id: str, target_section: str | None = None,
     model_preference: str = "primary",
+    improvement_mode: str = "clearer",
+    selected_anchor_ids: list[str] | None = None,
+    language: str | None = None,
+    manifest_mode: bool = False,
 ) -> None:
     """Background task: run A2 and store the suggestion in operation.result."""
     db = SessionLocal()
@@ -177,6 +188,9 @@ def redraft_executor(
             db, operation=op, run=run, draft_id=draft_id,
             base_version_id=base_version_id, field_id=field_id, guidance=guidance,
             target_section=target_section, model_preference=model_preference,
+            improvement_mode=improvement_mode,
+            selected_anchor_ids=selected_anchor_ids or [], language=language,
+            manifest_mode=manifest_mode,
         )
     except Exception:  # noqa: BLE001
         logger.exception("redraft execution failed")

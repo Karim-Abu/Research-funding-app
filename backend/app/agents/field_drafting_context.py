@@ -19,7 +19,7 @@ import re
 import uuid
 from dataclasses import dataclass, field
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.agents import allowed_facts
@@ -27,8 +27,11 @@ from app.config.settings import get_settings
 from app.db.models import (
     AnalysisRun,
     DraftVersion,
+    EvidenceAnchor,
     EvidenceLink,
     HumanDecision,
+    MarketComparison,
+    MarketComparisonItem,
     OpenIssue,
     Partner,
     Project,
@@ -38,8 +41,10 @@ from app.db.models import (
     RunProjectSnapshot,
     SourceDocument,
     SourceVersion,
+    SuggestionContextManifest,
     ToolInvocation,
 )
+from app.evidence.scope_policy import formal_application_scope, is_generated_or_review_source
 from app.market import source_scope
 from app.registry.loader import get_registry
 from app.repositories import drafts as drafts_repo
@@ -98,10 +103,28 @@ class A2Context:
     # landet. Basis der Erlaubt-Liste des Halluzinations-Gates: was hier fehlt,
     # hat das Modell nie gesehen und darf nicht als belegt gelten.
     visible_components: list[tuple[str, str]] = field(default_factory=list)
+    manifest_mode: bool = False
+    requirement_ids: set[str] = field(default_factory=set)
+    rule_ids: set[str] = field(default_factory=set)
+    source_version_ids: set[str] = field(default_factory=set)
+    selected_anchor_ids: set[str] = field(default_factory=set)
+    omitted_anchor_ids: set[str] = field(default_factory=set)
+    market_comparison_id: str | None = None
+    market_findings: list[dict] = field(default_factory=list)
+    improvement_mode: str = "clearer"
+    manifest_context_hash: str = ""
 
 
 class ContextBudgetError(ValueError):
     pass
+
+
+class ContextSelectionError(ValueError):
+    """A caller-selected context object is not usable for this frozen run."""
+
+    def __init__(self, code: str):
+        super().__init__(code)
+        self.code = code
 
 
 def _hash_text(text: str) -> str:
@@ -127,6 +150,183 @@ def _linked_requirement_ids(field_id: str) -> set[str]:
         r.requirement_id for r in registry.requirements.values()
         if field_id in (r.affected_field_ids or [])
     }
+
+
+def _linked_rule_ids(requirement_ids: set[str]) -> set[str]:
+    registry = get_registry()
+    return {
+        rule_id
+        for requirement_id in requirement_ids
+        for rule_id in registry.requirements[requirement_id].linked_rule_ids
+        if requirement_id in registry.requirements
+    }
+
+
+def _anchor_requirement_map(db: Session, run: AnalysisRun) -> dict[str, str]:
+    assessment_requirement = {
+        a.assessment_id: a.requirement_id
+        for a in db.scalars(
+            select(RequirementAssessment).where(RequirementAssessment.run_id == run.run_id)
+        )
+    }
+    result: dict[str, str] = {}
+    for link in db.scalars(
+        select(EvidenceLink).where(
+            EvidenceLink.run_id == run.run_id,
+            EvidenceLink.target_type == "requirement_assessment",
+            EvidenceLink.status == "active",
+        )
+    ):
+        requirement_id = assessment_requirement.get(link.target_id)
+        if requirement_id:
+            result.setdefault(link.anchor_id, requirement_id)
+    return result
+
+
+def _manifest_evidence(
+    db: Session,
+    run: AnalysisRun,
+    *,
+    requirement_ids: set[str],
+    selected_anchor_ids: set[str],
+) -> tuple[list[dict], list[str]]:
+    """Resolve exactly the application + explicitly selected drafting anchors.
+
+    Application anchors must belong to the frozen primary application and the
+    field's registry requirements.  External/supporting anchors additionally
+    need a current, reviewed and safe source version.  Search snippets are not
+    EvidenceAnchors and therefore cannot enter this path.
+    """
+    formal = formal_application_scope(db, run)
+    requirement_by_anchor = _anchor_requirement_map(db, run)
+    anchors = list(db.scalars(select(EvidenceAnchor).where(
+        EvidenceAnchor.workspace_id == run.workspace_id,
+        or_(
+            EvidenceAnchor.project_id == run.project_id,
+            EvidenceAnchor.project_id.is_(None),
+        ),
+    )))
+    by_id = {row.anchor_id: row for row in anchors}
+    unknown = sorted(selected_anchor_ids - set(by_id))
+    if unknown:
+        raise ContextSelectionError("unknown_selected_anchor")
+
+    selected: list[dict] = []
+    source_versions: set[str] = set()
+    for anchor in anchors:
+        requirement_id = requirement_by_anchor.get(anchor.anchor_id)
+        is_application = (
+            anchor.scope == "application"
+            and formal.status == "configured"
+            and anchor.source_id == formal.source_id
+            and anchor.source_version_id == formal.source_version_id
+            and requirement_id in requirement_ids
+        )
+        explicitly_selected = anchor.anchor_id in selected_anchor_ids
+        if not is_application and not explicitly_selected:
+            continue
+        if anchor.verification_status not in ("exact_verified", "human_verified"):
+            raise ContextSelectionError("selected_anchor_not_verified")
+        document = db.get(SourceDocument, anchor.source_id)
+        version = db.get(SourceVersion, anchor.source_version_id)
+        if (
+            document is None
+            or version is None
+            or document.workspace_id != run.workspace_id
+            or document.project_id != run.project_id
+            or version.source_document_id != document.source_id
+        ):
+            raise ContextSelectionError("selected_anchor_scope_mismatch")
+        if is_generated_or_review_source(document):
+            raise ContextSelectionError("selected_anchor_generated_content")
+        if explicitly_selected:
+            if anchor.scope not in ("external", "drafting_context"):
+                # Application evidence is selected by frozen scope, never by a
+                # client-provided override.
+                if not is_application:
+                    raise ContextSelectionError("selected_anchor_scope_invalid")
+            if document.current_source_version_id != anchor.source_version_id:
+                raise ContextSelectionError("selected_anchor_source_version_stale")
+            if version.content_review_status != "reviewed":
+                raise ContextSelectionError("selected_anchor_review_required")
+            if version.content_safety_status not in ("passed", "human_released"):
+                raise ContextSelectionError("selected_anchor_quarantined")
+        source_versions.add(anchor.source_version_id)
+        selected.append({
+            "anchor_id": anchor.anchor_id,
+            "quote": anchor.quote,
+            "source_name": anchor.source_name,
+            "verification_status": anchor.verification_status,
+            "page": anchor.page,
+            "section": anchor.section,
+            "requirement_id": requirement_id,
+            "support_status": "supports_strongly" if is_application else "human_review_required",
+            "context_kind": "application_evidence" if is_application else anchor.scope,
+            "source_version_id": anchor.source_version_id,
+        })
+    selected.sort(key=lambda item: (item["context_kind"], item["anchor_id"]))
+    return selected, sorted(source_versions)
+
+
+def _field_relevance_tokens(field_id: str, requirement_ids: set[str]) -> set[str]:
+    registry = get_registry()
+    field_def = registry.portal_fields.get(field_id)
+    text = " ".join([
+        field_def.label_or_question if field_def else field_id,
+        *(registry.requirements[item].title for item in sorted(requirement_ids)),
+        *(registry.requirements[item].description for item in sorted(requirement_ids)),
+    ])
+    return {
+        token.casefold()
+        for token in re.findall(r"[\wÄÖÜäöüß-]{4,}", text, flags=re.UNICODE)
+    }
+
+
+def _market_findings(
+    db: Session,
+    run: AnalysisRun,
+    *,
+    field_id: str,
+    requirement_ids: set[str],
+    allowed_anchor_ids: set[str],
+) -> tuple[str | None, list[dict]]:
+    comparison = db.scalar(
+        select(MarketComparison)
+        .where(
+            MarketComparison.project_id == run.project_id,
+            MarketComparison.workspace_id == run.workspace_id,
+            MarketComparison.status.in_(("ready_for_review", "limited")),
+            MarketComparison.stale_reason.is_(None),
+        )
+        .order_by(MarketComparison.updated_at.desc())
+    )
+    if comparison is None:
+        return None, []
+    tokens = _field_relevance_tokens(field_id, requirement_ids)
+    ranked: list[tuple[int, str, dict]] = []
+    for item in db.scalars(
+        select(MarketComparisonItem).where(
+            MarketComparisonItem.comparison_id == comparison.comparison_id,
+            MarketComparisonItem.status.in_(("accepted", "proposed")),
+            MarketComparisonItem.confidence_label == "source_backed",
+        )
+    ):
+        anchor_ids = sorted(set(item.evidence_anchor_ids or []) & allowed_anchor_ids)
+        if not anchor_ids:
+            continue
+        text = " ".join(filter(None, (
+            item.name, item.category, item.description,
+            item.offering_summary, item.differentiation_relevance,
+        )))
+        score = len(tokens & {t.casefold() for t in re.findall(r"[\wÄÖÜäöüß-]{4,}", text)})
+        ranked.append((score, item.item_id, {
+            "finding_id": item.item_id,
+            "category": item.category,
+            "finding": text,
+            "anchor_ids": anchor_ids,
+        }))
+    ranked.sort(key=lambda row: (-row[0], row[1]))
+    return comparison.comparison_id, [row[2] for row in ranked[:5]]
 
 
 def _field_profile_view(field_id: str) -> dict:
@@ -479,6 +679,8 @@ def _budgeted_context(
     target_text: str,
     components: list[tuple[str, str, int, int]],
     budget: int,
+    *,
+    sentence_boundaries: bool = False,
 ) -> tuple[str, list[dict], list[tuple[str, str]]]:
     """Keep the applicant target in full and allocate the remaining budget.
 
@@ -517,12 +719,20 @@ def _budgeted_context(
     }]
     visible = [("current_field_text", target_body)]
     for (kind, content, _, item_count), header, length in zip(active, headers, used):
-        blocks.append(header + content[:length])
+        visible_content = content[:length]
+        if sentence_boundaries and length < len(content):
+            boundaries = [
+                match.end()
+                for match in re.finditer(r"(?:[.!?](?=\s|$)|\n)", visible_content)
+            ]
+            visible_content = visible_content[:boundaries[-1]] if boundaries else ""
+        blocks.append(header + visible_content)
         meta.append({
             "kind": kind, "item_count": item_count,
-            "character_count": length, "truncated": length < len(content),
+            "character_count": len(visible_content),
+            "truncated": len(visible_content) < len(content),
         })
-        visible.append((kind, content[:length]))
+        visible.append((kind, visible_content))
     rendered = "\n\n".join(blocks)
     if len(rendered) > budget:  # defensive accounting invariant
         raise ContextBudgetError("context_budget_accounting_error")
@@ -538,11 +748,20 @@ def assemble_a2_context(
     target_section: str | None = None,
     section_markers: tuple[str, ...] = (),
     language: str | None = None,
+    base_version_id: str | None = None,
+    improvement_mode: str = "clearer",
+    selected_anchor_ids: list[str] | None = None,
+    manifest_mode: bool = False,
 ) -> A2Context:
     requirement_ids = _linked_requirement_ids(field_id)
     ctx = A2Context(
         field_id=field_id, profile_id=profile_id,
         target_section=target_section, language=language or "de",
+        manifest_mode=manifest_mode,
+        requirement_ids=set(requirement_ids),
+        rule_ids=_linked_rule_ids(requirement_ids),
+        selected_anchor_ids=set(selected_anchor_ids or []),
+        improvement_mode=improvement_mode,
     )
     ctx.field_profile = _field_profile_view(field_id)
     full_draft_text = _current_draft_text(db, run, field_id)
@@ -568,16 +787,24 @@ def assemble_a2_context(
     else:
         ctx.current_draft_text = full_draft_text
     ctx.language = language or detect_application_language(ctx.current_draft_text)
-    ctx.advisory_facts = retrieve_advisory_project_facts(db, run)
-    typed_evidence = retrieve_verified_evidence(db, run)
-    ctx.verified_evidence = [
-        item for item in typed_evidence
-        if item.get("context_kind") == "external_evidence"
-    ]
-    ctx.research_candidates = [
-        item for item in typed_evidence
-        if item.get("context_kind") == "research_candidate"
-    ]
+    ctx.advisory_facts = [] if manifest_mode else retrieve_advisory_project_facts(db, run)
+    if manifest_mode:
+        ctx.verified_evidence, source_version_ids = _manifest_evidence(
+            db, run, requirement_ids=requirement_ids,
+            selected_anchor_ids=ctx.selected_anchor_ids,
+        )
+        ctx.source_version_ids = set(source_version_ids)
+        ctx.research_candidates = []
+    else:
+        typed_evidence = retrieve_verified_evidence(db, run)
+        ctx.verified_evidence = [
+            item for item in typed_evidence
+            if item.get("context_kind") == "external_evidence"
+        ]
+        ctx.research_candidates = [
+            item for item in typed_evidence
+            if item.get("context_kind") == "research_candidate"
+        ]
     ctx.structured_project_data = retrieve_structured_project_data(db, run)
     portal_language = _selected_portal_language(ctx.structured_project_data)
     if language is None and portal_language is not None:
@@ -585,14 +812,21 @@ def assemble_a2_context(
     ctx.open_issues = retrieve_open_issues(db, run, requirement_ids, field_id)
     ctx.requirement_assessments = _requirement_assessments(db, run, requirement_ids)
     # R5.7: advisory research context (VC/SOL only) — never added to allowed_anchor_ids.
-    ctx.research_context = retrieve_advisory_research_context(
-        db, run, profile_id, target_section
+    ctx.research_context = (
+        {}
+        if manifest_mode
+        else retrieve_advisory_research_context(db, run, profile_id, target_section)
     )
     ctx.allowed_anchor_ids = {e["anchor_id"] for e in ctx.verified_evidence}
     ctx.allowed_issue_ids = {i["issue_id"] for i in ctx.open_issues}
     ctx.allowed_research_source_ids = {
         item["source_id"] for item in ctx.research_context.get("imported_sources", [])
     }
+    if manifest_mode:
+        ctx.market_comparison_id, ctx.market_findings = _market_findings(
+            db, run, field_id=field_id, requirement_ids=requirement_ids,
+            allowed_anchor_ids=ctx.allowed_anchor_ids,
+        )
 
     # Record the tool invocations (authorization checked against the registry).
     _record_tool(db, run, "lookup_portal_field_profile",
@@ -614,8 +848,13 @@ def assemble_a2_context(
     portal_requirement = _json({
         "field_profile": ctx.field_profile,
         "requirement_assessments": ctx.requirement_assessments,
+        "requirement_ids": sorted(ctx.requirement_ids),
+        "rule_ids": sorted(ctx.rule_ids),
+        "improvement_mode": improvement_mode,
         "allowed_evidence_types": [
+            "application_evidence",
             "external_evidence",
+            "drafting_context",
             "applicant_claim_with_provenance",
         ],
     })
@@ -624,9 +863,8 @@ def assemble_a2_context(
         "public_source_candidates": ctx.research_context.get("imported_sources", []),
         "advisory_a1_facts": ctx.advisory_facts,
     }
-    ctx.context_text, ctx.context_components, ctx.visible_components = _budgeted_context(
-        ctx.current_draft_text,
-        [
+    def context_components() -> list[tuple[str, str, int, int]]:
+        return [
             ("accepted_project_input", _json(ctx.structured_project_data), 25, 1),
             ("external_evidence", _json(ctx.verified_evidence), 35,
              len(ctx.verified_evidence)),
@@ -634,19 +872,75 @@ def assemble_a2_context(
             ("imported_applicant_text", _json(adjacent), 15, len(adjacent)),
             ("portal_requirement", portal_requirement, 5,
              len(ctx.requirement_assessments)),
+            ("market_finding", _json(ctx.market_findings), 5,
+             len(ctx.market_findings)),
             ("research_candidate", _json(research_candidates), 5,
              len(ctx.research_candidates)
              + len(ctx.research_context.get("imported_sources", []))
              + len(ctx.advisory_facts)),
-        ],
+        ]
+
+    ctx.context_text, ctx.context_components, ctx.visible_components = _budgeted_context(
+        ctx.current_draft_text,
+        context_components(),
         budget,
+        sentence_boundaries=manifest_mode,
     )
+    # Manifest contexts never pass a partial evidence object through the separate
+    # structured INPUT payload. If the evidence component does not fit as a whole,
+    # remove the lowest-priority anchor and rebuild until every retained anchor is
+    # fully visible. The removed IDs remain auditable in the metadata-only manifest.
+    while manifest_mode and ctx.verified_evidence and any(
+        component["kind"] == "external_evidence" and component["truncated"]
+        for component in ctx.context_components
+    ):
+        omitted = ctx.verified_evidence.pop()
+        ctx.omitted_anchor_ids.add(omitted["anchor_id"])
+        ctx.allowed_anchor_ids = {
+            item["anchor_id"] for item in ctx.verified_evidence
+        }
+        ctx.source_version_ids = {
+            item["source_version_id"]
+            for item in ctx.verified_evidence
+            if item.get("source_version_id")
+        }
+        ctx.market_findings = [
+            item for item in ctx.market_findings
+            if set(item.get("anchor_ids") or []) & ctx.allowed_anchor_ids
+        ]
+        ctx.context_text, ctx.context_components, ctx.visible_components = _budgeted_context(
+            ctx.current_draft_text,
+            context_components(),
+            budget,
+            sentence_boundaries=True,
+        )
     adjacent_was_compacted = any(item["truncated"] for item in adjacent)
     if adjacent_was_compacted:
         for component in ctx.context_components[1:]:
             if component["kind"] == "imported_applicant_text":
                 component["truncated"] = True
     ctx.context_hash = _hash_text(ctx.context_text)
+    manifest_components = {
+        kind: _hash_text(text)
+        for kind, text in ctx.visible_components
+    }
+    manifest_payload = {
+        "run_id": run.run_id,
+        "field_id": field_id,
+        "base_version_id": base_version_id,
+        "target_section": target_section,
+        "improvement_mode": improvement_mode,
+        "language": ctx.language,
+        "selected_anchor_ids": sorted(ctx.selected_anchor_ids),
+        "anchor_ids": sorted(ctx.allowed_anchor_ids),
+        "omitted_anchor_ids": sorted(ctx.omitted_anchor_ids),
+        "source_version_ids": sorted(ctx.source_version_ids),
+        "market_comparison_id": ctx.market_comparison_id,
+        "requirement_ids": sorted(ctx.requirement_ids),
+        "rule_ids": sorted(ctx.rule_ids),
+        "component_hashes": manifest_components,
+    }
+    ctx.manifest_context_hash = _hash_text(_json(manifest_payload))
     ctx.meta = {
         "context_hash": ctx.context_hash,
         "evidence_count": len(ctx.verified_evidence),
@@ -665,8 +959,120 @@ def assemble_a2_context(
         ),
         "language_needs_review": language is None and portal_language is None,
         "components": ctx.context_components,
+        "manifest_mode": manifest_mode,
+        "manifest_context_hash": ctx.manifest_context_hash,
+        "selected_anchor_count": len(ctx.selected_anchor_ids),
+        "source_version_count": len(ctx.source_version_ids),
+        "market_finding_count": len(ctx.market_findings),
+        "context_truncated": any(
+            component["truncated"] for component in ctx.context_components
+        ) or bool(ctx.omitted_anchor_ids),
+        "omitted_anchor_ids": sorted(ctx.omitted_anchor_ids),
     }
     return ctx
+
+
+def persist_suggestion_manifest(
+    db: Session,
+    run: AnalysisRun,
+    ctx: A2Context,
+    *,
+    base_version_id: str,
+    prompt_version: str,
+    output_schema_version: str,
+) -> SuggestionContextManifest:
+    """Persist the metadata-only manifest for an already assembled context."""
+    existing = db.scalar(
+        select(SuggestionContextManifest).where(
+            SuggestionContextManifest.run_id == run.run_id,
+            SuggestionContextManifest.field_id == ctx.field_id,
+            SuggestionContextManifest.base_draft_version_id == base_version_id,
+            SuggestionContextManifest.context_hash == ctx.manifest_context_hash,
+        )
+    )
+    if existing is not None:
+        return existing
+    registry = get_registry()
+    formal = formal_application_scope(db, run)
+    field_instruction_hash = _hash_text(_json(ctx.field_profile))
+    manifest = SuggestionContextManifest(
+        manifest_id=str(uuid.uuid4()),
+        schema_version="SuggestionContextManifest@v1",
+        workspace_id=run.workspace_id,
+        project_id=run.project_id,
+        run_id=run.run_id,
+        field_id=ctx.field_id,
+        base_draft_version_id=base_version_id,
+        primary_application_source_version_id=(
+            formal.source_version_id if formal.status == "configured" else None
+        ),
+        requirement_registry_version=registry.requirement_registry_version,
+        rule_registry_version=registry.rule_registry_version,
+        field_instruction_hash=field_instruction_hash,
+        improvement_mode=ctx.improvement_mode,
+        language=ctx.language,
+        selected_anchor_ids=sorted(ctx.selected_anchor_ids),
+        source_version_ids=sorted(ctx.source_version_ids),
+        market_comparison_id=ctx.market_comparison_id,
+        requirement_ids=sorted(ctx.requirement_ids),
+        rule_ids=sorted(ctx.rule_ids),
+        prompt_version=prompt_version,
+        output_schema_version=output_schema_version,
+        omitted_anchor_ids=sorted(ctx.omitted_anchor_ids),
+        component_hashes={kind: _hash_text(text) for kind, text in ctx.visible_components},
+        context_hash=ctx.manifest_context_hash,
+    )
+    db.add(manifest)
+    db.flush()
+    return manifest
+
+
+def suggestion_context_options(db: Session, run: AnalysisRun) -> dict:
+    """Metadata-only projection of anchors a user may explicitly select."""
+    anchors: list[dict] = []
+    for anchor in db.scalars(
+        select(EvidenceAnchor).where(
+            EvidenceAnchor.workspace_id == run.workspace_id,
+            EvidenceAnchor.project_id == run.project_id,
+            EvidenceAnchor.scope.in_(("external", "drafting_context")),
+            EvidenceAnchor.verification_status.in_(("exact_verified", "human_verified")),
+        ).order_by(EvidenceAnchor.anchor_id)
+    ):
+        document = db.get(SourceDocument, anchor.source_id)
+        version = db.get(SourceVersion, anchor.source_version_id)
+        if (
+            document is None or version is None
+            or document.current_source_version_id != anchor.source_version_id
+            or version.content_review_status != "reviewed"
+            or version.content_safety_status not in ("passed", "human_released")
+            or is_generated_or_review_source(document)
+        ):
+            continue
+        anchors.append({
+            "anchor_id": anchor.anchor_id,
+            "source_id": anchor.source_id,
+            "source_version_id": anchor.source_version_id,
+            "source_name": anchor.source_name,
+            "scope": anchor.scope,
+            "verification_status": anchor.verification_status,
+            "page": anchor.page,
+            "section": anchor.section,
+        })
+    comparison = db.scalar(
+        select(MarketComparison)
+        .where(
+            MarketComparison.project_id == run.project_id,
+            MarketComparison.workspace_id == run.workspace_id,
+            MarketComparison.status.in_(("ready_for_review", "limited")),
+            MarketComparison.stale_reason.is_(None),
+        )
+        .order_by(MarketComparison.updated_at.desc())
+    )
+    return {
+        "anchors": anchors,
+        "market_comparison_id": comparison.comparison_id if comparison else None,
+        "market_comparison_status": comparison.status if comparison else None,
+    }
 
 
 _PARTNER_NAME_KEYS = (

@@ -10,12 +10,19 @@ executor.
 from __future__ import annotations
 
 import logging
+import re
+import unicodedata
 from dataclasses import dataclass, field
+from dataclasses import replace
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.agents import a2_fields, allowed_facts, data_policy, gateway, generation
+from app.agents import (
+    a2_fields, allowed_facts, data_policy, gateway, generation,
+    missing_inputs as missing_input_service, suggestion_grounding,
+    suggestion_staleness,
+)
 from app.agents import field_drafting_context as a2_context
 from app.agents.a2_fields import A2FieldConfig
 from app.agents.prompt_assets import prompt_version_for
@@ -38,6 +45,7 @@ from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
 from app.repositories import draft_suggestions as suggestions_repo
+from app.registry.loader import get_registry
 from app.drafts.sections import (
     SectionStructureError,
     extract_section,
@@ -51,6 +59,7 @@ FIELD_INPUT_SCHEMA = "FieldDraftingInput@v1"
 FIELD_OUTPUT_SCHEMA = "PortalFieldDraftBundle@v1"
 SECTION_INPUT_SCHEMA = "SectionDraftingInput@v1"
 SECTION_OUTPUT_SCHEMA = "PortalSectionDraftBundle@v1"
+SUGGESTION_OUTPUT_SCHEMA = "FieldSuggestionOutput@v1"
 # Backward-compatible SOL entry point used by M9D tests.
 SOLUTION_INNOVATION_FIELD_ID = "SOL.INNOVATION_SOLUTION.EDITOR"
 
@@ -201,6 +210,110 @@ class _Validated:
     # Das Modell hat abweichende Routing-IDs geliefert. Der Caller bindet die
     # kanonischen Werte; der Widerspruch bleibt sichtbar (nie still korrigiert).
     routing_mismatch: bool = False
+
+
+def _words(value: str) -> set[str]:
+    normalized = unicodedata.normalize("NFC", value).casefold()
+    return set(re.findall(r"[\wäöüß-]{4,}", normalized, flags=re.UNICODE))
+
+
+def _bind_missing_inputs(
+    items: list[dict], ctx, *, strict: bool
+) -> tuple[list[dict] | None, str]:
+    """Bind every gap to registry requirements already present in the manifest."""
+    registry = get_registry()
+    allowed = set(ctx.requirement_ids)
+    normalized: list[dict] = []
+    for raw in items:
+        label = str(raw.get("label") or "Angabe fehlt").strip()
+        reason = str(raw.get("reason") or "Menschliche Klärung erforderlich").strip()
+        explicit = set(raw.get("requirement_ids") or [])
+        if explicit:
+            if not explicit <= allowed:
+                return None, "missing_input_requirement_unknown"
+            bound = sorted(explicit)
+        else:
+            needle = _words(f"{label} {reason}")
+            scored = []
+            for requirement_id in sorted(allowed):
+                req = registry.requirements[requirement_id]
+                score = len(needle & _words(f"{req.title} {req.description}"))
+                scored.append((score, requirement_id))
+            best = max((score for score, _ in scored), default=0)
+            winners = [rid for score, rid in scored if score == best and score > 0]
+            if len(winners) == 1:
+                bound = winners
+            elif len(allowed) == 1:
+                bound = sorted(allowed)
+            elif strict:
+                return None, "missing_input_requirement_ambiguous"
+            else:
+                # Compatibility for deterministic/demo outputs.  Live model
+                # output is strict and may never use this broad binding.
+                bound = sorted(allowed)
+        key = missing_input_service.normalized_key(label or reason)
+        if not key or not bound:
+            return None, "missing_input_requirement_ambiguous"
+        normalized.append({
+            "key": key, "label": label, "reason": reason,
+            "requirement_ids": bound,
+        })
+    return normalized, ""
+
+
+def _structured_suggestion_output(
+    validated: _Validated,
+    ctx,
+    config: A2FieldConfig,
+    *,
+    generation_kind: str,
+) -> tuple[dict | None, str, suggestion_grounding.GroundingResult]:
+    candidate = validated.candidate
+    missing, reason = _bind_missing_inputs(
+        list(validated.placeholders), ctx,
+        strict=generation_kind == generation.MODEL_GENERATED,
+    )
+    empty_grounding = suggestion_grounding.GroundingResult()
+    if missing is None:
+        return None, reason, empty_grounding
+    grounding = suggestion_grounding.validate_grounding(
+        candidate.suggested_text,
+        original_text=ctx.current_draft_text,
+        structured_project_data=ctx.structured_project_data,
+        anchors=ctx.verified_evidence,
+    )
+    if grounding.unsupported_critical:
+        return None, "failed_grounding_validation", grounding
+    declared_claims = [
+        {
+            "claim": str(claim), "claim_type": "other",
+            "anchor_ids": list(getattr(candidate, "evidence_anchor_ids", []) or []),
+        }
+        for claim in list(getattr(candidate, "new_claims", []) or [])
+    ]
+    warnings = list(dict.fromkeys([*validated.warnings, *grounding.warnings]))
+    payload = {
+        "suggestion_text": candidate.suggested_text,
+        "change_summary": [candidate.rationale] if candidate.rationale else [],
+        "used_anchor_ids": list(getattr(candidate, "evidence_anchor_ids", []) or []),
+        "used_rule_ids": sorted(ctx.rule_ids),
+        "missing_inputs": missing,
+        "unsupported_claim_warnings": warnings,
+        "factual_claims": declared_claims,
+        "character_count": char_count(candidate.suggested_text),
+        "character_limit": config.char_limit,
+        "character_limit_status": (
+            "within_limit"
+            if char_count(candidate.suggested_text) <= config.char_limit
+            else "exceeded"
+        ),
+        "language": ctx.language,
+    }
+    try:
+        validated_output = validate_payload(SUGGESTION_OUTPUT_SCHEMA, payload)
+    except (ValidationError, SchemaNotImplementedError):
+        return None, "suggestion_output_schema_invalid", grounding
+    return validated_output.model_dump(mode="json"), "", grounding
 
 
 def _proposal_contract_v2(
@@ -393,6 +506,10 @@ def run_a2_field_drafting(
     target_section: str | None = None,
     provider_resolver=None,
     model_preference: str = "primary",
+    improvement_mode: str = "clearer",
+    selected_anchor_ids: list[str] | None = None,
+    language: str | None = None,
+    manifest_mode: bool = False,
 ) -> A2Outcome:
     """Generate + validate + persist an advisory A2 suggestion for an A2-enabled field.
     Never raises. The field→profile/limit/markers binding comes from the registry."""
@@ -406,6 +523,10 @@ def run_a2_field_drafting(
             target_section=target_section,
             resolver=provider_resolver or _default_resolver(config, target_section),
             model_preference=model_preference,
+            improvement_mode=improvement_mode,
+            selected_anchor_ids=selected_anchor_ids or [],
+            language=language,
+            manifest_mode=manifest_mode,
         )
     except Exception:  # defensive: A2 must never break the request/run
         logger.exception("A2 field drafting crashed; run %s field %s", run.run_id, field_id)
@@ -433,7 +554,9 @@ def run_a2_solution_innovation(
 
 def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation_id,
          guidance, target_section, resolver,
-         model_preference: str = "primary") -> A2Outcome:
+         model_preference: str = "primary", improvement_mode: str = "clearer",
+         selected_anchor_ids: list[str] | None = None, language: str | None = None,
+         manifest_mode: bool = False) -> A2Outcome:
     field_id = config.field_id
     is_composite = bool(config.mandatory_markers)
     if (
@@ -469,8 +592,15 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         ctx = a2_context.assemble_a2_context(
             db, run, field_id=field_id, profile_id=config.profile_id,
             target_section=target_section, section_markers=config.mandatory_markers,
+            language=language, base_version_id=base_version_id,
+            improvement_mode=improvement_mode,
+            selected_anchor_ids=selected_anchor_ids or [],
+            manifest_mode=manifest_mode,
         )
-    except (a2_context.ContextBudgetError, SectionStructureError) as exc:
+    except (
+        a2_context.ContextBudgetError, a2_context.ContextSelectionError,
+        SectionStructureError,
+    ) as exc:
         reason = getattr(exc, "code", str(exc))
         _audit(db, run, "agent.field_drafting.skipped", field_id, {"reason": reason})
         return A2Outcome(status="skipped", reason=reason)
@@ -561,6 +691,67 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         routing_metadata_mismatch=validated.routing_mismatch,
     )
 
+    structured_output = None
+    grounding = suggestion_grounding.GroundingResult()
+    if manifest_mode:
+        structured_output, structured_reason, grounding = _structured_suggestion_output(
+            validated, ctx, config, generation_kind=result.generation_kind,
+        )
+        if structured_output is None:
+            # One bounded repair attempt through the same gateway request and
+            # route.  No provider switch and no fake fallback are introduced.
+            repair_request = replace(
+                request,
+                context_meta={
+                    **(request.context_meta or {}),
+                    "repair_attempt": 1,
+                    "repair_reason": structured_reason,
+                },
+            )
+            repaired = gateway.invoke(db, repair_request, provider_resolver=resolver)
+            if not isinstance(repaired, gateway.SafeFailure):
+                repaired_validated, repaired_reason = _validate_candidate(
+                    repaired.output, ctx, config, target_section, manifest
+                )
+                if repaired_validated is not None:
+                    repaired_output, repaired_structured_reason, repaired_grounding = (
+                        _structured_suggestion_output(
+                            repaired_validated, ctx, config,
+                            generation_kind=repaired.generation_kind,
+                        )
+                    )
+                    if repaired_output is not None:
+                        result = repaired
+                        validated = repaired_validated
+                        structured_output = repaired_output
+                        grounding = repaired_grounding
+                        structured_reason = ""
+                    else:
+                        structured_reason = repaired_structured_reason
+                else:
+                    structured_reason = repaired_reason
+            if structured_output is None:
+                logger.warning(
+                    "manifest suggestion validation failed run=%s field=%s reason=%s",
+                    run.run_id, field_id,
+                    structured_reason or "failed_grounding_validation",
+                )
+                controls.record(
+                    db, workspace_id=run.workspace_id, project_id=run.project_id,
+                    control_id="CTRL.OUTPUT_SCHEMA", status="failed",
+                    detail=structured_reason or "failed_grounding_validation",
+                    run_id=run.run_id, agent_invocation_id=result.invocation_id,
+                )
+                _audit(db, run, "agent.field_drafting.failed", field_id, {
+                    "reason": structured_reason or "failed_grounding_validation"
+                })
+                return A2Outcome(
+                    status="failed",
+                    reason=structured_reason or "failed_grounding_validation",
+                    invocation_id=result.invocation_id,
+                    claim_check=claim_check,
+                )
+
     cand = validated.candidate
     # Keep the established v1 result shape readable for existing views while
     # persisting the normalized v2 professional contract under a namespaced
@@ -569,6 +760,22 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     section_result["role_skill_contract_v2"] = _proposal_contract_v2(
         validated, config, target_section
     )
+    suggestion_manifest = None
+    if manifest_mode:
+        section_result["field_suggestion_output_v1"] = structured_output
+        section_result["server_claims"] = [
+            {
+                "claim_type": claim.claim_type,
+                "value_hash": suggestions_repo.content_hash(claim.value),
+                "grounded_anchor_ids": grounding.anchor_ids_by_claim.get(claim.value, []),
+            }
+            for claim in grounding.claims
+        ]
+        suggestion_manifest = a2_context.persist_suggestion_manifest(
+            db, run, ctx, base_version_id=base_version_id,
+            prompt_version=prompt_version_for(config.profile_id),
+            output_schema_version=SUGGESTION_OUTPUT_SCHEMA,
+        )
     suggestion = suggestions_repo.create(
         db, run, draft_id=draft_id, base_version_id=base_version_id, field_id=field_id,
         profile_id=config.profile_id, operation_id=operation_id,
@@ -594,7 +801,34 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         open_issue_ids=list(cand.open_issue_ids),
         placeholders=validated.placeholders,
         character_count=char_count(cand.suggested_text),
+        manifest_id=(suggestion_manifest.manifest_id if suggestion_manifest else None),
+        improvement_mode=(improvement_mode if manifest_mode else None),
+        change_summary=(structured_output or {}).get("change_summary", []),
+        used_rule_ids=(structured_output or {}).get("used_rule_ids", []),
+        missing_inputs=(structured_output or {}).get("missing_inputs", []),
+        unsupported_claim_warnings=(
+            structured_output or {}
+        ).get("unsupported_claim_warnings", []),
+        factual_claims=(structured_output or {}).get("factual_claims", []),
+        source_version_ids=sorted(ctx.source_version_ids),
+        market_comparison_id=ctx.market_comparison_id,
+        registry_version=(
+            suggestion_manifest.rule_registry_version if suggestion_manifest else None
+        ),
+        output_schema_version=(SUGGESTION_OUTPUT_SCHEMA if manifest_mode else None),
+        context_hash=(ctx.manifest_context_hash if manifest_mode else None),
+        quality_state=(
+            "needs_input" if (structured_output or {}).get("missing_inputs")
+            else "completed_with_warnings"
+            if (structured_output or {}).get("unsupported_claim_warnings")
+            else "completed"
+        ) if manifest_mode else None,
+        accept_mode="whole_suggestion_only" if manifest_mode else "legacy_partial",
     )
+    if manifest_mode:
+        suggestion.open_issue_ids = missing_input_service.sync_issues(
+            db, run, suggestion, suggestion.missing_inputs
+        )
     _audit(db, run, "agent.field_drafting.succeeded", field_id,
            {"suggestion_id": suggestion.suggestion_id,
             "character_count": suggestion.character_count,
@@ -629,6 +863,9 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
     warn = warnings if warnings is not None else (
         ["contains_placeholders"] if suggestion.placeholders else []
     )
+    stale_reason = suggestion_staleness.reason(db, run, suggestion)
+    if stale_reason and "suggestion_stale" not in warn:
+        warn = [*warn, "suggestion_stale"]
     invocation = (
         db.get(AgentInvocation, suggestion.agent_invocation_id)
         if suggestion.agent_invocation_id else None
@@ -699,6 +936,20 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
         "character_count": suggestion.character_count,
         "character_limit": config.char_limit if config else None,
         "warnings": warn,
+        "manifest_id": suggestion.manifest_id,
+        "improvement_mode": suggestion.improvement_mode,
+        "change_summary": list(suggestion.change_summary or []),
+        "used_rule_ids": list(suggestion.used_rule_ids or []),
+        "missing_inputs": list(suggestion.missing_inputs or []),
+        "unsupported_claim_warnings": list(
+            suggestion.unsupported_claim_warnings or []
+        ),
+        "source_version_ids": list(suggestion.source_version_ids or []),
+        "market_comparison_id": suggestion.market_comparison_id,
+        "context_hash": suggestion.context_hash,
+        "quality_state": suggestion.quality_state,
+        "stale_reason": stale_reason,
+        "accept_mode": suggestion.accept_mode,
         "section_result": suggestion.section_result_json,
         "research_sources": research_sources,
         # mode="json": datetime → ISO-String für die AsyncOperation-JSON-Spalte.

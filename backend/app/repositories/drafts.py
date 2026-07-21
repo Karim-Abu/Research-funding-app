@@ -337,6 +337,16 @@ def apply_update(
         db, run, draft, base_version_id=base_version_id, text=text,
         source_operation_id=source_operation_id,
     )
+    if (
+        source_suggestion is not None
+        and source_suggestion.accept_mode == "whole_suggestion_only"
+        and not exact_acceptance
+    ):
+        raise ProblemException(
+            status=422, code="whole_suggestion_required",
+            title="Unprocessable Entity",
+            detail="Dieser manifestgebundene Vorschlag kann nur vollständig übernommen werden.",
+        )
     final_text = text
     if source_suggestion is not None and source_suggestion.target_section is not None:
         config = a2_fields.resolve_field_config(draft.field_id)
