@@ -90,6 +90,43 @@ def test_unlabelled_bootstrap_inference_is_blocked_before_adapter(monkeypatch):
     assert ledger.actual_call_count == 0
 
 
+def test_primary_application_selection_uses_current_auto_assignment(monkeypatch):
+    module = _module()
+    monkeypatch.setattr(module, "_idem", lambda: "idem-primary")
+
+    class Response:
+        status_code = 200
+
+        def __init__(self, body):
+            self.body = body
+
+        def json(self):
+            return self.body
+
+    class Client:
+        put_payload = None
+
+        def get(self, path):
+            assert path == "/api/v1/projects/project-1"
+            return Response({"primary_application_source_id": "source-1"})
+
+        def put(self, path, *, json, headers):
+            assert path == "/api/v1/projects/project-1/primary-application"
+            assert headers["Idempotency-Key"] == "idem-primary"
+            self.put_payload = json
+            return Response({"primary_application_source_id": "source-1"})
+
+    client = Client()
+    result = module._select_current_primary_application(
+        client, "csrf", project_id="project-1", source_id="source-1"
+    )
+    assert result["primary_application_source_id"] == "source-1"
+    assert client.put_payload == {
+        "source_id": "source-1",
+        "expected_primary_source_id": "source-1",
+    }
+
+
 def test_anchor_approval_is_exact_scoped_and_needs_two_versions(tmp_path):
     module = _module()
     hashes = ["1" * 64, "2" * 64]

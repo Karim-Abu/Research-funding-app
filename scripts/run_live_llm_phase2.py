@@ -603,6 +603,25 @@ def _login(client: Any, email: str) -> str:
     return _expect(response, 200, "synthetic_login_failed")["csrf_token"]
 
 
+def _select_current_primary_application(
+    client: Any, csrf: str, *, project_id: str, source_id: str
+) -> dict[str, Any]:
+    """Select against the current value so auto-assignment remains idempotent."""
+    current = _expect(
+        client.get(f"/api/v1/projects/{project_id}"),
+        200,
+        "project_read_before_primary_selection_failed",
+    )
+    return _expect(client.put(
+        f"/api/v1/projects/{project_id}/primary-application",
+        json={
+            "source_id": source_id,
+            "expected_primary_source_id": current.get("primary_application_source_id"),
+        },
+        headers=_mut(csrf, idem=_idem()),
+    ), 200, "primary_application_select_failed")
+
+
 def _bootstrap_case(client: Any, csrf: str, *, label: str, text: str) -> dict[str, str]:
     classification = {
         "sensitivity": "public",
@@ -651,11 +670,9 @@ def _bootstrap_case(client: Any, csrf: str, *, label: str, text: str) -> dict[st
         },
         headers=_mut(csrf, idem=_idem()),
     ), 200, "primary_import_accept_failed")
-    _expect(client.put(
-        f"/api/v1/projects/{project_id}/primary-application",
-        json={"source_id": source_id, "expected_primary_source_id": None},
-        headers=_mut(csrf, idem=_idem()),
-    ), 200, "primary_application_select_failed")
+    _select_current_primary_application(
+        client, csrf, project_id=project_id, source_id=source_id
+    )
     confirmation = _expect(client.post(
         f"/api/v1/projects/{project_id}/processing-confirmations",
         json={
