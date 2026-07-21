@@ -282,10 +282,31 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
             " VALUES ('rp-rt', 'run-rt', 'prepare_documents', 'succeeded',"
             " '{}', '2026-01-01T00:00:00+00:00', '2026-01-01T00:00:00+00:00')"
         )
+        # RUN-3B-only External Evidence has deliberately no analysis run. The
+        # RUN-3A schema cannot represent it and the downgrade must remove only
+        # these new rows before restoring the old NOT NULL constraint.
+        con.execute(
+            "INSERT INTO evidence_anchors (anchor_id, run_id, project_id,"
+            " research_task_id, workspace_id, source_version_id, source_id,"
+            " source_name, source_type, fragment_id, quote, quote_hash,"
+            " match_type, normalizer_version, verification_status, scope,"
+            " created_at) VALUES ('anchor-3b-rt', NULL, 'p-rt', 'task-rt',"
+            " 'ws-m10', 'sv-ext-rt', 'src-ext-rt', 'Official source', 'url',"
+            " 'frag-ext-rt', 'Exact public passage', 'quote-hash-rt',"
+            " 'exact_normalized', 'nfc-ws-v1', 'human_verified', 'external',"
+            " '2026-01-01T00:00:00+00:00')"
+        )
+        con.execute(
+            "INSERT INTO evidence_links (evidence_link_id, run_id, workspace_id,"
+            " anchor_id, target_type, target_id, status, created_at) VALUES"
+            " ('link-3b-rt', NULL, 'ws-m10', 'anchor-3b-rt',"
+            " 'market_comparison_item', 'item-rt', 'active',"
+            " '2026-01-01T00:00:00+00:00')"
+        )
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive RUN-3A-Ebene. Alle vorherigen
+    # Down one entfernt nur die additive RUN-3B-Ebene. Alle vorherigen
     # Strukturen (inkl. Rollen-/Skill-, Recherchebrief- und
     # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
@@ -314,6 +335,16 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert not {
         "source_version_ids", "query_approval_ids", "stale_reason",
     } & _columns(db, "market_comparisons")
+    con = sqlite3.connect(db)
+    try:
+        assert con.execute(
+            "SELECT COUNT(*) FROM evidence_anchors WHERE anchor_id='anchor-3b-rt'"
+        ).fetchone() == (0,)
+        assert con.execute(
+            "SELECT COUNT(*) FROM evidence_links WHERE evidence_link_id='link-3b-rt'"
+        ).fetchone() == (0,)
+    finally:
+        con.close()
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
         db, "research_tasks"
     )

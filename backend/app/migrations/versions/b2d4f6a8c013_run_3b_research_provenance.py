@@ -101,6 +101,19 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # RUN 3A requires a run_id on every anchor/link. External research anchors
+    # introduced by RUN 3B are deliberately not analysis-run evidence and
+    # therefore cannot be represented below this revision. Remove only those
+    # RUN-3B-only rows; source documents, versions and older run evidence stay.
+    connection = op.get_bind()
+    connection.execute(sa.text(
+        "DELETE FROM evidence_links WHERE run_id IS NULL OR anchor_id IN "
+        "(SELECT anchor_id FROM evidence_anchors WHERE run_id IS NULL)"
+    ))
+    connection.execute(sa.text(
+        "DELETE FROM evidence_anchors WHERE run_id IS NULL"
+    ))
+
     with op.batch_alter_table("market_comparison_items") as batch:
         batch.drop_column("uncertainty")
         batch.drop_column("cell_evidence")
