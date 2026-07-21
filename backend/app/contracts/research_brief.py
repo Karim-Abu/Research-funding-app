@@ -4,7 +4,12 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
+
+from app.research.text_normalization import (
+    normalize_research_text,
+    normalize_research_text_list,
+)
 
 ResearchModule = Literal[
     "market_growth",
@@ -17,12 +22,34 @@ BriefListValue = Annotated[str, Field(max_length=120)]
 
 
 class ResearchBriefInput(BaseModel):
-    application_domain: str = Field(max_length=120)
-    technology_class: str = Field(max_length=120)
+    research_goal: str = Field(default="", max_length=500)
+    search_tags: list[BriefListValue] = Field(default_factory=list, max_length=12)
+    application_domain: str = Field(default="", max_length=120)
+    technology_class: str = Field(default="", max_length=120)
     target_customer_segments: list[BriefListValue] = Field(default_factory=list, max_length=8)
     region: str = Field(default="", max_length=80)
     competence_needs: list[BriefListValue] = Field(default_factory=list, max_length=12)
     modules: list[ResearchModule] = Field(default_factory=list, min_length=1)
+
+    @model_validator(mode="before")
+    @classmethod
+    def normalize_text_boundaries(cls, value):
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        for field_name in (
+            "research_goal", "application_domain", "technology_class", "region",
+        ):
+            normalized[field_name] = normalize_research_text(
+                normalized.get(field_name, "")
+            )
+        for field_name in (
+            "search_tags", "target_customer_segments", "competence_needs",
+        ):
+            normalized[field_name] = normalize_research_text_list(
+                normalized.get(field_name, [])
+            )
+        return normalized
 
 
 class ResearchBriefView(ResearchBriefInput):

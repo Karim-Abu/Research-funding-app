@@ -159,16 +159,10 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     await expect(page.getByTestId("research-brief-form")).toBeVisible({
       timeout: 20_000,
     })
-    // Pflichtfelder public-safe ausfüllen (nur generische Begriffe — keine
-    // Rohidee, keine Partnernamen): der Brief bleibt menschlich geprüft.
-    await page.getByLabel("Anwendungsdomäne").fill("Energiemanagement")
-    await page.getByLabel("Technologieklasse").fill("Prognosesoftware")
+    // Vereinfachtes public-safe Ziel (keine Rohidee, Partnernamen oder Budgets).
     await page
-      .getByLabel("Zielkundensegmente (kommagetrennt)")
-      .fill("Verteilnetzbetreiber, Stadtwerke")
-    await page
-      .getByLabel("Gesuchte Forschungs-/Partnerkompetenzen (kommagetrennt)")
-      .fill("Energiedatenanalyse")
+      .getByLabel("Recherchefrage / Ziel")
+      .fill("Prognosesoftware für Energiemanagement bei Schweizer Verteilnetzbetreibern")
     await page.getByRole("button", { name: "Public-safe Brief freigeben" }).click()
     await expect(page.getByText(/Brief v\d+ freigegeben/)).toBeVisible({
       timeout: 20_000,

@@ -1530,6 +1530,11 @@ class ProviderPreflightResult(Base):
     status: Mapped[str] = mapped_column(String, nullable=False)
     checks_json: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     error_class: Mapped[str | None] = mapped_column(String, nullable=True)
+    reason_code: Mapped[str | None] = mapped_column(String, nullable=True)
+    retryable: Mapped[bool] = mapped_column(nullable=False, default=False)
+    configuration_fingerprint: Mapped[str | None] = mapped_column(String, nullable=True)
+    registry_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    pricing_version: Mapped[str | None] = mapped_column(String, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(nullable=True)
     triggered_by: Mapped[str | None] = mapped_column(String, nullable=True)
     checked_at: Mapped[datetime] = mapped_column(
@@ -1752,6 +1757,8 @@ class ResearchBrief(Base):
     version: Mapped[int] = mapped_column(nullable=False)
     # draft | approved | superseded
     status: Mapped[str] = mapped_column(String, nullable=False, default="draft")
+    research_goal: Mapped[str] = mapped_column(String, nullable=False, default="")
+    search_tags: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
     application_domain: Mapped[str] = mapped_column(String, nullable=False, default="")
     technology_class: Mapped[str] = mapped_column(String, nullable=False, default="")
     target_customer_segments: Mapped[list] = mapped_column(

@@ -19,6 +19,7 @@ im Report — nur Status, Codes und Modell-IDs.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import uuid
@@ -39,7 +40,11 @@ from app.agents.providers.openai import OpenAIProvider
 from app.agents.registry import AgentRegistry, get_agent_registry
 from app.config.settings import Settings, get_settings
 from app.db.models import ProviderPreflightResult
-from app.evaluation.pricing import COST_STATUS_PRICED, resolve_cost
+from app.evaluation.pricing import (
+    COST_STATUS_PRICED,
+    PRICE_TABLE_VERSION,
+    resolve_cost,
+)
 
 PASS = "pass"
 FAIL = "fail"
@@ -99,6 +104,7 @@ class ProviderPreflight:
     actual_model_id: str | None = None
     latency_ms: int | None = None
     error_class: str | None = None
+    retryable: bool = False
 
     @property
     def status(self) -> str:
@@ -137,6 +143,66 @@ def classify_provider_error(message: str) -> tuple[str, str]:
         "Der Provider-Aufruf ist fehlgeschlagen (keine HTTP-Statusangabe). "
         "Netzwerk/Konfiguration prüfen."
     )
+
+
+def _retryable_reason(reason_code: str | None) -> bool:
+    return reason_code in {
+        "rate_limited", "provider_outage", "timeout", "provider_unavailable",
+    }
+
+
+@dataclass(frozen=True)
+class ReadinessAssessment:
+    status: str
+    reason_code: str | None = None
+    retryable: bool = False
+
+
+def configuration_fingerprint(
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> str:
+    """Hash only non-secret configuration that determines preflight validity."""
+    settings = settings or get_settings()
+    registry = registry or get_agent_registry()
+    if route_key == "firecrawl":
+        payload = {
+            "route_key": route_key,
+            "mode": firecrawl_mode(settings),
+            "key_present": bool(settings.firecrawl_api_key),
+            "registry_version": settings.agent_registry_version,
+        }
+    else:
+        route = registry.route(route_key)
+        requested = route.requested_model_id(settings)
+        cost = resolve_cost(
+            provider=route.provider,
+            model_id=requested,
+            input_tokens=0,
+            output_tokens=0,
+            settings=settings,
+        ) if requested else None
+        payload = {
+            "route_key": route_key,
+            "route_alias": route.alias,
+            "provider": route.provider,
+            "requested_model_id": requested,
+            "evaluation_only": route.evaluation_only,
+            "quality_ceiling_enabled": settings.agent_quality_ceiling_enabled,
+            "key_present": _provider_key_present(route.provider, settings),
+            "registry_version": settings.agent_registry_version,
+            "pricing_version": (
+                cost.price_version if cost and cost.price_version
+                else PRICE_TABLE_VERSION
+            ),
+            "cost_status": cost.cost_status if cost else "unknown_price",
+        }
+    encoded = json.dumps(
+        payload, ensure_ascii=True, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
 
 
 def preflight_route(
@@ -212,6 +278,7 @@ def preflight_route(
         ping = adapter.generate(request)
     except ProviderError as exc:
         result.error_class = exc.code
+        result.retryable = exc.retryable
         result.checks.append(PreflightCheck(
             "api_reachable", FAIL, f"[{exc.code}] Provider-Aufruf fehlgeschlagen.",
         ))
@@ -253,17 +320,40 @@ def persist_route_preflight(
     settings = settings or get_settings()
     now = datetime.now(timezone.utc)
     route_key = result.route_key or "unknown"
+    registry = get_agent_registry()
     try:
-        route_alias = get_agent_registry().route(route_key).alias
+        route_alias = registry.route(route_key).alias
     except Exception:  # pragma: no cover - malformed registry fails at startup
         route_alias = route_key
+    pricing_version = PRICE_TABLE_VERSION
+    if route_key != "firecrawl":
+        try:
+            route = registry.route(route_key)
+            cost = resolve_cost(
+                provider=route.provider,
+                model_id=result.requested_model_id,
+                input_tokens=0,
+                output_tokens=0,
+                settings=settings,
+            )
+            pricing_version = cost.price_version or PRICE_TABLE_VERSION
+        except Exception:  # pragma: no cover - invalid registry fails elsewhere
+            pricing_version = PRICE_TABLE_VERSION
     row = ProviderPreflightResult(
         preflight_id=str(uuid.uuid4()), route_key=route_key,
         route_alias=route_alias, provider=result.provider,
         requested_model_id=result.requested_model_id,
         actual_model_id=result.actual_model_id, status=result.status,
         checks_json=[{"name": c.name, "status": c.status, "detail": c.detail} for c in result.checks],
-        error_class=result.error_class, latency_ms=result.latency_ms,
+        error_class=result.error_class,
+        reason_code=result.error_class,
+        retryable=result.retryable,
+        configuration_fingerprint=configuration_fingerprint(
+            route_key, settings=settings, registry=registry
+        ),
+        registry_version=settings.agent_registry_version,
+        pricing_version=pricing_version,
+        latency_ms=result.latency_ms,
         triggered_by=triggered_by, checked_at=now,
         expires_at=now + timedelta(seconds=settings.provider_preflight_ttl_seconds),
     )
@@ -332,30 +422,71 @@ def route_preflight_reason(
     settings: Settings | None = None,
     registry: AgentRegistry | None = None,
 ) -> str | None:
-    """None only for a configured, fresh preflight of the current model ID."""
+    """Compatibility reason: None only when the derived route status is ready."""
+    readiness = route_readiness(
+        db, route_key, settings=settings, registry=registry
+    )
+    return None if readiness.status == "ready" else readiness.reason_code
+
+
+def route_readiness(
+    db: Session | None,
+    route_key: str,
+    *,
+    settings: Settings | None = None,
+    registry: AgentRegistry | None = None,
+) -> ReadinessAssessment:
+    """Derive route truth from config plus its matching persisted preflight."""
     settings = settings or get_settings()
     registry = registry or get_agent_registry()
     configured_reason = route_configuration_reason(
         route_key, settings=settings, registry=registry
     )
     if configured_reason:
-        return configured_reason
+        if configured_reason == LIVE_FAKE_CONFLICT:
+            return ReadinessAssessment("error", configured_reason, False)
+        if configured_reason in {
+            "live_eval_mode_disabled", "live_route_evaluation_disabled",
+        }:
+            return ReadinessAssessment("disabled", configured_reason, False)
+        return ReadinessAssessment("not_configured", configured_reason, False)
+    if db is None or not hasattr(db, "scalar"):
+        return ReadinessAssessment(
+            "configured_unverified", "live_preflight_required", False
+        )
     requested = registry.route(route_key).requested_model_id(settings)
     row = latest_route_preflight(db, route_key)
     if row is None:
-        return "live_preflight_required"
-    if row.status != PASS:
-        return "live_preflight_failed"
+        return ReadinessAssessment(
+            "configured_unverified", "live_preflight_required", False
+        )
     if row.requested_model_id != requested:
-        return "live_preflight_stale_model"
+        return ReadinessAssessment(
+            "configured_unverified", "live_preflight_stale_model", False
+        )
+    expected_fingerprint = configuration_fingerprint(
+        route_key, settings=settings, registry=registry
+    )
+    if row.configuration_fingerprint != expected_fingerprint:
+        return ReadinessAssessment(
+            "configured_unverified", "live_preflight_stale_configuration", False
+        )
+    if row.status != PASS:
+        reason = row.reason_code or row.error_class or "live_preflight_failed"
+        retryable = bool(row.retryable) or _retryable_reason(reason)
+        return ReadinessAssessment(
+            "degraded" if retryable else "error", reason, retryable
+        )
     if not row.actual_model_id:
-        return "live_actual_model_missing"
+        return ReadinessAssessment("error", "live_actual_model_missing", False)
     expires = row.expires_at
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     if expires <= datetime.now(timezone.utc):
-        return "live_preflight_expired"
-    return None
+        return ReadinessAssessment(
+            "configured_unverified", "live_preflight_expired", False
+        )
+    return ReadinessAssessment("ready")
 
 
 def route_preflight_passed(
@@ -536,6 +667,8 @@ def preflight_agent_provider(
     try:
         ping = adapter.generate(request)
     except ProviderTimeout:
+        result.error_class = "timeout"
+        result.retryable = True
         result.checks.append(
             PreflightCheck(
                 "api_reachable", FAIL,
@@ -546,6 +679,8 @@ def preflight_agent_provider(
         return result
     except (ProviderError, ProviderUnavailable) as exc:
         code, text = classify_provider_error(str(exc))
+        result.error_class = code
+        result.retryable = getattr(exc, "retryable", False) or _retryable_reason(code)
         failed = "model_available" if code == "model_unavailable" else "api_reachable"
         result.checks.append(PreflightCheck(failed, FAIL, f"[{code}] {text}"))
         if code == "rate_limited":
@@ -610,26 +745,49 @@ def firecrawl_mode(settings: Settings) -> str:
 def firecrawl_preflight_reason(
     db: Session | None, settings: Settings
 ) -> str | None:
+    readiness = firecrawl_readiness(db, settings)
+    return None if readiness.status == "ready" else readiness.reason_code
+
+
+def firecrawl_readiness(
+    db: Session | None, settings: Settings
+) -> ReadinessAssessment:
     mode = firecrawl_mode(settings)
     if mode == "disabled":
-        return "web_research_disabled"
+        return ReadinessAssessment("disabled", "web_research_disabled", False)
     if mode == "fake":
-        return "web_research_demo"
+        return ReadinessAssessment("fake", "web_research_demo", False)
     if mode != "live":
-        return "firecrawl_key_missing"
+        return ReadinessAssessment("not_configured", "firecrawl_key_missing", False)
     if db is None or not hasattr(db, "scalar"):
-        return "firecrawl_preflight_required"
+        return ReadinessAssessment(
+            "configured_unverified", "firecrawl_preflight_required", False
+        )
     row = latest_route_preflight(db, "firecrawl")
     if row is None:
-        return "firecrawl_preflight_required"
+        return ReadinessAssessment(
+            "configured_unverified", "firecrawl_preflight_required", False
+        )
+    if row.configuration_fingerprint != configuration_fingerprint(
+        "firecrawl", settings=settings
+    ):
+        return ReadinessAssessment(
+            "configured_unverified", "firecrawl_preflight_stale_configuration", False
+        )
     if row.status != PASS:
-        return "firecrawl_preflight_failed"
+        reason = row.reason_code or row.error_class or "firecrawl_preflight_failed"
+        retryable = bool(row.retryable) or _retryable_reason(reason)
+        return ReadinessAssessment(
+            "degraded" if retryable else "error", reason, retryable
+        )
     expires = row.expires_at
     if expires.tzinfo is None:
         expires = expires.replace(tzinfo=timezone.utc)
     if expires <= datetime.now(timezone.utc):
-        return "firecrawl_preflight_expired"
-    return None
+        return ReadinessAssessment(
+            "configured_unverified", "firecrawl_preflight_expired", False
+        )
+    return ReadinessAssessment("ready")
 
 
 def preflight_firecrawl(
@@ -683,6 +841,7 @@ def preflight_firecrawl(
         )
     except CreditExceeded:
         result.error_class = "rate_limited"
+        result.retryable = True
         result.checks.append(
             PreflightCheck(
                 "rate_limit_clarity", PASS,
@@ -701,6 +860,9 @@ def preflight_firecrawl(
     except (WebProviderError, WebProviderTimeout, WebProviderUnavailable) as exc:
         code, text = classify_provider_error(str(exc))
         result.error_class = code
+        result.retryable = isinstance(
+            exc, (WebProviderTimeout, WebProviderUnavailable)
+        ) or _retryable_reason(code)
         result.checks.append(PreflightCheck("api_reachable", FAIL, f"[{code}] {text}"))
         result.checks = _not_run_rest(result.checks, "API nicht erreichbar.")
         return result

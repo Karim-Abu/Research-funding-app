@@ -31,6 +31,28 @@ def test_live_status_is_metadata_only(client):
     assert "preflight connectivity check" not in encoded
     assert "api_key" not in encoded
     assert all("requested_model_id" in route for route in body["routes"])
+    assert all(
+        route["readiness_status"] in {
+            "disabled", "fake", "not_configured", "configured_unverified",
+            "ready", "degraded", "error",
+        }
+        for route in body["routes"]
+    )
+    assert "reason_code" in body["firecrawl"]
+    assert "retryable" in body["firecrawl"]
+
+
+def test_run_3a_openapi_contract_is_additive(client):
+    schema = client.app.openapi()
+    capabilities = schema["components"]["schemas"]["Capabilities"]
+    assert "feature_readiness" in capabilities["properties"]
+    feature = schema["components"]["schemas"]["FeatureReadiness"]
+    assert set(feature["properties"]["status"]["enum"]) == {
+        "disabled", "fake", "not_configured", "configured_unverified",
+        "ready", "degraded", "error",
+    }
+    brief = schema["components"]["schemas"]["ResearchBriefInput"]
+    assert {"research_goal", "search_tags"} <= set(brief["properties"])
 
 
 def test_preflight_requires_csrf_and_never_calls_without_keys(client):

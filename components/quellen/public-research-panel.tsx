@@ -31,6 +31,11 @@ import { discardResearchResult, importResearchResult } from "@/lib/research"
 import { createUrlSource } from "@/lib/sources"
 import type { DataClassification } from "@/lib/data-classification"
 import type { DataClass } from "@/lib/types"
+import {
+  normalizeResearchText,
+  parseSearchTags,
+  unicodeLength,
+} from "@/lib/research-text"
 
 const MODULES: ResearchModule[] = [
   "market_growth",
@@ -45,35 +50,16 @@ const PUBLIC_SOURCE_CLASSIFICATION: DataClassification = {
   web_research_mode: "validated_public",
   nda_applies: false,
 }
-const FIELD_EXAMPLES = {
-  application_domain: "Schweizer Gesundheitsdatenaustausch",
-  technology_class: "dezentrale Zugriffssteuerung / Audit Trail / DLT",
-  target_customer_segments: "medizinische Labore, Arztpraxen, Spitäler, Health-IT-Anbieter",
-  region: "Schweiz / DACH",
-  competence_needs: "Healthcare Cybersecurity, Interoperabilität, Distributed Systems, Data Governance",
-} as const
-const GENERIC_CUSTOMER_WORDS = new Set([
-  "unternehmer", "unternehmen", "kunde", "kunden", "kundschaft", "kmu",
-  "organisation", "organisationen", "nutzer", "anwender",
-])
-const REGION_WORDS = new Set([
-  "schweiz", "schweizer", "schweizerisch", "schweizerische",
-  "schweizerischer", "schweizerischen", "swiss",
-])
-const GENERIC_COMPETENCE_WORDS = new Set([
-  "eth", "epfl", "universität", "universitaet", "hochschule", "fachhochschule",
-  "institut", "kompetenzzentrum", "competence", "center", "centre",
-])
+const RESEARCH_GOAL_EXAMPLE =
+  "KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)"
 
-type BriefFieldKey =
-  | "application_domain"
-  | "technology_class"
-  | "target_customer_segments"
-  | "competence_needs"
+type BriefFieldKey = "research_goal" | "search_tags"
 type BriefFieldErrors = Partial<Record<BriefFieldKey, string>>
 
 function formOf(brief: ResearchBriefDto): ResearchBriefInput {
   return {
+    research_goal: brief.research_goal ?? "",
+    search_tags: [...(brief.search_tags ?? [])],
     application_domain: brief.application_domain,
     technology_class: brief.technology_class,
     target_customer_segments: [...brief.target_customer_segments],
@@ -98,65 +84,16 @@ function approvalsOf(rows: ResearchQueryDto[]): ApprovalQuery[] {
   }))
 }
 
-function words(value: string): string[] {
-  return value.toLocaleLowerCase("de-CH").match(/[\p{L}\p{N}]+/gu) ?? []
-}
-
-function comparisonKey(value: string): string {
-  return words(value).join("")
-}
-
-function genericCustomer(value: string): boolean {
-  const meaningful = words(value).filter((word) => !REGION_WORDS.has(word))
-  return meaningful.length === 0 || meaningful.every((word) => GENERIC_CUSTOMER_WORDS.has(word))
-}
-
-function concreteCompetence(value: string): boolean {
-  const trimmed = value.trim()
-  if (!trimmed || /^[A-ZÄÖÜ0-9]{2,10}$/.test(trimmed)) return false
-  const meaningful = words(trimmed)
-  return meaningful.length > 0 && !meaningful.every((word) => GENERIC_COMPETENCE_WORDS.has(word))
-}
-
 function approvalErrors(form: ResearchBriefInput): BriefFieldErrors {
   const errors: BriefFieldErrors = {}
-  if (!form.application_domain.trim()) {
-    errors.application_domain = "Bitte einen konkreten Anwendungsbereich angeben."
+  const goal = normalizeResearchText(form.research_goal ?? "")
+  if (!goal) {
+    errors.research_goal = "Bitte eine öffentliche Recherchefrage oder ein Ziel angeben."
+  } else if (unicodeLength(goal) > 500) {
+    errors.research_goal = "Die Recherchefrage darf höchstens 500 Zeichen enthalten."
   }
-  if (!form.technology_class.trim()) {
-    errors.technology_class = "Bitte eine Technologieklasse oder ein technisches Prinzip angeben."
-  }
-  if (
-    form.application_domain.trim()
-    && form.technology_class.trim()
-    && comparisonKey(form.application_domain) === comparisonKey(form.technology_class)
-  ) {
-    const message = "Anwendungsdomäne und Technologieklasse müssen unterschiedlich sein."
-    errors.application_domain = message
-    errors.technology_class = message
-  }
-  const hasMarketModule = form.modules.some((module) =>
-    module === "market_growth" || module === "competition_alternatives"
-  )
-  if (
-    hasMarketModule
-    && (
-      form.target_customer_segments.length === 0
-      || form.target_customer_segments.every(genericCustomer)
-    )
-  ) {
-    errors.target_customer_segments =
-      "Bitte mindestens ein konkretes Kundensegment statt nur Kunden, KMU oder Unternehmen angeben."
-  }
-  if (
-    form.modules.includes("swiss_research_partners")
-    && (
-      form.competence_needs.length === 0
-      || !form.competence_needs.some(concreteCompetence)
-    )
-  ) {
-    errors.competence_needs =
-      "Bitte mindestens eine konkrete Fachkompetenz statt nur eines Organisationsnamens angeben."
+  if ((form.search_tags ?? []).some((tag) => unicodeLength(tag) > 120)) {
+    errors.search_tags = "Ein Suchbegriff darf höchstens 120 Zeichen enthalten."
   }
   return errors
 }
@@ -183,6 +120,7 @@ export function PublicResearchPanel({
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [fieldErrors, setFieldErrors] = React.useState<BriefFieldErrors>({})
+  const [searchTagsDraft, setSearchTagsDraft] = React.useState("")
   const [manualUrl, setManualUrl] = React.useState("")
   const [manualTitle, setManualTitle] = React.useState("")
   const [manualContent, setManualContent] = React.useState("")
@@ -190,7 +128,11 @@ export function PublicResearchPanel({
   const refresh = React.useCallback(async () => {
     const next = await getResearchWorkspace(projectId)
     setWorkspace(next)
-    if (next.brief.latest) setForm(formOf(next.brief.latest))
+    if (next.brief.latest) {
+      const nextForm = formOf(next.brief.latest)
+      setForm(nextForm)
+      setSearchTagsDraft(nextForm.search_tags?.join(", ") ?? "")
+    }
     setQueries(approvalsOf(next.queries))
   }, [projectId])
 
@@ -229,11 +171,17 @@ export function PublicResearchPanel({
 
   const approveBrief = () => {
     if (!form) return
-    const nextErrors = approvalErrors(form)
+    const committed = {
+      ...form,
+      research_goal: normalizeResearchText(form.research_goal ?? ""),
+      region: normalizeResearchText(form.region),
+      search_tags: parseSearchTags(searchTagsDraft),
+    }
+    const nextErrors = approvalErrors(committed)
     setFieldErrors(nextErrors)
     if (Object.keys(nextErrors).length > 0) return
     void act(async () => {
-      const saved = await saveResearchBrief(projectId, form)
+      const saved = await saveResearchBrief(projectId, committed)
       await approveResearchBrief(saved.research_brief_id)
     })
   }
@@ -267,7 +215,13 @@ export function PublicResearchPanel({
     .map(({ query }) => query)
   const visibleResults = (workspace?.results ?? []).filter((row) => row.module === activeModule)
   const demo = workspace?.provider_mode === "fake_demo"
-  const briefFieldsDisabled = brief?.status === "approved" && !editingApproved
+  const editableBrief = brief?.status === "draft" || editingApproved
+  const committedForm = (): ResearchBriefInput | null => form && ({
+    ...form,
+    research_goal: normalizeResearchText(form.research_goal ?? ""),
+    region: normalizeResearchText(form.region),
+    search_tags: parseSearchTags(searchTagsDraft),
+  })
 
   return (
     <section className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
@@ -290,17 +244,20 @@ export function PublicResearchPanel({
         </Button>
       )}
 
-      {brief && form && (
+      {brief && form && editableBrief && (
         <div className="mt-4 space-y-3" data-testid="research-brief-form">
           <h4 className="text-sm font-semibold">Was soll öffentlich recherchiert werden?</h4>
           <div className="grid gap-3 md:grid-cols-2">
-            <BriefField label="Anwendungsdomäne" value={form.application_domain} onChange={(value) => { setForm({ ...form, application_domain: value }); setFieldErrors((current) => ({ ...current, application_domain: undefined })) }} disabled={briefFieldsDisabled} example={FIELD_EXAMPLES.application_domain} help={!form.application_domain.trim() ? "In welchem konkreten Anwendungsbereich soll recherchiert werden?" : undefined} error={fieldErrors.application_domain} />
-            <BriefField label="Technologieklasse" value={form.technology_class} onChange={(value) => { setForm({ ...form, technology_class: value }); setFieldErrors((current) => ({ ...current, technology_class: undefined })) }} disabled={briefFieldsDisabled} example={FIELD_EXAMPLES.technology_class} help={!form.technology_class.trim() ? "Welche Technologieklasse oder welches technische Prinzip soll verglichen werden?" : undefined} error={fieldErrors.technology_class} />
-            <BriefField label="Zielkundensegmente (kommagetrennt)" value={form.target_customer_segments.join(", ")} onChange={(value) => { setForm({ ...form, target_customer_segments: split(value) }); setFieldErrors((current) => ({ ...current, target_customer_segments: undefined })) }} disabled={briefFieldsDisabled} example={FIELD_EXAMPLES.target_customer_segments} help={form.target_customer_segments.length === 0 ? "Welche konkreten Organisationstypen entscheiden, nutzen oder bezahlen?" : undefined} error={fieldErrors.target_customer_segments} />
-            <BriefField label="Region" value={form.region} onChange={(value) => setForm({ ...form, region: value })} disabled={briefFieldsDisabled} example={FIELD_EXAMPLES.region} />
-            <BriefField label="Gesuchte Forschungs-/Partnerkompetenzen (kommagetrennt)" value={form.competence_needs.join(", ")} onChange={(value) => { setForm({ ...form, competence_needs: split(value) }); setFieldErrors((current) => ({ ...current, competence_needs: undefined })) }} disabled={briefFieldsDisabled} example={FIELD_EXAMPLES.competence_needs} help={form.competence_needs.length === 0 ? "Welche konkrete fachliche Kompetenz fehlt für die Partnersuche?" : undefined} error={fieldErrors.competence_needs} />
+            <BriefField label="Recherchefrage / Ziel" value={form.research_goal ?? ""} onChange={(value) => { setForm({ ...form, research_goal: value }); setFieldErrors((current) => ({ ...current, research_goal: undefined })) }} disabled={busy} example={RESEARCH_GOAL_EXAMPLE} help="Nur öffentliche, allgemeine Begriffe verwenden; interne Projekt- oder Partnerdaten gehören nicht hierher." error={fieldErrors.research_goal} multiline />
+            <BriefField label="Region" value={form.region} onChange={(value) => setForm({ ...form, region: value })} disabled={busy} example="Schweiz / DACH" />
           </div>
-          <fieldset disabled={briefFieldsDisabled}>
+          <details className="rounded border border-border/70 p-3">
+            <summary className="cursor-pointer text-xs font-medium">Optionale Suchbegriffe</summary>
+            <div className="mt-2">
+              <BriefField label="Suchbegriffe (kommagetrennt)" value={searchTagsDraft} onChange={(value) => { setSearchTagsDraft(value); setFieldErrors((current) => ({ ...current, search_tags: undefined })) }} disabled={busy} help="Beim Speichern werden Begriffe als Tags übernommen; Leerzeichen und Satzzeichen im Begriff bleiben erhalten." error={fieldErrors.search_tags} />
+            </div>
+          </details>
+          <fieldset disabled={busy}>
             <legend className="text-xs font-medium">Recherchemodule</legend>
             <div className="mt-1 flex flex-wrap gap-2">
               {MODULES.map((module) => <label key={module} className="flex items-center gap-1 rounded border px-2 py-1 text-xs"><input type="checkbox" checked={form.modules.includes(module)} onChange={(event) => setForm({ ...form, modules: event.target.checked ? [...form.modules, module] : form.modules.filter((item) => item !== module) })} />{RESEARCH_MODULE_LABELS[module]}</label>)}
@@ -308,17 +265,22 @@ export function PublicResearchPanel({
           </fieldset>
           <div className="flex flex-wrap gap-2">
             {brief.status === "draft" ? <>
-              <Button variant="outline" disabled={busy} onClick={() => void act(() => saveResearchBrief(projectId, form))}>Entwurf speichern</Button>
+              <Button variant="outline" disabled={busy} onClick={() => { const payload = committedForm(); if (payload) void act(() => saveResearchBrief(projectId, payload)) }}>Entwurf speichern</Button>
               <Button disabled={busy} onClick={approveBrief}>Public-safe Brief freigeben</Button>
-            </> : editingApproved ? <>
-              <Button variant="outline" disabled={busy} onClick={() => { setForm(formOf(brief)); setEditingApproved(false) }}>Abbrechen</Button>
-              <Button disabled={busy} onClick={() => void act(async () => { await saveResearchBrief(projectId, form); setEditingApproved(false) })}>Neue Briefversion speichern</Button>
             </> : <>
-              <Badge>Brief v{brief.version} freigegeben</Badge>
-              <Button variant="outline" disabled={busy} onClick={() => setEditingApproved(true)}>Brief ändern</Button>
-              <Button variant="outline" disabled={busy || queryRows.some((row) => row.research_brief_id === brief.research_brief_id)} onClick={() => void act(() => planResearchQueries(brief.research_brief_id))}>Queries erzeugen</Button>
+              <Button variant="outline" disabled={busy} onClick={() => { const reset = formOf(brief); setForm(reset); setSearchTagsDraft(reset.search_tags?.join(", ") ?? ""); setEditingApproved(false) }}>Abbrechen</Button>
+              <Button disabled={busy} onClick={() => { const payload = committedForm(); if (payload) void act(async () => { await saveResearchBrief(projectId, payload); setEditingApproved(false) }) }}>Neue Briefversion speichern</Button>
             </>}
           </div>
+        </div>
+      )}
+
+      {brief && form && !editableBrief && (
+        <div className="mt-4 flex flex-wrap items-center gap-2 rounded border border-border/70 p-3 text-xs">
+          <Badge>Brief v{brief.version} freigegeben</Badge>
+          <span className="min-w-0 flex-1 text-muted-foreground">{brief.research_goal || "Legacy-Recherchebrief"}{brief.region ? ` · ${brief.region}` : ""}</span>
+          <Button variant="outline" disabled={busy} onClick={() => setEditingApproved(true)}>Brief ändern</Button>
+          <Button variant="outline" disabled={busy || queryRows.some((row) => row.research_brief_id === brief.research_brief_id)} onClick={() => void act(() => planResearchQueries(brief.research_brief_id))}>Queries erzeugen</Button>
         </div>
       )}
 
@@ -410,10 +372,6 @@ function eligibilityLabel(value: string): string {
   return ({ eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert", likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt", needs_human_check: "Kein belastbarer Nachweis – menschlich prüfen", candidate_not_eligibility_confirmed: "Kein belastbarer Nachweis – menschlich prüfen" } as Record<string, string>)[value] ?? "Kein belastbarer Nachweis – menschlich prüfen"
 }
 
-function split(value: string): string[] {
-  return value.split(",").map((item) => item.trim()).filter(Boolean)
-}
-
 function BriefField({
   label,
   value,
@@ -422,6 +380,7 @@ function BriefField({
   example,
   help,
   error,
+  multiline = false,
 }: {
   label: string
   value: string
@@ -430,12 +389,13 @@ function BriefField({
   example?: string
   help?: string
   error?: string
+  multiline?: boolean
 }) {
   const id = React.useId()
   const descriptionId = `${id}-description`
   return <div>
     <Label htmlFor={id}>{label}</Label>
-    <Input id={id} value={value} disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={(example || help || error) ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} />
+    {multiline ? <Textarea id={id} value={value} disabled={disabled} rows={3} aria-invalid={Boolean(error)} aria-describedby={(example || help || error) ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} /> : <Input id={id} value={value} disabled={disabled} aria-invalid={Boolean(error)} aria-describedby={(example || help || error) ? descriptionId : undefined} onChange={(event) => onChange(event.target.value)} />}
     {(example || help || error) && <div id={descriptionId} className="mt-1 space-y-0.5 text-xs">
       {example && <p className="text-muted-foreground">Beispiel: {example}</p>}
       {help && <p className="text-primary">{help}</p>}

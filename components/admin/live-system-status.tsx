@@ -20,6 +20,16 @@ const PREFLIGHT_LABEL = {
   not_run: "Nicht durchgeführt",
 } as const
 
+const READINESS_LABEL = {
+  disabled: "Deaktiviert",
+  fake: "Demo",
+  not_configured: "Nicht konfiguriert",
+  configured_unverified: "Konfiguriert, ungeprüft",
+  ready: "Bereit",
+  degraded: "Eingeschränkt",
+  error: "Fehler",
+} as const
+
 const GENERATION_LABEL = {
   real_eval: "Live-KI verfügbar",
   fake_demo: "Demo",
@@ -118,6 +128,7 @@ export function LiveSystemStatus() {
                   <th className="py-2 pr-3">Provider</th>
                   <th className="py-2 pr-3">Angefragt</th>
                   <th className="py-2 pr-3">Tatsächlich</th>
+                  <th className="py-2 pr-3">Readiness</th>
                   <th className="py-2 pr-3">Preflight</th>
                   <th className="py-2 pr-3">Zuletzt geprüft</th>
                   <th className="py-2 pr-3">Kostenstatus</th>
@@ -134,6 +145,11 @@ export function LiveSystemStatus() {
                     <td className="py-2 pr-3">{route.provider}</td>
                     <td className="py-2 pr-3">{route.requested_model_id ?? "nicht aufgelöst"}</td>
                     <td className="py-2 pr-3">{route.actual_model_id ?? "—"}</td>
+                    <td className="py-2 pr-3">
+                      {READINESS_LABEL[route.readiness_status]}
+                      {route.reason_code ? ` · ${route.reason_code}` : ""}
+                      {route.retryable ? " · erneut versuchbar" : ""}
+                    </td>
                     <td className="py-2 pr-3">
                       {PREFLIGHT_LABEL[route.preflight_status]}
                       {route.error_class ? ` · ${route.error_class}` : ""}
@@ -162,6 +178,13 @@ export function LiveSystemStatus() {
           <div className="rounded-md border border-border/70 p-3">
             <p className="text-sm font-medium">
               {FIRECRAWL_MODE_LABEL[status.firecrawl.mode]}
+            </p>
+            <p className="mt-1 text-xs text-muted-foreground">
+              Readiness: {READINESS_LABEL[status.firecrawl.readiness_status]}
+              {status.firecrawl.reason_code
+                ? ` · ${status.firecrawl.reason_code}`
+                : ""}
+              {status.firecrawl.retryable ? " · erneut versuchbar" : ""}
             </p>
             <p className="mt-1 text-xs text-muted-foreground">
               Preflight: {PREFLIGHT_LABEL[status.firecrawl.preflight_status]}

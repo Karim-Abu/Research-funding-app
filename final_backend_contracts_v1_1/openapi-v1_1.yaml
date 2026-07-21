@@ -2740,6 +2740,7 @@ components:
       - polling_interval_seconds
       - supported_source_types
       - features
+      - feature_readiness
       properties:
         api_version:
           type: string
@@ -2766,6 +2767,52 @@ components:
           type: object
           additionalProperties:
             type: boolean
+        feature_readiness:
+          type: object
+          additionalProperties:
+            $ref: '#/components/schemas/FeatureReadiness'
+        generation_mode:
+          type: string
+          enum:
+          - unavailable
+          - fake_demo
+          - real_eval
+          - live_unavailable
+        generation_unavailable_reason:
+          type:
+          - string
+          - 'null'
+        ai_available:
+          type: boolean
+        ai_unavailable_reason:
+          type:
+          - string
+          - 'null'
+    FeatureReadiness:
+      type: object
+      required:
+      - status
+      - available
+      - retryable
+      properties:
+        status:
+          type: string
+          enum:
+          - disabled
+          - fake
+          - not_configured
+          - configured_unverified
+          - ready
+          - degraded
+          - error
+        available:
+          type: boolean
+        reason_code:
+          type:
+          - string
+          - 'null'
+        retryable:
+          type: boolean
     DataClassification:
       type: object
       required:

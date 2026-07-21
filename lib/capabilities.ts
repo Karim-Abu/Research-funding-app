@@ -8,6 +8,12 @@ export interface Capabilities {
   max_upload_bytes?: number | null
   supported_source_types: string[]
   features: Record<string, boolean>
+  feature_readiness?: Record<string, {
+    status: "disabled" | "fake" | "not_configured" | "configured_unverified" | "ready" | "degraded" | "error"
+    available: boolean
+    reason_code?: string | null
+    retryable?: boolean
+  }>
   // "live_unavailable": Live-Betrieb konfiguriert, Provider nicht verfügbar —
   // nie ein stiller Abstieg auf den Demo-Generator (Ebene E).
   generation_mode?: "unavailable" | "fake_demo" | "real_eval" | "live_unavailable"
@@ -38,6 +44,11 @@ export const MOCK_CAPABILITIES: Capabilities = {
     reliability: false,
     // Mock mode never talks to the network — copy events stay off.
     copy_events: false,
+  },
+  feature_readiness: {
+    web_research: { status: "fake", available: true, reason_code: "demo_only" },
+    market_comparison: { status: "fake", available: true, reason_code: "demo_only" },
+    field_suggestions: { status: "fake", available: true, reason_code: "demo_only" },
   },
   generation_mode: "fake_demo",
   generation_unavailable_reason: null,

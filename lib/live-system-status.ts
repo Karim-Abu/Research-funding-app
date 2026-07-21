@@ -9,6 +9,9 @@ export interface LiveRouteStatusDto {
   requested_model_id?: string | null
   actual_model_id?: string | null
   configuration_status: "configured" | "not_configured" | "evaluation_disabled"
+  readiness_status: "disabled" | "fake" | "not_configured" | "configured_unverified" | "ready" | "degraded" | "error"
+  reason_code?: string | null
+  retryable: boolean
   preflight_status: "pass" | "fail" | "not_run"
   checked_at?: string | null
   expires_at?: string | null
@@ -29,6 +32,9 @@ export interface LiveSystemStatusDto {
   firecrawl: {
     mode: "disabled" | "fake" | "live" | "not_configured"
     available: boolean
+    readiness_status: "disabled" | "fake" | "not_configured" | "configured_unverified" | "ready" | "degraded" | "error"
+    reason_code?: string | null
+    retryable: boolean
     preflight_status: "pass" | "fail" | "not_run"
     checked_at?: string | null
     expires_at?: string | null
@@ -65,7 +71,7 @@ export async function runLiveSystemPreflight(): Promise<LiveSystemStatusDto> {
     throw new LiveSystemStatusError("Nur im Live-Backend verfügbar.")
   }
   const csrf = getCsrfToken()
-  const response = await fetch("/api/admin/live-system-status", {
+  const response = await fetch("/api/admin/live-system-status/preflight", {
     method: "POST",
     headers: csrf ? { "X-CSRF-Token": csrf } : {},
   })

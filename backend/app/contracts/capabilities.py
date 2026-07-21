@@ -5,6 +5,15 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from app.contracts.live_system import LiveReadinessStatus
+
+
+class FeatureReadiness(BaseModel):
+    status: LiveReadinessStatus
+    available: bool
+    reason_code: str | None = None
+    retryable: bool = False
+
 
 class Capabilities(BaseModel):
     api_version: str
@@ -12,6 +21,7 @@ class Capabilities(BaseModel):
     max_upload_bytes: int | None = Field(default=None, ge=1)
     supported_source_types: list[Literal["pdf", "docx", "txt", "url"]]
     features: dict[str, bool]
+    feature_readiness: dict[str, FeatureReadiness] = Field(default_factory=dict)
     # Deployment-level capability only; project/source policy remains
     # authoritative at run creation and before every gateway call.
     # ``live_unavailable`` (Ebene E): Live-Betrieb ist KONFIGURIERT

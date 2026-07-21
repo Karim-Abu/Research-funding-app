@@ -6,6 +6,16 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+LiveReadinessStatus = Literal[
+    "disabled",
+    "fake",
+    "not_configured",
+    "configured_unverified",
+    "ready",
+    "degraded",
+    "error",
+]
+
 
 class LiveRouteStatus(BaseModel):
     role_id: str
@@ -15,6 +25,9 @@ class LiveRouteStatus(BaseModel):
     requested_model_id: str | None = None
     actual_model_id: str | None = None
     configuration_status: Literal["configured", "not_configured", "evaluation_disabled"]
+    readiness_status: LiveReadinessStatus
+    reason_code: str | None = None
+    retryable: bool = False
     preflight_status: Literal["pass", "fail", "not_run"]
     checked_at: datetime | None = None
     expires_at: datetime | None = None
@@ -29,6 +42,9 @@ class LiveRouteStatus(BaseModel):
 class LiveFirecrawlStatus(BaseModel):
     mode: Literal["disabled", "fake", "live", "not_configured"]
     available: bool
+    readiness_status: LiveReadinessStatus
+    reason_code: str | None = None
+    retryable: bool = False
     preflight_status: Literal["pass", "fail", "not_run"]
     checked_at: datetime | None = None
     expires_at: datetime | None = None

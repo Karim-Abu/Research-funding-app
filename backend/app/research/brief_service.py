@@ -41,6 +41,10 @@ from app.partner_research.eligibility import match_eligibility
 from app.repositories import audit
 from app.research import service
 from app.research.executor import research_executor
+from app.research.text_normalization import (
+    normalize_research_text,
+    normalize_research_text_list,
+)
 from app.security import approval_service
 from app.security.data_class import DataClass, derive_data_class, is_external_blocked
 from app.security.search_query_firewall import evaluate_query
@@ -90,11 +94,13 @@ def _now() -> datetime:
 
 
 def _clean(value: str) -> str:
-    return re.sub(r"\s+", " ", value or "").strip()
+    return normalize_research_text(value)
 
 
 def _normalized_payload(payload: ResearchBriefInput) -> dict:
     return {
+        "research_goal": _clean(payload.research_goal),
+        "search_tags": normalize_research_text_list(payload.search_tags),
         "application_domain": _clean(payload.application_domain),
         "technology_class": _clean(payload.technology_class),
         "target_customer_segments": [_clean(v) for v in payload.target_customer_segments if _clean(v)],
@@ -102,6 +108,23 @@ def _normalized_payload(payload: ResearchBriefInput) -> dict:
         "competence_needs": [_clean(v) for v in payload.competence_needs if _clean(v)],
         "modules": list(dict.fromkeys(payload.modules)),
     }
+
+
+def _apply_goal_legacy_projection(data: dict) -> dict:
+    """Keep the existing RUN-2 planner usable until RUN 3B replaces its inputs."""
+    if not data["research_goal"]:
+        return data
+    projected = dict(data)
+    tags = list(data["search_tags"])
+    if not projected["application_domain"]:
+        projected["application_domain"] = data["research_goal"][:120]
+    if not projected["technology_class"]:
+        projected["technology_class"] = (tags[0] if tags else data["research_goal"])[:120]
+    if tags and not projected["target_customer_segments"]:
+        projected["target_customer_segments"] = tags[:8]
+    if tags and not projected["competence_needs"]:
+        projected["competence_needs"] = tags[:12]
+    return projected
 
 
 def _content_hash(data: dict) -> str:
@@ -120,6 +143,8 @@ def _view(brief: ResearchBrief | None) -> ResearchBriefView | None:
         research_brief_id=brief.research_brief_id,
         version=brief.version,
         status=brief.status,
+        research_goal=brief.research_goal,
+        search_tags=list(brief.search_tags or []),
         application_domain=brief.application_domain,
         technology_class=brief.technology_class,
         target_customer_segments=list(brief.target_customer_segments or []),
@@ -164,6 +189,7 @@ def _validate_public_safe(
             status=403,
         )
     fields = [
+        data["research_goal"], *data["search_tags"],
         data["application_domain"], data["technology_class"], data["region"],
         *data["target_customer_segments"], *data["competence_needs"],
     ]
@@ -184,7 +210,8 @@ def _validate_public_safe(
         if (
             result.decision == "block"
             or result.redaction_summary
-            or _clean(result.sanitized_query).casefold() != _clean(value).casefold()
+            or re.sub(r"\s+", " ", _clean(result.sanitized_query)).casefold()
+            != re.sub(r"\s+", " ", _clean(value)).casefold()
         ):
             raise BriefError(
                 "research_brief_not_public_safe",
@@ -229,10 +256,12 @@ def _validate_draft(data: dict) -> None:
 
 def _validate_approval(data: dict) -> None:
     _validate_draft(data)
+    if data["research_goal"]:
+        return
     if not data["application_domain"] or not data["technology_class"]:
         raise BriefError(
             "research_brief_incomplete",
-            "Anwendungsdomäne und Technologieklasse sind erforderlich.",
+            "Recherchefrage/Ziel oder die bisherigen Domänenfelder sind erforderlich.",
         )
     if _comparison_key(data["application_domain"]) == _comparison_key(data["technology_class"]):
         raise BriefError(
@@ -275,9 +304,12 @@ def suggest(db: Session, project: Project, actor_user_id: str) -> ResearchBrief:
     domain = technology = ""
     if len(parts) == 2 and _comparison_key(parts[0]) != _comparison_key(parts[1]):
         domain, technology = parts
+    proposed_goal = ": ".join(value for value in (domain, technology) if value)
+    if not proposed_goal:
+        proposed_goal = field
     proposed = ResearchBriefInput(
-        application_domain=domain,
-        technology_class=technology,
+        research_goal=proposed_goal,
+        search_tags=[],
         target_customer_segments=[],
         region="Schweiz",
         competence_needs=[],
@@ -288,6 +320,8 @@ def suggest(db: Session, project: Project, actor_user_id: str) -> ResearchBrief:
     try:
         _validate_public_safe(db, project, actor_user_id, data)
     except BriefError:
+        data["research_goal"] = ""
+        data["search_tags"] = []
         data["application_domain"] = ""
         data["technology_class"] = ""
     version = (current.version + 1) if current else 1
@@ -317,6 +351,7 @@ def save(
     data = _normalized_payload(payload)
     _validate_draft(data)
     _validate_public_safe(db, project, actor_user_id, data)
+    data = _apply_goal_legacy_projection(data)
     current = latest(db, project)
     wanted_hash = _content_hash(data)
     if current is not None and current.content_hash == wanted_hash:
@@ -341,6 +376,8 @@ def approve(db: Session, brief: ResearchBrief, actor_user_id: str) -> ResearchBr
         raise BriefError("research_brief_not_draft", "Nur ein Entwurf kann freigegeben werden.", status=409)
     project = db.get(Project, brief.project_id)
     data = {
+        "research_goal": brief.research_goal,
+        "search_tags": list(brief.search_tags or []),
         "application_domain": brief.application_domain,
         "technology_class": brief.technology_class,
         "target_customer_segments": list(brief.target_customer_segments or []),

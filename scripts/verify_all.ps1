@@ -33,6 +33,10 @@ $R = @{ backend="skip"; migration="skip"; frontend="skip"; quality="skip";
         docx="skip"; apismoke="skip"; testdata="skip"; legacyguard="skip"; evalpath="-" }
 $e2eDb = Join-Path $backend "var\verify_e2e.db"
 
+$pytestRunToken = '{0}-{1}' -f $PID, ([guid]::NewGuid().ToString('N').Substring(0, 8))
+$pytestBase = '.pytest_cache\verify-all-' + $pytestRunToken
+$pytestDocxBase = '.pytest_cache\verify-all-docx-' + $pytestRunToken
+
 function Stop-Servers {
     foreach ($port in 3000, 8000) {
         try {
@@ -66,11 +70,11 @@ try {
 
     Write-Host "-- backend: pytest (ohne DOCX-Render-Smoke — eigene Gate-Zeile) --"
     Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
-    & $py -m pytest -q -p no:warnings --basetemp=.pytest_cache\verify-all --ignore=tests/test_docx_render_smoke.py
+    & $py -m pytest -q -p no:warnings --basetemp=$pytestBase --ignore=tests/test_docx_render_smoke.py
     $R.backend = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
 
     Write-Host "-- DOCX render smoke (benötigt Microsoft Word) --"
-    & $py -m pytest tests/test_docx_render_smoke.py -q -p no:warnings --basetemp=.pytest_cache\verify-all-docx
+    & $py -m pytest tests/test_docx_render_smoke.py -q -p no:warnings --basetemp=$pytestDocxBase
     $R.docx = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
     Pop-Location
 

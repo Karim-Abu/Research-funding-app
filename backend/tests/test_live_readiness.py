@@ -31,11 +31,13 @@ from app.evaluation.preflight import (
     PASS,
     PING_PROMPT,
     classify_provider_error,
+    firecrawl_readiness,
     firecrawl_mode,
     preflight_agent_provider,
     preflight_route,
     persist_route_preflight,
     route_preflight_passed,
+    route_readiness,
     render_report,
     run_preflight,
 )
@@ -267,10 +269,40 @@ def test_fresh_persisted_route_preflight_expires(db):
     row = persist_route_preflight(db, result, settings=settings)
     assert row.requested_model_id == "requested-hermetic-model"
     assert row.actual_model_id == "actual-hermetic-model"
+    assert row.configuration_fingerprint
+    assert row.registry_version == settings.agent_registry_version
+    assert row.pricing_version == "test-v1"
+    assert row.retryable is False
     assert route_preflight_passed(db, result.route_key, settings=settings)
+    assert route_readiness(db, result.route_key, settings=settings).status == "ready"
     row.expires_at = datetime.now(timezone.utc) - timedelta(seconds=1)
     db.flush()
     assert not route_preflight_passed(db, result.route_key, settings=settings)
+    assert route_readiness(db, result.route_key, settings=settings).status == "configured_unverified"
+    row.expires_at = datetime.now(timezone.utc) + timedelta(seconds=60)
+    row.status = FAIL
+    row.reason_code = "rate_limited"
+    row.retryable = True
+    db.flush()
+    degraded = route_readiness(db, result.route_key, settings=settings)
+    assert (degraded.status, degraded.retryable) == ("degraded", True)
+    row.reason_code = "auth_failed"
+    row.retryable = False
+    db.flush()
+    failed = route_readiness(db, result.route_key, settings=settings)
+    assert (failed.status, failed.retryable) == ("error", False)
+
+
+def test_readiness_distinguishes_retryable_and_nonretryable_preflight_failures(db):
+    settings = Settings(
+        web_research_enabled=True,
+        web_research_fake_provider=False,
+        firecrawl_api_key=None,
+    )
+    assert firecrawl_readiness(db, settings).status == "not_configured"
+    assert firecrawl_readiness(
+        db, Settings(web_research_enabled=True, web_research_fake_provider=True)
+    ).status == "fake"
 
 
 def test_rate_limit_and_quota_errors_are_understandable():

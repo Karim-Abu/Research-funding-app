@@ -4,12 +4,62 @@ from __future__ import annotations
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
+from app.agents.registry import get_agent_registry
 from app.config.settings import Settings
-from app.contracts.capabilities import Capabilities
+from app.contracts.capabilities import Capabilities, FeatureReadiness
 from app.security.deps import require_session, settings_dep
 from app.db.session import get_db
 
 router = APIRouter(tags=["Infrastructure"])
+
+
+def _field_suggestion_readiness(
+    db: Session | None, settings: Settings
+) -> FeatureReadiness:
+    from app.evaluation.preflight import live_fake_conflict, route_readiness
+
+    if live_fake_conflict(settings):
+        return FeatureReadiness(
+            status="error", available=False,
+            reason_code="live_fake_conflict", retryable=False,
+        )
+    if settings.ai_eval_mode != "real":
+        if settings.agent_fake_provider:
+            return FeatureReadiness(
+                status="fake", available=True, reason_code="demo_only"
+            )
+        return FeatureReadiness(
+            status="disabled", available=False,
+            reason_code="live_eval_mode_disabled",
+        )
+    registry = get_agent_registry()
+    role = (registry.role_routes or {}).get("A2_INNOSUISSE_PROPOSAL_WRITER")
+    if role is None:
+        return FeatureReadiness(
+            status="not_configured", available=False,
+            reason_code="live_route_not_configured",
+        )
+    assessments = [
+        route_readiness(db, route_key, settings=settings, registry=registry)
+        for route_key in (role.primary, role.fallback)
+        if route_key
+    ]
+    for status in (
+        "ready", "degraded", "error", "configured_unverified",
+        "not_configured", "disabled",
+    ):
+        selected = next((item for item in assessments if item.status == status), None)
+        if selected is not None:
+            return FeatureReadiness(
+                status=selected.status,
+                available=selected.status == "ready",
+                reason_code=selected.reason_code,
+                retryable=selected.retryable,
+            )
+    return FeatureReadiness(
+        status="not_configured", available=False,
+        reason_code="live_route_not_configured",
+    )
 
 
 @router.get("/capabilities", response_model=Capabilities)
@@ -18,11 +68,16 @@ def get_capabilities(
     settings: Settings = Depends(settings_dep),
     db: Session | None = Depends(get_db),
 ) -> Capabilities:
-    from app.evaluation.preflight import firecrawl_preflight_reason
-    web_research_available = settings.web_research_enabled and (
-        settings.web_research_fake_provider
-        or firecrawl_preflight_reason(db, settings) is None
+    from app.evaluation.preflight import firecrawl_readiness
+    web_state = firecrawl_readiness(db, settings)
+    web_readiness = FeatureReadiness(
+        status=web_state.status,
+        available=web_state.status in {"ready", "fake"},
+        reason_code=web_state.reason_code,
+        retryable=web_state.retryable,
     )
+    field_readiness = _field_suggestion_readiness(db, settings)
+    web_research_available = web_readiness.available
     # Truthful feature flags — only fully-implemented slices are advertised.
     # Milestone 4 activates the deterministic formal-eligibility precheck:
     # partner management + run + live requirement assessments. Semantic
@@ -69,6 +124,11 @@ def get_capabilities(
         max_upload_bytes=settings.max_upload_bytes,
         supported_source_types=settings.supported_source_types,
         features=features,
+        feature_readiness={
+            "web_research": web_readiness,
+            "market_comparison": web_readiness,
+            "field_suggestions": field_readiness,
+        },
         generation_mode=generation_mode,
         generation_unavailable_reason=unavailable_reason,
         ai_available=ai_available,

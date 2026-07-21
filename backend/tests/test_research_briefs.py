@@ -202,6 +202,45 @@ def test_suggest_only_uses_two_distinct_public_safe_innovation_field_parts(
         assert marker not in blob
 
 
+def test_goal_based_brief_normalizes_unicode_without_legacy_ontology(
+    client, db, web_fake
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _project(client, csrf)
+    saved = client.put(
+        f"/api/v1/projects/{project_id}/research-brief",
+        json={
+            "research_goal": "  KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)  ",
+            "search_tags": ["  Datenanalyse ", "Datenanalyse", "Ümlaut"],
+            "application_domain": "",
+            "technology_class": "",
+            "target_customer_segments": [],
+            "region": "  Schweiz / DACH  ",
+            "competence_needs": [],
+            "modules": ["market_growth", "competition_alternatives"],
+        },
+        headers=unsafe_headers(csrf),
+    )
+    assert saved.status_code == 200, saved.text
+    body = saved.json()
+    assert body["research_goal"] == (
+        "KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)"
+    )
+    assert body["search_tags"] == ["Datenanalyse", "Ümlaut"]
+    assert body["region"] == "Schweiz / DACH"
+
+    approved = client.post(
+        f"/api/v1/research-briefs/{body['research_brief_id']}/approve",
+        headers=unsafe_headers(csrf),
+    )
+    assert approved.status_code == 200, approved.text
+    persisted = db.get(ResearchBrief, body["research_brief_id"])
+    assert persisted.research_goal == body["research_goal"]
+    queries = _plan(client, csrf, body["research_brief_id"])
+    assert queries
+    assert all(query["research_brief_id"] == body["research_brief_id"] for query in queries)
+
+
 def test_new_brief_version_expires_unconsumed_query_approvals(client, db, web_fake):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _project(client, csrf)

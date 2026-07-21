@@ -16,6 +16,8 @@ export const RESEARCH_MODULE_LABELS: Record<ResearchModule, string> = {
 }
 
 export interface ResearchBriefInput {
+  research_goal?: string
+  search_tags?: string[]
   application_domain: string
   technology_class: string
   target_customer_segments: string[]

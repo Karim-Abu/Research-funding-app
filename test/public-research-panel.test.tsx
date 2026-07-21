@@ -12,6 +12,8 @@ const brief = {
   research_brief_id: "brief-1",
   version: 1,
   status: "approved" as const,
+  research_goal: "KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)",
+  search_tags: ["Datenanalyse", "KMU"],
   application_domain: "industrial quality",
   technology_class: "anomaly detection",
   target_customer_segments: ["manufacturing SMEs"],
@@ -100,6 +102,8 @@ describe("PublicResearchPanel", () => {
       ...brief,
       status: "draft" as const,
       approved_at: null,
+      research_goal: "",
+      search_tags: [],
       application_domain: "",
       technology_class: "",
       target_customer_segments: [],
@@ -127,23 +131,21 @@ describe("PublicResearchPanel", () => {
       "Markt & Wachstum", "Wettbewerb & Alternativen",
       "State of the Art", "Mögliche Schweizer Forschungspartner",
     ]) expect(screen.getByText(label)).toBeInTheDocument()
-    for (const example of [
-      "Schweizer Gesundheitsdatenaustausch",
-      "dezentrale Zugriffssteuerung / Audit Trail / DLT",
-      "medizinische Labore, Arztpraxen, Spitäler, Health-IT-Anbieter",
-      "Schweiz / DACH",
-      "Healthcare Cybersecurity, Interoperabilität, Distributed Systems, Data Governance",
-    ]) expect(screen.getByText(`Beispiel: ${example}`)).toBeInTheDocument()
+    expect(screen.getByText(
+      "Beispiel: KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)"
+    )).toBeInTheDocument()
+    expect(screen.getByText("Beispiel: Schweiz / DACH")).toBeInTheDocument()
     expect(screen.getByText(/Vorschläge bestätigen keine fachliche Richtigkeit/)).toBeInTheDocument()
-    expect(screen.getByText(/In welchem konkreten Anwendungsbereich/)).toBeInTheDocument()
-    expect(screen.getByText(/Welche konkreten Organisationstypen/)).toBeInTheDocument()
+    expect(screen.getByText(/interne Projekt- oder Partnerdaten gehören nicht hierher/)).toBeInTheDocument()
   })
 
-  it("prevents approval for identical fields, generic customers and organisation-only competence", async () => {
+  it("validates the simplified public research goal only when it is saved or approved", async () => {
     const invalidDraft = {
       ...brief,
       status: "draft" as const,
       approved_at: null,
+      research_goal: "",
+      search_tags: [],
       application_domain: "Medizintechnik",
       technology_class: "Medizin-Technik",
       target_customer_segments: ["Schweizer KMU"],
@@ -162,12 +164,28 @@ describe("PublicResearchPanel", () => {
     )
     render(<PublicResearchPanel projectId={PROJECT} />)
     fireEvent.click(await screen.findByRole("button", { name: "Public-safe Brief freigeben" }))
-    expect(await screen.findAllByText(
-      "Anwendungsdomäne und Technologieklasse müssen unterschiedlich sein."
-    )).toHaveLength(2)
-    expect(screen.getByText(/mindestens ein konkretes Kundensegment/)).toBeInTheDocument()
-    expect(screen.getByText(/mindestens eine konkrete Fachkompetenz/)).toBeInTheDocument()
+    expect(await screen.findByText(
+      "Bitte eine öffentliche Recherchefrage oder ein Ziel angeben."
+    )).toBeInTheDocument()
     expect(saveCalls).toBe(0)
+  })
+
+  it("accepts paste and Unicode punctuation without key filtering, then normalizes only at save", async () => {
+    const draft = { ...brief, status: "draft" as const, approved_at: null, research_goal: "", search_tags: [] }
+    let savedBody: Record<string, unknown> | null = null
+    server.use(
+      http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json({ ...emptyWorkspace(), brief: { latest: draft, active_approved: null } })),
+      http.put(`/api/projects/${PROJECT}/research-brief`, async ({ request }) => {
+        savedBody = await request.json() as Record<string, unknown>
+        return HttpResponse.json({ ...draft, ...savedBody })
+      }),
+    )
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    const goal = await screen.findByLabelText("Recherchefrage / Ziel")
+    fireEvent.change(goal, { target: { value: "  KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)  " } })
+    fireEvent.click(screen.getByRole("button", { name: "Entwurf speichern" }))
+    await waitFor(() => expect(savedBody).not.toBeNull())
+    expect(savedBody?.research_goal).toBe("KI-gestützte Datenanalyse für Schweizer KMU – Zürich/DACH (B2B)")
   })
 
   it("shows live URL, module relevance and imports through the existing source path", async () => {
@@ -250,10 +268,10 @@ describe("PublicResearchPanel", () => {
       () => HttpResponse.json(liveWorkspace()),
     ))
     render(<PublicResearchPanel projectId={PROJECT} />)
-    const domain = await screen.findByLabelText("Anwendungsdomäne")
-    expect(domain).toBeDisabled()
-    fireEvent.click(screen.getByRole("button", { name: "Brief ändern" }))
-    expect(domain).toBeEnabled()
+    const edit = await screen.findByRole("button", { name: "Brief ändern" })
+    expect(screen.queryByLabelText("Recherchefrage / Ziel")).toBeNull()
+    fireEvent.click(edit)
+    expect(await screen.findByLabelText("Recherchefrage / Ziel")).toBeEnabled()
     expect(screen.getByRole("button", { name: "Neue Briefversion speichern" })).toBeEnabled()
   })
 
