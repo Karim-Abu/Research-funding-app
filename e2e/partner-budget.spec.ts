@@ -49,6 +49,24 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
   await page.getByRole("button", { name: "Projekt erstellen und weiter" }).click()
   await expect(page).toHaveURL(/\/quellen/, { timeout: 20_000 })
 
+  const projectId = await page.evaluate(() =>
+    window.sessionStorage.getItem("rf_active_project_id")
+  )
+  expect(projectId).toBeTruthy()
+  const session = await page.request.get("/api/session")
+  const csrf = (await session.json()).csrf_token as string
+  const mut = () => ({
+    "X-CSRF-Token": csrf,
+    Origin: ORIGIN,
+    "Idempotency-Key": idem(),
+    "Content-Type": "application/json",
+  })
+  const dates = await page.request.patch(`/api/projects/${projectId}`, {
+    headers: mut(),
+    data: { start_date: "2026-01-01", end_date: "2027-12-31" },
+  })
+  expect(dates.status()).toBe(200)
+
   // 3. Partner & Budget ist der Erfassungsort: Partner anlegen + Budget.
   await page.goto("/partner")
   const addPartner = page.getByRole("button", { name: "Partner hinzufügen" })
@@ -107,7 +125,7 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
     .fill("100000")
   await page.getByLabel("Eigenleistung Umsetzungspartner").fill("45000")
   await page.getByLabel("Barbeitrag (Cash)").fill("5000")
-  await page.getByLabel("Projektdauer (Monate)").fill("24")
+  await expect(page.getByText("24 Monate", { exact: true })).toBeVisible()
   await page.getByRole("button", { name: "Budget speichern" }).click()
   await expect(page.getByText("Budgetangaben gespeichert.")).toBeVisible({
     timeout: 20_000,
@@ -123,19 +141,6 @@ test("intake partners + budget feed the requirements precheck", async ({ page })
   await expect(precheck.getByTestId("precheck-cash")).toContainText("5 %")
 
   // 4. Source + run via the API context (deterministic).
-  const session = await page.request.get("/api/session")
-  const csrf = (await session.json()).csrf_token as string
-  const mut = () => ({
-    "X-CSRF-Token": csrf,
-    Origin: ORIGIN,
-    "Idempotency-Key": idem(),
-    "Content-Type": "application/json",
-  })
-  const projectId = await page.evaluate(() =>
-    window.sessionStorage.getItem("rf_active_project_id")
-  )
-  expect(projectId).toBeTruthy()
-
   const src = await page.request.post(`/api/projects/${projectId}/sources/text`, {
     headers: mut(),
     data: {

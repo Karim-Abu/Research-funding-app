@@ -16,8 +16,8 @@ const CLASSIFICATION = {
 // Sentences lexically overlap requirement titles so deterministic discovery
 // produces verifiable evidence.
 const SOURCE_TEXT =
-  "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. " +
-  "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden. " +
+  "Industrie AG ist als Umsetzungspartner in der Schweiz wertschöpfend tätig. " +
+  "ETH Zürich ist als beitragsberechtigter Schweizer Forschungspartner eingebunden. " +
   "Das Gesuch ist vollständig und inhaltlich nachvollziehbar ausgefüllt."
 
 function idem(): string {
@@ -60,7 +60,19 @@ test("M5 deterministic evidence end-to-end", async ({ page }) => {
       data: { name: "Quelle", text: SOURCE_TEXT, data_classification: CLASSIFICATION },
     }
   )
-  expect((await src.json()).status).toBe("processed")
+  const source = await src.json()
+  expect(source.status).toBe("processed")
+  const selected = await page.request.put(
+    `/api/projects/${projectId}/primary-application`,
+    {
+      headers: mut(),
+      data: {
+        source_id: source.source_id,
+        expected_primary_source_id: null,
+      },
+    }
+  )
+  expect(selected.status()).toBe(200)
 
   for (const partner of [
     { name: "Industrie AG", partner_type: "implementation_partner", country: "CH", swiss_value_creation: true },

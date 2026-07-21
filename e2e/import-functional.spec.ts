@@ -163,9 +163,11 @@ test("Funktionaler Import: Altstruktur-PDF wird korrekt ausgelesen, Partner und 
     const decidedPattern = /Übernommen – menschlich bestätigt|Bearbeitet übernommen/
     for (let index = 0; index < 15; index++) {
       const row = rows.nth(index)
-      await row
-        .getByRole("button", { name: "Übernehmen", exact: true })
-        .click()
+      const accept = row.getByRole("button", { name: "Übernehmen", exact: true })
+      // Die PDF-Dauer bleibt sichtbar, ist aber nur Vergleichswert. Start und
+      // Ende werden übernommen; die Dauer wird daraus zentral abgeleitet.
+      if ((await accept.count()) === 0) continue
+      await accept.click()
       const decided = row.getByText(decidedPattern)
       const confirm = page.getByTestId("structured-import-confirm-overwrite")
       // Konflikt (z. B. Projekttitel aus dem Intake) verlangt ausdrückliche
@@ -212,7 +214,7 @@ test("Funktionaler Import: Altstruktur-PDF wird korrekt ausgelesen, Partner und 
       "105000"
     )
     await expect(page.getByLabel("Barbeitrag (Cash)")).toHaveValue("13000")
-    await expect(page.getByLabel("Projektdauer (Monate)")).toHaveValue("18")
+    await expect(page.getByText("18 Monate", { exact: true })).toBeVisible()
     // Regel-Precheck über den Live-Daten: Umsetzungsbeitrag (own+cash) 59 %
     // und Barbeitrag 6.5 % → beide formal erfüllt.
     const precheck = page.getByTestId("budget-precheck")

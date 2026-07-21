@@ -5,6 +5,7 @@ import {
   getActiveProjectId,
   login,
   logout,
+  mutFactory,
   waitForRecheckCleared,
   waitForRunCompleted,
 } from "./helpers"
@@ -101,6 +102,12 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
   })
 
   await test.step("5. Partner ergänzen", async () => {
+    const mut = await mutFactory(page)
+    const dates = await page.request.patch(`/api/projects/${projectId}`, {
+      headers: mut(),
+      data: { start_date: "2026-01-01", end_date: "2027-12-31" },
+    })
+    expect(dates.status()).toBe(200)
     await page.goto("/partner")
     const addPartner = page.getByRole("button", { name: "Partner hinzufügen" })
 
@@ -127,7 +134,7 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     await page.getByLabel("Direkte Projektkosten (ohne Overhead)").fill("100000")
     await page.getByLabel("Eigenleistung Umsetzungspartner").fill("45000")
     await page.getByLabel("Barbeitrag (Cash)").fill("5000")
-    await page.getByLabel("Projektdauer (Monate)").fill("24")
+    await expect(page.getByText("24 Monate", { exact: true })).toBeVisible()
     await page.getByRole("button", { name: "Budget speichern" }).click()
     await expect(page.getByText("Budgetangaben gespeichert.")).toBeVisible({
       timeout: 20_000,

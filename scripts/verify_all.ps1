@@ -66,11 +66,11 @@ try {
 
     Write-Host "-- backend: pytest (ohne DOCX-Render-Smoke — eigene Gate-Zeile) --"
     Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
-    & $py -m pytest -q -p no:warnings --ignore=tests/test_docx_render_smoke.py
+    & $py -m pytest -q -p no:warnings --basetemp=.pytest_cache\verify-all --ignore=tests/test_docx_render_smoke.py
     $R.backend = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
 
     Write-Host "-- DOCX render smoke (benötigt Microsoft Word) --"
-    & $py -m pytest tests/test_docx_render_smoke.py -q -p no:warnings
+    & $py -m pytest tests/test_docx_render_smoke.py -q -p no:warnings --basetemp=.pytest_cache\verify-all-docx
     $R.docx = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
     Pop-Location
 

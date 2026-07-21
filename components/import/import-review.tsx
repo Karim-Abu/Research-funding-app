@@ -290,10 +290,11 @@ export function ImportReview() {
     confirmOverwrite = false,
     editedText?: string
   ) {
+    const pid = projectId
+    if (!pid) return
     setError(null)
     setBusyId(candidate.import_candidate_id)
     try {
-      if (!projectId) return
       const payload = {
         decision,
         // Mit aktivem Run schreibt «Übernehmen» direkt in den Run-Draft;
@@ -305,21 +306,18 @@ export function ImportReview() {
         ...(confirmOverwrite ? { confirm_overwrite: true } : {}),
         ...(candidate.current_revision_id
           ? {
-              project_id: projectId,
+              project_id: pid,
               source_id: candidate.source_id,
               expected_revision_id: candidate.current_revision_id,
             }
           : {}),
       }
-      const isRevision =
-        candidate.decision === "accepted" ||
-        candidate.decision === "ignored" ||
-        candidate.decision === "saved_as_source"
+      const isRevision = candidate.decision !== "pending"
       const updated =
         isRevision && candidate.current_revision_id
           ? await reviseImportCandidate(candidate.import_candidate_id, {
               ...payload,
-              project_id: projectId,
+              project_id: pid,
               source_id: candidate.source_id,
               expected_revision_id: candidate.current_revision_id,
             })
@@ -331,15 +329,18 @@ export function ImportReview() {
       )
     } catch (err) {
       if (err instanceof ImportError && err.code === "import_conflict") {
-        // Kandidat ist jetzt serverseitig als Konflikt markiert.
-        setCandidates((prev) =>
-          prev.map((c) =>
-            c.import_candidate_id === candidate.import_candidate_id
-              ? { ...c, decision: "conflict" }
-              : c
-          )
-        )
-        setConflict({ candidate, editedText })
+        // Der Konflikt ist selbst eine neue Revision. Vor der bewussten
+        // Bestätigung deshalb den aktuellen Ressourcenstand laden, damit der
+        // Dialog nie mit der erwarteten Revision der Erstentscheidung sendet.
+        const refreshed = await getImportCandidates(pid)
+        setCandidates(refreshed)
+        setConflict({
+          candidate:
+            refreshed.find(
+              (item) => item.import_candidate_id === candidate.import_candidate_id
+            ) ?? candidate,
+          editedText,
+        })
       } else {
         setError(
           toUploadErrorInfo(
@@ -359,29 +360,29 @@ export function ImportReview() {
     editedPayload?: Record<string, unknown>,
     confirmOverwrite = false
   ) {
+    const pid = projectId
+    if (!pid) return
     setError(null)
     setBusyId(candidate.candidate_id)
     try {
-      if (!projectId) return
       const payload = {
         decision,
         ...(editedPayload ? { edited_payload_json: editedPayload } : {}),
         ...(confirmOverwrite ? { confirm_overwrite: true } : {}),
         ...(candidate.current_revision_id
           ? {
-              project_id: projectId,
+              project_id: pid,
               source_id: candidate.source_id,
               expected_revision_id: candidate.current_revision_id,
             }
           : {}),
       }
-      const isRevision =
-        candidate.decision === "accepted" || candidate.decision === "ignored"
+      const isRevision = candidate.decision !== "pending"
       const updated =
         isRevision && candidate.current_revision_id
           ? await reviseStructuredImportCandidate(candidate.candidate_id, {
               ...payload,
-              project_id: projectId,
+              project_id: pid,
               source_id: candidate.source_id,
               expected_revision_id: candidate.current_revision_id,
             })
@@ -398,16 +399,14 @@ export function ImportReview() {
           err.code
         )
       ) {
-        setStructuredCandidates((prev) =>
-          prev.map((item) =>
-            item.candidate_id === candidate.candidate_id
-              ? { ...item, decision: "conflict" }
-              : item
-          )
-        )
+        const refreshed = await getStructuredImportCandidates(pid)
+        setStructuredCandidates(refreshed)
+        const current =
+          refreshed.find((item) => item.candidate_id === candidate.candidate_id) ??
+          candidate
         if (err.code === "structured_import_conflict") {
           setStructuredConflict({
-            candidate,
+            candidate: current,
             payload: editedPayload ?? candidate.effective_payload_json,
           })
         } else {

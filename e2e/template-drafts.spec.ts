@@ -14,8 +14,8 @@ const CLASSIFICATION = {
   nda_applies: false,
 }
 const SOURCE_TEXT =
-  "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. " +
-  "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden."
+  "Industrie AG ist als Umsetzungspartner in der Schweiz wertschöpfend tätig. " +
+  "ETH ist als beitragsberechtigter Schweizer Forschungspartner eingebunden."
 
 function idem(): string {
   return Math.random().toString(36).slice(2) + Date.now().toString(36)
@@ -46,10 +46,21 @@ test("M6 template drafts: edit, persist, link, stale, conflict", async ({ page }
     },
   })).json()).project_id
 
-  await page.request.post(`/api/projects/${projectId}/sources/text`, {
+  const source = await (await page.request.post(`/api/projects/${projectId}/sources/text`, {
     headers: mut(),
     data: { name: "Quelle", text: SOURCE_TEXT, data_classification: CLASSIFICATION },
-  })
+  })).json()
+  const selected = await page.request.put(
+    `/api/projects/${projectId}/primary-application`,
+    {
+      headers: mut(),
+      data: {
+        source_id: source.source_id,
+        expected_primary_source_id: null,
+      },
+    }
+  )
+  expect(selected.status()).toBe(200)
   for (const partner of [
     { name: "Industrie AG", partner_type: "implementation_partner", country: "CH", swiss_value_creation: true },
     { name: "ETH", partner_type: "research_partner", country: "CH", research_partner_eligibility_status: "eligible" },

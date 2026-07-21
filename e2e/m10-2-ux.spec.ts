@@ -15,8 +15,8 @@ const CLASSIFICATION = {
   nda_applies: false,
 }
 const SOURCE_TEXT =
-  "Der Umsetzungspartner ist in der Schweiz wertschöpfend tätig. " +
-  "Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden."
+  "Industrie AG ist als Umsetzungspartner in der Schweiz wertschöpfend tätig. " +
+  "ETH ist als beitragsberechtigter Schweizer Forschungspartner eingebunden."
 // Zeitstempel: die Suite läuft im Gate zweimal auf derselben Demo-DB.
 const TITLE = `Eigener Testantrag M10-2 UX ${Date.now()}`
 
@@ -63,10 +63,18 @@ test("M10.2: orientation, links and readiness across the core screens", async ({
       data_classification: CLASSIFICATION,
     },
   })).json()).project_id as string
-  await api.post(`/api/projects/${projectId}/sources/text`, {
+  const source = await (await api.post(`/api/projects/${projectId}/sources/text`, {
     headers: mut(),
     data: { name: "Quelle", text: SOURCE_TEXT, data_classification: CLASSIFICATION },
+  })).json()
+  const selected = await api.put(`/api/projects/${projectId}/primary-application`, {
+    headers: mut(),
+    data: {
+      source_id: source.source_id,
+      expected_primary_source_id: null,
+    },
   })
+  expect(selected.status()).toBe(200)
   for (const partner of [
     { name: "Industrie AG", partner_type: "implementation_partner", country: "CH", swiss_value_creation: true },
     { name: "ETH", partner_type: "research_partner", country: "CH", research_partner_eligibility_status: "eligible" },

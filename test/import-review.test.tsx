@@ -67,6 +67,7 @@ const getStructuredImportCandidates = vi.fn<
 >()
 const decideImportCandidate = vi.fn()
 const decideStructuredImportCandidate = vi.fn()
+const reviseStructuredImportCandidate = vi.fn()
 const createImportCandidates = vi.fn()
 
 vi.mock("@/lib/imports", async (importOriginal) => {
@@ -80,6 +81,8 @@ vi.mock("@/lib/imports", async (importOriginal) => {
       decideImportCandidate(...args),
     decideStructuredImportCandidate: (...args: unknown[]) =>
       decideStructuredImportCandidate(...args),
+    reviseStructuredImportCandidate: (...args: unknown[]) =>
+      reviseStructuredImportCandidate(...args),
     createImportCandidates: (...args: unknown[]) =>
       createImportCandidates(...args),
   }
@@ -286,12 +289,24 @@ describe("ImportReview — Darstellung", () => {
 
 describe("ImportReview — Entscheidungsaktionen", () => {
   it("gruppiert strukturierte Werte, zeigt Altwert und bestätigt Konflikte explizit", async () => {
-    getStructuredImportCandidates.mockResolvedValueOnce([structuredCandidate()])
-    decideStructuredImportCandidate
-      .mockRejectedValueOnce(
-        new ImportError(409, "structured_import_conflict", "Wert vorhanden.")
-      )
-      .mockResolvedValueOnce(structuredCandidate({ decision: "accepted" }))
+    const initial = structuredCandidate({
+      current_revision_id: "structured-r1",
+      revision_number: 1,
+    })
+    const conflicted = structuredCandidate({
+      decision: "conflict",
+      current_revision_id: "structured-r2",
+      revision_number: 2,
+    })
+    getStructuredImportCandidates
+      .mockResolvedValueOnce([initial])
+      .mockResolvedValueOnce([conflicted])
+    decideStructuredImportCandidate.mockRejectedValueOnce(
+      new ImportError(409, "structured_import_conflict", "Wert vorhanden.")
+    )
+    reviseStructuredImportCandidate.mockResolvedValueOnce(
+      structuredCandidate({ decision: "accepted" })
+    )
     await renderReview()
 
     const section = screen.getByTestId("structured-import-review")
@@ -306,12 +321,15 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     )
     fireEvent.click(confirm)
     await waitFor(() =>
-      expect(decideStructuredImportCandidate).toHaveBeenLastCalledWith(
+      expect(reviseStructuredImportCandidate).toHaveBeenLastCalledWith(
         "sc-budget",
         {
           decision: "accepted",
           edited_payload_json: { cash_contribution: 20000 },
           confirm_overwrite: true,
+          project_id: "p-1",
+          source_id: "s-1",
+          expected_revision_id: "structured-r2",
         }
       )
     )
