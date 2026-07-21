@@ -122,8 +122,6 @@ def _render_report(result: SmokeResult) -> str:
             "- fake_fallback_observed: "
             f"`{'yes' if result.fake_fallback_observed else 'no'}`",
             "",
-            "Der Bericht enthaelt ausschliesslich redigierte Metadaten.",
-            "",
         ]
     )
 
