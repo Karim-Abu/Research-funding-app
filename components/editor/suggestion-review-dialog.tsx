@@ -88,6 +88,7 @@ export function SuggestionReviewDialog({
   const label = generationLabel(suggestion.generation_kind)
   const section = suggestion.section_result
   const chips = rationaleChips(suggestion)
+  const wholeOnly = suggestion.accept_mode === "whole_suggestion_only"
 
   const segments = React.useMemo(
     () => diffSuggestion(currentText, suggestion.suggested_text),
@@ -154,7 +155,9 @@ export function SuggestionReviewDialog({
           </div>
           <SheetDescription>
             Der Vorschlag folgt der Antragssprache. Nichts wird automatisch
-            übernommen — Sie entscheiden je Änderung.
+            übernommen — {wholeOnly
+              ? "dieser versionierte Vorschlag wird vollständig übernommen oder verworfen."
+              : "Sie entscheiden je Änderung."}
           </SheetDescription>
         </SheetHeader>
 
@@ -276,13 +279,15 @@ export function SuggestionReviewDialog({
                     // Streichungen sind rechts als übernehmbare Änderung wählbar.
                     segment.kind === "entfernt" ? (
                       <div key={`after-${index}`} className="flex flex-col gap-0.5">
-                        <label className="flex w-fit cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(index)}
-                            onChange={() => toggleSegment(index)}
-                            aria-label={`Streichung übernehmen: ${segment.before ?? ""}`}
-                          />
+                        <div className="flex w-fit items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {!wholeOnly && (
+                            <input
+                              type="checkbox"
+                              checked={selected.has(index)}
+                              onChange={() => toggleSegment(index)}
+                              aria-label={`Streichung übernehmen: ${segment.before ?? ""}`}
+                            />
+                          )}
                           <span
                             className={cn(
                               "inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium",
@@ -291,19 +296,21 @@ export function SuggestionReviewDialog({
                           >
                             Streichung übernehmen
                           </span>
-                        </label>
+                        </div>
                       </div>
                     ) : null
                   ) : (
                     <div key={`after-${index}`} className="flex flex-col gap-0.5">
                       {segment.kind !== "beibehalten" && (
-                        <label className="flex w-fit cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground">
-                          <input
-                            type="checkbox"
-                            checked={selected.has(index)}
-                            onChange={() => toggleSegment(index)}
-                            aria-label={`Änderung übernehmen: ${segment.after}`}
-                          />
+                        <div className="flex w-fit items-center gap-1.5 text-[11px] text-muted-foreground">
+                          {!wholeOnly && (
+                            <input
+                              type="checkbox"
+                              checked={selected.has(index)}
+                              onChange={() => toggleSegment(index)}
+                              aria-label={`Änderung übernehmen: ${segment.after}`}
+                            />
+                          )}
                           <span
                             className={cn(
                               "inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium",
@@ -312,7 +319,7 @@ export function SuggestionReviewDialog({
                           >
                             {KIND_LABELS[segment.kind]}
                           </span>
-                        </label>
+                        </div>
                       )}
                       <p className="whitespace-pre-wrap text-sm leading-relaxed">
                         {segment.kind === "umformuliert" && segment.words
@@ -342,6 +349,16 @@ export function SuggestionReviewDialog({
             {suggestion.character_count} / {suggestion.character_limit} Zeichen
             {overLimit ? " — über dem Limit" : ""}
           </p>
+
+          {suggestion.manifest_id && (
+            <div className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground" data-testid="suggestion-manifest-summary">
+              <span>Modus: {suggestion.improvement_mode ?? "clearer"}</span>
+              <span>Registry-Punkte: {suggestion.used_rule_ids?.length ?? 0}</span>
+              <span>Belege: {suggestion.source_version_ids?.length ?? 0}</span>
+              <span>Fehlende Angaben: {suggestion.missing_inputs?.length ?? 0}</span>
+              {suggestion.stale_reason && <span>Veraltet: {suggestion.stale_reason}</span>}
+            </div>
+          )}
 
           {suggestion.warnings.map((w) => (
             <p
@@ -527,7 +544,7 @@ export function SuggestionReviewDialog({
                   Eigene Bearbeitung öffnen
                 </Button>
               )}
-              {onAcceptPartial && (
+              {onAcceptPartial && !wholeOnly && (
                 <Button
                   variant="outline"
                   onClick={acceptSelected}
@@ -536,7 +553,10 @@ export function SuggestionReviewDialog({
                   Ausgewählte übernehmen ({selected.size})
                 </Button>
               )}
-              <Button onClick={onAccept} disabled={accepting || overLimit}>
+              <Button
+                onClick={onAccept}
+                disabled={accepting || overLimit || Boolean(suggestion.stale_reason)}
+              >
                 {accepting ? "Wird übernommen …" : "Übernehmen"}
               </Button>
             </div>

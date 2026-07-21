@@ -122,6 +122,44 @@ export interface A2Suggestion {
   section_result?: SectionResult | null
   proposal?: DraftProposal
   ai_proposal?: AIProposal
+  manifest_id?: string | null
+  improvement_mode?: ImprovementMode | null
+  change_summary?: string[]
+  used_rule_ids?: string[]
+  missing_inputs?: Array<AIMissingInput & { key: string; requirement_ids: string[] }>
+  unsupported_claim_warnings?: string[]
+  source_version_ids?: string[]
+  market_comparison_id?: string | null
+  context_hash?: string | null
+  quality_state?: "completed" | "completed_with_warnings" | "needs_input" | null
+  stale_reason?: string | null
+  accept_mode?: "legacy_partial" | "whole_suggestion_only"
+}
+
+export type ImprovementMode =
+  | "clearer"
+  | "complete_innolink_requirements"
+  | "shorten"
+
+export interface SuggestionContextAnchorOption {
+  anchor_id: string
+  source_id: string
+  source_version_id: string
+  source_name: string
+  scope: "external" | "drafting_context"
+  verification_status: "exact_verified" | "human_verified"
+  page?: number | null
+  section?: string | null
+}
+
+export interface SuggestionContextOptions {
+  anchors: SuggestionContextAnchorOption[]
+  market_comparison_id?: string | null
+  market_comparison_status?: string | null
+}
+
+function idempotencyKey(): string {
+  return crypto.randomUUID().replace(/-/g, "")
 }
 
 export function parseDraftProposal(value: unknown): DraftProposal | null {
@@ -323,13 +361,24 @@ export async function createRedraft(
   baseVersionId: string,
   guidance?: string,
   targetSection?: string,
-  modelPreference?: "primary" | "alternative"
+  modelPreference?: "primary" | "alternative",
+  options: {
+    improvementMode?: ImprovementMode
+    selectedAnchorIds?: string[]
+    language?: "de" | "en"
+    idempotencyKey?: string
+  } = {}
 ): Promise<A2Suggestion> {
+  const requestKey = options.idempotencyKey ?? idempotencyKey()
   const res = await fetch(
     `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/redrafts`,
     {
       method: "POST",
-      headers: { "Content-Type": "application/json", ...csrfHeaders() },
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": requestKey,
+        ...csrfHeaders(),
+      },
       body: JSON.stringify({
         base_version_id: baseVersionId,
         ...(guidance ? { guidance } : {}),
@@ -337,6 +386,9 @@ export async function createRedraft(
         ...(modelPreference && modelPreference !== "primary"
           ? { model_preference: modelPreference }
           : {}),
+        improvement_mode: options.improvementMode ?? "clearer",
+        selected_anchor_ids: options.selectedAnchorIds ?? [],
+        ...(options.language ? { language: options.language } : {}),
       }),
     }
   )
@@ -378,4 +430,38 @@ export async function createRedraft(
       },
     })
   })
+}
+
+export async function getSuggestionContextOptions(
+  runId: string,
+  fieldId: string
+): Promise<SuggestionContextOptions> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestion-context-options`
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as SuggestionContextOptions
+}
+
+export async function acceptFieldSuggestion(
+  runId: string,
+  fieldId: string,
+  suggestionId: string,
+  baseVersionId: string,
+  requestKey = idempotencyKey()
+): Promise<{ suggestion_id: string; draft_version_id: string; status: "accepted"; idempotent_replay: boolean }> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/suggestions/${encodeURIComponent(suggestionId)}/accept`,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Idempotency-Key": requestKey,
+        ...csrfHeaders(),
+      },
+      body: JSON.stringify({ base_version_id: baseVersionId }),
+    }
+  )
+  if (!res.ok) throw await toError(res)
+  return await res.json()
 }

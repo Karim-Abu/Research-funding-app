@@ -2,10 +2,11 @@
 from __future__ import annotations
 
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, Request, Response
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.api.errors import ProblemException, correlation_id
-from app.agents import field_drafting
+from app.agents import field_drafting, field_drafting_context, suggestion_staleness
 from app.contracts.copy_event import CopyEvent, CopyEventCreate
 from app.contracts.draft import (
     DraftPatch,
@@ -14,6 +15,9 @@ from app.contracts.draft import (
     FieldSuggestionsRead,
     PortalFieldDraft,
     RedraftRequest,
+    SuggestionAcceptRequest,
+    SuggestionAcceptResponse,
+    SuggestionContextOptions,
 )
 from app.contracts.evidence import EvidenceLink
 from app.contracts.portal_field import (
@@ -29,7 +33,7 @@ from app.drafts.charcount import within_limit
 from app.fields import redraft_service
 from app.fields import service as fields_service
 from app.registry import get_registry
-from app.repositories import audit
+from app.repositories import audit, idempotency
 from app.repositories import copy_events as copy_events_repo
 from app.repositories import draft_suggestions as suggestions_repo
 from app.repositories import drafts as drafts_repo
@@ -265,6 +269,23 @@ def list_field_suggestions(
     ])
 
 
+@router.get(
+    "/runs/{run_id}/fields/{field_id}/suggestion-context-options",
+    response_model=SuggestionContextOptions,
+)
+def get_suggestion_context_options(
+    run_id: str,
+    field_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> SuggestionContextOptions:
+    run = _require_run(db, run_id, context.user.workspace_id)
+    _require_draft(db, run, field_id)
+    return SuggestionContextOptions.model_validate(
+        field_drafting_context.suggestion_context_options(db, run)
+    )
+
+
 @router.post(
     "/runs/{run_id}/fields/{field_id}/redrafts",
     response_model=AsyncAccepted,
@@ -278,6 +299,9 @@ def create_redraft(
     background: BackgroundTasks,
     context: AuthContext = Depends(require_unsafe_guards),
     db: Session = Depends(get_db),
+    idempotency_key: str | None = Header(
+        None, alias="Idempotency-Key", min_length=8, max_length=128
+    ),
 ) -> AsyncAccepted:
     """Advisory A2-Vorschlag anfordern; der Entwurf bleibt unverändert."""
     run = _require_run(db, run_id, context.user.workspace_id)
@@ -304,19 +328,157 @@ def create_redraft(
             status=422, code="target_section_not_supported", title="Unprocessable Entity",
             detail="Dieses Feld besitzt keine getrennten Zielabschnitte.",
         )
+    scope = (
+        f"{context.user.workspace_id}:{context.user.id}:POST:"
+        f"/runs/{run_id}/fields/{field_id}/redrafts"
+    )
+    fingerprint = idempotency.fingerprint(
+        "POST", f"/runs/{run_id}/fields/{field_id}/redrafts",
+        payload.model_dump_json(exclude_none=True),
+    )
+    if idempotency_key:
+        replay = idempotency.get(db, scope, idempotency_key)
+        if replay is not None:
+            if replay.request_fingerprint != fingerprint:
+                raise ProblemException(
+                    status=409, code="idempotency_conflict", title="Conflict",
+                    detail="Idempotency-Key reused with a different request.",
+                )
+            return AsyncAccepted(**replay.response_body)
     operation, accepted, guidance = redraft_service.prepare_redraft(
         db, run, draft, base_version_id=payload.base_version_id,
         guidance=payload.guidance, target_section=payload.target_section,
         actor_user_id=context.user.id,
-        idempotency_key=None, correlation_id=correlation_id(request),
+        idempotency_key=idempotency_key, correlation_id=correlation_id(request),
     )
-    db.commit()
+    if idempotency_key:
+        try:
+            idempotency.save(
+                db, scope=scope, key=idempotency_key,
+                request_fingerprint=fingerprint, response_status=202,
+                response_body=accepted.model_dump(mode="json"),
+                resource_id=accepted.resource_id,
+            )
+            db.commit()
+        except IntegrityError:
+            # A concurrent same-key request owns the durable operation. Rolling
+            # back removes this request's queued operation and audit row.
+            db.rollback()
+            replay = idempotency.get(db, scope, idempotency_key)
+            if replay is not None and replay.request_fingerprint == fingerprint:
+                return AsyncAccepted(**replay.response_body)
+            raise ProblemException(
+                status=409, code="idempotency_conflict", title="Conflict",
+                detail="Concurrent idempotency request could not be replayed.",
+            )
+    else:
+        db.commit()
     background.add_task(
         redraft_service.redraft_executor, operation.operation_id, run.run_id,
         draft.draft_id, payload.base_version_id, guidance, field_id,
         payload.target_section, payload.model_preference,
+        payload.improvement_mode, payload.selected_anchor_ids,
+        payload.language, bool(idempotency_key),
     )
     return accepted
+
+
+@router.post(
+    "/runs/{run_id}/fields/{field_id}/suggestions/{suggestion_id}/accept",
+    response_model=SuggestionAcceptResponse,
+)
+def accept_field_suggestion(
+    run_id: str,
+    field_id: str,
+    suggestion_id: str,
+    payload: SuggestionAcceptRequest,
+    context: AuthContext = Depends(require_unsafe_guards),
+    db: Session = Depends(get_db),
+    idempotency_key: str = Header(
+        ..., alias="Idempotency-Key", min_length=8, max_length=128
+    ),
+) -> SuggestionAcceptResponse:
+    run = _require_run(db, run_id, context.user.workspace_id)
+    draft = _require_draft(db, run, field_id)
+    scope = (
+        f"{context.user.workspace_id}:{context.user.id}:POST:"
+        f"/runs/{run_id}/fields/{field_id}/suggestions/{suggestion_id}/accept"
+    )
+    request_fingerprint = idempotency.fingerprint(
+        "POST", f"/runs/{run_id}/fields/{field_id}/suggestions/{suggestion_id}/accept",
+        payload.model_dump_json(),
+    )
+    replay = idempotency.get(db, scope, idempotency_key)
+    if replay is not None:
+        if replay.request_fingerprint != request_fingerprint:
+            raise ProblemException(
+                status=409, code="idempotency_conflict", title="Conflict",
+                detail="Idempotency-Key reused with a different request.",
+            )
+        return SuggestionAcceptResponse.model_validate({
+            **replay.response_body, "idempotent_replay": True,
+        })
+    suggestion = suggestions_repo.get_scoped(
+        db, suggestion_id, run_id=run_id, workspace_id=context.user.workspace_id
+    )
+    if suggestion is None or suggestion.field_id != field_id:
+        raise ProblemException(
+            status=404, code="not_found", title=_NOT_FOUND,
+            detail="Suggestion not found.",
+        )
+    if suggestion.status != "proposed":
+        raise ProblemException(
+            status=409, code="suggestion_invalid_transition", title="Conflict",
+            detail="Der Vorschlag kann in diesem Zustand nicht übernommen werden.",
+        )
+    stale_reason = suggestion_staleness.reason(db, run, suggestion)
+    if stale_reason:
+        suggestion.status = "expired"
+        suggestion.stale_reason = stale_reason
+        db.commit()
+        raise ProblemException(
+            status=409, code="suggestion_stale", title="Conflict",
+            detail="Der Vorschlag basiert nicht mehr auf dem aktuellen Kontext.",
+            reason_code=stale_reason,
+        )
+    if payload.base_version_id != suggestion.base_version_id:
+        raise ProblemException(
+            status=409, code="stale_base_version", title="Conflict",
+            detail="Dieser Abschnitt wurde zwischenzeitlich geändert.",
+        )
+    try:
+        drafts_repo.apply_update(
+            db, run, draft, base_version_id=payload.base_version_id,
+            text=suggestion.suggested_text,
+            source_operation_id=suggestion.operation_id,
+            actor_user_id=context.user.id,
+        )
+        assert draft.current_version_id is not None
+        response = SuggestionAcceptResponse(
+            suggestion_id=suggestion.suggestion_id,
+            draft_version_id=draft.current_version_id,
+        )
+        idempotency.save(
+            db, scope=scope, key=idempotency_key,
+            request_fingerprint=request_fingerprint, response_status=200,
+            response_body=response.model_dump(mode="json"),
+            resource_id=draft.current_version_id,
+        )
+        db.commit()
+    except IntegrityError:
+        # Idempotency record and DraftVersion share one transaction. The losing
+        # request therefore rolls its duplicate version back before replaying.
+        db.rollback()
+        replay = idempotency.get(db, scope, idempotency_key)
+        if replay is not None and replay.request_fingerprint == request_fingerprint:
+            return SuggestionAcceptResponse.model_validate({
+                **replay.response_body, "idempotent_replay": True,
+            })
+        raise ProblemException(
+            status=409, code="idempotency_conflict", title="Conflict",
+            detail="Concurrent idempotency request could not be replayed.",
+        )
+    return response
 
 
 @router.post(

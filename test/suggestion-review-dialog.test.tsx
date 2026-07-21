@@ -113,6 +113,51 @@ describe("SuggestionReviewDialog", () => {
     expect(merged.startsWith("4.2 Neuheit\n")).toBe(true)
   })
 
+  it("blendet partielle Übernahme für manifestgebundene Vorschläge aus", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="Alter Satz."
+        suggestion={suggestion({
+          suggested_text: "Neuer Satz.",
+          manifest_id: "manifest-1",
+          accept_mode: "whole_suggestion_only",
+        })}
+        onAccept={() => {}}
+        onAcceptPartial={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.queryByRole("checkbox")).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole("button", { name: /Ausgewählte übernehmen/ })
+    ).not.toBeInTheDocument()
+    expect(screen.getByTestId("suggestion-manifest-summary")).toBeInTheDocument()
+  })
+
+  it("verhindert die Übernahme eines veralteten Manifest-Vorschlags", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="Alter Satz."
+        suggestion={suggestion({
+          suggested_text: "Neuer Satz.",
+          manifest_id: "manifest-1",
+          accept_mode: "whole_suggestion_only",
+          stale_reason: "source_version_changed",
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled()
+    expect(screen.getByTestId("suggestion-manifest-summary")).toHaveTextContent(
+      "Veraltet: source_version_changed"
+    )
+  })
+
   it("«Eigene Bearbeitung öffnen» ruft onEdit ohne Ablehnung", () => {
     const onEdit = vi.fn()
     const onDismiss = vi.fn()

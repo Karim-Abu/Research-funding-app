@@ -83,14 +83,18 @@ import {
 } from "@/lib/draft-viewmodel"
 import {
   AI_REASON_INFO,
+  acceptFieldSuggestion,
   createRedraft,
   FALLBACK_AI_REASON,
   getRunFieldSuggestion,
+  getSuggestionContextOptions,
   isA2Field,
   RedraftError,
   SOLUTION_INNOVATION_FIELD_ID,
   VALUE_CREATION_FIELD_ID,
   type A2Suggestion,
+  type ImprovementMode,
+  type SuggestionContextOptions,
 } from "@/lib/redraft"
 import { getResearchWorkspace } from "@/lib/research-brief"
 import {
@@ -256,6 +260,10 @@ export function LiveEditor({
   // True, wenn der angezeigte Vorschlag aus dem Analyse-Lauf stammt (statt
   // aus einem manuellen «KI-Vorschlag erstellen»).
   const [a2FromRun, setA2FromRun] = React.useState(false)
+  const [a2ImprovementMode, setA2ImprovementMode] = React.useState<ImprovementMode>("clearer")
+  const [a2ContextOptions, setA2ContextOptions] = React.useState<SuggestionContextOptions | null>(null)
+  const [a2SelectedAnchors, setA2SelectedAnchors] = React.useState<ReadonlySet<string>>(new Set())
+  const [a2ContextLoading, setA2ContextLoading] = React.useState(false)
   const [selectedSubsection, setSelectedSubsection] = React.useState<string | null>(null)
   const selectedIdRef = React.useRef<string | null>(null)
   const autoSelectedRef = React.useRef(false)
@@ -328,6 +336,8 @@ export function LiveEditor({
     setA2ReviewOpen(false)
     setA2Accepting(false)
     setA2FromRun(false)
+    setA2ContextOptions(null)
+    setA2SelectedAnchors(new Set())
   }
 
   // Im Analyse-Lauf erzeugte Vorschläge (proposed, zur aktuellen Basis)
@@ -455,7 +465,11 @@ export function LiveEditor({
         baseVersionId,
         undefined,
         selectedSubsection ?? undefined,
-        modelPreference
+        modelPreference,
+        {
+          improvementMode: a2ImprovementMode,
+          selectedAnchorIds: [...a2SelectedAnchors],
+        }
       )
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
@@ -491,6 +505,26 @@ export function LiveEditor({
     setA2Accepting(true)
     setErrorMsg(null)
     try {
+      if (
+        a2Suggestion.accept_mode === "whole_suggestion_only" &&
+        textOverride === undefined
+      ) {
+        await acceptFieldSuggestion(
+          runId,
+          selected.field_id,
+          a2Suggestion.suggestion_id,
+          a2Suggestion.base_version_id
+        )
+        const updated = await getField(runId, selected.field_id)
+        applyDraft(updated)
+        setBaseVersionId(updated.current_version.draft_version_id)
+        setLocalText(updated.current_version.text)
+        setSaveState("saved")
+        setRecheck("accepted")
+        loadReview()
+        resetA2()
+        return
+      }
       const updated = await updateField(
         runId,
         selected.field_id,
@@ -513,6 +547,20 @@ export function LiveEditor({
       } else {
         setA2Error(e instanceof FieldError ? e.message : "Übernehmen fehlgeschlagen.")
       }
+    }
+  }
+
+  async function loadSuggestionContextOptions() {
+    if (!selected) return
+    setA2ContextLoading(true)
+    try {
+      setA2ContextOptions(
+        await getSuggestionContextOptions(runId, selected.field_id)
+      )
+    } catch (error) {
+      setA2Error(error instanceof Error ? error.message : "Belege konnten nicht geladen werden.")
+    } finally {
+      setA2ContextLoading(false)
     }
   }
 
@@ -1404,6 +1452,54 @@ export function LiveEditor({
                 </label>
               )}
               {/* Was passiert bei der Aktion — in einem Satz, vor dem Klick. */}
+              <label className="flex items-center gap-2 text-xs text-muted-foreground">
+                <span>Verbesserungsziel</span>
+                <select
+                  value={a2ImprovementMode}
+                  onChange={(event) => setA2ImprovementMode(event.target.value as ImprovementMode)}
+                  className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                  aria-label="Verbesserungsziel"
+                >
+                  <option value="clearer">Klarer formulieren</option>
+                  <option value="complete_innolink_requirements">Innolink-Anforderungen vervollständigen</option>
+                  <option value="shorten">Kürzen</option>
+                </select>
+              </label>
+              <div className="flex flex-col gap-1 rounded-md border border-border px-2 py-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs text-muted-foreground">Optionale, geprüfte Belege</span>
+                  <Button
+                    type="button"
+                    size="xs"
+                    variant="ghost"
+                    onClick={() => void loadSuggestionContextOptions()}
+                    disabled={a2ContextLoading}
+                  >
+                    {a2ContextLoading ? "Wird geladen …" : "Belege auswählen"}
+                  </Button>
+                </div>
+                {a2ContextOptions && (
+                  <div className="flex max-h-28 flex-col gap-1 overflow-y-auto" data-testid="suggestion-anchor-options">
+                    {a2ContextOptions.anchors.length === 0 ? (
+                      <span className="text-[11px] text-muted-foreground">Keine freigegebenen Belege verfügbar.</span>
+                    ) : a2ContextOptions.anchors.map((anchor) => (
+                      <label key={anchor.anchor_id} className="flex items-center gap-2 text-[11px] text-foreground">
+                        <input
+                          type="checkbox"
+                          checked={a2SelectedAnchors.has(anchor.anchor_id)}
+                          onChange={() => setA2SelectedAnchors((previous) => {
+                            const next = new Set(previous)
+                            if (next.has(anchor.anchor_id)) next.delete(anchor.anchor_id)
+                            else next.add(anchor.anchor_id)
+                            return next
+                          })}
+                        />
+                        <span>{anchor.source_name}{anchor.section ? ` · ${anchor.section}` : ""}</span>
+                      </label>
+                    ))}
+                  </div>
+                )}
+              </div>
               <p
                 className="text-xs text-muted-foreground"
                 data-testid="a2-action-explainer"
@@ -1601,7 +1697,11 @@ export function LiveEditor({
           currentText={currentReviewText}
           suggestion={a2Suggestion}
           onAccept={() => void acceptSuggestion()}
-          onAcceptPartial={(mergedText) => void acceptSuggestion(mergedText)}
+          onAcceptPartial={
+            a2Suggestion.accept_mode === "whole_suggestion_only"
+              ? undefined
+              : (mergedText) => void acceptSuggestion(mergedText)
+          }
           onEdit={editSuggestionTarget}
           onDismiss={(reason) => void dismissSuggestion(reason)}
           accepting={a2Accepting}

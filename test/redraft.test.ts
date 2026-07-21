@@ -1,7 +1,13 @@
 import { describe, it, expect } from "vitest"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
-import { createRedraft, isA2Field, parseAIProposal, RedraftError } from "@/lib/redraft"
+import {
+  acceptFieldSuggestion,
+  createRedraft,
+  isA2Field,
+  parseAIProposal,
+  RedraftError,
+} from "@/lib/redraft"
 
 const FIELD = "SOL.INNOVATION_SOLUTION.EDITOR"
 const REDRAFT_URL = `/api/runs/r1/fields/${FIELD}/redrafts`
@@ -49,14 +55,18 @@ function suggestionResult() {
 
 describe("createRedraft", () => {
   it("posts, polls the operation and resolves the suggestion", async () => {
+    let requestKey = ""
+    let requestBody: Record<string, unknown> = {}
     server.use(
-      http.post(REDRAFT_URL, () =>
-        HttpResponse.json(
+      http.post(REDRAFT_URL, async ({ request }) => {
+        requestKey = request.headers.get("idempotency-key") ?? ""
+        requestBody = await request.json() as Record<string, unknown>
+        return HttpResponse.json(
           { operation_id: "op1", resource_type: "redraft", resource_id: "d1",
             status: "queued", poll_url: "/api/v1/operations/op1" },
           { status: 202 }
         )
-      ),
+      }),
       http.get("/api/operations/op1", () =>
         HttpResponse.json({
           operation_id: "op1", resource_type: "redraft", resource_id: "d1",
@@ -72,6 +82,9 @@ describe("createRedraft", () => {
     expect(suggestion.ai_proposal?.model_ref).toBe("anthropic_direct:claude-sonnet-4-6")
     expect(suggestion.ai_proposal?.human_review_required).toBe(true)
     expect(suggestion.ai_proposal?.missing_inputs[0]?.label).toBe("[Marktzahl fehlt]")
+    expect(requestKey).toMatch(/^[a-f0-9]{32}$/)
+    expect(requestBody.improvement_mode).toBe("clearer")
+    expect(requestBody.selected_anchor_ids).toEqual([])
   })
 
   // R5.2: fail-closed — ein Proposal ohne human_review_required=true wird verworfen.
@@ -197,5 +210,26 @@ describe("createRedraft", () => {
       )
     )
     await expect(createRedraft("r1", FIELD, "v1")).rejects.toBeInstanceOf(RedraftError)
+  })
+
+  it("accepts a manifest suggestion with an idempotency key", async () => {
+    let requestKey = ""
+    server.use(
+      http.post(
+        `/api/runs/r1/fields/${FIELD}/suggestions/s1/accept`,
+        ({ request }) => {
+          requestKey = request.headers.get("idempotency-key") ?? ""
+          return HttpResponse.json({
+            suggestion_id: "s1",
+            draft_version_id: "v2",
+            status: "accepted",
+            idempotent_replay: false,
+          })
+        }
+      )
+    )
+    const response = await acceptFieldSuggestion("r1", FIELD, "s1", "v1")
+    expect(response.draft_version_id).toBe("v2")
+    expect(requestKey).toMatch(/^[a-f0-9]{32}$/)
   })
 })
