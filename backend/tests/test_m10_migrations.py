@@ -24,9 +24,9 @@ _KEY_TABLES = {
     "draft_claims", "claim_lineages", "run_quality_summaries", "copy_events",
     "research_briefs",
     "import_candidate_revisions", "structured_import_candidate_revisions",
-    "project_field_revisions",
+    "project_field_revisions", "suggestion_context_manifests",
 }
-_HEAD = "b2d4f6a8c013"  # RUN 3B source provenance and external evidence.
+_HEAD = "c3e5a7b9d024"  # RUN 3C versioned suggestion context.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -228,6 +228,15 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert {"generation_kind", "target_section", "section_result_json"} <= _columns(
         db, "draft_suggestions"
     )
+    assert "suggestion_context_manifests" in _tables(db)
+    assert {
+        "manifest_id", "improvement_mode", "missing_inputs", "quality_state",
+        "stale_reason", "historical_status", "accept_mode",
+    } <= _columns(db, "draft_suggestions")
+    assert {
+        "field_id", "requirement_id", "missing_input_key", "resolved_at",
+        "stale_at", "status_reason",
+    } <= _columns(db, "open_issues")
     assert "target_section" in _columns(db, "review_findings")
     assert {
         "research_brief_id", "research_module", "planner_purpose", "execution_mode",
@@ -306,7 +315,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive RUN-3B-Ebene. Alle vorherigen
+    # Down one entfernt nur die additive RUN-3C-Ebene. Alle vorherigen
     # Strukturen (inkl. Rollen-/Skill-, Recherchebrief- und
     # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
     assert _alembic(db, "downgrade", "-1").returncode == 0
@@ -324,25 +333,30 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "reason_code", "retryable", "configuration_fingerprint",
         "registry_version", "pricing_version",
     } <= _columns(db, "provider_preflight_results")
-    assert not {
+    assert {
         "retrieval_provenance", "content_review_status", "content_safety_status",
         "similarity_hash", "possible_duplicate_source_id",
-    } & _columns(db, "source_versions")
-    assert not {"project_id", "research_task_id"} & _columns(db, "evidence_anchors")
-    assert not {
+    } <= _columns(db, "source_versions")
+    assert {"project_id", "research_task_id"} <= _columns(db, "evidence_anchors")
+    assert {
         "canonical_url", "fetched_content_hash", "eligibility_status",
-    } & _columns(db, "research_results")
-    assert not {
+    } <= _columns(db, "research_results")
+    assert {
         "source_version_ids", "query_approval_ids", "stale_reason",
-    } & _columns(db, "market_comparisons")
+    } <= _columns(db, "market_comparisons")
+    assert "suggestion_context_manifests" not in _tables(db)
+    assert not {
+        "manifest_id", "improvement_mode", "missing_inputs", "quality_state",
+        "stale_reason", "historical_status", "accept_mode",
+    } & _columns(db, "draft_suggestions")
     con = sqlite3.connect(db)
     try:
         assert con.execute(
             "SELECT COUNT(*) FROM evidence_anchors WHERE anchor_id='anchor-3b-rt'"
-        ).fetchone() == (0,)
+        ).fetchone() == (1,)
         assert con.execute(
             "SELECT COUNT(*) FROM evidence_links WHERE evidence_link_id='link-3b-rt'"
-        ).fetchone() == (0,)
+        ).fetchone() == (1,)
     finally:
         con.close()
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
@@ -420,6 +434,11 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert {
         "source_version_ids", "query_approval_ids", "stale_reason",
     } <= _columns(db, "market_comparisons")
+    assert "suggestion_context_manifests" in _tables(db)
+    assert {
+        "manifest_id", "improvement_mode", "missing_inputs", "quality_state",
+        "stale_reason", "historical_status", "accept_mode",
+    } <= _columns(db, "draft_suggestions")
     assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
@@ -509,3 +528,49 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "comparison_dimensions", "coverage_status", "support_status",
     } <= _columns(db, "market_comparison_items")
     assert {"draft_claims", "claim_lineages", "run_quality_summaries"} <= _tables(db)
+
+
+def test_run3c_historical_suggestion_backfill_and_rollback(tmp_path):
+    db = tmp_path / "run3c-backfill.db"
+    assert _alembic(db, "upgrade", "b2d4f6a8c013").returncode == 0
+    con = sqlite3.connect(db)
+    try:
+        con.execute(
+            "INSERT INTO draft_suggestions (suggestion_id, run_id, workspace_id,"
+            " draft_id, base_version_id, field_id, profile_id, operation_id,"
+            " generation_kind, status, suggested_text, evidence_anchor_ids,"
+            " open_issue_ids, placeholders, content_hash, character_count, created_at)"
+            " VALUES ('s-historical', 'run-historical', 'ws-historical', 'draft-historical',"
+            " 'version-historical', 'INTRO.APP.ABSTRACT', 'A2.introduction_public_summary',"
+            " 'op-historical', 'model_generated', 'accepted', 'Historischer Text',"
+            " '[]', '[]', '[]', 'hash-historical', 18,"
+            " '2026-01-01T00:00:00+00:00')"
+        )
+        con.commit()
+    finally:
+        con.close()
+
+    assert _alembic(db, "upgrade", "head").returncode == 0
+    con = sqlite3.connect(db)
+    try:
+        row = con.execute(
+            "SELECT status, stale_reason, historical_status, suggested_text "
+            "FROM draft_suggestions "
+            "WHERE suggestion_id='s-historical'"
+        ).fetchone()
+    finally:
+        con.close()
+    assert row == (
+        "expired", "historical_context_unavailable", "accepted", "Historischer Text"
+    )
+
+    assert _alembic(db, "downgrade", "b2d4f6a8c013").returncode == 0
+    con = sqlite3.connect(db)
+    try:
+        row = con.execute(
+            "SELECT status, suggested_text FROM draft_suggestions "
+            "WHERE suggestion_id='s-historical'"
+        ).fetchone()
+    finally:
+        con.close()
+    assert row == ("accepted", "Historischer Text")

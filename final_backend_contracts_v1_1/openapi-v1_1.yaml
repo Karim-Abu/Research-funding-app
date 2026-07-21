@@ -1491,6 +1491,76 @@ paths:
       - member
       - lead_admin
       x-audit-required: true
+  /api/v1/runs/{run_id}/fields/{field_id}/suggestion-context-options:
+    get:
+      summary: List selectable context anchors for a field suggestion
+      operationId: getSuggestionContextOptions
+      tags:
+      - Fields
+      responses:
+        '200':
+          description: Successful response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionContextOptions'
+        '401': *id001
+        '404': *id005
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: field_id
+        in: path
+        required: true
+        schema: {type: string}
+      x-required-roles:
+      - member
+      - lead_admin
+  /api/v1/runs/{run_id}/fields/{field_id}/suggestions/{suggestion_id}/accept:
+    post:
+      summary: Accept a manifest-bound field suggestion as one new draft version
+      operationId: acceptFieldSuggestion
+      tags:
+      - Fields
+      responses:
+        '200':
+          description: Suggestion accepted
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SuggestionAcceptResponse'
+        '401': *id001
+        '403': *id003
+        '404': *id005
+        '409': *id008
+        '422': *id006
+      parameters:
+      - name: run_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: field_id
+        in: path
+        required: true
+        schema: {type: string}
+      - name: suggestion_id
+        in: path
+        required: true
+        schema: {type: string}
+      - *id002
+      - *id007
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SuggestionAcceptRequest'
+      x-required-roles:
+      - member
+      - lead_admin
+      x-audit-required: true
   /api/v1/runs/{run_id}/fields/{field_id}/evidence-links:
     post:
       summary: Link evidence to current field draft
@@ -4423,6 +4493,53 @@ components:
           - primary
           - alternative
           default: primary
+        improvement_mode:
+          type: string
+          enum: [clearer, complete_innolink_requirements, shorten]
+          default: clearer
+        selected_anchor_ids:
+          type: array
+          maxItems: 20
+          items: {type: string}
+          default: []
+        language:
+          type: [string, 'null']
+          enum: [de, en, null]
+    SuggestionAcceptRequest:
+      type: object
+      additionalProperties: false
+      required: [base_version_id]
+      properties:
+        base_version_id: {type: string}
+    SuggestionAcceptResponse:
+      type: object
+      required: [suggestion_id, draft_version_id, status, idempotent_replay]
+      properties:
+        suggestion_id: {type: string}
+        draft_version_id: {type: string}
+        status: {type: string, enum: [accepted]}
+        idempotent_replay: {type: boolean, default: false}
+    SuggestionContextAnchorOption:
+      type: object
+      required: [anchor_id, source_id, source_version_id, source_name, scope, verification_status]
+      properties:
+        anchor_id: {type: string}
+        source_id: {type: string}
+        source_version_id: {type: string}
+        source_name: {type: string}
+        scope: {type: string, enum: [external, drafting_context]}
+        verification_status: {type: string, enum: [exact_verified, human_verified]}
+        page: {type: [integer, 'null']}
+        section: {type: [string, 'null']}
+    SuggestionContextOptions:
+      type: object
+      required: [anchors]
+      properties:
+        anchors:
+          type: array
+          items: {$ref: '#/components/schemas/SuggestionContextAnchorOption'}
+        market_comparison_id: {type: [string, 'null']}
+        market_comparison_status: {type: [string, 'null']}
     ReviewFinding:
       type: object
       required:

@@ -85,3 +85,38 @@ class RedraftRequest(BaseModel):
     # "alternative" = explizit angeforderte Alternativroute nach transientem
     # Providerfehler — nie ein stiller automatischer Fallback.
     model_preference: Literal["primary", "alternative"] = "primary"
+    improvement_mode: Literal[
+        "clearer", "complete_innolink_requirements", "shorten"
+    ] = "clearer"
+    selected_anchor_ids: list[str] = Field(default_factory=list, max_length=20)
+    language: Literal["de", "en"] | None = None
+
+
+class SuggestionAcceptRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    base_version_id: str
+
+
+class SuggestionAcceptResponse(BaseModel):
+    suggestion_id: str
+    draft_version_id: str
+    status: Literal["accepted"] = "accepted"
+    idempotent_replay: bool = False
+
+
+class SuggestionContextAnchorOption(BaseModel):
+    anchor_id: str
+    source_id: str
+    source_version_id: str
+    source_name: str
+    scope: Literal["external", "drafting_context"]
+    verification_status: Literal["exact_verified", "human_verified"]
+    page: int | None = None
+    section: str | None = None
+
+
+class SuggestionContextOptions(BaseModel):
+    anchors: list[SuggestionContextAnchorOption] = []
+    market_comparison_id: str | None = None
+    market_comparison_status: str | None = None

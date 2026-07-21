@@ -954,6 +954,20 @@ class OpenIssue(Base):
     last_seen_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
+    # RUN 3C: missing-input issues are field + registry-requirement scoped.  The
+    # text itself stays in ``description``; these columns contain identifiers
+    # and lifecycle metadata only.
+    field_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    requirement_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    missing_input_key: Mapped[str | None] = mapped_column(String, nullable=True)
+    source_suggestion_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    stale_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    status_reason: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 # ---------------------------------------------------------------------------
@@ -1661,6 +1675,56 @@ class AgentEvidenceProposal(Base):
 # ---------------------------------------------------------------------------
 
 
+class SuggestionContextManifest(Base):
+    """Versioned, metadata-only context boundary for one field suggestion.
+
+    The rendered prompt, draft text and source quotes are deliberately not
+    persisted here.  IDs, versions and hashes make the exact boundary
+    reproducible and allow fail-closed staleness checks.
+    """
+
+    __tablename__ = "suggestion_context_manifests"
+    __table_args__ = (
+        UniqueConstraint(
+            "run_id", "field_id", "base_draft_version_id", "context_hash",
+            name="uq_suggestion_manifest_context",
+        ),
+    )
+
+    manifest_id: Mapped[str] = mapped_column(String, primary_key=True)
+    schema_version: Mapped[str] = mapped_column(
+        String, nullable=False, default="SuggestionContextManifest@v1"
+    )
+    workspace_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    run_id: Mapped[str] = mapped_column(
+        ForeignKey("analysis_runs.run_id"), nullable=False, index=True
+    )
+    field_id: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    base_draft_version_id: Mapped[str] = mapped_column(String, nullable=False)
+    primary_application_source_version_id: Mapped[str | None] = mapped_column(
+        String, nullable=True
+    )
+    requirement_registry_version: Mapped[str] = mapped_column(String, nullable=False)
+    rule_registry_version: Mapped[str] = mapped_column(String, nullable=False)
+    field_instruction_hash: Mapped[str] = mapped_column(String, nullable=False)
+    improvement_mode: Mapped[str] = mapped_column(String, nullable=False)
+    language: Mapped[str] = mapped_column(String, nullable=False)
+    selected_anchor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    market_comparison_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    requirement_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    rule_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    prompt_version: Mapped[str] = mapped_column(String, nullable=False)
+    output_schema_version: Mapped[str] = mapped_column(String, nullable=False)
+    omitted_anchor_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    component_hashes: Mapped[dict] = mapped_column(JSON, nullable=False, default=dict)
+    context_hash: Mapped[str] = mapped_column(String, nullable=False, index=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=_utcnow, nullable=False
+    )
+
+
 class DraftSuggestion(Base):
     """One advisory A2 draft suggestion produced via createRedraft (proposed →
     accepted | rejected | expired | failed). Never auto-applied."""
@@ -1710,6 +1774,31 @@ class DraftSuggestion(Base):
     )
     decided_by: Mapped[str | None] = mapped_column(String, nullable=True)
     accepted_draft_version_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    # RUN 3C additive provenance.  Nullable fields preserve historical rows;
+    # new manifest-bound suggestions populate every applicable value.
+    project_id: Mapped[str | None] = mapped_column(String, nullable=True, index=True)
+    manifest_id: Mapped[str | None] = mapped_column(
+        ForeignKey("suggestion_context_manifests.manifest_id"), nullable=True, index=True
+    )
+    improvement_mode: Mapped[str | None] = mapped_column(String, nullable=True)
+    change_summary: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    used_rule_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    missing_inputs: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    unsupported_claim_warnings: Mapped[list] = mapped_column(
+        JSON, nullable=False, default=list
+    )
+    factual_claims: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    source_version_ids: Mapped[list] = mapped_column(JSON, nullable=False, default=list)
+    market_comparison_id: Mapped[str | None] = mapped_column(String, nullable=True)
+    registry_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    output_schema_version: Mapped[str | None] = mapped_column(String, nullable=True)
+    context_hash: Mapped[str | None] = mapped_column(String, nullable=True)
+    quality_state: Mapped[str | None] = mapped_column(String, nullable=True)
+    stale_reason: Mapped[str | None] = mapped_column(String, nullable=True)
+    historical_status: Mapped[str | None] = mapped_column(String, nullable=True)
+    accept_mode: Mapped[str] = mapped_column(
+        String, nullable=False, default="legacy_partial", server_default="legacy_partial"
+    )
 
 
 # ---------------------------------------------------------------------------

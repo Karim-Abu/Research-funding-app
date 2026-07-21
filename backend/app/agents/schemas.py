@@ -176,7 +176,11 @@ class EvidenceLinkRecord(BaseModel):
     section: str | None = None
     requirement_id: str | None = None
     support_status: str | None = None
-    context_kind: Literal["external_evidence", "research_candidate"] | None = None
+    context_kind: Literal[
+        "application_evidence", "external_evidence", "external",
+        "drafting_context", "research_candidate",
+    ] | None = None
+    source_version_id: str | None = None
 
 
 class OpenIssueRecord(BaseModel):
@@ -237,6 +241,61 @@ class PortalFieldDraftBundle(BaseModel):
     field_level_warnings: list[OpenIssueRecord] = []
 
 
+# --- RUN 3C normalized field suggestion output -----------------------------
+
+
+class FieldSuggestionMissingInputV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    key: str
+    label: str
+    reason: str
+    requirement_ids: list[str] = Field(min_length=1)
+
+
+class FieldSuggestionClaimV1(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    claim: str
+    claim_type: Literal[
+        "number", "date", "organization", "product", "market",
+        "technology", "legal", "other",
+    ]
+    anchor_ids: list[str] = []
+
+
+class FieldSuggestionOutputV1(BaseModel):
+    """Server-normalized structured contract for a manifest-bound suggestion.
+
+    ``factual_claims`` is advisory model metadata only.  Independent server
+    extraction validates the complete ``suggestion_text`` separately.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    suggestion_text: str = Field(min_length=1)
+    change_summary: list[str] = []
+    used_anchor_ids: list[str] = []
+    used_rule_ids: list[str] = []
+    missing_inputs: list[FieldSuggestionMissingInputV1] = []
+    unsupported_claim_warnings: list[str] = []
+    factual_claims: list[FieldSuggestionClaimV1] = []
+    character_count: int = Field(ge=0)
+    character_limit: int = Field(gt=0)
+    character_limit_status: Literal["within_limit", "exceeded"]
+    language: Literal["de", "en"]
+
+    @model_validator(mode="after")
+    def _validate_character_count(self) -> "FieldSuggestionOutputV1":
+        expected = len(self.suggestion_text)
+        if self.character_count != expected:
+            raise ValueError("character_count_mismatch")
+        expected_status = "within_limit" if expected <= self.character_limit else "exceeded"
+        if self.character_limit_status != expected_status:
+            raise ValueError("character_limit_status_mismatch")
+        return self
+
+
 # --- A2 subsection drafting (additive code-only contract) ------------------
 
 ContextKind = Literal[
@@ -246,6 +305,7 @@ ContextKind = Literal[
     "research_candidate",
     "portal_requirement",
     "open_issue",
+    "market_finding",
 ]
 
 
@@ -653,6 +713,7 @@ SCHEMA_MODELS: dict[str, type[BaseModel]] = {
     "MarketComparisonResult@v1": MarketComparisonResult,
     "FactEvidenceAnalysisResult@v2": FactEvidenceAnalysisResultV2,
     "ProposalSectionSuggestion@v2": ProposalSectionSuggestionV2,
+    "FieldSuggestionOutput@v1": FieldSuggestionOutputV1,
     "CriticalReviewBundle@v2": CriticalReviewBundleV2,
     "ResearchEvidenceSynthesis@v2": ResearchEvidenceSynthesisV2,
     "EvidenceSupportVerification@v2": EvidenceSupportVerificationV2,

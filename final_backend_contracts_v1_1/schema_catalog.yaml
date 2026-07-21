@@ -1112,3 +1112,46 @@ schemas:
     created_at:
       type: datetime
       required: true
+- schema_id: SuggestionContextManifest@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    manifest_id: {type: string, required: true}
+    workspace_id: {type: string, required: true}
+    project_id: {type: string, required: false, nullable: true}
+    run_id: {type: string, required: true}
+    field_id: {type: string, required: true}
+    base_draft_version_id: {type: string, required: true}
+    primary_application_source_version_id: {type: string, required: false, nullable: true}
+    requirement_registry_version: {type: string, required: true}
+    rule_registry_version: {type: string, required: true}
+    field_instruction_hash: {type: string, required: true}
+    improvement_mode: {type: string, required: true}
+    language: {type: string, required: true}
+    selected_anchor_ids: {type: array, required: true, items: string}
+    source_version_ids: {type: array, required: true, items: string}
+    market_comparison_id: {type: string, required: false, nullable: true}
+    requirement_ids: {type: array, required: true, items: string}
+    rule_ids: {type: array, required: true, items: string}
+    prompt_version: {type: string, required: true}
+    output_schema_version: {type: string, required: true}
+    omitted_anchor_ids: {type: array, required: true, items: string}
+    component_hashes: {type: object, required: true}
+    context_hash: {type: string, required: true}
+- schema_id: FieldSuggestionOutput@v1
+  version: 1.0.0
+  additional_properties: false
+  kind: object
+  fields:
+    suggestion_text: {type: string, required: true}
+    change_summary: {type: array, required: true, items: string}
+    used_anchor_ids: {type: array, required: true, items: string}
+    used_rule_ids: {type: array, required: true, items: string}
+    missing_inputs: {type: array, required: true, items: FieldSuggestionMissingInputV1}
+    unsupported_claim_warnings: {type: array, required: true, items: string}
+    factual_claims: {type: array, required: true, items: FieldSuggestionClaimV1}
+    character_count: {type: integer, required: true}
+    character_limit: {type: integer, required: true}
+    character_limit_status: {type: string, required: true}
+    language: {type: string, required: true}
