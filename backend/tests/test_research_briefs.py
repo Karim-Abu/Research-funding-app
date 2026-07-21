@@ -309,7 +309,7 @@ def test_partner_result_is_advisory_and_location_is_not_inferred(client, web_fak
     assert all(candidate["location"] is None for candidate in candidates)
     assert all(candidate["location_status"] == "unverified" for candidate in candidates)
     assert all(
-        candidate["status"] == "needs_human_check"
+        candidate["status"] == "human_review_required"
         for candidate in candidates
     )
 

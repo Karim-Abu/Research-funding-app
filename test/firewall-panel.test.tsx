@@ -49,9 +49,10 @@ describe("PublicResearchPanel — Search Query Firewall (D2)", () => {
   it("persists human approval and enables only the approved query", async () => {
     server.use(
       http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace())),
-      http.post("/api/search-query-approvals/approval-1/approve", () => HttpResponse.json({
-        approval_id: "approval-1", status: "approved",
-      })),
+      http.post("/api/search-query-approvals/approval-1/approve", ({ request }) => {
+        expect(request.headers.get("Idempotency-Key")).toMatch(/^[a-f0-9]{32}$/)
+        return HttpResponse.json({ approval_id: "approval-1", status: "approved" })
+      }),
     )
     render(<PublicResearchPanel projectId={PROJECT} dataClass="confidential" />)
     fireEvent.click(await screen.findByRole("button", { name: "Freigeben" }))

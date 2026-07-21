@@ -67,10 +67,12 @@ test("market comparison: fake mode completes honestly empty with gap note", asyn
   const view = await (await page.request.get(
     `/api/market-comparisons/${accepted.resource_id}`)).json()
   // Ehrlicher Leerzustand: bereit zur Prüfung, aber 0 Items + klare Lücke.
-  expect(view.status).toBe("ready_for_review")
+  // Ohne zwei gepruefte externe Quellen ist kein Vergleich pruefbereit.
+  expect(view.status).toBe("insufficient_external_evidence")
   expect(view.item_count ?? (view.items ?? []).length).toBe(0)
+  expect(view.warnings).toContain("insufficient_external_evidence")
   expect(JSON.stringify(view.research_gaps)).toContain(
-    "Demo-Recherche enthält keine echten Webquellen"
+    "Demo-Recherche enth\u00e4lt keine echten Webquellen"
   )
 
   // No drafts were created by the comparison (no automatic draft mutation).

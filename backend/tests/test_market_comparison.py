@@ -119,6 +119,8 @@ def _seed_imported_public_source(
         normalized_text=text, normalizer_version="normalizer-1",
         processing_status=version_status, data_classification=dc,
         storage_ref="ref", original_filename="web", byte_size=len(text), mime_type="text/plain",
+        content_review_status=content_review_status,
+        content_safety_status="passed",
     ))
     db.add(SourceFragment(
         fragment_id=str(uuid.uuid4()), source_version_id=version_id, ordinal=0,
@@ -156,6 +158,14 @@ def _generate(client, csrf, project_id):
     op = client.get(f"/api/v1/operations/{body['operation_id']}")
     assert op.status_code == 200
     return body, op.json()
+
+
+def _seed_comparison_sources(db, project_id, workspace_id, **kwargs):
+    """RUN 3B full-comparison fixture: three independent reviewed sources."""
+    return [
+        _seed_imported_public_source(db, project_id, workspace_id, **kwargs)
+        for _ in range(3)
+    ]
 
 
 # --- standalone quote verification ------------------------------------------
@@ -262,7 +272,7 @@ def test_generate_produces_source_backed_item(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     body, op = _generate(client, csrf, project_id)
     assert op["status"] == "succeeded"
 
@@ -274,11 +284,13 @@ def test_generate_produces_source_backed_item(client, db, web_enabled):
     assert item["evidence_quotes"], "source-backed item must carry a verified quote"
     quote = item["evidence_quotes"][0]
     assert quote["quote"] in MARKET_TEXT
-    assert quote["linked_evidence_anchor_id"] is None
+    assert quote["linked_evidence_anchor_id"]
+    assert item["external_evidence_anchor_ids"] == [quote["linked_evidence_anchor_id"]]
+    assert item["cell_evidence"]["name"] == item["external_evidence_anchor_ids"]
     assert view["research_gaps"]
-    # No provider/model/confidence-number leakage in the public payload.
-    blob = str(view).lower()
-    assert "anthropic" not in blob and "haiku" not in blob and "firecrawl" not in blob
+    # Allow-listed provenance is visible; raw provider output is not persisted.
+    assert view["provider"] and view["model_ref"] and view["context_hash"]
+    assert len(view["source_version_ids"]) == 3
 
 
 def test_market_size_and_customer_problem_categories(client, db, web_enabled):
@@ -288,7 +300,7 @@ def test_market_size_and_customer_problem_categories(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(
+    _seed_comparison_sources(
         db, project_id, project.workspace_id,
         text=(
             "Der Markt für Anomalieerkennung wächst laut Bericht deutlich. "
@@ -318,7 +330,7 @@ def test_no_imported_sources_gives_empty_with_gaps(client, db, web_enabled):
     body, op = _generate(client, csrf, project_id)
     assert op["status"] == "succeeded"
     view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
-    assert view["status"] == "ready_for_review"
+    assert view["status"] == "insufficient_external_evidence"
     assert view["item_count"] == 0
     assert view["research_gaps"]  # rule 13: gaps instead of invented content
     assert "inhaltlich positiv geprüften" in view["research_gaps"][0]
@@ -354,7 +366,7 @@ def test_unsupported_item_quote_becomes_research_gap(client, db, web_enabled, mo
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     body, op = _generate(client, csrf, project_id)
     assert op["status"] == "succeeded"
     view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
@@ -382,22 +394,22 @@ def test_duplicate_names_deduped(client, db, web_enabled, monkeypatch):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     body, _ = _generate(client, csrf, project_id)
     view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
     assert view["item_count"] == 1
 
 
-def test_no_draft_assessment_anchor_mutation(client, db, web_enabled):
+def test_external_anchor_created_without_draft_or_assessment_mutation(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     before_anchors = db.scalar(select(func.count(EvidenceAnchor.anchor_id))) or 0
     before_drafts = db.scalar(select(func.count(DraftVersion.draft_version_id))) or 0
     before_assess = db.scalar(select(func.count(RequirementAssessment.assessment_id))) or 0
     _generate(client, csrf, project_id)
-    assert (db.scalar(select(func.count(EvidenceAnchor.anchor_id))) or 0) == before_anchors
+    assert (db.scalar(select(func.count(EvidenceAnchor.anchor_id))) or 0) > before_anchors
     assert (db.scalar(select(func.count(DraftVersion.draft_version_id))) or 0) == before_drafts
     assert (db.scalar(select(func.count(RequirementAssessment.assessment_id))) or 0) == before_assess
 
@@ -406,7 +418,7 @@ def test_generation_guard_once_per_comparison(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     body, _ = _generate(client, csrf, project_id)
     cid = body["resource_id"]
     before = db.scalar(select(func.count(MarketComparisonItem.item_id)).where(
@@ -423,7 +435,7 @@ def test_item_status_update(client, db, web_enabled):
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_project(client, csrf)
     project = db.get(Project, project_id)
-    _seed_imported_public_source(db, project_id, project.workspace_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
     body, _ = _generate(client, csrf, project_id)
     view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
     item_id = view["items"][0]["item_id"]

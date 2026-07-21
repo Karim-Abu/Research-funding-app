@@ -26,7 +26,7 @@ _KEY_TABLES = {
     "import_candidate_revisions", "structured_import_candidate_revisions",
     "project_field_revisions",
 }
-_HEAD = "a1c3e5f7b902"  # RUN 3A readiness and simplified research brief.
+_HEAD = "b2d4f6a8c013"  # RUN 3B source provenance and external evidence.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -298,11 +298,22 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert "generation_kind" in _columns(db, "market_comparisons")
     assert "actual_model_id" in _columns(db, "agent_invocations")
     assert "research_briefs" in _tables(db)
-    assert not {"research_goal", "search_tags"} & _columns(db, "research_briefs")
-    assert not {
+    assert {"research_goal", "search_tags"} <= _columns(db, "research_briefs")
+    assert {
         "reason_code", "retryable", "configuration_fingerprint",
         "registry_version", "pricing_version",
-    } & _columns(db, "provider_preflight_results")
+    } <= _columns(db, "provider_preflight_results")
+    assert not {
+        "retrieval_provenance", "content_review_status", "content_safety_status",
+        "similarity_hash", "possible_duplicate_source_id",
+    } & _columns(db, "source_versions")
+    assert not {"project_id", "research_task_id"} & _columns(db, "evidence_anchors")
+    assert not {
+        "canonical_url", "fetched_content_hash", "eligibility_status",
+    } & _columns(db, "research_results")
+    assert not {
+        "source_version_ids", "query_approval_ids", "stale_reason",
+    } & _columns(db, "market_comparisons")
     assert {"research_brief_id", "research_module", "planner_purpose"} <= _columns(
         db, "research_tasks"
     )
@@ -367,6 +378,17 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         "reason_code", "retryable", "configuration_fingerprint",
         "registry_version", "pricing_version",
     } <= _columns(db, "provider_preflight_results")
+    assert {
+        "retrieval_provenance", "content_review_status", "content_safety_status",
+        "similarity_hash", "possible_duplicate_source_id",
+    } <= _columns(db, "source_versions")
+    assert {"project_id", "research_task_id"} <= _columns(db, "evidence_anchors")
+    assert {
+        "canonical_url", "fetched_content_hash", "eligibility_status",
+    } <= _columns(db, "research_results")
+    assert {
+        "source_version_ids", "query_approval_ids", "stale_reason",
+    } <= _columns(db, "market_comparisons")
     assert "run_phases" in _tables(db)
     assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
