@@ -1,5 +1,15 @@
 # RUN 3A - Ergebnis
 
+Matrix-Korrektur fuer den verbindlichen RUN-3-Plan:
+
+| ID | Verbindlicher Nachweis |
+|---|---|
+| `UX-RES-01` | Unicode-/Whitespace-Policy inklusive Paste, Bearbeitung in der Mitte und Reload |
+| `UX-RES-02` | Vereinfachtes Rechercheformular ohne Pflicht-Ontologie |
+
+Diese Zuordnung ersetzt die beiden spaeter im historischen Abschlussabschnitt
+vertauschten UX-Zeilen.
+
 Stand: 21. Juli 2026
 
 Status: abgeschlossen, vor RUN 3B gestoppt
