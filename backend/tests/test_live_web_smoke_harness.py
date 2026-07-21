@@ -73,6 +73,7 @@ def test_demo_domains_are_rejected():
 def test_harness_orchestrates_existing_services_with_offline_adapter(monkeypatch):
     module = _module()
     from app.config.settings import get_settings
+    from app.db.models import ProviderPreflightResult
     from app.db.session import SessionLocal
     from app.research.providers.base import (
         FetchOutcome,
@@ -145,15 +146,22 @@ def test_harness_orchestrates_existing_services_with_offline_adapter(monkeypatch
     monkeypatch.setattr(settings, "agent_fake_provider", False)
     monkeypatch.setattr(settings, "ai_eval_mode", "off")
 
+    actor_user_id = "user-live-web-offline"
     db = SessionLocal()
     try:
         result = module.execute_smoke(
             db,
             settings,
-            actor_user_id="user-live-web-offline",
+            actor_user_id=actor_user_id,
             preflight_provider=provider,
         )
     finally:
+        # The suite shares one temporary DB. A successful readiness row must not
+        # make later capability tests believe a real preflight was performed.
+        db.query(ProviderPreflightResult).filter(
+            ProviderPreflightResult.triggered_by == actor_user_id
+        ).delete(synchronize_session=False)
+        db.commit()
         db.close()
 
     assert result.status == "passed", result.reason_codes
