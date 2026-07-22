@@ -3382,6 +3382,13 @@ components:
           type:
           - string
           - 'null'
+        error_code:
+          type:
+          - string
+          - 'null'
+        retryable:
+          type: boolean
+          default: false
     ResearchResult:
       type: object
       required:

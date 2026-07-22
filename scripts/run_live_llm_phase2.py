@@ -10,9 +10,9 @@ Usage (PowerShell, from repository root)::
 
     $env:RUN_REAL_PROVIDER_SMOKE = "true"
     $env:RUN_LIVE_LLM_SMOKES_APPROVED = "true"
-    backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py prepare
+    backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py prepare-web
 
-    backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py resume \
+    backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py resume-llm \
       --approval "APPROVE_LIVE_E2E_ANCHORS <session> <hashes>"
 
 Normal tests import only the pure helpers below and never load provider keys.
@@ -32,7 +32,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 from urllib.parse import urlparse
@@ -60,6 +60,7 @@ MAX_ACTIVE_SECONDS = 600.0
 POLICY_VERSION = "1.1.0"
 APPROVAL_PREFIX = "APPROVE_LIVE_E2E_ANCHORS"
 SESSION_VERSION = "run3c-phase2-session-v1"
+WEB_REVIEW_SESSION_TTL_SECONDS = 3600
 ORIGIN = "http://localhost:3000"
 SYNTHETIC_PASSWORD = "phase2-d0-local-only"
 DEMO_DOMAINS = {"example.org", "example.com", "example.net"}
@@ -88,9 +89,10 @@ SMOKE_3_TEXT = (
 class HarnessFailure(RuntimeError):
     """Log-safe harness failure carrying only a stable reason code."""
 
-    def __init__(self, code: str) -> None:
+    def __init__(self, code: str, *, retryable: bool = False) -> None:
         super().__init__(code)
         self.code = code
+        self.retryable = retryable
 
 
 def _utcnow() -> datetime:
@@ -133,6 +135,7 @@ class PlannedCall:
     model_id: str
     max_input_chars: int
     max_output_tokens: int
+    route_alias: str = "not_available"
 
 
 @dataclass
@@ -146,6 +149,61 @@ class CallRecord:
     input_tokens: int | None
     output_tokens: int | None
     status: str
+
+
+@dataclass
+class RequestLedgerEntry:
+    attempt_id: str
+    request_sequence: int
+    provider: str
+    route_alias: str
+    purpose: str
+    started_at: str
+    finished_at: str
+    http_class: str
+    http_status: int | str
+    retryable: bool
+    reason_code: str
+    input_tokens: int | None
+    output_tokens: int | None
+    estimated_cost_chf: float | str
+    actual_cost_chf: float | str
+
+
+@dataclass
+class AtomicRequestLedger:
+    """Redacted request metadata persisted before a review session exists."""
+
+    attempt_id: str
+    path: Path
+    entries: list[RequestLedgerEntry] = field(default_factory=list)
+
+    def append(self, entry: RequestLedgerEntry) -> None:
+        self.entries.append(entry)
+        self.persist()
+
+    def persist(self) -> None:
+        payload = {
+            "attempt_id": self.attempt_id,
+            "requests": [asdict(item) for item in self.entries],
+        }
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        temporary = self.path.with_suffix(".tmp")
+        temporary.write_text(_canonical_json(payload), encoding="utf-8")
+        os.replace(temporary, self.path)
+
+    @classmethod
+    def load(cls, attempt_id: str, path: Path) -> "AtomicRequestLedger":
+        if not path.is_file():
+            return cls(attempt_id=attempt_id, path=path)
+        payload = json.loads(path.read_text(encoding="utf-8"))
+        if payload.get("attempt_id") != attempt_id:
+            raise HarnessFailure("request_ledger_attempt_mismatch")
+        return cls(
+            attempt_id=attempt_id,
+            path=path,
+            entries=[RequestLedgerEntry(**item) for item in payload.get("requests", [])],
+        )
 
 
 @dataclass
@@ -264,6 +322,28 @@ def _ledger_from_dict(value: dict[str, Any]) -> BudgetLedger:
     )
 
 
+def _request_ledger_path(temp_root: Path) -> Path:
+    return temp_root / "redacted-request-ledger.json"
+
+
+def _request_diagnosis(exc: BaseException | None):
+    if exc is None:
+        return None
+    from app.provider_errors import classify_provider_failure
+
+    return classify_provider_failure(
+        str(exc), source_code=getattr(exc, "code", None),
+        http_status=getattr(exc, "http_status", None),
+    )
+
+
+def _write_text_atomic(path: Path, value: str) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(value, encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def _session_path(session_id: str) -> Path:
     if not re.fullmatch(r"[0-9a-f]{32}", session_id):
         raise HarnessFailure("live_session_id_invalid")
@@ -274,7 +354,7 @@ def save_session(session: ReviewSession) -> Path:
     session.refresh_hash()
     path = _session_path(session.review_session_id)
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_canonical_json(asdict(session)), encoding="utf-8")
+    _write_text_atomic(path, _canonical_json(asdict(session)))
     return path
 
 
@@ -324,20 +404,27 @@ def validate_anchor_approval(
     return selected
 
 
-def _opt_in_reason(settings: Any) -> str | None:
+def _opt_in_reason(settings: Any, *, require_llm: bool = True) -> str | None:
     if os.environ.get("CI"):
         return "ci_environment_blocked"
     if os.environ.get("RUN_REAL_PROVIDER_SMOKE", "").casefold() != "true":
         return "live_smoke_opt_in_missing"
-    if os.environ.get("RUN_LIVE_LLM_SMOKES_APPROVED", "").casefold() != "true":
-        return "live_llm_approval_missing"
+    approval_variable = (
+        "RUN_LIVE_LLM_SMOKES_APPROVED" if require_llm
+        else "RUN_FIRECRAWL_RECOVERY_APPROVED"
+    )
+    if os.environ.get(approval_variable, "").casefold() != "true":
+        return (
+            "live_llm_approval_missing" if require_llm
+            else "firecrawl_recovery_approval_missing"
+        )
     if settings.ai_eval_mode != "real":
         return "live_eval_mode_disabled"
     if settings.agent_fake_provider or settings.web_research_fake_provider:
         return "live_fake_conflict"
     if not settings.web_research_enabled:
         return "web_research_disabled"
-    if not settings.openai_api_key or not settings.anthropic_api_key:
+    if require_llm and (not settings.openai_api_key or not settings.anthropic_api_key):
         return "live_provider_key_missing"
     if not settings.firecrawl_api_key:
         return "firecrawl_key_missing"
@@ -440,7 +527,8 @@ def _assert_budget_before_call(
 
 @contextmanager
 def instrument_live_providers(
-    ledger: BudgetLedger, *, web_counter: dict[str, Any]
+    ledger: BudgetLedger, *, web_counter: dict[str, Any],
+    request_ledger: AtomicRequestLedger | None = None,
 ) -> Iterator[None]:
     """Count unchanged production adapter calls without wrapping adapter objects."""
     from app.agents.providers.anthropic import AnthropicProvider
@@ -473,9 +561,11 @@ def instrument_live_providers(
                 settings=settings,
             )
             started = time.monotonic()
+            started_at = _iso()
             status = "failed"
             actual_cost = None
             input_tokens = output_tokens = None
+            failure: BaseException | None = None
             try:
                 result = original(self, request)
                 status = "succeeded"
@@ -493,6 +583,9 @@ def instrument_live_providers(
                     raise HarnessFailure("unknown_price")
                 actual_cost = float(priced.cost_chf)
                 return result
+            except BaseException as exc:
+                failure = exc
+                raise
             finally:
                 duration = time.monotonic() - started
                 ledger.records.append(CallRecord(
@@ -506,6 +599,26 @@ def instrument_live_providers(
                     output_tokens=output_tokens,
                     status=status,
                 ))
+                if request_ledger is not None:
+                    diagnosis = _request_diagnosis(failure)
+                    spec = next((item for item in ledger.planned if item.label == label), None)
+                    request_ledger.append(RequestLedgerEntry(
+                        attempt_id=request_ledger.attempt_id,
+                        request_sequence=len(request_ledger.entries) + 1,
+                        provider=provider_name,
+                        route_alias=(spec.route_alias if spec is not None else "not_available"),
+                        purpose=label,
+                        started_at=started_at,
+                        finished_at=_iso(),
+                        http_class=(diagnosis.http_class if diagnosis else "2xx"),
+                        http_status=(diagnosis.http_status if diagnosis and diagnosis.http_status else "not_available"),
+                        retryable=bool(diagnosis.retryable) if diagnosis else False,
+                        reason_code=(diagnosis.reason_code if diagnosis else "none"),
+                        input_tokens=input_tokens,
+                        output_tokens=output_tokens,
+                        estimated_cost_chf=estimate,
+                        actual_cost_chf=(actual_cost if actual_cost is not None else "not_available"),
+                    ))
                 ledger.active_label = None
         return counted
 
@@ -514,17 +627,41 @@ def instrument_live_providers(
             if web_counter["calls"] >= MAX_WEB_CALLS:
                 raise HarnessFailure("firecrawl_call_limit_exceeded")
             started = time.monotonic()
+            started_at = _iso()
             web_counter["calls"] += 1
+            failure: BaseException | None = None
             try:
                 value = original(self, *args, **kwargs)
                 credits = getattr(value, "credits_used", None)
                 if credits is not None:
                     web_counter["credits"] += float(credits)
                 return value
+            except BaseException as exc:
+                failure = exc
+                raise
             finally:
                 duration = time.monotonic() - started
                 web_counter["seconds"] += duration
                 web_counter["kinds"].append(kind)
+                if request_ledger is not None:
+                    diagnosis = _request_diagnosis(failure)
+                    request_ledger.append(RequestLedgerEntry(
+                        attempt_id=request_ledger.attempt_id,
+                        request_sequence=len(request_ledger.entries) + 1,
+                        provider="firecrawl",
+                        route_alias="firecrawl",
+                        purpose=f"public_{kind}",
+                        started_at=started_at,
+                        finished_at=_iso(),
+                        http_class=(diagnosis.http_class if diagnosis else "2xx"),
+                        http_status=(diagnosis.http_status if diagnosis and diagnosis.http_status else "not_available"),
+                        retryable=bool(diagnosis.retryable) if diagnosis else False,
+                        reason_code=(diagnosis.reason_code if diagnosis else "none"),
+                        input_tokens=None,
+                        output_tokens=None,
+                        estimated_cost_chf="not_available",
+                        actual_cost_chf="not_available",
+                    ))
         return counted
 
     OpenAIProvider.generate = wrap_generate("openai_direct", originals[(OpenAIProvider, "generate")])
@@ -554,17 +691,17 @@ def _planned_calls(settings: Any) -> tuple[list[PlannedCall], dict[str, str], di
         raise HarnessFailure("live_model_id_missing")
     context_max = int(settings.a1_context_char_budget) + 30_000
     calls = [
-        PlannedCall("a2_preflight", a2_route.provider, a2_model, 2_000, 256),
-        PlannedCall("live_02a", a2_route.provider, a2_model, context_max, 4096),
+        PlannedCall("a2_preflight", a2_route.provider, a2_model, 2_000, 256, a2_key),
+        PlannedCall("live_02a", a2_route.provider, a2_model, context_max, 4096, a2_key),
     ]
     if market_key != a2_key:
         calls.append(PlannedCall(
-            "market_preflight", market_route.provider, market_model, 2_000, 256
+            "market_preflight", market_route.provider, market_model, 2_000, 256, market_key
         ))
     calls.extend([
-        PlannedCall("market_comparison", market_route.provider, market_model, 90_000, 4096),
-        PlannedCall("live_02b", a2_route.provider, a2_model, context_max, 4096),
-        PlannedCall("live_02c", a2_route.provider, a2_model, context_max, 4096),
+        PlannedCall("market_comparison", market_route.provider, market_model, 90_000, 4096, market_key),
+        PlannedCall("live_02b", a2_route.provider, a2_model, context_max, 4096, a2_key),
+        PlannedCall("live_02c", a2_route.provider, a2_model, context_max, 4096, a2_key),
     ])
     return calls, {"a2": a2_key, "market": market_key}, {
         "a2": a2_model, "market": market_model,
@@ -901,7 +1038,40 @@ def _render_smoke_report(summary: dict[str, Any]) -> str:
             f"- reason_code: `{case.get('reason_code', 'none')}`",
             "",
         ])
+    entries = summary.get("request_ledger") or []
+    if entries:
+        lines.extend(["## Redacted request ledger", ""])
+        for entry in entries:
+            lines.append(
+                "- " + ", ".join(
+                    f"{key}=`{entry.get(key, 'not_available')}`" for key in (
+                        "attempt_id", "request_sequence", "provider", "route_alias",
+                        "purpose", "started_at", "finished_at", "http_class",
+                        "http_status", "retryable", "reason_code", "input_tokens",
+                        "output_tokens", "estimated_cost_chf", "actual_cost_chf",
+                    )
+                )
+            )
+        lines.append("")
     return "\n".join(lines)
+
+
+def _write_early_failure_report(
+    request_ledger: AtomicRequestLedger,
+    *,
+    reason_code: str,
+) -> None:
+    summary = {
+        "timestamp_utc": _iso(),
+        "status": "failed",
+        "execution_mode": "live",
+        "request_count": len(request_ledger.entries),
+        "web_calls": sum(1 for item in request_ledger.entries if item.provider == "firecrawl"),
+        "fake_fallback_observed": "no",
+        "reason_code": reason_code,
+        "request_ledger": [asdict(item) for item in request_ledger.entries],
+    }
+    _write_text_atomic(REPORT_PATH, _render_smoke_report(summary))
 
 
 def _render_run_result(statuses: dict[str, str], summary: dict[str, Any]) -> str:
@@ -975,17 +1145,53 @@ def _session_id_from_approval(value: str) -> str:
     return parse_anchor_approval(value)[0]
 
 
+def _read_research_execution(client: Any, run: dict[str, Any]) -> list[dict[str, Any]]:
+    """Read persisted task and operation truth before considering result count."""
+    from app.provider_errors import provider_reason_is_retryable
+
+    states: list[dict[str, Any]] = []
+    for task_id in run.get("task_ids") or []:
+        task = _expect(
+            client.get(f"/api/v1/research-tasks/{task_id}"),
+            200,
+            "research_task_read_failed",
+        )
+        operation_id = task.get("operation_id")
+        if not operation_id:
+            raise HarnessFailure("research_operation_id_missing")
+        operation = _expect(
+            client.get(f"/api/v1/operations/{operation_id}"),
+            200,
+            "research_operation_read_failed",
+        )
+        task_code = task.get("error_code")
+        operation_error = operation.get("error") or {}
+        operation_code = operation_error.get("code") if isinstance(operation_error, dict) else None
+        if task_code and operation_code and task_code != operation_code:
+            raise HarnessFailure("research_failure_code_mismatch")
+        reason_code = task_code or operation_code
+        failed = task.get("status") == "failed" or operation.get("status") == "failed"
+        if failed:
+            safe_code = str(reason_code or "research_execution_failed")
+            retryable = bool(task.get("retryable")) or provider_reason_is_retryable(safe_code)
+            raise HarnessFailure(safe_code, retryable=retryable)
+        if task.get("status") != "succeeded" or operation.get("status") != "succeeded":
+            raise HarnessFailure("research_execution_not_terminal")
+        states.append({"task": task, "operation": operation})
+    return states
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="RUN 3C Phase 2 live acceptance")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("prepare")
-    resume = sub.add_parser("resume")
+    sub.add_parser("prepare-web")
+    resume = sub.add_parser("resume-llm")
     resume.add_argument("--approval", required=True)
     sub.add_parser("cleanup-expired")
     return parser
 
 
-def prepare() -> int:  # pragma: no cover - opt-in live path
+def prepare_web() -> int:  # pragma: no cover - opt-in live path
     session_id = uuid.uuid4().hex
     temp_root = SESSION_ROOT / session_id
     temp_root.mkdir(parents=True, exist_ok=False)
@@ -993,6 +1199,8 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
     runtime_engine = None
     started = time.monotonic()
     web_counter = {"calls": 0, "credits": 0.0, "seconds": 0.0, "kinds": []}
+    request_ledger = AtomicRequestLedger(session_id, _request_ledger_path(temp_root))
+    request_ledger.persist()
     try:
         _configure_environment(temp_root)
         os.chdir(BACKEND)
@@ -1007,7 +1215,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
         runtime_engine = engine
         get_settings.cache_clear()
         settings = get_settings()
-        reason = _opt_in_reason(settings)
+        reason = _opt_in_reason(settings, require_llm=False)
         if reason:
             raise HarnessFailure(reason)
         _assert_registry_contract()
@@ -1019,7 +1227,9 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
             # Instrument the bootstrap as well. With no active budget label, an
             # attempted provider inference is rejected before the adapter can
             # issue a network request.
-            with instrument_live_providers(ledger, web_counter=web_counter):
+            with instrument_live_providers(
+                ledger, web_counter=web_counter, request_ledger=request_ledger
+            ):
                 cases = {
                     "live_02a": _bootstrap_case(client, csrf, label="LIVE-02A", text=SMOKE_1_TEXT),
                     "live_02b": _bootstrap_case(client, csrf, label="LIVE-02B", text=SMOKE_2_TEXT),
@@ -1031,18 +1241,8 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
             db = SessionLocal()
             try:
                 with instrument_live_providers(
-                    ledger, web_counter=web_counter
+                    ledger, web_counter=web_counter, request_ledger=request_ledger
                 ):
-                    a2_preflight = _run_preflight(
-                        db, route_key=routes["a2"], actor_id=actor_id,
-                        ledger=ledger, label="a2_preflight",
-                    )
-                    smoke_1 = _generate_suggestion(
-                        client, csrf, cases["live_02a"],
-                        mode="complete_innolink_requirements", label="live_02a",
-                        ledger=ledger,
-                    )
-                    _assert_smoke_1(smoke_1)
                     brief = _expect(client.put(
                         f"/api/v1/projects/{cases['live_02b']['project_id']}/research-brief",
                         json={
@@ -1081,6 +1281,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                     ), 200, "research_live_run_failed")
                     if run["execution_mode"] != "live" or len(run["task_ids"]) != 1:
                         raise HarnessFailure("research_not_live")
+                    _read_research_execution(client, run)
                     results = _expect(client.get(
                         f"/api/v1/projects/{cases['live_02b']['project_id']}/research-results"
                     ), 200, "research_result_read_failed")
@@ -1106,14 +1307,6 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                         ), 201, "research_result_import_failed"))
                     if web_counter["calls"] != 3 or web_counter["kinds"] != ["search", "fetch", "fetch"]:
                         raise HarnessFailure("firecrawl_call_plan_mismatch")
-                    if routes["market"] == routes["a2"]:
-                        market_preflight = a2_preflight
-                    else:
-                        market_preflight = _run_preflight(
-                            db, route_key=routes["market"], actor_id=actor_id,
-                            ledger=ledger, label="market_preflight",
-                        )
-
                     proposals: list[AnchorProposal] = []
                     for item, document_view in zip(chosen, imported, strict=True):
                         passages = _expect(client.get(
@@ -1146,7 +1339,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                             safety_status=passage["safety_status"],
                             content_review_status=passage["content_review_status"],
                         ))
-                    expires_at = min(a2_preflight.expires_at, market_preflight.expires_at)
+                    expires_at = _utcnow() + timedelta(seconds=WEB_REVIEW_SESSION_TTL_SECONDS)
                     session = ReviewSession(
                         review_session_id=session_id,
                         session_version=SESSION_VERSION,
@@ -1164,6 +1357,9 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                             "query_hash": _sha256(query["query_text"]),
                             "risk_level": query["risk_label"],
                             "firewall_decision": query["firewall_decision"],
+                            "request_ledger_hash": _sha256(
+                                request_ledger.path.read_bytes()
+                            ),
                         },
                         anchors=[item.safe_state() for item in proposals],
                         route_ids=routes,
@@ -1172,10 +1368,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                             key: configuration_fingerprint(route, settings=settings)
                             for key, route in routes.items()
                         },
-                        preflight_fingerprints={
-                            "a2": a2_preflight.configuration_fingerprint,
-                            "market": market_preflight.configuration_fingerprint,
-                        },
+                        preflight_fingerprints={},
                         policy_version=POLICY_VERSION,
                         pricing_version=PRICE_TABLE_VERSION,
                         registry_version=settings.agent_registry_version,
@@ -1209,10 +1402,16 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
             finally:
                 db.close()
     except HarnessFailure as exc:
-        print(f"LIVE_LLM_PREPARE_FAILED reason_code={exc.code}")
+        _write_early_failure_report(request_ledger, reason_code=exc.code)
+        print(
+            f"LIVE_WEB_PREPARE_FAILED reason_code={exc.code} "
+            f"retryable={str(exc.retryable).lower()}"
+        )
         return 1
     except Exception as exc:
-        print(f"LIVE_LLM_PREPARE_FAILED reason_code={_redacted_error(exc)}")
+        reason_code = _redacted_error(exc)
+        _write_early_failure_report(request_ledger, reason_code=reason_code)
+        print(f"LIVE_WEB_PREPARE_FAILED reason_code={reason_code} retryable=false")
         return 1
     finally:
         _close_runtime_resources(runtime_engine)
@@ -1220,16 +1419,29 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
             _remove_session_root(temp_root)
 
 
-def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
+def resume_llm(approval: str) -> int:  # pragma: no cover - opt-in live path
     session_id = _session_id_from_approval(approval)
     session = load_session(session_id)
     selected = validate_anchor_approval(session, approval)
     temp_root = Path(session.temp_root)
     started = time.monotonic()
-    web_counter = {"calls": MAX_WEB_CALLS, "credits": 0.0, "seconds": 0.0, "kinds": []}
+    request_ledger = AtomicRequestLedger.load(
+        session.review_session_id, _request_ledger_path(temp_root)
+    )
+    prior_web_calls = sum(1 for item in request_ledger.entries if item.provider == "firecrawl")
+    web_counter = {
+        "calls": prior_web_calls, "credits": 0.0, "seconds": 0.0,
+        "kinds": [item.purpose.removeprefix("public_") for item in request_ledger.entries
+                  if item.provider == "firecrawl"],
+    }
     final_review_artifact: Path | None = None
     runtime_engine = None
     try:
+        if not request_ledger.path.is_file() or not hmac.compare_digest(
+            str(session.research.get("request_ledger_hash") or ""),
+            _sha256(request_ledger.path.read_bytes()),
+        ):
+            raise HarnessFailure("request_ledger_integrity_invalid")
         _configure_environment(temp_root)
         os.chdir(BACKEND)
         sys.path.insert(0, str(BACKEND))
@@ -1237,12 +1449,11 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         from sqlalchemy import func, select
         from app.config.settings import get_settings
         from app.db.models import (
-            DraftSuggestion, DraftVersion, EvidenceAnchor, ProviderPreflightResult,
-            ResearchResult,
+            DraftSuggestion, DraftVersion, EvidenceAnchor, ResearchResult,
             SuggestionContextManifest,
         )
         from app.db.session import SessionLocal, engine
-        from app.evaluation.preflight import configuration_fingerprint, route_preflight_reason
+        from app.evaluation.preflight import configuration_fingerprint
         from app.evaluation.pricing import PRICE_TABLE_VERSION
         from app.main import app
 
@@ -1264,18 +1475,31 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         ledger = _ledger_from_dict(session.ledger)
         db = SessionLocal()
         try:
-            for key, route in routes.items():
-                if route_preflight_reason(db, route, settings=settings):
-                    raise HarnessFailure("live_session_configuration_changed")
-                row = db.query(ProviderPreflightResult).filter(
-                    ProviderPreflightResult.route_key == route
-                ).order_by(ProviderPreflightResult.checked_at.desc()).first()
-                if row is None or row.configuration_fingerprint != session.preflight_fingerprints[key]:
-                    raise HarnessFailure("live_session_configuration_changed")
             with TestClient(app) as client, instrument_live_providers(
-                ledger, web_counter=web_counter
+                ledger, web_counter=web_counter, request_ledger=request_ledger
             ):
                 csrf = _login(client, session.actor_email)
+                a2_preflight = _run_preflight(
+                    db, route_key=routes["a2"], actor_id=session.actor_user_id,
+                    ledger=ledger, label="a2_preflight",
+                )
+                smoke_1 = _generate_suggestion(
+                    client, csrf, session.cases["live_02a"],
+                    mode="complete_innolink_requirements", label="live_02a",
+                    ledger=ledger,
+                )
+                _assert_smoke_1(smoke_1)
+                if routes["market"] == routes["a2"]:
+                    market_preflight = a2_preflight
+                else:
+                    market_preflight = _run_preflight(
+                        db, route_key=routes["market"], actor_id=session.actor_user_id,
+                        ledger=ledger, label="market_preflight",
+                    )
+                session.preflight_fingerprints = {
+                    "a2": a2_preflight.configuration_fingerprint,
+                    "market": market_preflight.configuration_fingerprint,
+                }
                 approved_quotes: dict[str, str] = {}
                 # Reload the exact bounded review projection through HTTP after
                 # the process boundary; only an unchanged hash can consume the
@@ -1298,6 +1522,10 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
 
                 session.human_wait_ended_at = _iso()
                 session.consumed = True
+                session.ledger = _ledger_to_dict(ledger)
+                session.provider_call_seconds = sum(
+                    item.duration_seconds for item in ledger.records
+                )
                 save_session(session)
                 anchor_ids = []
                 for item in selected:
@@ -1480,6 +1708,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                     "web_credits": "not_available",
                     "fake_fallback_observed": "no",
                     "reason_code": "none",
+                    "request_ledger": [asdict(item) for item in request_ledger.entries],
                     "cases": [{
                         "case_id": item["case_id"], "status": "passed",
                         "suggestion_id": item["suggestion_id"],
@@ -1492,18 +1721,14 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                         "character_count": item["after"], "reason_code": "none",
                     } for item in review_cases],
                 }
-                REPORT_PATH.write_text(_render_smoke_report(summary), encoding="utf-8")
-                HUMAN_REVIEW_PATH.write_text(
-                    _render_review_template(review_cases), encoding="utf-8"
-                )
+                _write_text_atomic(REPORT_PATH, _render_smoke_report(summary))
+                _write_text_atomic(HUMAN_REVIEW_PATH, _render_review_template(review_cases))
                 statuses = {
                     "live_01": "passed", "preflight": "passed",
                     "live_02a": "passed", "live_02b": "passed",
                     "live_02c": "passed", "live_03": "passed",
                 }
-                RUN_RESULT_PATH.write_text(
-                    _render_run_result(statuses, summary), encoding="utf-8"
-                )
+                _write_text_atomic(RUN_RESULT_PATH, _render_run_result(statuses, summary))
                 print(f"LOCAL_HUMAN_REVIEW_ARTIFACT={final_review_artifact}")
                 print("LIVE_LLM_SMOKES_EXECUTED")
                 print("READY_FOR_HUMAN_LLM_QUALITY_REVIEW")
@@ -1511,6 +1736,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         finally:
             db.close()
     except HarnessFailure as exc:
+        _write_early_failure_report(request_ledger, reason_code=exc.code)
         if exc.code == "live_session_configuration_changed":
             print("LIVE_SESSION_CONFIGURATION_CHANGED")
             print("FRESH_PREFLIGHT_AND_NEW_APPROVAL_REQUIRED")
@@ -1518,7 +1744,9 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
             print(f"LIVE_LLM_SMOKE_FAILED reason_code={exc.code}")
         return 1
     except Exception as exc:
-        print(f"LIVE_LLM_SMOKE_FAILED reason_code={_redacted_error(exc)}")
+        reason_code = _redacted_error(exc)
+        _write_early_failure_report(request_ledger, reason_code=reason_code)
+        print(f"LIVE_LLM_SMOKE_FAILED reason_code={reason_code}")
         return 1
     finally:
         _close_runtime_resources(runtime_engine)
@@ -1531,9 +1759,9 @@ def main(argv: list[str] | None = None) -> int:
     args = _build_parser().parse_args(argv)
     if args.command == "cleanup-expired":
         return cleanup_expired()
-    if args.command == "prepare":
-        return prepare()
-    return resume(args.approval)
+    if args.command == "prepare-web":
+        return prepare_web()
+    return resume_llm(args.approval)
 
 
 if __name__ == "__main__":

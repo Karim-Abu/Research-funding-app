@@ -4,6 +4,7 @@ import pytest
 
 from app.config.settings import Settings
 from app.evaluation.preflight import preflight_firecrawl
+from app.provider_errors import classify_provider_failure
 from app.research.providers.base import (
     ProviderError,
     SearchCandidate,
@@ -185,3 +186,15 @@ def test_live_preflight_surfaces_provider_failure_without_demo_fallback():
     assert result.status == "fail"
     assert result.mode == "live"
     assert result.error_class == "provider_outage"
+
+
+def test_firecrawl_429_retains_rate_limit_classification():
+    response = type("Response", (), {"status_code": 429})()
+    with pytest.raises(ProviderError) as caught:
+        FirecrawlProvider._raise_for_status(response, "search")
+    diagnosis = classify_provider_failure(
+        str(caught.value), source_code=getattr(caught.value, "code", None)
+    )
+    assert (diagnosis.reason_code, diagnosis.retryable, diagnosis.http_status) == (
+        "provider_rate_limited", True, 429,
+    )

@@ -41,6 +41,7 @@ from app.evaluation.preflight import (
     render_report,
     run_preflight,
 )
+from app.provider_errors import classify_provider_failure
 from app.exports.snapshot import _technical_trace
 from tests.agent_helpers import base_request, fake_resolver, make_run
 
@@ -313,6 +314,26 @@ def test_rate_limit_and_quota_errors_are_understandable():
     assert code == "auth_failed"
     code, text = classify_provider_error("openai http 404")
     assert code == "model_unavailable"
+
+
+@pytest.mark.parametrize(
+    ("message", "source_code", "reason_code", "retryable"),
+    [
+        ("provider status 401", None, "provider_auth_error", False),
+        ("provider status 403", None, "provider_auth_error", False),
+        ("provider status 429", None, "provider_rate_limited", True),
+        ("provider status 502", None, "provider_outage", True),
+        ("provider status 503", None, "provider_outage", True),
+        ("provider status 504", None, "provider_outage", True),
+        ("request timed out", "provider_timeout", "provider_timeout", True),
+        ("invalid schema", "provider_error", "provider_response_invalid", False),
+    ],
+)
+def test_canonical_provider_failure_classification(
+    message, source_code, reason_code, retryable
+):
+    result = classify_provider_failure(message, source_code=source_code)
+    assert (result.reason_code, result.retryable) == (reason_code, retryable)
 
 
 def test_run_preflight_without_opt_in_makes_no_network_calls():

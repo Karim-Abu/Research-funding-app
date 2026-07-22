@@ -21,7 +21,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
@@ -45,6 +44,7 @@ from app.evaluation.pricing import (
     PRICE_TABLE_VERSION,
     resolve_cost,
 )
+from app.provider_errors import classify_provider_failure, provider_reason_is_retryable
 
 PASS = "pass"
 FAIL = "fail"
@@ -116,39 +116,22 @@ class ProviderPreflight:
 
 
 def classify_provider_error(message: str) -> tuple[str, str]:
-    """HTTP-/Fehlerklassifikation → (code, verständlicher deutscher Text)."""
-    match = re.search(r"(?:http|status) (\d{3})", message)
-    status = int(match.group(1)) if match else None
-    if status in (401, 403):
-        return "auth_failed", (
-            "Der API-Schlüssel wurde abgelehnt (HTTP "
-            f"{status}). Schlüssel prüfen/erneuern."
-        )
-    if status == 404:
-        return "model_unavailable", (
-            "Das konfigurierte Modell ist beim Provider nicht verfügbar "
-            "(HTTP 404). Modellroute in der Registry prüfen."
-        )
-    if status == 429:
-        return "rate_limited", (
-            "Rate-Limit oder Kontingent erreicht (HTTP 429). Später erneut "
-            "versuchen oder Kontingent/Abrechnung beim Provider prüfen."
-        )
-    if status is not None and status >= 500:
-        return "provider_outage", (
-            f"Der Provider meldet einen Serverfehler (HTTP {status}). "
-            "Später erneut versuchen."
-        )
-    return "provider_error", (
-        "Der Provider-Aufruf ist fehlgeschlagen (keine HTTP-Statusangabe). "
-        "Netzwerk/Konfiguration prüfen."
-    )
+    """Compatibility projection of the canonical provider classification.
+
+    Existing readiness clients retain their established reason literals while
+    research execution consumes the canonical provider-prefixed literals.
+    """
+    classified = classify_provider_failure(message)
+    compatibility_code = {
+        "provider_auth_error": "auth_failed",
+        "provider_rate_limited": "rate_limited",
+        "provider_timeout": "timeout",
+    }.get(classified.reason_code, classified.reason_code)
+    return compatibility_code, classified.safe_detail
 
 
 def _retryable_reason(reason_code: str | None) -> bool:
-    return reason_code in {
-        "rate_limited", "provider_outage", "timeout", "provider_unavailable",
-    }
+    return provider_reason_is_retryable(reason_code) or reason_code == "provider_unavailable"
 
 
 @dataclass(frozen=True)

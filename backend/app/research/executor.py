@@ -16,6 +16,7 @@ from urllib.parse import urlparse
 from app.config.settings import get_settings
 from app.db.models import AsyncOperation, Project, ResearchResult, ResearchTask
 from app.db.session import SessionLocal
+from app.provider_errors import classify_provider_failure
 from app.research import cost_guard, recording
 from app.research.policy import evaluate_web_research
 from app.research.providers import (
@@ -349,22 +350,15 @@ def _record_tool_failure(db, tool_invocation_id: str, error_class: str) -> None:
 
 
 def _safe_provider_code(exc: Exception) -> str:
-    return {
-        ProviderUnavailable: "provider_unavailable",
-        ProviderTimeout: "provider_timeout",
-        ProviderError: "provider_error",
-        CreditExceeded: "credit_exceeded",
-    }.get(type(exc), "provider_error")
+    return classify_provider_failure(
+        str(exc), source_code=getattr(exc, "code", None)
+    ).reason_code
 
 
 def _safe_provider_detail(exc: Exception) -> str:
-    if isinstance(exc, CreditExceeded):
-        return "Das Budget für die Recherche ist erreicht."
-    if isinstance(exc, ProviderUnavailable):
-        return "Der Recherchedienst ist derzeit nicht verfügbar."
-    if isinstance(exc, ProviderTimeout):
-        return "Die Recherche hat das Zeitlimit überschritten."
-    return "Die Recherche konnte nicht abgeschlossen werden."
+    return classify_provider_failure(
+        str(exc), source_code=getattr(exc, "code", None)
+    ).safe_detail
 
 
 def _safe_mark_failed(task_id: str, operation_id: str, code: str) -> None:

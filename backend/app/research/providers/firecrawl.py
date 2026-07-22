@@ -53,7 +53,7 @@ class FirecrawlProvider:
 
     @staticmethod
     def _raise_for_status(resp, operation: str) -> None:
-        if resp.status_code in (402, 429):
+        if resp.status_code == 402:
             raise CreditExceeded("firecrawl credit/budget limit")
         if resp.status_code >= 400:
             raise ProviderError(f"firecrawl {operation} status {resp.status_code}")

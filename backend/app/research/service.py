@@ -28,6 +28,7 @@ from app.db.models import (
     ResearchTask,
     SearchQueryApproval,
 )
+from app.provider_errors import provider_reason_is_retryable
 from app.repositories import controls
 from app.research import recording
 from app.security import approval_service
@@ -490,6 +491,8 @@ def task_to_contract(task: ResearchTask) -> ResearchTaskContract:
         completed_at=task.finished_at,
         result_count=task.result_count,
         error=task.safe_error_detail,
+        error_code=task.error_code,
+        retryable=provider_reason_is_retryable(task.error_code),
     )
 
 

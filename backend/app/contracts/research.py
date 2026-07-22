@@ -49,6 +49,8 @@ class ResearchTask(BaseModel):
     completed_at: datetime | None = None
     result_count: int = 0
     error: str | None = None
+    error_code: str | None = None
+    retryable: bool = False
 
 
 class ProfessionalEvidence(BaseModel):

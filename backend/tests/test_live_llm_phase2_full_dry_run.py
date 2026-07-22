@@ -92,11 +92,16 @@ def _safe_status(value: Any) -> dict[str, Any]:
     allowed = {
         "status", "generation_status", "last_error_code", "warnings",
         "execution_mode", "firewall_decision", "risk_label", "error",
+        "error_code", "retryable", "result_count",
     }
-    return {
+    result = {
         key: item for key, item in value.items()
         if key in allowed and isinstance(item, (str, int, float, bool, list, type(None)))
     }
+    error = value.get("error")
+    if isinstance(error, dict):
+        result["error_code"] = error.get("code")
+    return result
 
 
 def _trace_testclient(trace_path: Path) -> None:
@@ -224,12 +229,14 @@ def _market_output(request) -> dict[str, Any]:
     }
 
 
-def _install_offline_adapters(trace_path: Path) -> None:
+def _install_offline_adapters(trace_path: Path, *, firecrawl_502: bool = False) -> None:
     from app.agents.providers.anthropic import AnthropicProvider
     from app.agents.providers.base import ProviderResult, ProviderUsage
     from app.agents.providers.openai import OpenAIProvider
     from app.research.providers import resolver as web_resolver
-    from app.research.providers.base import FetchOutcome, SearchCandidate, SearchOutcome
+    from app.research.providers.base import (
+        FetchOutcome, ProviderError, SearchCandidate, SearchOutcome,
+    )
     from app.research.providers.firecrawl import FirecrawlProvider
 
     def llm_result(provider: str, request) -> ProviderResult:
@@ -262,7 +269,10 @@ def _install_offline_adapters(trace_path: Path) -> None:
         _append_json(trace_path, {
             "kind": "web_provider", "operation": "search",
             "query_hash": hashlib.sha256(request.query.encode("utf-8")).hexdigest(),
+            "status": 502 if firecrawl_502 else 200,
         })
+        if firecrawl_502:
+            raise ProviderError("firecrawl search status 502")
         return SearchOutcome(
             candidates=[SearchCandidate(
                 url=row["url"], title=row["title"],
@@ -305,6 +315,7 @@ def _prepare_child_environment(work_root: Path) -> None:
     os.environ.update({
         "RUN_REAL_PROVIDER_SMOKE": "true",
         "RUN_LIVE_LLM_SMOKES_APPROVED": "true",
+        "RUN_FIRECRAWL_RECOVERY_APPROVED": "true",
         "OPENAI_API_KEY": "offline-transport-test-only",
         "ANTHROPIC_API_KEY": "offline-transport-test-only",
         "FIRECRAWL_API_KEY": "offline-transport-test-only",
@@ -380,14 +391,25 @@ def _phase2_worker(
 
         harness._assert_budget_before_call = traced_budget_check
         _trace_testclient(trace_path)
-        _install_offline_adapters(trace_path)
-        code = harness.prepare() if mode == "prepare" else harness.resume(approval or "")
+        _install_offline_adapters(trace_path, firecrawl_502=mode == "prepare_web_502")
+        code = (
+            harness.prepare_web()
+            if mode in {"prepare_web", "prepare_web_502"}
+            else harness.resume_llm(approval or "")
+        )
         queue.put({"code": code, "error": None})
     except BaseException as exc:  # process boundary must return a safe test failure
         queue.put({"code": 99, "error": f"{type(exc).__name__}:{exc}"})
 
 
-def _run_worker(mode: str, work_root: Path, trace_path: Path, approval: str | None = None):
+def _run_worker(
+    mode: str,
+    work_root: Path,
+    trace_path: Path,
+    approval: str | None = None,
+    *,
+    expected_code: int = 0,
+):
     context = multiprocessing.get_context("spawn")
     queue = context.Queue()
     process = context.Process(
@@ -407,7 +429,7 @@ def _run_worker(mode: str, work_root: Path, trace_path: Path, approval: str | No
     except Empty:
         pytest.fail(f"{mode} worker returned no result (exit={process.exitcode})")
     assert process.exitcode == 0, result
-    assert result == {"code": 0, "error": None}, result
+    assert result == {"code": expected_code, "error": None}, result
     return duration
 
 
@@ -439,7 +461,60 @@ def _route_artifact_ids(
     return {key: sorted(values) for key, values in sorted(merged.items())}
 
 
-def test_phase2_prepare_resume_full_offline_dry_run():
+def test_phase2_prepare_web_provider_502_is_classified_and_cleaned():
+    work_root = Path(tempfile.mkdtemp(prefix="p2err-")).resolve()
+    shutil.rmtree(work_root)
+    trace_path = work_root / "safe-trace.jsonl"
+
+    _run_worker(
+        "prepare_web_502", work_root, trace_path, expected_code=1,
+    )
+
+    trace = _read_trace(trace_path)
+    web_calls = [row for row in trace if row.get("kind") == "web_provider"]
+    assert web_calls == [{
+        "kind": "web_provider",
+        "operation": "search",
+        "query_hash": web_calls[0]["query_hash"],
+        "status": 502,
+    }]
+    assert not [row for row in trace if row.get("kind") == "provider"]
+
+    run_rows = _http(trace, "POST", r"/research-briefs/[^/]+/run$")
+    assert len(run_rows) == 1
+    assert run_rows[0]["safe_status"]["result_count"] == 0
+    task_rows = _http(trace, "GET", r"/research-tasks/[^/]+$")
+    operation_rows = _http(trace, "GET", r"/operations/[^/]+$")
+    task_status = task_rows[0]["safe_status"]
+    assert task_status["status"] == "failed"
+    assert task_status["error_code"] == "provider_outage"
+    assert task_status["retryable"] is True
+    assert task_status["result_count"] == 0
+    assert operation_rows[-1]["safe_status"]["status"] == "failed"
+    assert operation_rows[-1]["safe_status"]["error_code"] == "provider_outage"
+    assert not _http(trace, "GET", r"/projects/[^/]+/research-results$")
+    assert not _http(trace, "POST", r"/research-results/[^/]+/import$")
+
+    report = (work_root / "reports" / "LIVE_LLM_SMOKE_REPORT.md").read_text(
+        encoding="utf-8"
+    )
+    assert "reason_code: `provider_outage`" in report
+    assert "http_status=`502`" in report
+    assert "retryable=`True`" in report
+    assert "insufficient_external_evidence" not in report
+    assert "fake_fallback_observed: `no`" in report
+    assert "Authorization" not in report and SNIPPET_SENTINEL not in report
+
+    assert not list((work_root / "sessions").glob("*"))
+    assert not list(work_root.rglob("phase2.db"))
+    assert not list(work_root.rglob("redacted-request-ledger.json"))
+    assert not list(work_root.rglob("sources"))
+    assert not list(work_root.rglob("checkpoints.db"))
+    assert not list(work_root.rglob("exports"))
+    shutil.rmtree(work_root, ignore_errors=False)
+
+
+def test_phase2_prepare_web_resume_llm_full_offline_dry_run():
     configured_root = os.environ.get("PHASE2_DRY_RUN_WORK_ROOT")
     work_root = (
         Path(configured_root).resolve()
@@ -450,7 +525,7 @@ def test_phase2_prepare_resume_full_offline_dry_run():
         shutil.rmtree(work_root)
     trace_path = work_root / "safe-trace.jsonl"
 
-    prepare_seconds = _run_worker("prepare", work_root, trace_path)
+    prepare_seconds = _run_worker("prepare_web", work_root, trace_path)
     session_files = list((work_root / "sessions").glob("*/session.json"))
     assert len(session_files) == 1
     session_payload = json.loads(session_files[0].read_text(encoding="utf-8"))
@@ -461,11 +536,15 @@ def test_phase2_prepare_resume_full_offline_dry_run():
     assert len(quote_hashes) == 2 and len(source_versions) == 2
     assert len({item["fragment_id"] for item in session_payload["anchors"]}) == 2
     assert session_payload["human_wait_ended_at"] is None
-    assert [row["label"] for row in session_payload["ledger"]["records"]] == [
-        "a2_preflight", "live_02a", "market_preflight",
-    ]
+    assert session_payload["ledger"]["records"] == []
+    assert session_payload["preflight_fingerprints"] == {}
     assert session_payload["research"]["firewall_decision"] == "allow"
     assert session_payload["research"]["approval_id"]
+    prepare_trace = _read_trace(trace_path)
+    assert not [row for row in prepare_trace if row.get("kind") == "provider"]
+    assert [row["operation"] for row in prepare_trace if row.get("kind") == "web_provider"] == [
+        "search", "fetch", "fetch",
+    ]
 
     # The same contiguous rehearsal proves tamper rejection without mutating the
     # actual session that resume must consume.
@@ -487,7 +566,7 @@ def test_phase2_prepare_resume_full_offline_dry_run():
     human_wait_started = time.monotonic()
     time.sleep(0.2)
     approval = f"{local_harness.APPROVAL_PREFIX} {session_id} {','.join(quote_hashes)}"
-    resume_seconds = _run_worker("resume", work_root, trace_path, approval)
+    resume_seconds = _run_worker("resume_llm", work_root, trace_path, approval)
     human_wait_seconds = time.monotonic() - human_wait_started - resume_seconds
     assert human_wait_seconds >= 0.15
 

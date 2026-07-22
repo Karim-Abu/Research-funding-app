@@ -61,11 +61,58 @@ def test_no_network_without_both_explicit_opt_ins(monkeypatch):
     monkeypatch.delenv("CI", raising=False)
     monkeypatch.delenv("RUN_REAL_PROVIDER_SMOKE", raising=False)
     monkeypatch.delenv("RUN_LIVE_LLM_SMOKES_APPROVED", raising=False)
+    monkeypatch.delenv("RUN_FIRECRAWL_RECOVERY_APPROVED", raising=False)
     assert module._opt_in_reason(Settings()) == "live_smoke_opt_in_missing"
     monkeypatch.setenv("RUN_REAL_PROVIDER_SMOKE", "true")
     assert module._opt_in_reason(Settings()) == "live_llm_approval_missing"
     monkeypatch.setenv("RUN_LIVE_LLM_SMOKES_APPROVED", "true")
     assert module._opt_in_reason(Settings()) is None
+    assert module._opt_in_reason(Settings(), require_llm=False) == (
+        "firecrawl_recovery_approval_missing"
+    )
+    monkeypatch.setenv("RUN_FIRECRAWL_RECOVERY_APPROVED", "true")
+    assert module._opt_in_reason(Settings(), require_llm=False) is None
+
+
+def test_parser_exposes_web_first_commands_only():
+    module = _module()
+    parser = module._build_parser()
+    assert parser.parse_args(["prepare-web"]).command == "prepare-web"
+    parsed = parser.parse_args(["resume-llm", "--approval", "approval"])
+    assert (parsed.command, parsed.approval) == ("resume-llm", "approval")
+    with pytest.raises(SystemExit):
+        parser.parse_args(["prepare"])
+
+
+def test_redacted_request_ledger_is_atomic_and_content_free(tmp_path):
+    module = _module()
+    path = tmp_path / "attempt" / "redacted-request-ledger.json"
+    ledger = module.AtomicRequestLedger("a" * 32, path)
+    ledger.append(module.RequestLedgerEntry(
+        attempt_id="a" * 32,
+        request_sequence=1,
+        provider="firecrawl",
+        route_alias="firecrawl",
+        purpose="public_search",
+        started_at="2026-07-22T00:00:00+00:00",
+        finished_at="2026-07-22T00:00:01+00:00",
+        http_class="5xx",
+        http_status=502,
+        retryable=True,
+        reason_code="provider_outage",
+        input_tokens=None,
+        output_tokens=None,
+        estimated_cost_chf="not_available",
+        actual_cost_chf="not_available",
+    ))
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["requests"][0]["reason_code"] == "provider_outage"
+    assert payload["requests"][0]["retryable"] is True
+    assert not path.with_suffix(".tmp").exists()
+    serialized = path.read_text(encoding="utf-8")
+    assert "Authorization" not in serialized
+    assert "raw_query" not in serialized
+    assert "provider_response" not in serialized
 
 
 def test_unlabelled_bootstrap_inference_is_blocked_before_adapter(monkeypatch):
