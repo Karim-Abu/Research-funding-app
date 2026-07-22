@@ -115,7 +115,7 @@ describe("LiveRequirements — Compliance ≠ Human Review (RUN 2A Slice 1)", ()
     // Primärstatus = Compliance; Sekundärbadge = Reviewzustand — die Zeile
     // selbst zeigt nie «Teilweise erfüllt» für eine bestandene Mathematikregel.
     expect(rowToggle).toHaveTextContent(
-      "Maschinell geprüft · Menschliche Bestätigung offen"
+      "Maschinell geprüft · Bestätigung offen"
     )
     expect(rowToggle).not.toHaveTextContent("Teilweise erfüllt")
     // Gruppenzähler: der erfüllte Hybrid-Check zählt als erfüllt.
@@ -144,10 +144,55 @@ describe("LiveRequirements — Compliance ≠ Human Review (RUN 2A Slice 1)", ()
       name: /Barbeitrag mindestens/,
     })
     expect(
-      screen.queryByText("Maschinell geprüft · Menschliche Bestätigung offen")
+      screen.queryByText("Maschinell geprüft · Bestätigung offen")
     ).toBeNull()
     fireEvent.click(rowToggle)
     expect(await screen.findByText("Menschlich bestätigt")).toBeInTheDocument()
+  })
+
+  it("RUN 4A Statussprache: open → «Prüfung nötig», blocked → «Nicht erfüllt», nie Roh-Enums", async () => {
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-open",
+            requirement_id: "REQ.INNO.SOL.INNOVATION_DESCRIBED",
+            title: "Innovationsgehalt dargelegt",
+            status: "open",
+            basis: "semantic_assessment",
+            reasoning: "Inhaltliche Prüfung durch eine Person nötig.",
+          }),
+          assessment({
+            assessment_id: "as-blocked",
+            requirement_id: "REQ.INNO.ELIG.SWISS_PARTNER",
+            title: "Schweizer Forschungspartner vorhanden",
+            status: "blocked",
+            reasoning: "Kein beitragsberechtigter Forschungspartner erfasst.",
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    const openRow = await screen.findByRole("button", {
+      name: /Innovationsgehalt dargelegt/,
+    })
+    fireEvent.click(openRow)
+    // Detailebene: präzises Label + Kurzbegründung, kein «Nicht erfüllt».
+    expect(
+      await screen.findByText(/Nicht maschinell entscheidbar/)
+    ).toBeInTheDocument()
+
+    const blockedRow = screen.getByRole("button", {
+      name: /Schweizer Forschungspartner vorhanden/,
+    })
+    fireEvent.click(blockedRow)
+    expect(await screen.findByText(/Die Regel ist verletzt/)).toBeInTheDocument()
+    expect(screen.getByText("Nicht erfüllt")).toBeInTheDocument()
+
+    // Roh-Enums erscheinen nie im Standardfluss.
+    expect(screen.queryByText(/^open$/)).toBeNull()
+    expect(screen.queryByText(/^blocked$/)).toBeNull()
+    expect(screen.queryByText(/^needs_input$/)).toBeNull()
   })
 
   it("Guidance-Hinweise laufen in die Hinweise-Sektion und zählen in keiner Quote", async () => {

@@ -23,7 +23,10 @@ import {
 import {
   listRequirements,
   STALE_NOTICE,
+  STATUS_LABELS,
+  STATUS_REASONS,
   type RequirementAssessmentDto,
+  type RequirementStatus,
   type RuleEvidenceDto,
 } from "@/lib/requirements"
 import {
@@ -51,6 +54,8 @@ interface LiveRow {
   requirementId: string
   title: string
   reasoning: string
+  /** Präziser Backend-Status — Detailebene rendert das 5er-Statuslabel. */
+  status: RequirementStatus
   bucket: ReqBucket
   category: string
   evidenceState: EvidenceState
@@ -91,6 +96,7 @@ function toRow(a: RequirementAssessmentDto): LiveRow {
     requirementId: a.requirement_id,
     title: a.title?.trim() || REQ_FALLBACK.title,
     reasoning: a.reasoning?.trim() || "Keine Begründung vorhanden.",
+    status: a.status,
     bucket,
     category: categorize(a.requirement_id),
     evidenceState,
@@ -453,7 +459,7 @@ function LiveRequirementRow({
         {row.humanState === "needed" && (
           <span className="hidden shrink-0 rounded-full bg-muted px-2 py-0.5 text-xs text-muted-foreground sm:inline">
             {row.bucket === "fulfilled"
-              ? "Maschinell geprüft · Menschliche Bestätigung offen"
+              ? "Maschinell geprüft · Bestätigung offen"
               : "Prüfung nötig"}
           </span>
         )}
@@ -461,6 +467,15 @@ function LiveRequirementRow({
 
       {expanded && (
         <div className="flex flex-col gap-4 border-t border-border bg-muted/20 px-5 pb-5 pt-4">
+          {/* Präziser fachlicher Status mit Kurzbegründung (RUN 4A). */}
+          <p className="text-sm text-foreground">
+            <span className="font-medium">{STATUS_LABELS[row.status]}</span>
+            <span className="text-muted-foreground">
+              {" "}
+              — {STATUS_REASONS[row.status]}
+            </span>
+          </p>
+
           {/* System finding — clearly separated from the human decision. */}
           <div className="flex flex-col gap-1">
             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">

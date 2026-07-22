@@ -71,13 +71,25 @@ export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
   confirmed: "Menschlich bestätigt",
 }
 
-// German user-facing labels (recommended in the milestone spec).
+// German user-facing labels (RUN 4A status catalog). `open` heisst bewusst
+// «Prüfung nötig», nicht «Nicht erfüllt»: das Backend nutzt `open` auch für
+// «menschliche Entscheidung nötig» und «semantisch nicht bewertet»
+// (backend/app/rules/aggregation.py) — nur `blocked` ist eine verletzte Regel.
 export const STATUS_LABELS: Record<RequirementStatus, string> = {
   fulfilled: "Erfüllt",
   partial: "Teilweise erfüllt",
-  open: "Offen",
-  needs_input: "Angaben nötig",
-  blocked: "Blockiert",
+  open: "Prüfung nötig",
+  needs_input: "Nicht beurteilbar",
+  blocked: "Nicht erfüllt",
+}
+
+// Kurzbegründung je Status — im Detailbereich neben dem Label gerendert.
+export const STATUS_REASONS: Record<RequirementStatus, string> = {
+  fulfilled: "Die maschinelle Prüfung ist bestanden.",
+  partial: "Ein Teil der notwendigen Angaben fehlt.",
+  open: "Nicht maschinell entscheidbar — eine Person muss diesen Punkt prüfen.",
+  needs_input: "Erforderliche Daten fehlen.",
+  blocked: "Die Regel ist verletzt.",
 }
 
 export const BASIS_LABELS: Record<AssessmentBasis, string> = {

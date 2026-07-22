@@ -5,6 +5,7 @@ import { setBackendMode } from "@/lib/app-mode"
 import {
   listRequirements,
   STATUS_LABELS,
+  STATUS_REASONS,
   STALE_NOTICE,
 } from "@/lib/requirements"
 
@@ -61,10 +62,17 @@ describe("requirements client (live)", () => {
     await expect(listRequirements("missing")).rejects.toThrow("nicht gefunden")
   })
 
-  it("exposes German status labels + stale notice", () => {
+  it("exposes German status labels + stale notice (RUN 4A catalog)", () => {
     expect(STATUS_LABELS.fulfilled).toBe("Erfüllt")
-    expect(STATUS_LABELS.needs_input).toBe("Angaben nötig")
-    expect(STATUS_LABELS.blocked).toBe("Blockiert")
+    expect(STATUS_LABELS.partial).toBe("Teilweise erfüllt")
+    expect(STATUS_LABELS.open).toBe("Prüfung nötig")
+    expect(STATUS_LABELS.needs_input).toBe("Nicht beurteilbar")
+    expect(STATUS_LABELS.blocked).toBe("Nicht erfüllt")
+    expect(STATUS_REASONS.blocked).toBe("Die Regel ist verletzt.")
+    expect(STATUS_REASONS.needs_input).toBe("Erforderliche Daten fehlen.")
+    // «open» darf nie als «Nicht erfüllt» erscheinen — das Backend nutzt open
+    // auch für «menschliche Entscheidung nötig» (aggregation.py).
+    expect(STATUS_REASONS.open).toContain("Nicht maschinell entscheidbar")
     expect(STALE_NOTICE).toContain("erneut")
   })
 })
