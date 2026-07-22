@@ -203,6 +203,19 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
                 return
             candidates = source_scope.prefilter_fragments(db, sources)
             if not candidates:
+                if len(sources) >= 2:
+                    _complete_empty(
+                        db,
+                        comparison,
+                        operation_id,
+                        "Die importierten externen Quellen wurden verifiziert und "
+                        "sind technisch geeignet, liefern aber keine eindeutig "
+                        "marktbezogenen Passagen für einen belastbaren Vergleich.",
+                        status="limited",
+                        warning="limited_external_evidence",
+                    )
+                    db.commit()
+                    return
                 _complete_empty(
                     db,
                     comparison,

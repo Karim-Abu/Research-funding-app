@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import hashlib
 import uuid
+import time
 
 import pytest
 from sqlalchemy import func, select
@@ -17,6 +18,7 @@ from app.config.settings import get_settings
 from app.db.models import (
     DraftVersion,
     EvidenceAnchor,
+    EvidenceLink,
     MarketComparison,
     MarketComparisonItem,
     Project,
@@ -96,13 +98,16 @@ def _seed_imported_public_source(
     content_review_status="reviewed",
     support_status="supports",
     result_status="imported",
+    result_safety_status="passed",
     execution_mode="live",
     document_status="processed",
     version_status="processed",
+    source_url: str | None = None,
 ):
     """Insert a web-imported public SourceDocument(type=url) + version + one fragment."""
     doc_id = str(uuid.uuid4())
     version_id = str(uuid.uuid4())
+    effective_url = source_url or "https://public.example.test/market-report"
     dc = {"sensitivity": "public", "origin": "public_source",
           "processing_mode": "deterministic_only", "web_research_mode": "validated_public",
           "nda_applies": False}
@@ -140,9 +145,10 @@ def _seed_imported_public_source(
     ))
     db.add(ResearchResult(
         result_id=str(uuid.uuid4()), research_task_id=task_id, workspace_id=workspace_id,
-        source_url="https://public.example.test/market-report",
-        final_url="https://public.example.test/market-report", title="Public market report",
+        source_url=effective_url,
+        final_url=effective_url, title="Public market report",
         snippet="Public candidate snippet", status=result_status,
+        content_safety_status=result_safety_status,
         content_review_status=content_review_status,
         support_status=support_status,
         source_document_id=doc_id,
@@ -291,6 +297,171 @@ def test_generate_produces_source_backed_item(client, db, web_enabled):
     # Allow-listed provenance is visible; raw provider output is not persisted.
     assert view["provider"] and view["model_ref"] and view["context_hash"]
     assert len(view["source_version_ids"]) == 3
+
+
+def _seed_reviewed_public_source_without_market_signal(
+    db,
+    project_id: str,
+    workspace_id: str,
+    *,
+    index: int | None = None,
+) -> tuple[str, str, str]:
+    """Seed a reviewed, supported imported public source without market-signal terms."""
+    idx_suffix = f" {index}" if index is not None else ""
+    doc_id, version_id = _seed_imported_public_source(
+        db,
+        project_id,
+        workspace_id,
+        text=(
+            "In diesem Abschnitt wird ein Projektplan beschrieben, inklusive "
+            "organisatorischer Schritte, Rollen und Zeitplanangaben ohne "
+            "marktbezogenen Inhalt." + idx_suffix
+        ),
+        source_url=f"https://public.example.test/market-report-{uuid.uuid4()}",
+    )
+    result = db.scalar(select(ResearchResult).where(
+        ResearchResult.source_document_id == doc_id
+    ))
+    assert result is not None
+    # Keep the historical review path explicit for the full BFF-style chain.
+    return result.result_id, doc_id, version_id
+
+
+def test_market_comparison_two_reviewed_live_sources_becomes_limited(client, db, web_enabled):
+    """Regression for market-scope recovery: two reviewed live public sources are counted,
+    but with no markt-relevante Begriffe darf der Vergleich nur als limited enden."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    source_version_ids: list[str] = []
+    result_ids: list[str] = []
+    source_ids: list[str] = []
+    anchor_ids: list[str] = []
+
+    for idx in range(2):
+        result_id, _doc_id, version_id = _seed_reviewed_public_source_without_market_signal(
+            db, project_id, project.workspace_id, index=idx
+        )
+        review = client.post(
+            f"/api/v1/research-results/{result_id}/review",
+            json={"decision": "supports"},
+            headers=unsafe_headers(csrf),
+        )
+        assert review.status_code == 200, review.text
+
+        result = db.get(ResearchResult, result_id)
+        assert result is not None
+        result_ids.append(result_id)
+        source_version_ids.append(version_id)
+        source_ids.append(result.source_document_id)
+        document = db.get(SourceDocument, result.source_document_id)
+        assert document is not None
+        task = db.get(ResearchTask, result.research_task_id)
+        assert task is not None
+        assert task.execution_mode == "live"
+        assert result.content_review_status == "reviewed"
+        assert result.support_status == "supports"
+
+        fragment = db.scalar(select(SourceFragment).where(
+            SourceFragment.source_version_id == version_id
+        ))
+        assert fragment is not None
+        passages = client.get(
+            f"/api/v1/research-results/{result_id}/anchor-passages"
+        ).json()
+        assert passages and passages != []
+        passage = passages[0]
+        assert passage is not None
+        assert passage["start_offset"] < passage["end_offset"] <= len(fragment.normalized_text)
+        assert passage["safety_status"] in {"passed", "human_released"}
+        assert passage["content_review_status"] == "reviewed"
+
+        anchor = client.post(
+            f"/api/v1/research-results/{result_id}/external-anchors",
+            json={
+                "fragment_id": fragment.fragment_id,
+                "quote": passage["excerpt"],
+            },
+            headers=_headers(csrf),
+        )
+        assert anchor.status_code == 200, anchor.text
+        anchor_data = anchor.json()
+        assert anchor_data["source_id"] == result.source_document_id
+        assert anchor_data["source_version_id"] == version_id
+        assert anchor_data["scope"] == "external"
+        assert anchor_data["verification_status"] == "exact_verified"
+        anchor_ids.append(anchor_data["anchor_id"])
+
+    assert len(result_ids) == 2
+    assert len(source_ids) == 2
+    assert len(set(source_ids)) == 2
+    assert len(anchor_ids) == 2
+    assert len(set(anchor_ids)) == 2
+    source_rows = source_scope.imported_public_sources(db, project_id, project.workspace_id)
+    assert len(source_rows) == 2
+    assert set(result_ids) == set(rr.result_id for rr in db.scalars(
+        select(ResearchResult).where(
+            ResearchResult.source_document_id.in_([row.source_id for row in source_rows])
+        )
+    ))
+    assert all(row.project_id == project_id and row.workspace_id == project.workspace_id for row in source_rows)
+    assert len(source_rows[0].source_id) > 0 and len(source_rows[1].source_id) > 0
+    fragments = source_scope.prefilter_fragments(db, source_rows)
+    assert fragments == []
+    assert len(source_rows[0].source_id) > 0 and len(source_rows[1].source_id) > 0
+    assert len(source_rows[0].current_source_version_id or "") > 0
+    assert len(source_rows[1].current_source_version_id or "") > 0
+
+    result_rows = list(db.scalars(
+        select(ResearchResult).where(ResearchResult.source_document_id.in_([row.source_id for row in source_rows]))
+    ))
+    assert len(result_rows) == 2
+    assert len(set((r.final_url or r.source_url) for r in result_rows)) == 2
+    version_rows = list(db.scalars(
+        select(SourceVersion).where(SourceVersion.source_version_id.in_(source_version_ids))
+    ))
+    assert len(version_rows) == 2
+    assert len(set(v.normalized_content_hash for v in version_rows)) == 2
+    assert all(v.processing_status == "processed" for v in version_rows)
+    assert all(v.content_review_status == "reviewed" for v in version_rows)
+    assert all(v.content_safety_status in {"passed", "human_released"} for v in version_rows)
+    anchors = list(db.scalars(select(EvidenceAnchor).where(EvidenceAnchor.anchor_id.in_(anchor_ids))))
+    assert len(anchors) == 2
+    assert {a.scope for a in anchors} == {"external"}
+    assert {a.verification_status for a in anchors} == {"exact_verified"}
+    assert all(a.start_offset is not None and a.end_offset is not None for a in anchors)
+    links = list(db.scalars(select(EvidenceLink).where(
+        EvidenceLink.anchor_id.in_(anchor_ids),
+        EvidenceLink.target_type == "market_comparison_item",
+    )))
+    assert len(links) == 0
+
+    created = client.post(
+        f"/api/v1/projects/{project_id}/market-comparisons", headers=_headers(csrf)
+    )
+    assert created.status_code == 202, created.text
+    created_body = created.json()
+    op_id = created_body["operation_id"]
+    poll = client.get(f"/api/v1/operations/{op_id}")
+    assert poll.status_code == 200
+    for _ in range(20):
+        poll = client.get(f"/api/v1/operations/{op_id}")
+        assert poll.status_code == 200
+        state = poll.json()
+        if state.get("status") in {"succeeded", "failed", "cancelled"}:
+            break
+        time.sleep(0.05)
+    assert state["status"] == "succeeded"
+
+    view = client.get(f"/api/v1/market-comparisons/{created_body['resource_id']}").json()
+    assert view["status"] == "limited"
+    assert "limited_external_evidence" in view["warnings"]
+    assert view["item_count"] == 0
+    assert len(view["items"]) == 0
+    assert len(view["source_version_ids"]) == 2
+    assert len(set(view["source_version_ids"])) == 2
+    assert set(view["source_version_ids"]) == set(source_version_ids)
+    assert view["source_version_ids"] == sorted(view["source_version_ids"])
 
 
 def test_market_size_and_customer_problem_categories(client, db, web_enabled):
