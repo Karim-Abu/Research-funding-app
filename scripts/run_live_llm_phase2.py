@@ -935,6 +935,17 @@ def _remove_session_root(temp_root: Path) -> None:
     shutil.rmtree(resolved, ignore_errors=True)
 
 
+def _close_runtime_resources(engine: Any | None = None) -> None:
+    """Close process-global SQLite handles before Windows session cleanup."""
+    try:
+        graph_module = sys.modules.get("app.runs.graph")
+        if graph_module is not None:
+            graph_module.close_checkpointer()
+    finally:
+        if engine is not None:
+            engine.dispose()
+
+
 def cleanup_expired() -> int:
     SESSION_ROOT.mkdir(parents=True, exist_ok=True)
     now = _utcnow()
@@ -979,6 +990,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
     temp_root = SESSION_ROOT / session_id
     temp_root.mkdir(parents=True, exist_ok=False)
     success_waiting = False
+    runtime_engine = None
     started = time.monotonic()
     web_counter = {"calls": 0, "credits": 0.0, "seconds": 0.0, "kinds": []}
     try:
@@ -992,6 +1004,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
         from app.evaluation.pricing import PRICE_TABLE_VERSION
         from app.main import app
 
+        runtime_engine = engine
         get_settings.cache_clear()
         settings = get_settings()
         reason = _opt_in_reason(settings)
@@ -1195,7 +1208,6 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                     return 0
             finally:
                 db.close()
-                engine.dispose()
     except HarnessFailure as exc:
         print(f"LIVE_LLM_PREPARE_FAILED reason_code={exc.code}")
         return 1
@@ -1203,6 +1215,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
         print(f"LIVE_LLM_PREPARE_FAILED reason_code={_redacted_error(exc)}")
         return 1
     finally:
+        _close_runtime_resources(runtime_engine)
         if not success_waiting:
             _remove_session_root(temp_root)
 
@@ -1215,6 +1228,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
     started = time.monotonic()
     web_counter = {"calls": MAX_WEB_CALLS, "credits": 0.0, "seconds": 0.0, "kinds": []}
     final_review_artifact: Path | None = None
+    runtime_engine = None
     try:
         _configure_environment(temp_root)
         os.chdir(BACKEND)
@@ -1232,6 +1246,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         from app.evaluation.pricing import PRICE_TABLE_VERSION
         from app.main import app
 
+        runtime_engine = engine
         get_settings.cache_clear()
         settings = get_settings()
         reason = _opt_in_reason(settings)
@@ -1495,7 +1510,6 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                 return 0
         finally:
             db.close()
-            engine.dispose()
     except HarnessFailure as exc:
         if exc.code == "live_session_configuration_changed":
             print("LIVE_SESSION_CONFIGURATION_CHANGED")
@@ -1507,6 +1521,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         print(f"LIVE_LLM_SMOKE_FAILED reason_code={_redacted_error(exc)}")
         return 1
     finally:
+        _close_runtime_resources(runtime_engine)
         _remove_session_root(temp_root)
 
 

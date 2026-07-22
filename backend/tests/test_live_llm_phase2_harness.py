@@ -278,6 +278,34 @@ def test_cleanup_rejects_targets_outside_session_root(tmp_path, monkeypatch):
         module._remove_session_root(tmp_path / "outside")
 
 
+def test_cleanup_closes_checkpoint_before_removing_session(tmp_path, monkeypatch):
+    module = _module()
+    session_root = tmp_path / "sessions"
+    temp_root = session_root / ("f" * 32)
+    temp_root.mkdir(parents=True)
+    checkpoint_path = temp_root / "checkpoints.db"
+    monkeypatch.setattr(module, "SESSION_ROOT", session_root)
+    monkeypatch.setenv("CHECKPOINT_DB_PATH", str(checkpoint_path))
+
+    from app.config.settings import get_settings
+    from app.runs import graph as runs_graph
+
+    runs_graph.close_checkpointer()
+    get_settings.cache_clear()
+    try:
+        runs_graph.get_checkpointer()
+        assert checkpoint_path.is_file()
+
+        module._close_runtime_resources()
+        assert runs_graph._checkpointer is None
+        assert runs_graph._graph is None
+        module._remove_session_root(temp_root)
+        assert not temp_root.exists()
+    finally:
+        runs_graph.close_checkpointer()
+        get_settings.cache_clear()
+
+
 def test_live03_user_operations_are_declared_as_http_routes():
     source = SCRIPT.read_text(encoding="utf-8")
     required_route_fragments = {

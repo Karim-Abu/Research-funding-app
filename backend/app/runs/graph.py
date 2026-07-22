@@ -631,6 +631,18 @@ def get_checkpointer() -> SqliteSaver:
     return _checkpointer
 
 
+def close_checkpointer() -> None:
+    """Release the process-local checkpoint connection and compiled graph."""
+    global _checkpointer, _graph
+    saver = _checkpointer
+    _graph = None
+    _checkpointer = None
+    if saver is not None:
+        connection = getattr(saver, "conn", None)
+        if connection is not None:
+            connection.close()
+
+
 def get_graph():
     global _graph
     if _graph is None:
