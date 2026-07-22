@@ -429,6 +429,16 @@ def _artifact(row: dict[str, Any], key: str) -> str:
     return values[0]
 
 
+def _route_artifact_ids(
+    trace: list[dict[str, Any]], method: str, pattern: str
+) -> dict[str, list[str]]:
+    merged: dict[str, set[str]] = {}
+    for row in _http(trace, method, pattern):
+        for key, values in row.get("artifact_ids", {}).items():
+            merged.setdefault(key, set()).update(values)
+    return {key: sorted(values) for key, values in sorted(merged.items())}
+
+
 def test_phase2_prepare_resume_full_offline_dry_run():
     configured_root = os.environ.get("PHASE2_DRY_RUN_WORK_ROOT")
     work_root = (
@@ -631,6 +641,32 @@ def test_phase2_prepare_resume_full_offline_dry_run():
         "active_execution_seconds": active_seconds,
         "human_wait_seconds": human_wait_seconds,
         "http_request_count": len([row for row in trace if row.get("kind") == "http"]),
+        "route_artifact_ids": {
+            "projects": _route_artifact_ids(trace, "POST", r"^/api/v1/projects$"),
+            "primary_sources": _route_artifact_ids(trace, "POST", r"/sources/text$"),
+            "imports": _route_artifact_ids(trace, "POST", r"/projects/[^/]+/imports$"),
+            "import_decisions": _route_artifact_ids(trace, "POST", r"/imports/[^/]+/decision$"),
+            "primary_application": _route_artifact_ids(trace, "PUT", r"/primary-application$"),
+            "runs": _route_artifact_ids(trace, "POST", r"/projects/[^/]+/runs$"),
+            "research_brief": _route_artifact_ids(trace, "PUT", r"/research-brief$"),
+            "query_plan": _route_artifact_ids(trace, "POST", r"/queries/plan$"),
+            "query_approval": _route_artifact_ids(
+                trace, "POST", r"/search-query-approvals/[^/]+/approve$"
+            ),
+            "research_run": _route_artifact_ids(trace, "POST", r"/research-briefs/[^/]+/run$"),
+            "source_imports": _route_artifact_ids(trace, "POST", r"/research-results/[^/]+/import$"),
+            "anchor_passages": _route_artifact_ids(trace, "GET", r"/research-results/[^/]+/anchor-passages$"),
+            "content_reviews": _route_artifact_ids(trace, "POST", r"/research-results/[^/]+/review$"),
+            "external_anchors": _route_artifact_ids(trace, "POST", r"/research-results/[^/]+/external-anchors$"),
+            "market_create": _route_artifact_ids(trace, "POST", r"/market-comparisons$"),
+            "market_read": _route_artifact_ids(trace, "GET", r"/market-comparisons/[^/]+$"),
+            "redrafts": _route_artifact_ids(trace, "POST", r"/redrafts$"),
+            "suggestion_reads": _route_artifact_ids(trace, "GET", r"/suggestions$"),
+            "accepts": _route_artifact_ids(trace, "POST", r"/suggestions/[^/]+/accept$"),
+            "draft_version_reads": _route_artifact_ids(
+                trace, "GET", r"/fields/[^/]+/versions/[^/]+$"
+            ),
+        },
     }
     evidence_path = os.environ.get("PHASE2_DRY_RUN_EVIDENCE_PATH")
     if evidence_path:
