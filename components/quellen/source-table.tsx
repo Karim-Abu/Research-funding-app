@@ -53,6 +53,13 @@ import { cn } from "@/lib/utils"
 import { DATA_CLASS_LABELS, type DataClass } from "@/lib/types"
 import type { SourceUsage } from "@/lib/evidence"
 import {
+  PRIMARY_APPLICATION_HINTS,
+  SOURCE_GROUP_DESCRIPTIONS,
+  SOURCE_GROUP_LABELS,
+  SOURCE_GROUP_ORDER,
+  type SourceGroupKey,
+} from "@/lib/sources-view"
+import {
   importableSourceProjects,
   URL_SOURCE_KIND_LABELS,
   type ImportableSourceProject,
@@ -125,6 +132,14 @@ interface SourceTableProps {
   sourceUsage?: Map<string, SourceUsage>
   /** Navigate to the Evidenz tab (used from the details dialog). */
   onShowEvidence?: () => void
+  /**
+   * RUN 4A: Gruppenschlüssel je Quellen-ID (aus kanonischen Metadaten der
+   * Seite abgeleitet). Vorhanden → Liste nach Zweck gruppiert; fehlt (z. B.
+   * Mock-Modus) → flache Liste wie bisher.
+   */
+  sourceGroups?: Map<string, SourceGroupKey>
+  /** Primärantrags-Status des Projekts fürs Hinweisfeld der ersten Gruppe. */
+  primaryApplicationStatus?: "configured" | "not_configured" | "needs_selection"
 }
 
 const SOURCE_STATUS_CONFIG: Record<
@@ -261,6 +276,8 @@ export function SourceTable({
   onDetailsOpenChange,
   sourceUsage,
   onShowEvidence,
+  sourceGroups,
+  primaryApplicationStatus,
 }: SourceTableProps) {
   const fileInputRef = React.useRef<HTMLInputElement>(null)
   const [confirmId, setConfirmId] = React.useState<string | null>(null)
@@ -468,6 +485,8 @@ export function SourceTable({
           onDelete={(id) => setConfirmId(id)}
           onRetry={handleRetrySource}
           onReupload={openFilePicker}
+          groups={sourceGroups}
+          primaryApplicationStatus={primaryApplicationStatus}
         />
       )}
 
@@ -903,21 +922,39 @@ function SourceWayCard({
   )
 }
 
-function SourceList({
-  sources,
-  canRetry,
-  onDetails,
-  onDelete,
-  onRetry,
-  onReupload,
-}: {
-  sources: Source[]
+interface SourceRowHandlers {
   canRetry: boolean
   onDetails: (source: Source) => void
   onDelete: (id: string) => void
   onRetry: (source: Source) => void
   onReupload: () => void
+}
+
+function SourceList({
+  sources,
+  groups,
+  primaryApplicationStatus,
+  ...handlers
+}: SourceRowHandlers & {
+  sources: Source[]
+  /** RUN 4A: vorhanden → nach Zweck gruppierte Darstellung (live). */
+  groups?: Map<string, SourceGroupKey>
+  primaryApplicationStatus?: "configured" | "not_configured" | "needs_selection"
 }) {
+  // Quellen ohne Gruppenzuordnung (z. B. lokal vorgemerkte) zählen als
+  // Projektunterlagen — nie stillschweigend verstecken.
+  const grouped = groups
+    ? SOURCE_GROUP_ORDER.map((key) => ({
+        key,
+        rows: sources.filter(
+          (s) => (groups.get(s.id) ?? "project_documents") === key
+        ),
+      }))
+    : null
+  const primaryHint =
+    primaryApplicationStatus && primaryApplicationStatus !== "configured"
+      ? PRIMARY_APPLICATION_HINTS[primaryApplicationStatus]
+      : null
   return (
     <section aria-labelledby="source-list-heading" className="flex flex-col gap-3">
       <div className="flex items-end justify-between gap-4">
@@ -934,9 +971,70 @@ function SourceList({
         </span>
       </div>
 
+      {grouped ? (
+        <div className="flex flex-col gap-5" data-testid="source-groups">
+          {grouped.map(({ key, rows }) => {
+            const emptyPrimaryHint =
+              key === "primary_application" && rows.length === 0
+                ? primaryHint
+                : null
+            if (rows.length === 0 && !emptyPrimaryHint) return null
+            return (
+              <section
+                key={key}
+                aria-label={SOURCE_GROUP_LABELS[key]}
+                className="flex flex-col gap-2"
+                data-testid={`source-group-${key}`}
+              >
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    {SOURCE_GROUP_LABELS[key]}
+                  </h3>
+                  <p className="text-xs text-muted-foreground">
+                    {SOURCE_GROUP_DESCRIPTIONS[key]}
+                  </p>
+                </div>
+                {emptyPrimaryHint ? (
+                  <p
+                    role="status"
+                    className="rounded-lg border border-dashed border-border bg-muted/20 px-4 py-3 text-sm text-muted-foreground"
+                  >
+                    {emptyPrimaryHint}
+                  </p>
+                ) : (
+                  <SourceRows
+                    sources={rows}
+                    label={SOURCE_GROUP_LABELS[key]}
+                    {...handlers}
+                  />
+                )}
+              </section>
+            )
+          })}
+        </div>
+      ) : (
+        <SourceRows sources={sources} {...handlers} />
+      )}
+    </section>
+  )
+}
+
+function SourceRows({
+  sources,
+  label,
+  canRetry,
+  onDetails,
+  onDelete,
+  onRetry,
+  onReupload,
+}: SourceRowHandlers & {
+  sources: Source[]
+  label?: string
+}) {
+  return (
       <div
         role="table"
-        aria-label="Quellen"
+        aria-label={label ?? "Quellen"}
         className="overflow-x-auto rounded-lg border border-border bg-card"
       >
         <div className="min-w-[920px]">
@@ -1071,7 +1169,6 @@ function SourceList({
           ))}
         </div>
       </div>
-    </section>
   )
 }
 

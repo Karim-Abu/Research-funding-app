@@ -88,6 +88,7 @@ import {
   type Origin,
 } from "@/lib/data-classification"
 import { getProject } from "@/lib/projects"
+import { sourceGroupOf, type SourceGroupKey } from "@/lib/sources-view"
 import {
   computeSourceUsage,
   listEvidence,
@@ -606,6 +607,13 @@ function QuellenPageContent() {
   const [marketSourceEligible, setMarketSourceEligible] = React.useState(false)
   // Einmaliger Hinweis aus dem Intake: Projekt gespeichert, Upload offen.
   const [uploadHint, setUploadHint] = React.useState(false)
+  // RUN 4A: Primärantrags-Metadaten für die Zweck-Gruppierung der Quellen.
+  const [primarySourceId, setPrimarySourceId] = React.useState<string | null>(
+    null
+  )
+  const [primaryStatus, setPrimaryStatus] = React.useState<
+    "configured" | "not_configured" | "needs_selection" | null
+  >(null)
 
   React.useEffect(() => {
     if (!liveMode) return
@@ -631,6 +639,10 @@ function QuellenPageContent() {
         if (active)
           setProjectDataClass(flatFromDataClassification(p.data_classification))
         if (active) setProjectOrigin(p.data_classification.origin)
+        if (active) {
+          setPrimarySourceId(p.primary_application_source_id ?? null)
+          setPrimaryStatus(p.primary_application_status)
+        }
       })
       .catch(() => {})
     return () => {
@@ -853,6 +865,20 @@ function QuellenPageContent() {
     ? [...localSourceRows, ...liveSources.map(toSourceRow)]
     : dummySources
 
+  // RUN 4A: Gruppenzuordnung nur aus kanonischen Metadaten (Primärantrag +
+  // data_classification.origin); lokal vorgemerkte Zeilen = Projektunterlagen.
+  const sourceGroupById = React.useMemo(() => {
+    if (!liveMode) return undefined
+    const map = new Map<string, SourceGroupKey>()
+    for (const s of liveSources) {
+      map.set(s.source_id, sourceGroupOf(s, primarySourceId))
+    }
+    for (const row of localSourceRows) {
+      map.set(row.id, "project_documents")
+    }
+    return map
+  }, [liveMode, liveSources, localSourceRows, primarySourceId])
+
   // STEP 12: the live "Analyse starten" action stays disabled until the server
   // capability (features.runs) enables it (Milestone 4). Mock mode is unaffected.
   const runsEnabled = !liveMode || Boolean(capabilities?.features?.runs)
@@ -1036,6 +1062,8 @@ function QuellenPageContent() {
               }}
               sourceUsage={sourceUsage}
               onShowEvidence={() => router.push("/anforderungen?tab=evidenz")}
+              sourceGroups={sourceGroupById}
+              primaryApplicationStatus={primaryStatus ?? undefined}
             />
             {projectId && capabilities?.features?.web_research && (
               <PublicResearchPanel

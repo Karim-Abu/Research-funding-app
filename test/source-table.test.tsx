@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { SourceTable } from "@/components/quellen/source-table"
 import type { Source } from "@/lib/quellen-mock-data"
 
@@ -214,5 +214,71 @@ describe("SourceTable live statuses", () => {
       expect(onUploadFiles).toHaveBeenCalledTimes(2)
     })
     expect(onUploadFiles.mock.calls[1][0]).toEqual([file])
+  })
+
+  it("RUN 4A: gruppiert Quellen nach Zweck, wenn Gruppendaten vorliegen", () => {
+    render(
+      <SourceTable
+        sources={rows}
+        controlled
+        sourceGroups={
+          new Map([
+            ["1", "primary_application"],
+            ["2", "project_documents"],
+            ["3", "project_documents"],
+            ["4", "public_research"],
+          ])
+        }
+        primaryApplicationStatus="configured"
+      />
+    )
+    const groups = screen.getByTestId("source-groups")
+    expect(within(groups).getByText("Primärer Innolink-Antrag")).toBeInTheDocument()
+    expect(within(groups).getByText("Projektunterlagen")).toBeInTheDocument()
+    expect(within(groups).getByText("Öffentliche Recherche")).toBeInTheDocument()
+    // Zweck-Sätze der Gruppen sind sichtbar.
+    expect(
+      within(groups).getByText("Verwendet für Import und Antragsanalyse.")
+    ).toBeInTheDocument()
+    expect(
+      within(groups).getByText("Verwendet für Markt- und Konkurrenzvergleich.")
+    ).toBeInTheDocument()
+    // Die Quellen liegen in ihren Gruppen.
+    expect(
+      within(screen.getByTestId("source-group-primary_application")).getByText(
+        "a.pdf"
+      )
+    ).toBeInTheDocument()
+    expect(
+      within(screen.getByTestId("source-group-public_research")).getByText(
+        "d.txt"
+      )
+    ).toBeInTheDocument()
+  })
+
+  it("RUN 4A: ohne Primärantrag erscheint ein freundlicher Hinweis statt einer leeren Gruppe", () => {
+    render(
+      <SourceTable
+        sources={rows.slice(1)}
+        controlled
+        sourceGroups={
+          new Map([
+            ["2", "project_documents"],
+            ["3", "project_documents"],
+            ["4", "public_research"],
+          ])
+        }
+        primaryApplicationStatus="not_configured"
+      />
+    )
+    expect(
+      screen.getByText(/Noch kein primärer Innolink-Antrag festgelegt/)
+    ).toBeInTheDocument()
+  })
+
+  it("RUN 4A: ohne Gruppendaten bleibt die flache Liste (Mock-Modus) erhalten", () => {
+    render(<SourceTable sources={rows} controlled />)
+    expect(screen.queryByTestId("source-groups")).toBeNull()
+    expect(screen.getByText("a.pdf")).toBeInTheDocument()
   })
 })
