@@ -80,6 +80,12 @@ def test_parser_exposes_web_first_commands_only():
     assert parser.parse_args(["prepare-web"]).command == "prepare-web"
     parsed = parser.parse_args(["resume-llm", "--approval", "approval"])
     assert (parsed.command, parsed.approval) == ("resume-llm", "approval")
+    refined = parser.parse_args([
+        "bind-refined-anchors", "--session-id", "a" * 32,
+        "--passage", f"sv:fragment:10:20:{'1' * 64}",
+    ])
+    assert refined.command == "bind-refined-anchors"
+    assert refined.usage_policy == module.SWISS_MARKET_POLICY
     with pytest.raises(SystemExit):
         parser.parse_args(["prepare"])
 
@@ -214,6 +220,54 @@ def test_anchor_approval_is_exact_scoped_and_needs_two_versions(tmp_path):
         module.validate_anchor_approval(
             session,
             f"{module.APPROVAL_PREFIX} {session.review_session_id} {hashes[0]}",
+        )
+
+
+def test_refined_passage_selector_and_swiss_market_policy_fail_closed():
+    module = _module()
+    selector = module.parse_refined_passage(
+        f"source-version:fragment:1337:1540:{'a' * 64}"
+    )
+    assert selector == {
+        "source_version_id": "source-version",
+        "fragment_id": "fragment",
+        "start_offset": 1337,
+        "end_offset": 1540,
+        "quote_hash": "a" * 64,
+    }
+    with pytest.raises(module.HarnessFailure, match="live_anchor_passage_selector_invalid"):
+        module.parse_refined_passage(f"source:fragment:0:301:{'a' * 64}")
+
+    valid = {
+        "suggested_text": (
+            "Laut der Marktstudie von Grand View Research wird der globale Markt "
+            "auf USD 35,8 Milliarden geschätzt."
+        ),
+        "missing_inputs": [{"key": "schweizer_tam_marktgroesse_chf"}],
+    }
+    module._assert_swiss_market_usage_policy(
+        valid, require_missing_input=True, require_attribution=True
+    )
+    with pytest.raises(
+        module.HarnessFailure,
+        match="live_anchor_policy_swiss_market_derivation_forbidden",
+    ):
+        module._assert_swiss_market_usage_policy(
+            {
+                "suggested_text": "Der Schweizer Markt beträgt USD 35,8 Milliarden.",
+                "missing_inputs": [{"key": "schweizer_marktgroesse"}],
+            },
+            require_missing_input=True,
+            require_attribution=True,
+        )
+    with pytest.raises(
+        module.HarnessFailure,
+        match="live_02b_swiss_market_missing_input_absent",
+    ):
+        module._assert_swiss_market_usage_policy(
+            {"suggested_text": "Laut Mordor wächst das globale KMU-Segment um 12,96 %."},
+            require_missing_input=True,
+            require_attribution=True,
         )
 
 

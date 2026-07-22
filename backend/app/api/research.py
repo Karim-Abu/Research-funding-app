@@ -13,7 +13,7 @@ import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -316,6 +316,10 @@ def list_external_anchor_passages(
     result_id: str,
     context: AuthContext = Depends(require_session),
     db: Session = Depends(get_db),
+    fragment_id: str | None = Query(default=None),
+    start_offset: int | None = Query(default=None, ge=0),
+    end_offset: int | None = Query(default=None, gt=0),
+    quote_hash: str | None = Query(default=None, pattern=r"^[0-9a-f]{64}$"),
 ) -> list[ExternalAnchorPassageView]:
     """Return bounded exact passages from one current imported public source.
 
@@ -351,6 +355,61 @@ def list_external_anchor_passages(
             detail="The current public source version is not safe for passage review.",
         )
     domain = (urlparse(result.final_url or result.source_url).hostname or "").casefold()
+    selector_values = (fragment_id, start_offset, end_offset, quote_hash)
+    exact_selector = any(value is not None for value in selector_values)
+    if exact_selector and not all(value is not None for value in selector_values):
+        raise ProblemException(
+            status=422,
+            code="external_anchor_passage_selector_invalid",
+            title="Passage selection refused",
+            detail="Fragment, offsets and quote hash must be supplied together.",
+        )
+    if exact_selector:
+        fragment = db.get(SourceFragment, fragment_id)
+        text = fragment.normalized_text if fragment is not None else None
+        if (
+            fragment is None
+            or fragment.source_version_id != version.source_version_id
+            or text is None
+            or start_offset is None
+            or end_offset is None
+            or start_offset >= end_offset
+            or end_offset > len(text)
+            or end_offset - start_offset > 300
+        ):
+            raise ProblemException(
+                status=422,
+                code="external_anchor_passage_selector_invalid",
+                title="Passage selection refused",
+                detail="The requested bounded passage is not part of the current source version.",
+            )
+        excerpt = text[start_offset:end_offset]
+        if (
+            not excerpt.strip()
+            or excerpt != excerpt.strip()
+            or hashlib.sha256(excerpt.encode("utf-8")).hexdigest() != quote_hash
+        ):
+            raise ProblemException(
+                status=409,
+                code="external_anchor_passage_changed",
+                title="Passage selection refused",
+                detail="The exact reviewed passage no longer matches the current source version.",
+            )
+        return [ExternalAnchorPassageView(
+            result_id=result.result_id,
+            source_id=document.source_id,
+            source_version_id=version.source_version_id,
+            fragment_id=fragment.fragment_id,
+            start_offset=start_offset,
+            end_offset=end_offset,
+            public_domain=domain,
+            page_title=result.title or document.name,
+            excerpt=excerpt,
+            quote_hash=quote_hash,
+            safety_status=version.content_safety_status,
+            content_review_status=version.content_review_status,
+        )]
+
     rows = db.scalars(
         select(SourceFragment).where(
             SourceFragment.source_version_id == version.source_version_id

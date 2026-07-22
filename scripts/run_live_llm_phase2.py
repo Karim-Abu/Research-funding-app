@@ -15,6 +15,9 @@ Usage (PowerShell, from repository root)::
     backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py resume-llm \
       --approval "APPROVE_LIVE_E2E_ANCHORS <session> <hashes>"
 
+    backend\.venv\Scripts\python.exe scripts\run_live_llm_phase2.py bind-refined-anchors \
+      --session-id <session> --passage <version:fragment:start:end:hash>
+
 Normal tests import only the pure helpers below and never load provider keys.
 """
 from __future__ import annotations
@@ -59,6 +62,7 @@ MAX_COST_CHF = 3.0
 MAX_ACTIVE_SECONDS = 600.0
 POLICY_VERSION = "1.1.0"
 APPROVAL_PREFIX = "APPROVE_LIVE_E2E_ANCHORS"
+SWISS_MARKET_POLICY = "global-estimates-not-swiss-market-v1"
 SESSION_VERSION = "run3c-phase2-session-v1"
 WEB_REVIEW_SESSION_TTL_SECONDS = 3600
 ORIGIN = "http://localhost:3000"
@@ -402,6 +406,34 @@ def validate_anchor_approval(
     if len({item["source_version_id"] for item in selected}) < 2:
         raise HarnessFailure("insufficient_approved_source_versions")
     return selected
+
+
+def parse_refined_passage(value: str) -> dict[str, Any]:
+    """Parse a content-free exact-passage selector for an existing review session."""
+    parts = value.strip().split(":")
+    if len(parts) != 5:
+        raise HarnessFailure("live_anchor_passage_selector_invalid")
+    source_version_id, fragment_id, raw_start, raw_end, quote_hash = parts
+    try:
+        start_offset, end_offset = int(raw_start), int(raw_end)
+    except ValueError as exc:
+        raise HarnessFailure("live_anchor_passage_selector_invalid") from exc
+    if (
+        not source_version_id
+        or not fragment_id
+        or start_offset < 0
+        or end_offset <= start_offset
+        or end_offset - start_offset > 300
+        or not re.fullmatch(r"[0-9a-f]{64}", quote_hash)
+    ):
+        raise HarnessFailure("live_anchor_passage_selector_invalid")
+    return {
+        "source_version_id": source_version_id,
+        "fragment_id": fragment_id,
+        "start_offset": start_offset,
+        "end_offset": end_offset,
+        "quote_hash": quote_hash,
+    }
 
 
 def _opt_in_reason(settings: Any, *, require_llm: bool = True) -> str | None:
@@ -969,6 +1001,70 @@ def _assert_smoke_3(result: dict[str, Any]) -> None:
         raise HarnessFailure("live_02c_new_fact")
 
 
+def _assert_swiss_market_usage_policy(
+    value: Any,
+    *,
+    require_missing_input: bool,
+    require_attribution: bool,
+) -> None:
+    """Fail closed on the human-approved scope of the two market estimates."""
+    scoped_value = (
+        str(value.get("suggested_text") or "")
+        if require_missing_input and isinstance(value, dict)
+        else value
+    )
+    serialized = _canonical_json(scoped_value)
+    if re.search(r"\b(?:chf|fr\.)\s*\d", serialized, re.IGNORECASE):
+        raise HarnessFailure("live_anchor_policy_chf_derivation_forbidden")
+    if re.search(r"\b(?:tam|sam|som)\b", serialized, re.IGNORECASE):
+        raise HarnessFailure("live_anchor_policy_swiss_market_derivation_forbidden")
+    if require_missing_input:
+        missing = _canonical_json(value.get("missing_inputs") or []).casefold()
+        if not (
+            any(item in missing for item in ("schweiz", "swiss"))
+            and any(item in missing for item in ("marktgr", "market_size", "market size"))
+        ):
+            raise HarnessFailure("live_02b_swiss_market_missing_input_absent")
+
+    strings: list[str] = []
+
+    def collect(item: Any) -> None:
+        if isinstance(item, str):
+            strings.append(item)
+        elif isinstance(item, dict):
+            for nested in item.values():
+                collect(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                collect(nested)
+
+    collect(scoped_value)
+    numeric = re.compile(
+        r"(?:\b(?:usd|chf)\b|\b\d+(?:[.,]\d+)?\s*%|"
+        r"\b\d+(?:[.,]\d+)?\s*(?:mio|million|mrd|billion)\b)",
+        re.IGNORECASE,
+    )
+    source_fact = re.compile(
+        r"(?:35[.,]8|39[.,]3|78[.,]9|10[.,]5\s*%|12[.,]96\s*%)",
+        re.IGNORECASE,
+    )
+    attribution = re.compile(
+        r"(?:grand view|mordor|marktstudie|market study|laut|sch[aä]tz|estimate)",
+        re.IGNORECASE,
+    )
+    for text in strings:
+        if re.search(r"(?:schweiz|swiss)", text, re.IGNORECASE) and numeric.search(text):
+            raise HarnessFailure("live_anchor_policy_swiss_market_derivation_forbidden")
+        if require_attribution and source_fact.search(text) and not attribution.search(text):
+            raise HarnessFailure("live_anchor_policy_attribution_missing")
+    if re.search(
+        r"(?:umsatzprognose|revenue projection)[^\n]{0,80}\d",
+        serialized,
+        re.IGNORECASE,
+    ):
+        raise HarnessFailure("live_anchor_policy_revenue_projection_forbidden")
+
+
 def _save_review_artifact(path: Path, cases: list[dict[str, Any]]) -> None:
     payload = {
         "created_at": _iso(),
@@ -1187,6 +1283,14 @@ def _build_parser() -> argparse.ArgumentParser:
     sub.add_parser("prepare-web")
     resume = sub.add_parser("resume-llm")
     resume.add_argument("--approval", required=True)
+    refine = sub.add_parser("bind-refined-anchors")
+    refine.add_argument("--session-id", required=True)
+    refine.add_argument("--passage", action="append", required=True)
+    refine.add_argument(
+        "--usage-policy",
+        choices=[SWISS_MARKET_POLICY],
+        default=SWISS_MARKET_POLICY,
+    )
     sub.add_parser("cleanup-expired")
     return parser
 
@@ -1419,6 +1523,103 @@ def prepare_web() -> int:  # pragma: no cover - opt-in live path
             _remove_session_root(temp_root)
 
 
+def bind_refined_anchors(
+    session_id: str,
+    passage_values: list[str],
+    *,
+    usage_policy: str,
+) -> int:  # pragma: no cover - local human-review transition
+    """Bind already reviewed exact passages without any provider operation."""
+    session = load_session(session_id)
+    selectors = [parse_refined_passage(value) for value in passage_values]
+    if len({item["source_version_id"] for item in selectors}) < 2:
+        raise HarnessFailure("insufficient_approved_source_versions")
+    existing_by_version = {
+        item["source_version_id"]: item for item in session.anchors
+    }
+    if any(item["source_version_id"] not in existing_by_version for item in selectors):
+        raise HarnessFailure("live_anchor_source_version_unknown")
+
+    temp_root = Path(session.temp_root)
+    runtime_engine = None
+    original_cwd = Path.cwd()
+    try:
+        _configure_environment(temp_root)
+        os.chdir(BACKEND)
+        sys.path.insert(0, str(BACKEND))
+        from fastapi.testclient import TestClient
+        from app.config.settings import get_settings
+        from app.db.session import engine
+        from app.main import app
+
+        runtime_engine = engine
+        get_settings.cache_clear()
+        refined: list[dict[str, Any]] = []
+        with TestClient(app) as client:
+            _login(client, session.actor_email)
+            for selector in selectors:
+                base = existing_by_version[selector["source_version_id"]]
+                rows = _expect(client.get(
+                    f"/api/v1/research-results/{base['result_id']}/anchor-passages",
+                    params={
+                        "fragment_id": selector["fragment_id"],
+                        "start_offset": selector["start_offset"],
+                        "end_offset": selector["end_offset"],
+                        "quote_hash": selector["quote_hash"],
+                    },
+                ), 200, "refined_review_passage_read_failed")
+                if len(rows) != 1:
+                    raise HarnessFailure("refined_review_passage_not_unique")
+                passage = rows[0]
+                if any(passage[key] != selector[key] for key in (
+                    "source_version_id", "fragment_id", "start_offset",
+                    "end_offset", "quote_hash",
+                )):
+                    raise HarnessFailure("refined_review_passage_mismatch")
+                if (
+                    passage["source_id"] != base["source_id"]
+                    or passage["safety_status"] != "passed"
+                    or passage["content_review_status"] != "unreviewed"
+                    or _sha256(passage["excerpt"]) != passage["quote_hash"]
+                ):
+                    raise HarnessFailure("refined_review_source_state_invalid")
+                refined.append(AnchorProposal(
+                    result_id=passage["result_id"],
+                    source_id=passage["source_id"],
+                    source_version_id=passage["source_version_id"],
+                    fragment_id=passage["fragment_id"],
+                    start_offset=passage["start_offset"],
+                    end_offset=passage["end_offset"],
+                    domain=passage["public_domain"],
+                    title=passage["page_title"],
+                    excerpt=passage["excerpt"],
+                    quote_hash=passage["quote_hash"],
+                    safety_status=passage["safety_status"],
+                    content_review_status=passage["content_review_status"],
+                ).safe_state())
+
+        session.anchors = refined
+        session.research["anchor_usage_policy"] = usage_policy
+        session.expires_at = _iso(
+            _utcnow() + timedelta(seconds=WEB_REVIEW_SESSION_TTL_SECONDS)
+        )
+        session.human_wait_started_at = _iso()
+        session.human_wait_ended_at = None
+        save_session(session)
+        print(_canonical_json({
+            "review_session_id": session.review_session_id,
+            "quote_hashes": [item["quote_hash"] for item in refined],
+            "source_version_ids": [item["source_version_id"] for item in refined],
+            "usage_policy": usage_policy,
+            "expires_at": session.expires_at,
+        }))
+        print("REFINED_ANCHOR_SESSION_BOUND")
+        return 0
+    finally:
+        os.chdir(original_cwd)
+        _close_runtime_resources(runtime_engine)
+
+
 def resume_llm(approval: str) -> int:  # pragma: no cover - opt-in live path
     session_id = _session_id_from_approval(approval)
     session = load_session(session_id)
@@ -1506,7 +1707,13 @@ def resume_llm(approval: str) -> int:  # pragma: no cover - opt-in live path
                 # one-time approval.
                 for item in selected:
                     passages = _expect(client.get(
-                        f"/api/v1/research-results/{item['result_id']}/anchor-passages"
+                        f"/api/v1/research-results/{item['result_id']}/anchor-passages",
+                        params={
+                            "fragment_id": item["fragment_id"],
+                            "start_offset": item["start_offset"],
+                            "end_offset": item["end_offset"],
+                            "quote_hash": item["quote_hash"],
+                        },
                     ), 200, "review_passage_reload_failed")
                     passage = next((row for row in passages if (
                         row["source_id"] == item["source_id"]
@@ -1558,6 +1765,13 @@ def resume_llm(approval: str) -> int:  # pragma: no cover - opt-in live path
                         "market_comparison_not_limited_"
                         f"{market['status']}_{market.get('error') or 'no_error'}"
                     )
+                usage_policy = session.research.get("anchor_usage_policy")
+                if usage_policy == SWISS_MARKET_POLICY:
+                    _assert_swiss_market_usage_policy(
+                        market,
+                        require_missing_input=False,
+                        require_attribution=False,
+                    )
                 market_anchor_ids = {
                     anchor_id
                     for market_item in market.get("items", [])
@@ -1576,6 +1790,12 @@ def resume_llm(approval: str) -> int:  # pragma: no cover - opt-in live path
                     client, csrf, e2e, mode="complete_innolink_requirements",
                     label="live_02b", ledger=ledger, anchor_ids=anchor_ids,
                 )
+                if usage_policy == SWISS_MARKET_POLICY:
+                    _assert_swiss_market_usage_policy(
+                        smoke_2,
+                        require_missing_input=True,
+                        require_attribution=True,
+                    )
                 if not set(smoke_2.get("used_anchor_ids") or []).issubset(set(anchor_ids)):
                     raise HarnessFailure("live_02b_unknown_anchor")
                 suggestion_read = _expect(client.get(
@@ -1761,6 +1981,12 @@ def main(argv: list[str] | None = None) -> int:
         return cleanup_expired()
     if args.command == "prepare-web":
         return prepare_web()
+    if args.command == "bind-refined-anchors":
+        return bind_refined_anchors(
+            args.session_id,
+            args.passage,
+            usage_policy=args.usage_policy,
+        )
     return resume_llm(args.approval)
 
 

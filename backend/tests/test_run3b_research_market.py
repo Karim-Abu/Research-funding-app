@@ -348,6 +348,74 @@ def test_quarantine_review_external_anchor_and_run3c_handoff(
     assert "SECRET_SNIPPET_MARKER" not in handoff.text
 
 
+def test_anchor_passage_exact_selector_reaches_reviewed_text_after_cover(
+    client, db, live_web_settings, monkeypatch
+):
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _project(client, csrf)
+    project = db.get(Project, project_id)
+    _task, result = _task_and_result(
+        db, project_id, project.workspace_id,
+        url="https://public.test/refined-passage",
+        snippet="SEARCH_SNIPPET_MUST_NOT_BECOME_EVIDENCE",
+    )
+    target = (
+        "The global compliance software market was estimated at USD 35.8 billion "
+        "in 2025 and is projected to reach USD 78.9 billion by 2033."
+    )
+    content = "Navigation and report cover. " + ("Index entry. " * 40) + target
+    _install_provider(monkeypatch, StubProvider([_outcome(result.source_url, content)]))
+    imported = client.post(
+        f"/api/v1/research-results/{result.result_id}/import", headers=_headers(csrf)
+    )
+    assert imported.status_code == 201, imported.text
+
+    db.expire_all()
+    document = db.get(SourceDocument, imported.json()["source_id"])
+    fragment = db.scalar(select(SourceFragment).where(
+        SourceFragment.source_version_id == document.current_source_version_id
+    ))
+    start = fragment.normalized_text.index(target)
+    quote_hash = hashlib.sha256(target.encode("utf-8")).hexdigest()
+    response = client.get(
+        f"/api/v1/research-results/{result.result_id}/anchor-passages",
+        params={
+            "fragment_id": fragment.fragment_id,
+            "start_offset": start,
+            "end_offset": start + len(target),
+            "quote_hash": quote_hash,
+        },
+    )
+    assert response.status_code == 200, response.text
+    assert response.json() == [{
+        "result_id": result.result_id,
+        "source_id": document.source_id,
+        "source_version_id": document.current_source_version_id,
+        "fragment_id": fragment.fragment_id,
+        "start_offset": start,
+        "end_offset": start + len(target),
+        "public_domain": "public.test",
+        "page_title": result.title,
+        "excerpt": target,
+        "quote_hash": quote_hash,
+        "safety_status": "passed",
+        "content_review_status": "unreviewed",
+    }]
+    assert "SEARCH_SNIPPET_MUST_NOT_BECOME_EVIDENCE" not in response.text
+
+    changed = client.get(
+        f"/api/v1/research-results/{result.result_id}/anchor-passages",
+        params={
+            "fragment_id": fragment.fragment_id,
+            "start_offset": start,
+            "end_offset": start + len(target),
+            "quote_hash": "f" * 64,
+        },
+    )
+    assert changed.status_code == 409
+    assert changed.json()["code"] == "external_anchor_passage_changed"
+
+
 def test_exact_url_dedup_reuses_source_and_simhash_only_marks_possible_duplicate(
     client, db, live_web_settings, monkeypatch
 ):
