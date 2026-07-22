@@ -17,7 +17,8 @@ Scope: RUN 3C Abschluss nach Owner-Entscheid
 |---|---|---:|---|
 | AI-01 | Strukturierter feldbezogener Vorschlagsfluss mit Manifest | `passed` | `docs/RUN_3C_OFFLINE_RESULT.md` |
 | AI-02 | Grounding-fähiger, scoped Anchor-Pfad + Claim-Prüfung | `passed` | `docs/LIVE_LLM_SMOKE_REPORT.md` (offline), `docs/LLM_SUGGESTION_ARCHITECTURE.md` |
-| AI-04 | Accept erzeugt neue DraftVersion | `passed` | `docs/RUN_3C_PHASE2_DRY_RUN_RESULT.md`, `docs/RUN_3C_OFFLINE_RESULT.md` |
+| AI-04 | Staleness bei Draft-/Run-/Source-/Registry-/Market-Änderung | `passed` | `docs/RUN_3C_OFFLINE_RESULT.md` (Staleness-Gates der Offline-Phase) |
+| AI-ACCEPT-01 | Accept erzeugt idempotent genau eine neue DraftVersion | `passed` | `docs/RUN_3C_PHASE2_DRY_RUN_RESULT.md`, `docs/RUN_3C_OFFLINE_RESULT.md` |
 | AI-Q01 | Reine Umformulierung | `passed` | `docs/LLM_SUGGESTION_EVAL.md` |
 | AI-Q02 | Dauer aus Original | `passed` | `docs/LLM_SUGGESTION_EVAL.md` |
 | AI-Q03 | TRL aus strukturiertem Input | `passed` | `docs/LLM_SUGGESTION_EVAL.md` |
