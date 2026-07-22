@@ -611,10 +611,21 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
         origin_ok = origin in ("synthetic", "anonymized") or (
             origin == "public_source" and cls.get("sensitivity") == "public"
         )
+        # A project-scoped MarketComparison has no AnalysisRun confirmation.
+        # Its input is nevertheless eligible when (and only when) the caller
+        # classified it as reviewed public-source material; source_scope and
+        # ProviderPolicy enforce that provenance before this gateway boundary.
+        public_market_without_run = (
+            request.profile_id == "MC.market_comparison"
+            and request.run_id is None
+            and origin == "public_source"
+            and cls.get("sensitivity") == "public"
+        )
+        confirmation_ok = bool(request.run_confirmation) or public_market_without_run
         if (
             not origin_ok
             or get_settings().ai_eval_mode != "real"
-            or not request.run_confirmation
+            or not confirmation_ok
         ):
             route_failure("blocked", "real_eval_gate_blocked")
             return None, "blocked", "real_eval_gate_blocked", None

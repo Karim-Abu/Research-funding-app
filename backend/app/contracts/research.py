@@ -96,6 +96,23 @@ class ExternalAnchorCreate(BaseModel):
     quote: str = Field(min_length=1)
 
 
+class ExternalAnchorPassageView(BaseModel):
+    """Bounded, exact public-source passage offered for explicit human review."""
+
+    result_id: str
+    source_id: str
+    source_version_id: str
+    fragment_id: str
+    start_offset: int = Field(ge=0)
+    end_offset: int = Field(gt=0)
+    public_domain: str
+    page_title: str
+    excerpt: str = Field(min_length=1, max_length=300)
+    quote_hash: str = Field(pattern=r"^[0-9a-f]{64}$")
+    safety_status: str
+    content_review_status: str
+
+
 class ExternalAnchorView(BaseModel):
     anchor_id: str
     project_id: str

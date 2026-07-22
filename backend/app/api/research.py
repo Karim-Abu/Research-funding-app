@@ -8,6 +8,7 @@ The data policy still gates the external call.
 """
 from __future__ import annotations
 
+import hashlib
 import uuid
 from datetime import datetime, timezone
 from urllib.parse import urlparse
@@ -19,6 +20,7 @@ from sqlalchemy.orm import Session
 from app.api.errors import ProblemException
 from app.contracts.research import (
     ExternalAnchorCreate,
+    ExternalAnchorPassageView,
     ExternalAnchorView,
     ResearchHandoffSource,
     ResearchHandoffView,
@@ -304,6 +306,85 @@ def import_research_result(
     )
     db.commit()
     return contract
+
+
+@router.get(
+    "/research-results/{result_id}/anchor-passages",
+    response_model=list[ExternalAnchorPassageView],
+)
+def list_external_anchor_passages(
+    result_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> list[ExternalAnchorPassageView]:
+    """Return bounded exact passages from one current imported public source.
+
+    This is the read-only human-review projection used before an exact external
+    anchor is released. Search snippets are deliberately absent.
+    """
+    result = service.get_result(db, result_id, context.user.workspace_id)
+    if result is None or result.status != "imported" or not result.source_document_id:
+        raise ProblemException(
+            status=409, code="external_anchor_source_not_ready", title="Anchor refused",
+            detail="Only an imported public source can provide review passages.",
+        )
+    task = service.get_task(db, result.research_task_id, context.user.workspace_id)
+    if task is None:
+        raise ProblemException(
+            status=404, code="not_found", title="Resource not found",
+            detail="Research task not found.",
+        )
+    document = db.get(SourceDocumentModel, result.source_document_id)
+    version = (
+        db.get(SourceVersion, document.current_source_version_id)
+        if document is not None and document.current_source_version_id else None
+    )
+    if (
+        document is None or version is None
+        or document.project_id != task.project_id
+        or document.workspace_id != context.user.workspace_id
+        or (document.data_classification or {}).get("origin") != "public_source"
+        or version.content_safety_status not in ("passed", "human_released")
+    ):
+        raise ProblemException(
+            status=409, code="external_anchor_source_not_ready", title="Anchor refused",
+            detail="The current public source version is not safe for passage review.",
+        )
+    domain = (urlparse(result.final_url or result.source_url).hostname or "").casefold()
+    rows = db.scalars(
+        select(SourceFragment).where(
+            SourceFragment.source_version_id == version.source_version_id
+        ).order_by(SourceFragment.ordinal)
+    )
+    passages: list[ExternalAnchorPassageView] = []
+    for fragment in rows:
+        text = (fragment.normalized_text or "").strip()
+        if not text:
+            continue
+        excerpt = text[:300]
+        if len(text) > 300:
+            boundary = excerpt.rfind(" ")
+            excerpt = excerpt[:boundary if boundary >= 80 else 300].rstrip()
+        start = (fragment.normalized_text or "").find(excerpt)
+        if start < 0:
+            continue
+        passages.append(ExternalAnchorPassageView(
+            result_id=result.result_id,
+            source_id=document.source_id,
+            source_version_id=version.source_version_id,
+            fragment_id=fragment.fragment_id,
+            start_offset=start,
+            end_offset=start + len(excerpt),
+            public_domain=domain,
+            page_title=result.title or document.name,
+            excerpt=excerpt,
+            quote_hash=hashlib.sha256(excerpt.encode("utf-8")).hexdigest(),
+            safety_status=version.content_safety_status,
+            content_review_status=version.content_review_status,
+        ))
+        if len(passages) == 10:
+            break
+    return passages
 
 
 @router.post(

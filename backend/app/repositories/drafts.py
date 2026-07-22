@@ -422,7 +422,7 @@ def apply_update(
 # --- read model ------------------------------------------------------------
 
 
-def _version_contract(db: Session, version: DraftVersion) -> DraftVersionSchema:
+def to_version_contract(db: Session, version: DraftVersion) -> DraftVersionSchema:
     generation_kind = None
     if version.created_by == "template":
         generation_kind = "rule_template"
@@ -467,7 +467,7 @@ def to_contract(
         field_id=draft.field_id,
         field_name=draft.field_name,
         status=draft.status,
-        current_version=_version_contract(db, current),
+        current_version=to_version_contract(db, current),
         character_count=current.character_count,
         character_limit=draft.character_limit,
         open_issue_count=draft.open_issue_count,

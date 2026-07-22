@@ -375,7 +375,7 @@ def _expect(response: Any, status: int, code: str) -> dict[str, Any]:
 
 
 def _assert_registry_contract() -> None:
-    from app.agents.a2_fields import skill_id_for
+    from app.agents.a2_fields import resolve_field_config, skill_id_for
     from app.registry import get_registry
 
     registry = get_registry()
@@ -389,6 +389,13 @@ def _assert_registry_contract() -> None:
         raise HarnessFailure("canonical_field_skill_changed")
     if LEGACY_FIELD_ID in registry.portal_fields:
         raise HarnessFailure("legacy_field_became_canonical")
+    questions = registry.mandatory_questions(FIELD_ID)
+    registry_markers = tuple(
+        item.label_or_question.strip().split(maxsplit=1)[0] for item in questions
+    )
+    config = resolve_field_config(FIELD_ID)
+    if config is None or registry_markers != config.mandatory_markers:
+        raise HarnessFailure("canonical_field_markers_changed")
 
 
 def _future_upper_cost(spec: PlannedCall, settings: Any) -> float:
@@ -980,7 +987,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
         sys.path.insert(0, str(BACKEND))
         from fastapi.testclient import TestClient
         from app.config.settings import get_settings
-        from app.db.session import SessionLocal
+        from app.db.session import SessionLocal, engine
         from app.evaluation.preflight import configuration_fingerprint
         from app.evaluation.pricing import PRICE_TABLE_VERSION
         from app.main import app
@@ -1043,7 +1050,11 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                         f"/api/v1/research-briefs/{brief['research_brief_id']}/queries/plan",
                         headers=_mut(csrf),
                     ), 200, "research_query_plan_failed")
-                    if len(plan["queries"]) != 1 or not plan["queries"][0].get("approval_id"):
+                    # The registry-backed planner may emit more than one
+                    # purpose for a module. This bounded smoke executes exactly
+                    # the first approved plan row instead of requiring the
+                    # planner itself to collapse valid purposes.
+                    if not plan["queries"] or not plan["queries"][0].get("approval_id"):
                         raise HarnessFailure("research_query_plan_invalid")
                     query = plan["queries"][0]
                     approval = _expect(client.post(
@@ -1090,47 +1101,37 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                             ledger=ledger, label="market_preflight",
                         )
 
-                    from app.db.models import ResearchResult, SourceDocument, SourceFragment, SourceVersion
-                    from app.evidence.discovery import quote_hash
                     proposals: list[AnchorProposal] = []
                     for item, document_view in zip(chosen, imported, strict=True):
-                        result_row = db.get(ResearchResult, item["result_id"])
-                        document = db.get(SourceDocument, document_view["source_id"])
-                        version = db.get(SourceVersion, document.current_source_version_id)
+                        passages = _expect(client.get(
+                            f"/api/v1/research-results/{item['result_id']}/anchor-passages"
+                        ), 200, "review_passage_read_failed")
+                        passage = next(
+                            (row for row in passages if len(row.get("excerpt") or "") >= 80),
+                            None,
+                        )
+                        if passage is None:
+                            raise HarnessFailure("review_fragment_missing")
                         if (
-                            result_row is None or document is None or version is None
-                            or version.content_safety_status != "passed"
-                            or version.content_review_status != "unreviewed"
+                            passage["source_id"] != document_view["source_id"]
+                            or passage["safety_status"] != "passed"
+                            or passage["content_review_status"] != "unreviewed"
+                            or _sha256(passage["excerpt"]) != passage["quote_hash"]
                         ):
                             raise HarnessFailure("review_source_state_invalid")
-                        fragments = list(db.query(SourceFragment).filter(
-                            SourceFragment.source_version_id == version.source_version_id
-                        ).order_by(SourceFragment.ordinal))
-                        fragment = next((f for f in fragments if len(f.original_text.strip()) >= 80), None)
-                        if fragment is None:
-                            raise HarnessFailure("review_fragment_missing")
-                        text = fragment.original_text.strip()
-                        excerpt = text[:300]
-                        if len(text) > 300:
-                            stop = excerpt.rfind(" ")
-                            excerpt = excerpt[:stop if stop >= 80 else 300]
-                        offset = fragment.original_text.find(excerpt)
-                        if offset < 0:
-                            raise HarnessFailure("review_excerpt_not_exact")
-                        domain = _safe_domain(result_row.final_url or result_row.source_url)
                         proposals.append(AnchorProposal(
-                            result_id=result_row.result_id,
-                            source_id=document.source_id,
-                            source_version_id=version.source_version_id,
-                            fragment_id=fragment.fragment_id,
-                            start_offset=offset,
-                            end_offset=offset + len(excerpt),
-                            domain=domain,
-                            title=result_row.title or document.name,
-                            excerpt=excerpt,
-                            quote_hash=quote_hash(excerpt),
-                            safety_status=version.content_safety_status,
-                            content_review_status=version.content_review_status,
+                            result_id=passage["result_id"],
+                            source_id=passage["source_id"],
+                            source_version_id=passage["source_version_id"],
+                            fragment_id=passage["fragment_id"],
+                            start_offset=passage["start_offset"],
+                            end_offset=passage["end_offset"],
+                            domain=passage["public_domain"],
+                            title=passage["page_title"],
+                            excerpt=passage["excerpt"],
+                            quote_hash=passage["quote_hash"],
+                            safety_status=passage["safety_status"],
+                            content_review_status=passage["content_review_status"],
                         ))
                     expires_at = min(a2_preflight.expires_at, market_preflight.expires_at)
                     session = ReviewSession(
@@ -1194,6 +1195,7 @@ def prepare() -> int:  # pragma: no cover - opt-in live path
                     return 0
             finally:
                 db.close()
+                engine.dispose()
     except HarnessFailure as exc:
         print(f"LIVE_LLM_PREPARE_FAILED reason_code={exc.code}")
         return 1
@@ -1221,10 +1223,11 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
         from sqlalchemy import func, select
         from app.config.settings import get_settings
         from app.db.models import (
-            DraftSuggestion, DraftVersion, ProviderPreflightResult,
-            SourceDocument, SourceFragment, SourceVersion, SuggestionContextManifest,
+            DraftSuggestion, DraftVersion, EvidenceAnchor, ProviderPreflightResult,
+            ResearchResult,
+            SuggestionContextManifest,
         )
-        from app.db.session import SessionLocal
+        from app.db.session import SessionLocal, engine
         from app.evaluation.preflight import configuration_fingerprint, route_preflight_reason
         from app.evaluation.pricing import PRICE_TABLE_VERSION
         from app.main import app
@@ -1254,28 +1257,33 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                 ).order_by(ProviderPreflightResult.checked_at.desc()).first()
                 if row is None or row.configuration_fingerprint != session.preflight_fingerprints[key]:
                     raise HarnessFailure("live_session_configuration_changed")
-            # Re-hash every approved exact passage before consuming approval.
-            for item in selected:
-                fragment = db.get(SourceFragment, item["fragment_id"])
-                document = db.get(SourceDocument, item["source_id"])
-                version = db.get(SourceVersion, item["source_version_id"])
-                if (
-                    fragment is None or document is None or version is None
-                    or document.current_source_version_id != version.source_version_id
-                    or fragment.source_version_id != version.source_version_id
-                ):
-                    raise HarnessFailure("live_anchor_source_changed")
-                quote = fragment.original_text[item["start_offset"]:item["end_offset"]]
-                if _sha256(quote) != item["quote_hash"]:
-                    raise HarnessFailure("live_anchor_quote_changed")
-
-            session.human_wait_ended_at = _iso()
-            session.consumed = True
-            save_session(session)
             with TestClient(app) as client, instrument_live_providers(
                 ledger, web_counter=web_counter
             ):
                 csrf = _login(client, session.actor_email)
+                approved_quotes: dict[str, str] = {}
+                # Reload the exact bounded review projection through HTTP after
+                # the process boundary; only an unchanged hash can consume the
+                # one-time approval.
+                for item in selected:
+                    passages = _expect(client.get(
+                        f"/api/v1/research-results/{item['result_id']}/anchor-passages"
+                    ), 200, "review_passage_reload_failed")
+                    passage = next((row for row in passages if (
+                        row["source_id"] == item["source_id"]
+                        and row["source_version_id"] == item["source_version_id"]
+                        and row["fragment_id"] == item["fragment_id"]
+                        and row["start_offset"] == item["start_offset"]
+                        and row["end_offset"] == item["end_offset"]
+                        and row["quote_hash"] == item["quote_hash"]
+                    )), None)
+                    if passage is None or _sha256(passage["excerpt"]) != item["quote_hash"]:
+                        raise HarnessFailure("live_anchor_quote_changed")
+                    approved_quotes[item["quote_hash"]] = passage["excerpt"]
+
+                session.human_wait_ended_at = _iso()
+                session.consumed = True
+                save_session(session)
                 anchor_ids = []
                 for item in selected:
                     _expect(client.post(
@@ -1283,11 +1291,12 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                         json={"decision": "supports", "confirm_untrusted_content": False},
                         headers=_mut(csrf),
                     ), 200, "content_review_failed")
-                    fragment = db.get(SourceFragment, item["fragment_id"])
-                    quote = fragment.original_text[item["start_offset"]:item["end_offset"]]
                     anchor = _expect(client.post(
                         f"/api/v1/research-results/{item['result_id']}/external-anchors",
-                        json={"fragment_id": item["fragment_id"], "quote": quote},
+                        json={
+                            "fragment_id": item["fragment_id"],
+                            "quote": approved_quotes[item["quote_hash"]],
+                        },
                         headers=_mut(csrf),
                     ), 200, "external_anchor_create_failed")
                     anchor_ids.append(anchor["anchor_id"])
@@ -1302,7 +1311,17 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                     f"/api/v1/market-comparisons/{market_accepted['resource_id']}"
                 ), 200, "market_comparison_read_failed")
                 if market["status"] != "limited" or "limited_external_evidence" not in market.get("warnings", []):
-                    raise HarnessFailure("market_comparison_not_limited")
+                    raise HarnessFailure(
+                        "market_comparison_not_limited_"
+                        f"{market['status']}_{market.get('error') or 'no_error'}"
+                    )
+                market_anchor_ids = {
+                    anchor_id
+                    for market_item in market.get("items", [])
+                    for anchor_id in market_item.get("external_evidence_anchor_ids", [])
+                }
+                if not market_anchor_ids or not market_anchor_ids <= set(anchor_ids):
+                    raise HarnessFailure("market_comparison_anchor_scope_invalid")
 
                 options = _expect(client.get(
                     f"/api/v1/runs/{e2e['run_id']}/fields/{FIELD_ID}/suggestion-context-options"
@@ -1316,6 +1335,13 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                 )
                 if not set(smoke_2.get("used_anchor_ids") or []).issubset(set(anchor_ids)):
                     raise HarnessFailure("live_02b_unknown_anchor")
+                suggestion_read = _expect(client.get(
+                    f"/api/v1/runs/{e2e['run_id']}/fields/{FIELD_ID}/suggestions"
+                ), 200, "live_02b_suggestion_read_failed")
+                if smoke_2["suggestion_id"] not in {
+                    row["suggestion_id"] for row in suggestion_read["suggestions"]
+                }:
+                    raise HarnessFailure("live_02b_suggestion_read_missing")
                 db.expire_all()
                 suggestion_row = db.get(DraftSuggestion, smoke_2["suggestion_id"])
                 manifest = db.get(SuggestionContextManifest, suggestion_row.manifest_id)
@@ -1353,13 +1379,38 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                 ), 200, "accepted_draft_read_failed")
                 if current_field["current_version"]["draft_version_id"] != accepted["draft_version_id"]:
                     raise HarnessFailure("accepted_draft_version_not_current")
+                accepted_version = _expect(client.get(
+                    f"/api/v1/runs/{e2e['run_id']}/fields/{FIELD_ID}/versions/"
+                    f"{accepted['draft_version_id']}"
+                ), 200, "accepted_draft_version_read_failed")
+                original_version = _expect(client.get(
+                    f"/api/v1/runs/{e2e['run_id']}/fields/{FIELD_ID}/versions/"
+                    f"{e2e['base_version_id']}"
+                ), 200, "original_draft_version_read_failed")
+                if (
+                    accepted_version["draft_version_id"] != accepted["draft_version_id"]
+                    or original_version["draft_version_id"] != e2e["base_version_id"]
+                ):
+                    raise HarnessFailure("live_03_draft_version_read_invalid")
                 db.expire_all()
                 after_versions = db.scalar(select(func.count(DraftVersion.draft_version_id)).where(
                     DraftVersion.draft_id == e2e["draft_id"]
                 ))
                 if after_versions != before_versions + 1 or db.get(DraftVersion, e2e["base_version_id"]) is None:
                     raise HarnessFailure("live_03_draft_history_invalid")
-
+                external_anchors = list(db.scalars(select(EvidenceAnchor).where(
+                    EvidenceAnchor.project_id == e2e["project_id"],
+                    EvidenceAnchor.scope == "external",
+                )))
+                if {row.anchor_id for row in external_anchors} != set(anchor_ids):
+                    raise HarnessFailure("live_anchor_approval_scope_invalid")
+                snippets = {
+                    row for row in db.scalars(select(ResearchResult.snippet).where(
+                        ResearchResult.research_task_id == session.research["task_id"]
+                    )) if row
+                }
+                if snippets & {row.quote for row in external_anchors}:
+                    raise HarnessFailure("search_snippet_became_evidence")
                 review_cases = []
                 for case_id, mode, base_text, result in (
                     ("LIVE-02A", "complete_innolink_requirements", SMOKE_1_TEXT, None),
@@ -1371,6 +1422,8 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                             f"/api/v1/runs/{session.cases['live_02a']['run_id']}/fields/{FIELD_ID}/suggestions"
                         ), 200, "live_02a_read_failed")["suggestions"]
                         result = suggestions[0]
+                        if not result.get("missing_inputs") or not result.get("open_issue_ids"):
+                            raise HarnessFailure("live_02a_missing_issue_not_persisted")
                     suggestion_text = str(result.get("suggested_text") or "")
                     missing = result.get("missing_inputs") or []
                     review_cases.append({
@@ -1442,6 +1495,7 @@ def resume(approval: str) -> int:  # pragma: no cover - opt-in live path
                 return 0
         finally:
             db.close()
+            engine.dispose()
     except HarnessFailure as exc:
         if exc.code == "live_session_configuration_changed":
             print("LIVE_SESSION_CONFIGURATION_CHANGED")

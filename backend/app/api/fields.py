@@ -19,6 +19,7 @@ from app.contracts.draft import (
     SuggestionAcceptResponse,
     SuggestionContextOptions,
 )
+from app.contracts.draft import DraftVersion as DraftVersionContract
 from app.contracts.evidence import EvidenceLink
 from app.contracts.portal_field import (
     DisplayMode,
@@ -190,6 +191,29 @@ def get_field(
     return drafts_repo.to_contract(
         db, draft, copy_readiness=readiness.get(field_id)
     )
+
+
+@router.get(
+    "/runs/{run_id}/fields/{field_id}/versions/{draft_version_id}",
+    response_model=DraftVersionContract,
+)
+def get_field_version(
+    run_id: str,
+    field_id: str,
+    draft_version_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> DraftVersionContract:
+    """Read one immutable version scoped through its run and portal field."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    draft = _require_draft(db, run, field_id)
+    version = db.get(DraftVersion, draft_version_id)
+    if version is None or version.draft_id != draft.draft_id:
+        raise ProblemException(
+            status=404, code="not_found", title=_NOT_FOUND,
+            detail="Draft version not found.",
+        )
+    return drafts_repo.to_version_contract(db, version)
 
 
 @router.patch("/runs/{run_id}/fields/{field_id}", response_model=PortalFieldDraft)
@@ -427,6 +451,16 @@ def accept_field_suggestion(
             detail="Suggestion not found.",
         )
     if suggestion.status != "proposed":
+        # A concurrent request can commit the acceptance after this request's
+        # initial idempotency lookup but before the suggestion read. End the
+        # current snapshot and replay that committed response before treating
+        # the state transition as invalid.
+        db.rollback()
+        replay = idempotency.get(db, scope, idempotency_key)
+        if replay is not None and replay.request_fingerprint == request_fingerprint:
+            return SuggestionAcceptResponse.model_validate({
+                **replay.response_body, "idempotent_replay": True,
+            })
         raise ProblemException(
             status=409, code="suggestion_invalid_transition", title="Conflict",
             detail="Der Vorschlag kann in diesem Zustand nicht übernommen werden.",
