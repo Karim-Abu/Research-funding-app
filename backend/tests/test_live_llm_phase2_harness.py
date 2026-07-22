@@ -134,6 +134,21 @@ def test_harness_uses_the_canonical_preflight_pass_literal():
     assert 'result.status != "passed"' not in source
 
 
+def test_d0_editor_seed_preserves_all_registry_section_markers():
+    module = _module()
+    from app.agents.a2_fields import resolve_field_config
+    from app.drafts.sections import extract_section, section_spans
+
+    config = resolve_field_config(module.FIELD_ID)
+    assert config is not None
+    value = module._canonical_composite_field_text(module.SMOKE_1_TEXT)
+    spans = section_spans(value, config.mandatory_markers)
+    assert [span.marker for span in spans] == list(config.mandatory_markers)
+    target = extract_section(value, config.mandatory_markers, module.TARGET_SECTION)
+    assert target.startswith(module.EXPECTED_QUESTION)
+    assert module.SMOKE_1_TEXT in target
+
+
 def test_anchor_approval_is_exact_scoped_and_needs_two_versions(tmp_path):
     module = _module()
     hashes = ["1" * 64, "2" * 64]

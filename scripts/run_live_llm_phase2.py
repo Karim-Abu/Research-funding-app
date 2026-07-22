@@ -622,6 +622,26 @@ def _select_current_primary_application(
     ), 200, "primary_application_select_failed")
 
 
+def _canonical_composite_field_text(target_answer: str) -> str:
+    """Build the D0 editor value from the current portal registry questions."""
+    from app.registry import get_registry
+
+    questions = get_registry().mandatory_questions(FIELD_ID)
+    if not questions or not any(
+        question.field_id == MANDATORY_FIELD_ID for question in questions
+    ):
+        raise HarnessFailure("canonical_field_questions_missing")
+    parts: list[str] = []
+    for question in questions:
+        parts.append(question.label_or_question.strip())
+        parts.append(
+            target_answer.strip()
+            if question.field_id == MANDATORY_FIELD_ID
+            else "Synthetischer D0-Testfall: keine zusÃ¤tzlichen Angaben."
+        )
+    return "\n".join(parts)
+
+
 def _bootstrap_case(client: Any, csrf: str, *, label: str, text: str) -> dict[str, str]:
     classification = {
         "sensitivity": "public",
@@ -644,7 +664,7 @@ def _bootstrap_case(client: Any, csrf: str, *, label: str, text: str) -> dict[st
         headers=_mut(csrf, idem=_idem()),
     ), 201, "project_create_failed")
     project_id = project["project_id"]
-    source_text = f"{EXPECTED_QUESTION}\n{text}"
+    source_text = _canonical_composite_field_text(text)
     source = _expect(client.post(
         f"/api/v1/projects/{project_id}/sources/text",
         json={"name": "synthetic-primary-application.txt", "text": source_text,
@@ -706,10 +726,13 @@ def _bootstrap_case(client: Any, csrf: str, *, label: str, text: str) -> dict[st
         "field_read_failed",
     )
     current = field_view["current_version"]
-    if current["text"].strip() != text.strip():
+    if current["text"].strip() != source_text.strip():
         field_view = _expect(client.patch(
             f"/api/v1/runs/{run_id}/fields/{FIELD_ID}",
-            json={"base_version_id": current["draft_version_id"], "text": text},
+            json={
+                "base_version_id": current["draft_version_id"],
+                "text": source_text,
+            },
             headers=_mut(csrf),
         ), 200, "field_seed_patch_failed")
         current = field_view["current_version"]
