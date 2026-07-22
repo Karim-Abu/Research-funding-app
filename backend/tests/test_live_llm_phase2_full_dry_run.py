@@ -464,6 +464,8 @@ def test_phase2_prepare_resume_full_offline_dry_run():
     assert [row["label"] for row in session_payload["ledger"]["records"]] == [
         "a2_preflight", "live_02a", "market_preflight",
     ]
+    assert session_payload["research"]["firewall_decision"] == "allow"
+    assert session_payload["research"]["approval_id"]
 
     # The same contiguous rehearsal proves tamper rejection without mutating the
     # actual session that resume must consume.
