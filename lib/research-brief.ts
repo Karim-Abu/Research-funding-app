@@ -15,6 +15,36 @@ export const RESEARCH_MODULE_LABELS: Record<ResearchModule, string> = {
   swiss_research_partners: "Mögliche Schweizer Forschungspartner",
 }
 
+// RUN 4A — Nutzersprache statt Roh-Enums im Standardfluss.
+
+/** Anbieterstatus der öffentlichen Recherche (kanonische drei Zustände). */
+export const PROVIDER_MODE_LABELS: Record<
+  "live" | "fake_demo" | "unavailable",
+  string
+> = {
+  live: "Live-Recherche",
+  fake_demo: "Demo-Recherche",
+  unavailable: "Vorübergehend nicht verfügbar",
+}
+
+/** Vorläufige Quellenqualität (backend/app/research/executor.py). */
+export const SOURCE_QUALITY_LABELS: Record<string, string> = {
+  wissenschaftlich: "Wissenschaftliche Quelle",
+  offizielle_stelle: "Offizielle Stelle",
+  institutionell_ungeprüft: "Institutionell (ungeprüft)",
+  unbewertet: "Noch nicht bewertet",
+}
+
+export function sourceQualityLabel(value: string | undefined | null): string {
+  return SOURCE_QUALITY_LABELS[value ?? "unbewertet"] ?? "Noch nicht bewertet"
+}
+
+/** Fundstellenabdeckung — einziger Verifikationswert ist exact_quote_verified. */
+export function coverageStatusLabel(value: string | undefined | null): string {
+  if (value === "exact_quote_verified") return "Textstelle exakt gefunden"
+  return "Nicht geprüft"
+}
+
 export interface ResearchBriefInput {
   research_goal?: string
   search_tags?: string[]

@@ -12,14 +12,17 @@ import { Textarea } from "@/components/ui/textarea"
 import { flatToPrivacyClass, isExternalBlocked } from "@/lib/data-class"
 import { type QueryCandidateDto } from "@/lib/market-research"
 import {
+  PROVIDER_MODE_LABELS,
   RESEARCH_MODULE_LABELS,
   approveResearchBrief,
+  coverageStatusLabel,
   getResearchWorkspace,
   planResearchQueries,
   previewBriefQuery,
   reviewResearchResult,
   runResearchBrief,
   saveResearchBrief,
+  sourceQualityLabel,
   suggestResearchBrief,
   type ResearchBriefDto,
   type ResearchBriefInput,
@@ -232,10 +235,17 @@ export function PublicResearchPanel({
           <p className="mt-1 text-xs text-muted-foreground">Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben eintragen.</p>
           <p className="mt-1 text-xs text-muted-foreground">Vorschläge bestätigen keine fachliche Richtigkeit. Bitte alle Felder vor der Freigabe prüfen.</p>
         </div>
-        {workspace && <Badge variant="outline">{workspace.provider_mode === "live" ? "Live-Recherche" : workspace.provider_mode === "fake_demo" ? "Demo-Recherche" : "Nicht verfügbar"}</Badge>}
+        {workspace && <Badge variant="outline">{PROVIDER_MODE_LABELS[workspace.provider_mode] ?? "Vorübergehend nicht verfügbar"}</Badge>}
       </div>
 
       {demo && <p className="mt-3 rounded border border-amber-300 bg-amber-50 p-2 text-xs text-amber-900" data-testid="research-demo-banner">Demo-Recherche – keine echten Webquellen. Ergebnisse können nicht übernommen werden.</p>}
+      {workspace?.provider_mode === "unavailable" && (
+        <p role="alert" className="mt-3 rounded border border-status-partial/40 bg-status-partial/10 p-2 text-xs text-foreground" data-testid="research-unavailable-banner">
+          Die öffentliche Recherche ist momentan nicht erreichbar. Der Antrag
+          und Ihre Daten wurden nicht verändert. Sie können öffentliche Quellen
+          unten manuell hinzufügen oder es später erneut versuchen.
+        </p>
+      )}
       {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
 
       {!brief && (
@@ -284,10 +294,14 @@ export function PublicResearchPanel({
         </div>
       )}
 
-      {approved && (
+      {/* RUN 4A: genau EINE Modul-Darstellung gleichzeitig — solange das
+          Brief-Formular (Checkboxen) offen ist, bleibt der Ergebnisbereich
+          mit seinem Modul-Umschalter ausgeblendet. */}
+      {approved && !editableBrief && (
         <div className="mt-5">
-          <div className="flex gap-1 overflow-x-auto pb-2" aria-label="Recherchemodule">
-            {approved.modules.filter((module) => MODULES.includes(module)).map((module) => <Button key={module} size="xs" variant={activeModule === module ? "default" : "outline"} onClick={() => setActiveModule(module)}>{RESEARCH_MODULE_LABELS[module]}</Button>)}
+          <h4 className="text-sm font-semibold">Ergebnisse nach Modul</h4>
+          <div className="mt-1 flex gap-1 overflow-x-auto pb-2" role="group" aria-label="Ergebnisse nach Modul filtern">
+            {approved.modules.filter((module) => MODULES.includes(module)).map((module) => <Button key={module} size="xs" variant={activeModule === module ? "default" : "outline"} aria-pressed={activeModule === module} onClick={() => setActiveModule(module)}>{RESEARCH_MODULE_LABELS[module]}</Button>)}
           </div>
 
           {visibleQueries.length > 0 && <div className="mt-3">
@@ -329,8 +343,8 @@ export function PublicResearchPanel({
               <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>
               <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
                 <div><dt className="font-medium">Potentieller Abschnitt</dt><dd>{(result.potential_sections ?? []).join(", ") || "noch offen"}</dd></div>
-                <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{(result.source_quality ?? "unbewertet").replaceAll("_", " ")}</dd></div>
-                <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{!result.coverage_status || result.coverage_status === "not_checked" ? "nicht geprüft" : result.coverage_status}</dd></div>
+                <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{sourceQualityLabel(result.source_quality)}</dd></div>
+                <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{coverageStatusLabel(result.coverage_status)}</dd></div>
                 <div><dt className="font-medium">Inhaltliche Stützung</dt><dd>{supportLabel(result.support_status ?? "not_checked")}</dd></div>
               </dl>
               {result.content_safety_status === "quarantined" && <p className="mt-2 rounded border border-status-partial/40 bg-status-partial/10 p-2 text-xs">{"Nicht vertrauensw\u00fcrdiges Inhaltssignal: Die Seite muss vor der Verwendung ausdr\u00fccklich gepr\u00fcft werden."}</p>}
@@ -353,16 +367,19 @@ export function PublicResearchPanel({
             </article>)}
           </div>
 
-          {(workspace?.provider_mode === "unavailable" || error) && <div className="mt-4 rounded border p-3" data-testid="manual-research-fallback">
-            <h4 className="text-sm font-medium">Manueller Quellenimport</h4>
-            <p className="mt-1 text-xs text-muted-foreground">Bei Netz- oder Recherchedienstfehlern: öffentliche URL und selbst kopierten Seiteninhalt einfügen. Der Server ruft die URL nicht ab. Alternativ steht der bestehende PDF-Upload auf dieser Seite zur Verfügung.</p>
-            <div className="mt-2 grid gap-2 md:grid-cols-2"><BriefField label="Öffentliche HTTPS-URL" value={manualUrl} onChange={setManualUrl} disabled={busy} /><BriefField label="Titel" value={manualTitle} onChange={setManualTitle} disabled={busy} /></div>
-            <Label className="mt-2 block" htmlFor="manual-research-content">Kopierter Seiteninhalt</Label>
-            <Textarea id="manual-research-content" value={manualContent} disabled={busy} onChange={(event) => setManualContent(event.target.value)} rows={6} />
-            <Button className="mt-2" size="sm" variant="outline" disabled={busy || !manualUrl.trim() || !manualContent.trim()} onClick={() => void act(async () => { await createUrlSource(projectId, manualUrl, manualTitle || null, PUBLIC_SOURCE_CLASSIFICATION, manualContent); setManualUrl(""); setManualTitle(""); setManualContent(""); onImported?.() })}>Manuell als Quelle übernehmen</Button>
-          </div>}
         </div>
       )}
+
+      {/* RUN 4A: der manuelle Import hängt nicht mehr am freigegebenen Brief —
+          bei nicht erreichbarem Recherchedienst steht er immer bereit. */}
+      {(workspace?.provider_mode === "unavailable" || error) && <div className="mt-4 rounded border p-3" data-testid="manual-research-fallback">
+        <h4 className="text-sm font-medium">Manueller Quellenimport</h4>
+        <p className="mt-1 text-xs text-muted-foreground">Bei Netz- oder Recherchedienstfehlern: öffentliche URL und selbst kopierten Seiteninhalt einfügen. Der Server ruft die URL nicht ab. Alternativ steht der bestehende PDF-Upload auf dieser Seite zur Verfügung.</p>
+        <div className="mt-2 grid gap-2 md:grid-cols-2"><BriefField label="Öffentliche HTTPS-URL" value={manualUrl} onChange={setManualUrl} disabled={busy} /><BriefField label="Titel" value={manualTitle} onChange={setManualTitle} disabled={busy} /></div>
+        <Label className="mt-2 block" htmlFor="manual-research-content">Kopierter Seiteninhalt</Label>
+        <Textarea id="manual-research-content" value={manualContent} disabled={busy} onChange={(event) => setManualContent(event.target.value)} rows={6} />
+        <Button className="mt-2" size="sm" variant="outline" disabled={busy || !manualUrl.trim() || !manualContent.trim()} onClick={() => void act(async () => { await createUrlSource(projectId, manualUrl, manualTitle || null, PUBLIC_SOURCE_CLASSIFICATION, manualContent); setManualUrl(""); setManualTitle(""); setManualContent(""); onImported?.() })}>Manuell als Quelle übernehmen</Button>
+      </div>}
     </section>
   )
 }

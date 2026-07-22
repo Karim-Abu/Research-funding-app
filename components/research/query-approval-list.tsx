@@ -214,7 +214,9 @@ export function QueryApprovalList({
                 {query.firewall_decision && (
                   <div className="mt-1 text-[11px] text-muted-foreground">
                     <span>Firewall: {query.firewall_decision === "allow" ? "freigegeben" : query.firewall_decision === "block" ? "blockiert" : "menschliche Freigabe nötig"}</span>
-                    {query.risk_label && <span> · Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}{typeof query.risk_score === "number" ? ` (${query.risk_score}/10)` : ""}</span>}
+                    {/* RUN 4A: nur die verständliche Risikostufe — der rohe
+                        Score gehört nicht in den Standardfluss. */}
+                    {query.risk_label && <span> · Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}</span>}
                     {(query.redaction_summary?.length ?? 0) > 0 && (
                       <ul className="mt-1 flex flex-wrap gap-1" aria-label="Entfernte Kategorien">
                         {query.redaction_summary?.map((entry, redactionIndex) => (
