@@ -62,6 +62,25 @@ function mock(anchors: unknown[], assessments: unknown[]) {
 }
 
 describe("LiveEvidence", () => {
+  it("RUN 4A: die Supportleiter-Kurzdefinitionen sind aufklappbar sichtbar", async () => {
+    mock([anchor()], [assessment([link()])])
+    render(<LiveEvidence runId="r1" />)
+    const summary = await screen.findByText("Was bedeuten die Belegstufen?")
+    expect(summary.closest("details")).not.toBeNull()
+    // Definitionen liegen im DOM (jsdom rendert <details>-Inhalt immer).
+    expect(
+      screen.getByText(
+        "Die Passage ist in der Quelle auffindbar; die fachliche Stützung ist noch offen."
+      )
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("Die Passage trägt die konkrete Aussage direkt.")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("Die Quelle widerspricht der Aussage oder bleibt unklar.")
+    ).toBeInTheDocument()
+  })
+
   it("zeigt location_found neutral und erklärt Coverage ≠ Correctness (R6)", async () => {
     mock([anchor()], [assessment([link()])])
     const onOpenSource = vi.fn()
@@ -106,9 +125,14 @@ describe("LiveEvidence", () => {
       [assessment([link()])]
     )
     render(<LiveEvidence runId="r1" />)
-    await waitFor(() =>
-      expect(screen.getByText("Stark gestützt")).toBeInTheDocument()
-    )
+    // «Stark gestützt» erscheint zusätzlich im RUN-4A-Definitionsblock —
+    // entscheidend ist die Badge in der Belegkarte (Listeneintrag).
+    await waitFor(() => {
+      const badge = screen
+        .getAllByText("Stark gestützt")
+        .find((el) => el.closest("li"))
+      expect(badge).toBeTruthy()
+    })
   })
 
   it("expands and highlights the deep-linked anchor (M10.2)", async () => {

@@ -150,6 +150,66 @@ describe("LiveRequirements — Compliance ≠ Human Review (RUN 2A Slice 1)", ()
     expect(await screen.findByText("Menschlich bestätigt")).toBeInTheDocument()
   })
 
+  it("RUN 4A Regelgrundlage: Quelle, Zitat und Link «Offizielle Regel öffnen»", async () => {
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-rule",
+            requirement_id: "REQ.INNO.ELIG.PROFILE",
+            title: "Förderprofil eingehalten",
+            status: "fulfilled",
+            rule_evidence: [
+              {
+                rule_id: "RULE.X",
+                registry_version: "2026-05",
+                source_ref: "sec-2",
+                source_title: "Innosuisse-Fördergrundsätze Innovationsprojekte",
+                source_url: "https://www.innosuisse.admin.ch/foerdergrundsaetze",
+                last_verified: "2026-05-01",
+                evidence_quote:
+                  "Projekte müssen einen Schweizer Umsetzungsbezug aufweisen.",
+                evidence_label: "Kuratierter Registry-Auszug",
+              },
+              {
+                rule_id: "RULE.Y",
+                registry_version: "2026-05",
+                source_ref: "sec-3",
+                source_title: "Interner Registry-Eintrag ohne URL",
+                source_url: null,
+                last_verified: null,
+                evidence_quote: "Zweiter Auszug ohne offizielle URL.",
+                evidence_label: "Kuratierter Registry-Auszug",
+              },
+            ],
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    const rowToggle = await screen.findByRole("button", {
+      name: /Förderprofil eingehalten/,
+    })
+    fireEvent.click(rowToggle)
+
+    expect(await screen.findByTestId("rule-evidence")).toBeInTheDocument()
+    expect(
+      screen.getByText("Projekte müssen einen Schweizer Umsetzungsbezug aufweisen.")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText(/Quelle: Innosuisse-Fördergrundsätze Innovationsprojekte/)
+    ).toBeInTheDocument()
+    // Link nur beim Eintrag mit URL — genau einer.
+    const links = screen.getAllByRole("link", { name: "Offizielle Regel öffnen" })
+    expect(links).toHaveLength(1)
+    expect(links[0]).toHaveAttribute(
+      "href",
+      "https://www.innosuisse.admin.ch/foerdergrundsaetze"
+    )
+    // Interne Rule-IDs erscheinen nicht im Standardfluss.
+    expect(screen.queryByText("RULE.X")).toBeNull()
+  })
+
   it("RUN 4A Statussprache: open → «Prüfung nötig», blocked → «Nicht erfüllt», nie Roh-Enums", async () => {
     server.use(
       http.get("/api/runs/r1/requirements", () =>

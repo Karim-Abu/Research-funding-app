@@ -29,6 +29,9 @@ import {
 } from "@/lib/evidence"
 import {
   SUPPORT_LADDER_HINT,
+  SUPPORT_LADDER_ORDER,
+  SUPPORT_STATUS_DEFINITIONS,
+  SUPPORT_STATUS_SHORT_LABELS,
   supportStatusFromVerification,
 } from "@/lib/evidence-ladder"
 import { listRequirements } from "@/lib/requirements"
@@ -132,9 +135,27 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
 
   return (
     <div className="flex flex-col gap-6">
-      <div className="flex items-start gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
-        <Info className="mt-0.5 h-4 w-4 shrink-0" />
-        <span>{SUPPORT_LADDER_HINT}</span>
+      <div className="flex flex-col gap-2 rounded-md border border-border bg-muted/30 px-4 py-3 text-xs text-muted-foreground">
+        <div className="flex items-start gap-2">
+          <Info className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>{SUPPORT_LADDER_HINT}</span>
+        </div>
+        {/* RUN 4A: Kurzdefinition jeder Stufe — progressiv, kein Dauertext. */}
+        <details>
+          <summary className="cursor-pointer font-medium text-foreground">
+            Was bedeuten die Belegstufen?
+          </summary>
+          <dl className="mt-2 grid gap-x-4 gap-y-1 sm:grid-cols-[auto_1fr]">
+            {SUPPORT_LADDER_ORDER.map((status) => (
+              <React.Fragment key={status}>
+                <dt className="font-medium text-foreground">
+                  {SUPPORT_STATUS_SHORT_LABELS[status]}
+                </dt>
+                <dd>{SUPPORT_STATUS_DEFINITIONS[status]}</dd>
+              </React.Fragment>
+            ))}
+          </dl>
+        </details>
       </div>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

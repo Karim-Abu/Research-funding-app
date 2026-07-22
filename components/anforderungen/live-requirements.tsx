@@ -7,6 +7,7 @@ import {
   ChevronDown,
   ChevronRight,
   CheckCircle2,
+  ExternalLink,
   FileText,
 } from "lucide-react"
 import { Button } from "@/components/ui/button"
@@ -538,11 +539,25 @@ function LiveRequirementRow({
                     {evidence.evidence_quote}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    {evidence.source_title} · Registry {evidence.registry_version}
+                    Quelle: {evidence.source_title} · Registry{" "}
+                    {evidence.registry_version}
                     {evidence.last_verified
                       ? ` · geprüft ${evidence.last_verified}`
                       : ""}
                   </p>
+                  {/* RUN 4A: direkter Absprung zur offiziellen Regelquelle —
+                      nur wenn die Registry eine URL führt. */}
+                  {evidence.source_url && (
+                    <a
+                      href={evidence.source_url}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="mt-1.5 inline-flex items-center gap-1 rounded text-xs font-medium text-primary underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                    >
+                      <ExternalLink className="size-3.5" aria-hidden />
+                      Offizielle Regel öffnen
+                    </a>
+                  )}
                 </div>
               ))}
             </div>

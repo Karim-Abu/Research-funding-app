@@ -46,6 +46,31 @@ export const SUPPORT_STATUS_STYLES: Record<SupportStatus, string> = {
   human_review_required: "bg-status-partial/12 text-status-partial",
 }
 
+// RUN 4A — Kurzdefinition je Stufe (aufklappbar unter Beleg-Listen). Reihen-
+// folge = fachliche Leiter von «gefunden» bis «widersprüchlich».
+export const SUPPORT_LADDER_ORDER: SupportStatus[] = [
+  "location_found",
+  "supports_partially",
+  "supports_strongly",
+  "conflict_or_uncertain",
+  "human_review_required",
+  "evidence_missing",
+  "not_required",
+]
+
+export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
+  location_found:
+    "Die Passage ist in der Quelle auffindbar; die fachliche Stützung ist noch offen.",
+  supports_partially: "Die Passage trägt nur einen Teil der Aussage.",
+  supports_strongly: "Die Passage trägt die konkrete Aussage direkt.",
+  conflict_or_uncertain:
+    "Die Quelle widerspricht der Aussage oder bleibt unklar.",
+  human_review_required:
+    "Die Stützung braucht eine menschliche Entscheidung — sie wurde noch nicht abschliessend geprüft.",
+  evidence_missing: "Für die Aussage ist noch keine Quelle verknüpft.",
+  not_required: "Für diesen Punkt ist kein Beleg erforderlich.",
+}
+
 // Erläuterung unter Beleg-Listen: was die Stufe aussagt — und was nicht.
 export const SUPPORT_LADDER_HINT =
   "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar. " +
