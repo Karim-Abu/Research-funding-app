@@ -215,7 +215,7 @@ describe("ImportReview — Darstellung", () => {
     expect(
       within(rows[0]).getByText("Abstract (wird in Aramis publiziert)")
     ).toBeInTheDocument()
-    expect(within(rows[0]).getByText(/Fundseite: Seite 1/)).toBeInTheDocument()
+    expect(within(rows[0]).getByText(/Fundstelle: Seite 1/)).toBeInTheDocument()
     // Unsicher ist visuell markiert …
     expect(
       within(rows[1]).getByText("Leer")
@@ -248,6 +248,44 @@ describe("ImportReview — Darstellung", () => {
     expect(within(row).getByText("Originalausschnitt")).toBeInTheDocument()
     expect(within(row).getByText("Technische Details")).toBeInTheDocument()
     expect(within(row).getByText("innolink-narrative-v2")).toBeInTheDocument()
+  })
+
+  it("RUN 4A: reversible Aktionen bleiben nach der Entscheidung sichtbar", async () => {
+    getImportCandidates.mockResolvedValueOnce([
+      candidate({
+        decision: "accepted",
+        decided_at: "2026-07-01T00:00:00Z",
+      }),
+    ])
+    await renderReview()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    expect(
+      within(row).getByRole("button", { name: "Bearbeiten" })
+    ).toBeInTheDocument()
+    expect(
+      within(row).getByRole("button", { name: "PDF-Wert wiederherstellen" })
+    ).toBeInTheDocument()
+    expect(
+      within(row).getByRole("button", { name: "Übernahme zurücknehmen" })
+    ).toBeInTheDocument()
+  })
+
+  it("RUN 4A: Feld-ID und Mapping-Version nur unter zugeklappten «Technische Details»", async () => {
+    await renderReview()
+    const row = screen.getAllByTestId("import-candidate")[0]
+    // Vor dem Aufklappen der Abschnittsdetails: keine Roh-IDs im Fluss.
+    expect(within(row).queryByText("INTRO.APP.ABSTRACT")).toBeNull()
+    expect(within(row).queryByText("innolink-narrative-v2")).toBeNull()
+    fireEvent.click(
+      within(row).getByRole("button", { name: "Abschnittsdetails" })
+    )
+    // Nach dem Aufklappen liegen die Werte im DOM, aber nur innerhalb des
+    // zugeklappten <details>-Elements «Technische Details» — nicht sichtbar.
+    expect(within(row).getByText("INTRO.APP.ABSTRACT")).not.toBeVisible()
+    expect(within(row).getByText("innolink-narrative-v2")).not.toBeVisible()
+    expect(
+      within(row).getByText("INTRO.APP.ABSTRACT").closest("details")
+    ).not.toBeNull()
   })
 
   it("verlangt für die gemeinsame 4.5.2/4.5.3-Altzuordnung Bearbeitung", async () => {
@@ -312,7 +350,7 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     const section = screen.getByTestId("structured-import-review")
     expect(within(section).getByText("Budget")).toBeInTheDocument()
     const row = within(section).getByTestId("structured-import-candidate")
-    expect(within(row).getByText("Fundseite: Seite 6")).toBeInTheDocument()
+    expect(within(row).getByText("Fundstelle: Seite 6")).toBeInTheDocument()
     expect(within(row).getByText("Aktueller Wert")).toBeInTheDocument()
     fireEvent.click(within(row).getByRole("button", { name: "Übernehmen" }))
 

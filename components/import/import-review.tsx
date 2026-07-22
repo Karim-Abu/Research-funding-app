@@ -696,23 +696,17 @@ export function ImportReview() {
 
       {phase === "review" && (
         <div className="flex flex-col gap-4" data-testid="import-review">
+          {/* RUN 4A: ein ruhiger Hinweis statt zwei Info-Karten; die Anzahl
+              steht bereits in der Statuszeile neben der Primäraktion. */}
           <Alert className="flex items-start gap-3 border-border bg-accent/40 text-sm">
             <Info className="mt-0.5 size-4 shrink-0 text-primary" />
             <span>
-              {totalCandidates} Kandidaten erkannt. «Unsicher» markierte Einträge
-              brauchen besondere Prüfung und werden nie automatisch übernommen.
+              «Unsicher» markierte Einträge brauchen besondere Prüfung und
+              werden nie automatisch übernommen.
+              {!runId &&
+                " Übernommene Inhalte fliessen beim nächsten Analyse-Lauf als Entwurfsbasis in die Feld-Entwürfe ein."}
             </span>
           </Alert>
-
-          {!runId && (
-            <Alert className="flex items-start gap-3 border-border bg-accent/40 text-sm">
-              <Info className="mt-0.5 size-4 shrink-0 text-primary" />
-              <span>
-                Übernommene Inhalte fliessen beim nächsten Analyse-Lauf als
-                Entwurfsbasis in die Feld-Entwürfe ein.
-              </span>
-            </Alert>
-          )}
 
           {structuredCandidates.length > 0 && (
             <section
@@ -1070,6 +1064,15 @@ const STRUCTURED_HIDDEN_KEYS = new Set([
   "financial_confirmations",
 ])
 
+/** Anzeige-Label eines strukturierten Schlüssels — unbekannte Schlüssel nie
+ *  roh (snake_case) im Standardfluss zeigen (RUN 4A / CLAUDEX §2). */
+function structuredFieldLabel(key: string): string {
+  const label = STRUCTURED_FIELD_LABELS[key]
+  if (label) return label
+  const humanized = key.replaceAll("_", " ").trim()
+  return humanized.charAt(0).toUpperCase() + humanized.slice(1)
+}
+
 function formatStructuredValue(value: unknown): string {
   if (value === null || value === undefined || value === "") return "Nicht erkannt"
   if (typeof value === "boolean") return value ? "Ja" : "Nein"
@@ -1092,7 +1095,7 @@ function PayloadDisplay({ payload }: { payload: Record<string, unknown> }) {
         .map(([key, value]) => (
           <React.Fragment key={key}>
             <dt className="text-muted-foreground">
-              {STRUCTURED_FIELD_LABELS[key] ?? key}
+              {structuredFieldLabel(key)}
             </dt>
             <dd className="break-words text-foreground">
               {formatStructuredValue(value)}
@@ -1167,7 +1170,7 @@ function StructuredCandidateRow({
             {comparisonOnly && <Badge variant="outline">Nur Vergleich</Badge>}
             {candidate.source_location && (
               <span className="text-xs text-muted-foreground">
-                Fundseite: {candidate.source_location}
+                Fundstelle: {candidate.source_location}
               </span>
             )}
           </div>
@@ -1289,7 +1292,7 @@ function StructuredPayloadEditor({
         </Alert>
       )}
       {visible.map(([key, value]) => {
-        const label = STRUCTURED_FIELD_LABELS[key] ?? key
+        const label = structuredFieldLabel(key)
         if (typeof value === "boolean" || key === "sanction_answer") {
           return (
             <div key={key} className="grid gap-1.5">
@@ -1497,7 +1500,7 @@ function CandidateRow({
             </Badge>
             {candidate.source_location && (
               <span className="text-xs text-muted-foreground">
-                Fundseite: {candidate.source_location}
+                Fundstelle: {candidate.source_location}
               </span>
             )}
           </div>
@@ -1635,7 +1638,7 @@ function CandidateRow({
                   </Badge>
                   {section.source_location && (
                     <span className="text-muted-foreground">
-                      Fundseite: {section.source_location}
+                      Fundstelle: {section.source_location}
                     </span>
                   )}
                 </div>
