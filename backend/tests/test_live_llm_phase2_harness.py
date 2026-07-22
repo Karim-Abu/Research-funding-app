@@ -127,6 +127,13 @@ def test_primary_application_selection_uses_current_auto_assignment(monkeypatch)
     }
 
 
+def test_harness_uses_the_canonical_preflight_pass_literal():
+    source = SCRIPT.read_text(encoding="utf-8")
+    assert "from app.evaluation.preflight import PASS" in source
+    assert 'result.status != PASS' in source
+    assert 'result.status != "passed"' not in source
+
+
 def test_anchor_approval_is_exact_scoped_and_needs_two_versions(tmp_path):
     module = _module()
     hashes = ["1" * 64, "2" * 64]

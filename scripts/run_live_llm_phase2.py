@@ -727,13 +727,13 @@ def _run_preflight(
     db: Any, *, route_key: str, actor_id: str, ledger: BudgetLedger, label: str
 ) -> Any:
     from app.config.settings import get_settings
-    from app.evaluation.preflight import persist_route_preflight, preflight_route
+    from app.evaluation.preflight import PASS, persist_route_preflight, preflight_route
 
     ledger.active_label = label
     result = preflight_route(route_key, settings=get_settings(), execute_live=True)
     row = persist_route_preflight(db, result, triggered_by=actor_id, settings=get_settings())
     db.commit()
-    if result.status != "passed":
+    if result.status != PASS:
         raise HarnessFailure(result.error_class or "live_llm_preflight_failed")
     return row
 
