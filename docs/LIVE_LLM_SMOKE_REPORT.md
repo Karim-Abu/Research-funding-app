@@ -2,155 +2,102 @@
 
 ## Status
 
-- Bericht erstellt: 22. Juli 2026
+- Bericht aktualisiert: `2026-07-22T16:34:09Z`
 - LIVE-01 web: `passed`
-- LIVE-02A Missing Input Smoke: `passed` in Attempt 3
+- LIVE-02A Missing Input Smoke: `passed`
 - LIVE-02B Grounded Anchor Smoke: `not_run`
 - LIVE-02C Shorten Smoke: `not_run`
 - LIVE-03 API/BFF E2E: `not_run`
 - Browser E2E: `pending`
 - Human quality review: `pending`
-- Finaler Reteststatus: `THIRD_LIVE_RETEST_FAILED_REVIEW_REQUIRED`
+- Fake-Fallback beobachtet: `no`
+- Finaler Status: `LIVE_RETEST_FAILED_REVIEW_REQUIRED`
+- Sicherer Reason-Code: `market_comparison_not_limited_insufficient_external_evidence_no_error`
 
-Attempt 3 wurde vor dem Anchor-Review-Gate beendet. Es wurde keine Review-Session
-gespeichert und es wurden keine Quote-Hashes zur Freigabe vorgelegt. Nach dem
-Fehler erfolgte kein weiterer externer Request.
+Gate C wurde fail-closed beendet. Die MarketComparison lieferte trotz zweier
+exakt freigegebener öffentlicher Passagen den Status
+`insufficient_external_evidence` statt des erwarteten Status `limited`. Nach
+diesem Befund wurden keine weiteren externen Requests ausgeführt und kein
+automatischer Fix oder Retest begonnen.
 
-## Attempt 1
-
-| Merkmal | Gemessener Wert |
-|---|---|
-| Tatsächliche LLM-Requests | `1` |
-| Request | A2-Preflight |
-| Providerstatus | HTTP `200` |
-| Harnessstatus | `preflight_status_mismatch` |
-| Ursache | Harness erwartete `passed` statt des kanonischen Status `pass` |
-| Live-Smokes | `not_run` |
-| Firecrawl-Requests | `0` |
-| Token | `not_available` |
-| Einzellatenz | `not_available` |
-| Konservativ geschätzte Kosten | CHF `0.007134` |
-| Fake-Fallback | `no` |
-
-Der Harnessfehler wurde mit Commit `28bbfce` und einem Offline-Regressionstest
-behoben. Es wurde kein Provider-Retest ohne neue Freigabe ausgeführt.
-
-## Attempt 2
-
-| Merkmal | Gemessener Wert |
-|---|---|
-| Tatsächliche LLM-Requests | `1` |
-| Request | A2-Preflight |
-| Providerstatus | HTTP `200` |
-| Harnessstatus | `section_marker_missing` |
-| Ursache | Synthetischer Feld-Seed enthielt nicht alle Registry-Sektionen |
-| Live-Smokes | `not_run` |
-| Firecrawl-Requests | `0` |
-| Token | `not_available` |
-| Einzellatenz | `not_available` |
-| Konservativ geschätzte Kosten | CHF `0.007134` |
-| Fake-Fallback | `no` |
-
-Der Harnessfehler wurde mit Commit `9aa65d7` behoben. Die vollständige
-Offline-Generalprobe des danach gültigen `prepare`-/`resume`-Pfads ist in
-`docs/RUN_3C_PHASE2_DRY_RUN_RESULT.md` dokumentiert.
-
-## Attempt 3
-
-| Merkmal | Gemessener Wert |
-|---|---|
-| Attempt-ID | `7804e94a11da4764b6836a71ec965fc5` |
-| Execution Mode | `live` |
-| A2-Route | `openai_gpt_56_terra_candidate` |
-| Tatsächliche LLM-Requests | `2` |
-| Tatsächliche Firecrawl-Requests | `1` |
-| Aktive Harness-Laufzeit bis Abbruch | ca. `30.0 s` |
-| Exakte Provider-Call-Latenzen | `not_available` |
-| Tatsächliche Token | `not_available` |
-| Konservativ geschätzte Kosten | CHF `0.165661` |
-| Fake-Fallback | `no` |
-| Secrets/Rohprompts geloggt | `no` |
-| Vollständige Providerantworten geloggt | `no` |
-
-Die fehlenden Token- und Einzellatenzwerte wurden nach dem frühen Abbruch nicht
-persistiert. Sie werden nicht aus Providerantworten rekonstruiert oder geschätzt.
-Für die Kostenabrechnung werden deshalb die vor jedem Call reservierten
-konservativen Maximalwerte verwendet.
-
-### Ausgeführte Pflichtschritte
-
-| Schritt | Ergebnis | Externe Requests | Sicherer Nachweis |
-|---|---|---:|---|
-| A2-Preflight | `passed` | 1 LLM | HTTP `200`, kanonischer Status `pass`, frischer passender Fingerprint |
-| LIVE-02A Missing Input | `passed` | 1 LLM | strukturierte Ausgabe, `missing_inputs`, keine erfundene Marktzahl |
-| Public-safe Research Brief, Planner, Firewall und Approval | `passed` | 0 | produktiver HTTP-/BFF-Pfad, freigegebene Query |
-| Firecrawl Search | `failed` | 1 Firecrawl | Provider HTTP `502` |
-| Anchor-Vorbereitung und Human Gate | `not_run` | 0 | keine geeigneten Resultate und keine Review-Session |
-| Market-Preflight | `not_run` | 0 | nach Firecrawl-Fehler gestoppt |
-| MarketComparison | `not_run` | 0 | nach Firecrawl-Fehler gestoppt |
-| LIVE-02B | `not_run` | 0 | nach Firecrawl-Fehler gestoppt |
-| LIVE-02C | `not_run` | 0 | nach Firecrawl-Fehler gestoppt |
-| LIVE-03 API/BFF E2E | `not_run` | 0 | nach Firecrawl-Fehler gestoppt |
-
-Der öffentliche Suchtext, vollständige URLs, Dokumentinhalte, API-Schlüssel,
-Authorization-Header, Rohprompts und vollständige Providerantworten sind in
-diesem Bericht nicht enthalten.
-
-## Root Cause und Sicherheitsverhalten
-
-Der erste Firecrawl-Search in Attempt 3 antwortete mit HTTP `502`. Dadurch
-standen keine zwei geeigneten öffentlichen Quellen für Anchor-Review und
-LIVE-03 zur Verfügung. Der Harness beendete `prepare` fail-closed mit
-`live_e2e_blocked_insufficient_external_evidence`. Es gab keinen Fake-Fallback,
-keinen Quellenimport, keine Search-Snippet-Evidenz und keine erfundene
-MarketComparison. Das ist kein bestätigter Fehler der Produktlogik.
-
-Beim Fehler-Cleanup blieb auf Windows zunächst die lokale Datei
-`checkpoints.db` gesperrt. Ursache war die prozessglobale SQLite-Verbindung des
-LangGraph-Checkpointers, die nach dem Engine-Dispose noch offen war. Der
-minimale Harness-Fix `6c1d476` schließt Checkpointer und Graph vor Engine und
-Session-Entfernung. Der Regressionstest öffnet den echten Checkpointer und
-weist anschließend die vollständige Verzeichnislöschung nach. Ein einmaliger
-Recovery-Cleanup entfernte die verbliebene Attempt-3-Datei; der Session-Root
-war danach leer.
-
-## Kumulative Abrechnung
+## Historische kumulative Basis vor Gate C
 
 | Merkmal | Attempts 1–3 |
 |---|---:|
 | Tatsächliche LLM-Requests | `4` |
 | Tatsächliche Firecrawl-Requests | `1` |
 | Konservativ geschätzte LLM-Kosten | CHF `0.179929` |
-| Genehmigtes kumulatives LLM-Limit | `8` Requests |
+| Fake-Fallback | `no` |
+
+LIVE-01 ist separat mit drei Firecrawl-Calls bestanden. Der erfolgreiche
+Firecrawl-Recovery-Gate-B-Lauf verwendete anschließend drei weitere Calls:
+einen Search und zwei explizite Fetch-/Import-Requests. Gate C selbst führte
+keinen Firecrawl-Call aus.
+
+## Gate C
+
+| Merkmal | Gemessener Wert |
+|---|---:|
+| Review-Session-ID | `2c878e9fc80e4a758609f645a95d2549` |
+| Execution Mode | `live` |
+| Neue LLM-Requests | `3` |
+| Neue Firecrawl-Requests | `0` |
+| Tatsächliche neue LLM-Kosten | CHF `0.037274` |
+| Konservativ reservierte neue LLM-Kosten | CHF `0.151586` |
+| Laufzeit des Gate-C-Kommandos | `46.4 s` |
+| Fake-Fallback | `no` |
+| Secrets oder Rohprompts geloggt | `no` |
+| Vollständige Providerantworten geloggt | `no` |
+
+### Redigierter LLM-Request-Ledger
+
+| Sequenz | Zweck | Providerroute | HTTP | Input-Token | Output-Token | Konservativ CHF | Tatsächlich CHF |
+|---:|---|---|---|---:|---:|---:|---:|
+| 4 | `a2_preflight` | `openai_gpt_56_terra_candidate` | `2xx` | 48 | 17 | 0.049737 | 0.000303 |
+| 5 | `live_02a` | `openai_gpt_56_terra_candidate` | `2xx` | 2782 | 2486 | 0.068670 | 0.035706 |
+| 6 | `market_preflight` | `anthropic_sonnet_5_candidate` | `2xx` | 619 | 33 | 0.033179 | 0.001265 |
+
+Die Sequenzen 1–3 dieser Recovery-Session waren der bereits abgeschlossene
+Firecrawl-Search und die zwei expliziten Imports aus Gate B. Es wurden keine
+Rohqueries, URLs, Dokumenttexte, Prompts oder Providerantworten in den Ledger
+übernommen.
+
+## Kumulative Abrechnung
+
+| Merkmal | Gesamtstand |
+|---|---:|
+| Tatsächliche LLM-Requests | `7` |
+| Konservativ geschätzte LLM-Kosten | CHF `0.331515` |
+| Tatsächliche Gate-C-Kosten | CHF `0.037274` |
+| Phase-2-Firecrawl-Requests einschließlich Attempts 1–3 und Recovery | `4` |
+| LIVE-01-Firecrawl-Requests separat | `3` |
 | Genehmigtes kumulatives Kostenlimit | CHF `3.00` |
 | Fake-Fallback beobachtet | `no` |
-| Secrets/Rohprompts geloggt | `no` |
 
-Vor Attempt 3 betrug die vorgegebene kumulative Abrechnung zwei Requests und
-CHF `0.014268`. Attempt 3 verbrauchte zwei weitere Requests mit konservativ
-CHF `0.165661`. Alle Limits wurden eingehalten.
+Die kumulative konservative Kostengrenze wurde eingehalten. Die tatsächlich
+berechneten Kosten früherer Attempts sind teilweise `not_available`; deshalb
+bleibt für diese Attempts die konservative Schätzung maßgeblich.
 
-## Offline-Regressionsgate nach dem Befund
+## Ausgeführte Schritte
 
-| Gate | Ergebnis |
-|---|---|
-| Checkpoint-Cleanup-Regression | `1 passed` |
-| Alle Harness-Tests | `14 passed` |
-| Vollständige zusammenhängende Phase-2-Generalprobe | `1 passed` |
-| `scripts/verify_all.ps1` | `passed`, Exit `0`, `654.9 s` |
-| Backend, Migration, DOCX | `passed` |
-| Vitest, ESLint, TypeScript, Build | `passed` |
-| Playwright-Gesamtsuite | `48 passed` |
-| Zweiter Golden Path, Import, Review Truth | jeweils `passed` |
-| API-Smoke | `19/19 passed` |
+| Schritt | Ergebnis | Nachweis |
+|---|---|---|
+| Session-/Hash-/Source-/Konfigurationsprüfung | `passed` | zwei signierte Quote-Hashes, aktuelle SourceVersions, unveränderte Fingerprints |
+| A2-Preflight | `passed` | ein echter OpenAI-Request, HTTP 2xx |
+| LIVE-02A | `passed` | `model_generated`, Market-Missing-Input, keine erfundene Marktzahl |
+| Market-Preflight | `passed` | ein echter Anthropic-Request, HTTP 2xx |
+| Exakte Content Reviews | `passed` | ausschließlich die zwei freigegebenen Passagen |
+| Exakte External Anchors | `passed` | Fragment, Offset und Quote-Hash revalidiert |
+| MarketComparison | `failed` | `insufficient_external_evidence` statt `limited` |
+| LIVE-02B | `not_run` | nach MarketComparison-Befund gestoppt |
+| LIVE-02C | `not_run` | nach MarketComparison-Befund gestoppt |
+| LIVE-03 API/BFF | `not_run` | nach MarketComparison-Befund gestoppt |
+| Human-Review-Artefakt | `not_created` | technische Smokes nicht vollständig |
 
-Ein erster isolierter Gate-Versuch konnte Word COM und esbuild nicht öffnen.
-Der unveränderte Lauf in der lokalen Host-Sitzung bestand diese Schritte. Ein
-weiterer kompletter Lauf hatte einen nicht reproduzierten späteren E2E-Fehler;
-der exit-code-treue Abschlusslauf bestand anschließend sämtliche Teilgates.
-Es wurden dafür keine Produkt- oder Teständerungen vorgenommen.
+Die Content Reviews, Anchors und MarketComparison lagen ausschließlich in der
+temporären D0-Datenbank. Der Harness entfernte Session, Datenbank, Sources,
+Checkpoints und Exporte nach dem Fehler vollständig.
 
 ## Haltepunkt
 
-Attempt 3 ist beendet. Es gibt keine gültige Anchor-Review-Session und keine
-Autorisierung für weitere externe Requests. RUN 4 wurde nicht begonnen.
+RUN 4 wurde nicht begonnen. Ein weiterer Live-Retest ist nicht autorisiert.
