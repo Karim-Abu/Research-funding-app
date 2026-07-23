@@ -74,6 +74,29 @@ async function openProject(page: Page, heading: RegExp): Promise<void> {
   await expect(page).not.toHaveURL(/\/$/, { timeout: 20_000 })
 }
 
+/**
+ * Anforderungszeilen der Reihe nach aufklappen, bis der präzise Statustext
+ * (STATUS_LABELS, nur im Detail sichtbar) erscheint. Gibt true zurück, wenn
+ * gefunden; nicht passende Zeilen werden wieder eingeklappt.
+ */
+async function expandUntilDetailText(page: Page, text: string): Promise<boolean> {
+  const rows = page.locator('[id^="req-"] > button')
+  // count() wartet nicht — erst das asynchrone Laden der Liste abwarten.
+  await rows.first().waitFor({ state: "visible", timeout: 20_000 })
+  const rowCount = await rows.count()
+  for (let i = 0; i < rowCount; i++) {
+    await rows.nth(i).click()
+    const found = await page
+      .getByText(text, { exact: false })
+      .first()
+      .isVisible()
+      .catch(() => false)
+    if (found) return true
+    await rows.nth(i).click()
+  }
+  return false
+}
+
 test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
   test("B1: Erstimport setzt die Primärquelle (Gruppe «Primärer Innolink-Antrag»)", async ({ page }) => {
     test.setTimeout(300_000)
@@ -86,10 +109,9 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
     await page.getByTestId("intake-file-input").setInputFiles(FIXTURE_PDF)
     await choosePublic(page)
     await page.getByRole("button", { name: "Projekt erstellen und weiter" }).click()
-    await expect(page).toHaveURL(/\/quellen/, { timeout: 30_000 })
-
-    // Erstimport abwarten — er weist die Primärquelle implizit zu.
-    await page.goto("/import")
+    // Mit hochgeladenem PDF führt der Intake direkt in den Import-Review;
+    // der Erstimport weist die Primärquelle implizit zu.
+    await expect(page).toHaveURL(/\/import/, { timeout: 30_000 })
     await expect(page.getByTestId("import-review")).toBeVisible({
       timeout: 120_000,
     })
@@ -276,9 +298,13 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
     expect(byId["REQ.INNO.BUDGET.IMPLEMENTATION_SHARE_40_60"]).toBe("fulfilled")
     expect(byId["REQ.INNO.BUDGET.CASH_MIN5"]).toBe("fulfilled")
     expect(byId["REQ.INNO.DURATION.TYPICAL_6_36"]).toBe("partial")
+    test.info().annotations.push({
+      type: "statuses-52-5-projekt",
+      description: JSON.stringify(byId),
+    })
 
-    // B4 im selben Projekt: Erfüllt / Teilweise erfüllt / Nicht beurteilbar /
-    // Hinweise; keine rohen Regel-IDs im Standardfluss.
+    // B4 im selben Projekt: Erfüllt / Teilweise erfüllt / Hinweise; keine
+    // rohen Regel-IDs im Standardfluss.
     await page.goto("/anforderungen")
     await expect(page.getByText("Fördervoraussetzungen").first()).toBeVisible({
       timeout: 20_000,
@@ -288,9 +314,6 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
       page.getByText("Teilweise erfüllt", { exact: true }).first()
     ).toBeVisible()
     await expect(
-      page.getByText("Nicht beurteilbar", { exact: true }).first()
-    ).toBeVisible()
-    await expect(
       page.getByRole("heading", { name: "Hinweise", exact: true })
     ).toBeVisible()
     await expect(page.getByText(/REQ\.INNO\./).first()).not.toBeVisible()
@@ -298,6 +321,7 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
 
     // B3: Regelgrundlage mit offizieller Quelle + Link in der Detailansicht.
     const rows = page.locator('[id^="req-"] > button')
+    await rows.first().waitFor({ state: "visible", timeout: 20_000 })
     const rowCount = await rows.count()
     let ruleEvidenceFound = false
     for (let i = 0; i < rowCount; i++) {
@@ -326,9 +350,19 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
     await expect(page.getByText("Fördervoraussetzungen").first()).toBeVisible({
       timeout: 20_000,
     })
-    await expect(
-      page.getByText("Nicht erfüllt", { exact: true }).first()
-    ).toBeVisible()
+    // Der präzise Status «Nicht erfüllt» steht im aufgeklappten Detail
+    // (kollabiert zeigt die Zeile das Bucket-Badge «Blocker»).
+    await expect(page.getByText("Blocker", { exact: true }).first()).toBeVisible()
+    expect(await expandUntilDetailText(page, "Nicht erfüllt —")).toBe(true)
+
+    // «Nicht beurteilbar» (needs_input): Demo-Projekt A ohne Budgetzahlen —
+    // kollabiert als «Offen» gebündelt, präzise im Detail.
+    await openProject(page, /Verbundwerkstoffe \(Demo\)/)
+    await page.goto("/anforderungen")
+    await expect(page.getByText("Fördervoraussetzungen").first()).toBeVisible({
+      timeout: 20_000,
+    })
+    expect(await expandUntilDetailText(page, "Nicht beurteilbar —")).toBe(true)
     // «Nicht geprüft» (not_run) ist über die Prüfstatus-Ansicht abgedeckt
     // (review-truth.spec: eigenes Segment, nie grün) und in B9 unten.
   })
@@ -450,6 +484,8 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
     await login(page)
     await openProject(page, /Verbundwerkstoffe \(Demo\)/)
     await page.goto("/editor?field=INTRO.APP.EXECUTIVE_SUMMARY")
+    // Der KI-Bereich ist nur im Modus «Vorschläge» sichtbar (CSS-hidden sonst).
+    await page.getByRole("button", { name: "Vorschläge", exact: true }).click()
     // Gespeicherter Vorschlag aus dem Lauf (Seed) wird zum Prüfen angeboten.
     await expect(page.getByTestId("run-suggestion-hint")).toBeVisible({
       timeout: 30_000,
