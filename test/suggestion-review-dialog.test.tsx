@@ -171,9 +171,11 @@ describe("SuggestionReviewDialog", () => {
       />
     )
     expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled()
-    expect(screen.getByTestId("suggestion-manifest-summary")).toHaveTextContent(
-      "Veraltet: source_version_changed"
+    // RUN 4B §4 — Klartext-Grund statt Roh-Code, plus nächste Aktion.
+    expect(screen.getByTestId("suggestion-stale-notice")).toHaveTextContent(
+      "Vorschlag veraltet: Eine verwendete Quelle liegt in neuer Version vor. Erzeugen Sie einen neuen Vorschlag."
     )
+    expect(screen.queryByText(/source_version_changed/)).toBeNull()
   })
 
   it("«Eigene Bearbeitung öffnen» ruft onEdit ohne Ablehnung", () => {

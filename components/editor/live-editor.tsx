@@ -1613,6 +1613,18 @@ export function LiveEditor({
                     </Button>
                   )}
               </div>
+              {/* RUN 4B §4/§10 — ehrlicher Pending-Zustand mit aria-live. */}
+              {a2Loading && (
+                <p
+                  role="status"
+                  aria-live="polite"
+                  data-testid="a2-pending"
+                  className="text-xs text-muted-foreground"
+                >
+                  Vorschlag wird erzeugt … Ihr Entwurf bleibt unverändert, bis
+                  Sie den Vorschlag prüfen und übernehmen.
+                </p>
+              )}
               {a2Suggestion && !a2ReviewOpen && (
                 <div
                   className="flex flex-col gap-1"

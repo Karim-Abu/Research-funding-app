@@ -23,7 +23,7 @@ import {
 import { rationaleChips } from "@/lib/suggestion-view"
 import { VERIFICATION_LABELS, type VerificationStatus } from "@/lib/evidence"
 import { charCount } from "@/lib/fields"
-import type { A2Suggestion } from "@/lib/redraft"
+import { staleReasonLabel, type A2Suggestion } from "@/lib/redraft"
 import { GENERATION_KIND_BADGE_CLASS, generationLabel } from "@/lib/generation-kind"
 
 const WARNING_LABELS: Record<string, string> = {
@@ -375,13 +375,26 @@ export function SuggestionReviewDialog({
             {overLimit ? " — über dem Limit" : ""}
           </p>
 
+          {/* RUN 4B §4 — veralteter Vorschlag: Klartext-Grund + nächste Aktion,
+              prominent (die Übernahme ist unten deaktiviert). */}
+          {suggestion.stale_reason && (
+            <p
+              role="status"
+              data-testid="suggestion-stale-notice"
+              className="rounded-md border border-status-partial/40 bg-status-partial/10 px-3 py-2 text-xs text-foreground"
+            >
+              Vorschlag veraltet: {staleReasonLabel(suggestion.stale_reason)}{" "}
+              Erzeugen Sie einen neuen Vorschlag.
+            </p>
+          )}
+
           {suggestion.manifest_id && (
             <div className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground" data-testid="suggestion-manifest-summary">
               <span>Modus: {suggestion.improvement_mode ?? "clearer"}</span>
               <span>Registry-Punkte: {suggestion.used_rule_ids?.length ?? 0}</span>
               <span>Belege: {suggestion.source_version_ids?.length ?? 0}</span>
               <span>Fehlende Angaben: {suggestion.missing_inputs?.length ?? 0}</span>
-              {suggestion.stale_reason && <span>Veraltet: {suggestion.stale_reason}</span>}
+              {suggestion.stale_reason && <span>Veraltet</span>}
             </div>
           )}
 

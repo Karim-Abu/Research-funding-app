@@ -296,6 +296,36 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
 /** Fail-closed-Anzeige, wenn ein 503 ohne bekannten Code eintrifft. */
 export const FALLBACK_AI_REASON = "provider_unavailable"
 
+// RUN 4B §4 — Klartext je Staleness-Grund (kanonische Codes aus
+// backend/app/agents/suggestion_staleness.py + Legacy stale_base_version).
+// Reine Anzeige-Strings; die Prüfung bleibt serverseitig.
+export const STALE_REASON_LABELS: Record<string, string> = {
+  draft_version_changed: "Der Abschnitt wurde seit diesem Vorschlag geändert.",
+  context_manifest_missing:
+    "Der Kontext dieses Vorschlags ist nicht mehr verfügbar.",
+  run_snapshot_changed: "Die Projektdaten wurden seither aktualisiert.",
+  primary_application_version_changed:
+    "Das zugrunde liegende Antragsdokument wurde aktualisiert.",
+  registry_version_changed:
+    "Die Innolink-Anforderungsliste wurde aktualisiert.",
+  field_instruction_changed:
+    "Die Vorgaben für dieses Feld haben sich geändert.",
+  anchor_changed: "Eine verwendete Fundstelle ist nicht mehr bestätigt.",
+  source_version_changed: "Eine verwendete Quelle liegt in neuer Version vor.",
+  market_comparison_changed: "Der Marktvergleich wurde seither aktualisiert.",
+  stale_base_version: "Der Abschnitt wurde seit diesem Vorschlag geändert.",
+}
+
+export function staleReasonLabel(
+  reason: string | null | undefined
+): string | null {
+  if (!reason) return null
+  return (
+    STALE_REASON_LABELS[reason] ??
+    "Dieser Vorschlag basiert nicht mehr auf dem aktuellen Stand."
+  )
+}
+
 const MESSAGES: Record<string, string> = {
   stale_base_version: "Dieser Abschnitt wurde zwischenzeitlich geändert.",
 }

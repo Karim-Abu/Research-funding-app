@@ -7,7 +7,40 @@ import {
   isA2Field,
   parseAIProposal,
   RedraftError,
+  STALE_REASON_LABELS,
+  staleReasonLabel,
 } from "@/lib/redraft"
+
+// RUN 4B §4 — jeder kanonische Staleness-Code hat einen Klartext; unbekannte
+// Codes fallen ehrlich auf einen generischen Satz zurück (nie Roh-Enum).
+describe("staleReasonLabel", () => {
+  it("deckt alle neun kanonischen Codes + Legacy ab", () => {
+    for (const code of [
+      "draft_version_changed",
+      "context_manifest_missing",
+      "run_snapshot_changed",
+      "primary_application_version_changed",
+      "registry_version_changed",
+      "field_instruction_changed",
+      "anchor_changed",
+      "source_version_changed",
+      "market_comparison_changed",
+      "stale_base_version",
+    ]) {
+      expect(STALE_REASON_LABELS[code]).toBeTruthy()
+      expect(staleReasonLabel(code)).toBe(STALE_REASON_LABELS[code])
+      expect(staleReasonLabel(code)).not.toMatch(/_/)
+    }
+  })
+
+  it("unbekannter Code → generischer Klartext; leer → null", () => {
+    expect(staleReasonLabel("some_future_code")).toBe(
+      "Dieser Vorschlag basiert nicht mehr auf dem aktuellen Stand."
+    )
+    expect(staleReasonLabel(null)).toBeNull()
+    expect(staleReasonLabel(undefined)).toBeNull()
+  })
+})
 
 const FIELD = "SOL.INNOVATION_SOLUTION.EDITOR"
 const REDRAFT_URL = `/api/runs/r1/fields/${FIELD}/redrafts`
