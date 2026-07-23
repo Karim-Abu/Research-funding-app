@@ -35,12 +35,29 @@ from app.evidence.tokenize import content_terms
 from app.fields import service as fields_service
 from app.market import verify as market_verify
 from app.reliability.executor import run_reliability_pass
+from app.repositories import draft_suggestions as suggestions_repo
 from app.repositories import drafts as drafts_repo
 
 logger = logging.getLogger("app.demo.evaluation")
 
 SOL_FIELD = "SOL.INNOVATION_SOLUTION.EDITOR"
 VC_FIELD = "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+SUMMARY_FIELD = "INTRO.APP.EXECUTIVE_SUMMARY"
+
+# Stored fake-demo suggestion citing the verified anchor (Final-Acceptance-Slice):
+# makes the projected evidence details (Quelle/Fundstelle/Ausschnitt/Status)
+# deterministically visible in the editor via the real read path. Honest demo
+# text — no invented facts, placeholders instead of numbers.
+_SUMMARY_SUGGESTION_TEXT = (
+    "Zusammenfassung des Vorhabens: Ausgangslage, Innovationsziel und geplanter "
+    "Nutzen in allgemein verständlicher Sprache. Die technische Grundlage ist "
+    "durch eine geprüfte Fundstelle aus den Projektunterlagen gestützt; fehlende "
+    "Baselines und Marktzahlen bleiben als [Platzhalter] markiert statt erfunden."
+)
+_SUMMARY_SUGGESTION_RATIONALE = (
+    "Deterministischer Demo-Vorschlag: verweist auf eine geprüfte Fundstelle "
+    "aus den Projektunterlagen; kein echtes KI-Modell beteiligt."
+)
 
 # A synthetic PUBLIC market source (no network). The verified quote is an exact substring.
 _MARKET_SOURCE_TEXT = (
@@ -183,6 +200,44 @@ def _ensure_market_comparison(db: Session, project: Project) -> None:
     db.flush()
 
 
+def _ensure_summary_suggestion(db: Session, run: AnalysisRun,
+                               anchor: EvidenceAnchor) -> None:
+    """Stored proposed fake-demo suggestion for the Executive Summary citing the
+    verified anchor — view-only (no seeded AsyncOperation, so it cannot be
+    accepted; accept mechanics are covered by the real A2 flow/E2E)."""
+    draft = drafts_repo.get_draft(db, run.run_id, SUMMARY_FIELD)
+    if draft is None:
+        raise RuntimeError(
+            f"Evaluation enrichment: missing draft field {SUMMARY_FIELD}."
+        )
+    if suggestions_repo.get_proposed_for(
+        db, run.run_id, draft.draft_id, draft.current_version_id, None
+    ) is not None:
+        return
+    suggestions_repo.create(
+        db, run,
+        draft_id=draft.draft_id,
+        base_version_id=draft.current_version_id,
+        field_id=SUMMARY_FIELD,
+        profile_id="A2.introduction_public_summary",
+        operation_id=stable_id("eval-suggestion-op", run.run_id),
+        agent_invocation_id=None,
+        prompt_version=None,
+        model_route=None,
+        model_id=None,
+        generation_kind="fake_demo",
+        target_section=None,
+        section_result_json=None,
+        suggested_text=_SUMMARY_SUGGESTION_TEXT,
+        rationale=_SUMMARY_SUGGESTION_RATIONALE,
+        evidence_anchor_ids=[anchor.anchor_id],
+        open_issue_ids=[],
+        placeholders=[],
+        character_count=len(_SUMMARY_SUGGESTION_TEXT),
+    )
+    db.flush()
+
+
 def apply_evaluation(db: Session) -> None:
     """Idempotently apply the M10 evaluation enrichment to the main demo project."""
     project, run = _main_run(db)
@@ -197,6 +252,9 @@ def apply_evaluation(db: Session) -> None:
 
     # Source-backed market comparison (deterministic, no network).
     _ensure_market_comparison(db, project)
+
+    # Stored suggestion with a real verified citation (evidence-read slice proof).
+    _ensure_summary_suggestion(db, run, anchor)
     db.commit()
     db.expire_all()
 

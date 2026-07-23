@@ -12,6 +12,7 @@ from app.db.models import (
     ControlResult,
     DemoSeedManifest,
     DraftClaim,
+    DraftSuggestion,
     DraftVersion,
     EvidenceAnchor,
     EvidenceCandidate,
@@ -140,6 +141,8 @@ def reset_demo_data(db: Session, *, seed_version: str = SEED_VERSION) -> int:
             )
         )
         db.execute(delete(RuleResult).where(RuleResult.run_id.in_(run_ids)))
+        # Seed-owned advisory suggestions (evaluation enrichment) — run-scoped.
+        db.execute(delete(DraftSuggestion).where(DraftSuggestion.run_id.in_(run_ids)))
         if draft_ids:
             db.execute(delete(DraftVersion).where(DraftVersion.draft_id.in_(draft_ids)))
         db.execute(delete(PortalFieldDraft).where(PortalFieldDraft.run_id.in_(run_ids)))

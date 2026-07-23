@@ -12,7 +12,9 @@ from sqlalchemy import select
 
 from app.config.settings import get_settings
 from app.db.models import (
+    DraftSuggestion,
     DraftVersion,
+    EvidenceAnchor,
     MarketComparison,
     MarketComparisonItem,
     PortalFieldDraft,
@@ -21,7 +23,7 @@ from app.db.models import (
 )
 from app.db.session import SessionLocal
 from app.demo.dataset import DEMO_PROJECTS
-from app.demo.evaluation import VC_FIELD
+from app.demo.evaluation import SUMMARY_FIELD, VC_FIELD
 from app.demo.seed import seed_demo_data
 
 MAIN = DEMO_PROJECTS[0]
@@ -139,3 +141,41 @@ def test_evaluation_seed_is_idempotent(demo_enabled, db):
     assert len(_market_items(db)) == items_before
     # A new pass on the same scope reuses the summary (idempotent).
     assert _summary(db) is not None
+    # The stored fake-demo suggestion is not duplicated either.
+    assert len(_summary_suggestions(db)) == 1
+
+
+def _summary_suggestions(db):
+    return db.scalars(
+        select(DraftSuggestion).where(
+            DraftSuggestion.run_id == MAIN.run_id,
+            DraftSuggestion.field_id == SUMMARY_FIELD,
+            DraftSuggestion.status == "proposed",
+        )
+    ).all()
+
+
+def test_evaluation_seed_adds_suggestion_citing_verified_anchor(demo_enabled, db):
+    """Final-Acceptance-Slice: the seeded Executive-Summary suggestion cites the
+    run's verified anchor, so the read path can project real evidence details."""
+    seed_demo_data(reset=True, evaluation=True)
+    db.expire_all()
+    suggestions = _summary_suggestions(db)
+    assert len(suggestions) == 1
+    suggestion = suggestions[0]
+    assert suggestion.generation_kind == "fake_demo"
+    assert len(suggestion.evidence_anchor_ids) == 1
+    anchor = db.get(EvidenceAnchor, suggestion.evidence_anchor_ids[0])
+    assert anchor is not None
+    assert anchor.run_id == MAIN.run_id
+    assert anchor.verification_status == "exact_verified"
+    assert anchor.source_name and anchor.quote
+    # The suggestion targets the CURRENT base version (readable via GET).
+    draft = db.scalar(
+        select(PortalFieldDraft).where(
+            PortalFieldDraft.run_id == MAIN.run_id,
+            PortalFieldDraft.field_id == SUMMARY_FIELD,
+        )
+    )
+    assert draft is not None
+    assert suggestion.base_version_id == draft.current_version_id
