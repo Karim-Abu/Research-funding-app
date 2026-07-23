@@ -334,4 +334,36 @@ describe("PublicResearchPanel", () => {
     expect(screen.getByText("Standort").nextSibling).toHaveTextContent("unbestätigt")
     expect(screen.getByText(/anomaly detection, applied machine learning/)).toBeInTheDocument()
   })
+
+  it("hebt einen für alle Karten identischen relevance_reason einmal über die Liste", async () => {
+    // 2026-07-23: der Backend-Grund ist je Modul identisch — er erscheint einmal
+    // über der Liste statt wortgleich auf jeder Karte.
+    const workspace = liveWorkspace()
+    const base = workspace.results[0]
+    workspace.results = [
+      base,
+      { ...base, result_id: "result-2", title: "Second market source", source_url: "https://research.example.edu/second", final_url: "https://research.example.edu/second" },
+    ]
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace)))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    await screen.findByTestId("research-results")
+    expect(await screen.findByText("Second market source")).toBeInTheDocument()
+    expect(
+      screen.getAllByText("Treffer zum freigegebenen Recherchemodul; fachlich prüfen.")
+    ).toHaveLength(1)
+  })
+
+  it("zeigt unterschiedliche relevance_reasons weiterhin pro Karte", async () => {
+    const workspace = liveWorkspace()
+    const base = workspace.results[0]
+    workspace.results = [
+      base,
+      { ...base, result_id: "result-2", title: "Second market source", relevance_reason: "Anderer Grund; fachlich prüfen." },
+    ]
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace)))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    await screen.findByTestId("research-results")
+    expect(await screen.findByText("Treffer zum freigegebenen Recherchemodul; fachlich prüfen.")).toBeInTheDocument()
+    expect(screen.getByText("Anderer Grund; fachlich prüfen.")).toBeInTheDocument()
+  })
 })

@@ -36,6 +36,11 @@ class QueryCandidateDto(BaseModel):
     # R8 Freigabepflicht: pending Freigabe je Query; der Nutzer entscheidet über die
     # bestehenden /search-query-approvals/{id}/approve|reject-Endpoints.
     approval_id: str | None = None
+    # Additiv (Freigabe 2026-07-23): persistierter Freigabe-Status der Query
+    # ("pending"/"approved"/"rejected"/"expired"/"used"/"blocked"). Der Plan liefert
+    # beim Re-Plan auch bereits entschiedene Queries — ohne Status rendert die UI
+    # sie fälschlich als offen und ein erneutes Freigeben endet im 409.
+    status: str | None = None
 
 
 class MarketQueryPreviewInput(BaseModel):

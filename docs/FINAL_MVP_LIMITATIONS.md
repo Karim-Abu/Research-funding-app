@@ -40,6 +40,17 @@ RUN_4_COMPLETE
 LIVE-02B / LIVE-02C / LIVE-03 bleiben `blocked`; HUMAN-01 bleibt `pending`.
 Keine Umdeutung durch diese Abnahme.
 
+### Nachtrag 23.07.2026 — Live-Retest ausgeführt (neue Freigabe)
+
+Der P0-Retest wurde am 23.07.2026 mit neuer Owner-Freigabe ausgeführt
+(`docs/LIVE_RETEST_2026-07-23.md`). Ergebnis: Live-Web-E2E **passed**
+(reale Firecrawl-Kette, kein Timeout); LIVE-02A einmal live bestanden
+(akzeptierter echter A2-Vorschlag), über 3 Versuche nicht stabil;
+LIVE-02B fail-closed am Exakt-Zitat-Gate. Der frühere externe Blocker
+`provider_timeout` ist damit nachweislich behoben — der Status
+`COMBINED_LIVE_E2E_BLOCKED_BY_PROVIDER_TIMEOUT` ist überholt und wird durch
+`COMBINED_LIVE_E2E_PARTIAL_STRICT_GATES` ersetzt. HUMAN-01 bleibt `pending`.
+
 ## 2. Contract-Notizen (Stand nach dem Evidence-Read-Slice)
 
 - **GESCHLOSSEN — Evidence-Read-Gap:** Der Read-Pfad für gespeicherte
@@ -86,6 +97,10 @@ Keine Umdeutung durch diese Abnahme.
 
 - Live-Retest der blockierten Gates LIVE-02B / LIVE-02C / LIVE-03 (separat zu
   autorisieren; externer Provider-Timeout war die Ursache, kein Produktfehler).
+  **Ausgeführt 23.07.2026** mit neuer Freigabe — Ergebnis teilweise: Web-E2E
+  passed, LIVE-02A live bestanden (nicht stabil), 02B fail-closed am
+  Exakt-Zitat-Gate; Details `docs/LIVE_RETEST_2026-07-23.md`. Restpunkt neu:
+  robustere Zitat-Lokalisierung + produktgetreues Repair-Budget im Harness (P1).
 - HUMAN-01: menschlicher Qualitäts-Finalentscheid über echte LLM-Outputs.
 - Spotcheck-Re-Run mit produktgetreuem Repair-Budget (1+max_retries je Modus)
   und ausgewählten Belegen: Der Phase-E-Spotcheck dieser Abnahme (2 Calls,

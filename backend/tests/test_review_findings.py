@@ -53,6 +53,23 @@ def test_missing_research_partner_is_blocker(client):
     )
 
 
+def test_needs_input_findings_name_their_requirement(client):
+    """Regression 2026-07-23: N identische «benötigt zusätzliche Angaben»-Zeilen
+    waren in der Fix-Queue nicht unterscheidbar. Die Description nennt jetzt den
+    Anforderungstitel aus der Registry (reiner Anzeigetext, kein DTO-Feld)."""
+    _csrf, _pid, run_id = setup_completed_run(client)
+    pkg = get_review(client, run_id)
+    needs_input = [
+        f for f in pkg["findings"]
+        if "benötigt zusätzliche Angaben" in f["description"]
+    ]
+    assert needs_input, "Setup muss mindestens eine needs_input-Anforderung liefern"
+    for finding in needs_input:
+        assert finding["description"].startswith("Anforderung «"), finding["description"]
+    descriptions = [f["description"] for f in needs_input]
+    assert len(set(descriptions)) == len(descriptions), descriptions
+
+
 def test_findings_are_all_deterministic_source(client):
     _csrf, _pid, run_id = setup_completed_run(client)
     db = SessionLocal()

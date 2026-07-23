@@ -96,14 +96,24 @@ def compute_finding_specs(db: Session, run: AnalysisRun) -> list[FindingSpec]:
     )
     for assessment in assessments:
         if assessment.status == "needs_input":
+            # Der Anforderungstitel macht die sonst identischen Beispielzeilen in
+            # der Fix-Queue unterscheidbar (reiner Anzeigetext, kein DTO-Feld).
+            requirement = registry.requirements.get(assessment.requirement_id)
+            if requirement is not None and requirement.title:
+                needs_input_description = (
+                    f"Anforderung «{requirement.title}» benötigt zusätzliche "
+                    "Angaben, bevor sie abschliessend beurteilt werden kann."
+                )
+            else:
+                needs_input_description = (
+                    "Diese Anforderung benötigt zusätzliche Angaben, bevor sie "
+                    "abschliessend beurteilt werden kann."
+                )
             specs.append(
                 FindingSpec(
                     finding_code=f"requirement_needs_input:{assessment.requirement_id}",
                     severity="warning",
-                    description=(
-                        "Diese Anforderung benötigt zusätzliche Angaben, bevor sie "
-                        "abschliessend beurteilt werden kann."
-                    ),
+                    description=needs_input_description,
                     target_type="requirement_assessment",
                     target_id=assessment.assessment_id,
                     requirement_id=assessment.requirement_id,

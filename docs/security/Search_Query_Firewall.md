@@ -64,8 +64,10 @@ free-form idea **blocks** on its own.
 1. `POST /projects/{id}/search-query-firewall/preview` runs the firewall. For
    `require_human_approval` it persists a **pending** `SearchQueryApproval` storing only the
    `raw_query_hash` + `sanitized_query` + `redaction_summary` (**never the raw query**).
-2. `POST /search-query-approvals/{id}/approve|reject` decides it (only `pending` may
-   transition).
+2. `POST /search-query-approvals/{id}/approve|reject` decides it. `pending` transitions;
+   repeating the **identical** decision on an already-decided approval is idempotent
+   (returns the current state, no new audit event). Any other change on a non-pending
+   approval (approve↔reject, `expired`, `used`) stays a 409 `approval_not_pending`.
 3. `createResearchTask` with the `approval_id` re-hashes the incoming query and calls
    `consume_for_task`: it must match an **approved, unused** approval for the same project,
    then marks it **used** (`used_by_research_task_id`). Only the stored `sanitized_query`

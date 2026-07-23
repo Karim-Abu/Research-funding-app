@@ -342,4 +342,75 @@ describe("PortalTransfer copy governance (Slice 3)", () => {
     expect(JSON.stringify(bodies)).not.toContain("24")
     await waitFor(() => expect(writeText).toHaveBeenCalledWith("24"))
   })
+
+  it("Partner: eine beschriftete Zeilen-Kopie + leise Feld-Kopien in den Spalten", async () => {
+    // Regression 2026-07-23: statt sechs identischer «Kopieren»-Buttons pro
+    // Zeile gibt es genau eine Zeilen-Kopie plus Icon-Kopien je Spalte mit
+    // deutschen Labels (kein Roh-Key im a11y-Tree). Payloads unverändert.
+    sessionStorage.clear()
+    const writeText = vi.fn().mockResolvedValue(undefined)
+    setClipboard({ writeText })
+    const bodies: Array<Record<string, unknown>> = []
+    server.use(
+      http.post(STRUCTURED_COPY_URL, async ({ request }) => {
+        bodies.push((await request.json()) as Record<string, unknown>)
+        return HttpResponse.json({
+          copy_event_id: "structured-2",
+          target_type: "partner_cell",
+          target_key: "partner:0:partner_type",
+          created_at: new Date().toISOString(),
+        }, { status: 201 })
+      })
+    )
+    const snapshot: TransferSnapshotDto = {
+      snapshot_available: true,
+      stale: false,
+      stale_message: null,
+      project: { title: "Snapshot Project", instrument: "Instrument", duration_months: null, duration_copy_target: "duration", application_language: null },
+      partners: [{ index: 0, name: "Snapshot Partner", partner_type: "implementation_partner", project_role: "Rolle", country: "CH", swiss_value_creation: true, eligibility_status: "eligible", provenance: "Import bestätigt", copy_target_row: "partner:0" }],
+      budget: { values: [], ratios: [], rules: [] },
+      sources: [],
+      manual_portal_tasks: [],
+    }
+    render(
+      <PortalTransfer
+        fields={[field("INTRO.APP.ABSTRACT", "Sauberer Feldtext.")]}
+        review={reviewPkg()}
+        runId="r1"
+        copyEventsEnabled
+        transferSnapshot={snapshot}
+      />
+    )
+
+    // Feld-Kopie: deutsches Spalten-Label, kein Roh-Key, Event ohne Wert.
+    fireEvent.click(screen.getByRole("button", { name: "Typ kopieren" }))
+    await waitFor(() =>
+      expect(bodies).toEqual([
+        { target_type: "partner_cell", target_key: "partner:0:partner_type" },
+      ])
+    )
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith("implementation_partner")
+    )
+    expect(screen.queryByRole("button", { name: /partner_type kopieren/ })).toBeNull()
+
+    // Genau EINE beschriftete Zeilen-Kopie, tab-getrennter Wert, Event ohne Wert.
+    const rowButtons = screen.getAllByRole("button", { name: "Zeile kopieren" })
+    expect(rowButtons).toHaveLength(1)
+    fireEvent.click(rowButtons[0])
+    await waitFor(() => expect(bodies).toHaveLength(2))
+    expect(bodies[1]).toEqual({ target_type: "partner_row", target_key: "partner:0" })
+    await waitFor(() =>
+      expect(writeText).toHaveBeenCalledWith(
+        ["Snapshot Partner", "implementation_partner", "Rolle", "CH", "eligible"].join("\t")
+      )
+    )
+    expect(JSON.stringify(bodies)).not.toContain("Snapshot Partner")
+
+    // «erfasst» bleibt ein lokaler Sitzungsmarker ohne kopierte Werte.
+    fireEvent.click(screen.getAllByRole("checkbox")[0])
+    expect(
+      JSON.parse(sessionStorage.getItem("innolink-transfer-progress:r1") ?? "[]")
+    ).toEqual(["partner:0"])
+  })
 })

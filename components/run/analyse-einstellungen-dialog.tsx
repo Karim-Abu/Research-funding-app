@@ -357,11 +357,6 @@ export function AnalyseEinstellungenDialog({
                 <p className="text-sm font-medium text-foreground">
                   Suchanfragen für die Webrecherche
                 </p>
-                <p className="text-xs text-muted-foreground">
-                  Diese abstrahierten Suchanfragen würden an die öffentliche
-                  Websuche gesendet. Geben Sie frei, was gesendet werden darf —
-                  Sie können jede Anfrage auch bearbeiten oder ablehnen.
-                </p>
                 {webQueriesLoading && (
                   <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
                     <Loader2 className="size-3.5 animate-spin" /> Suchanfragen
@@ -407,80 +402,92 @@ export function AnalyseEinstellungenDialog({
             <Separator className="lg:hidden" />
 
             <div className="flex min-w-0 flex-col gap-5">
-            <div className="flex flex-col gap-1.5">
-              <label
-                htmlFor="cost-limit"
-                className="text-sm font-medium text-foreground"
-              >
-                Kostenlimit für diesen Durchlauf
-              </label>
-              <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">CHF</span>
-                <Input
-                  id="cost-limit"
-                  type="number"
-                  step="0.01"
-                  value={costLimit}
-                  onChange={(e) => setCostLimit(e.target.value)}
-                  className="w-32"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                Beim Erreichen stoppt der Durchlauf automatisch. Dieser Schutz
-                lässt sich nicht abschalten.
-              </p>
-            </div>
-
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">
-                Vertraulichkeitsstufe
+            {/* Eine ruhige Gruppe statt zweier gleichrangiger Panels. */}
+            <div className="flex flex-col gap-4 rounded-md border border-border p-3">
+              <span className="text-sm font-semibold text-foreground">
+                Limits und Datenschutz
               </span>
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
-                  {dataClassLabel[dataClass]}
+              <div className="flex flex-col gap-1.5">
+                <label
+                  htmlFor="cost-limit"
+                  className="text-sm font-medium text-foreground"
+                >
+                  Kostenlimit für diesen Durchlauf
+                </label>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-muted-foreground">CHF</span>
+                  <Input
+                    id="cost-limit"
+                    type="number"
+                    step="0.01"
+                    value={costLimit}
+                    onChange={(e) => setCostLimit(e.target.value)}
+                    className="w-32"
+                  />
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Beim Erreichen stoppt der Durchlauf automatisch. Dieser Schutz
+                  lässt sich nicht abschalten.
+                </p>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <span className="text-sm font-medium text-foreground">
+                  Vertraulichkeitsstufe
                 </span>
-                <span className="text-xs text-muted-foreground">
-                  Bestimmt, welche Dienste genutzt werden dürfen.
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="inline-flex items-center rounded-full bg-secondary px-2.5 py-0.5 text-xs font-medium text-secondary-foreground">
+                    {dataClassLabel[dataClass]}
+                  </span>
+                  <span className="text-xs text-muted-foreground">
+                    Bestimmt, welche Dienste genutzt werden dürfen.
+                  </span>
+                </div>
               </div>
             </div>
 
             {/* A2 — erwartete Phasen aus dem echten Phasenkatalog, mit ehrlich
-                angekündigten Skips. Keine Dauer-/Kostenprognose. */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-sm font-medium text-foreground">
-                Erwartete Phasen
-              </span>
-              <ol className="flex flex-col gap-1" data-testid="expected-phases">
-                {expectedPhases({
-                  ki: ki && aiAvailable,
-                  web: effectiveWeb,
-                  approvedQueryCount: webQueries
-                    ? approvedIds(webQueries).length
-                    : null,
-                }).map((phase, index) => (
-                  <li
-                    key={phase.key}
-                    className="flex items-baseline gap-2 text-xs"
-                  >
-                    <span className="tabular-nums text-muted-foreground/70">
-                      {index + 1}.
-                    </span>
-                    <span className="text-foreground">{phase.label}</span>
-                    {phase.note && (
-                      <span className="text-muted-foreground">
-                        — {phase.note}
-                      </span>
-                    )}
-                  </li>
-                ))}
-              </ol>
-              <p className="text-xs text-muted-foreground">
-                Die Dauer hängt vom Umfang der Unterlagen ab — der Fortschritt
-                ist während der Analyse Schritt für Schritt sichtbar. Die Kosten
-                sind durch das Limit oben begrenzt.
-              </p>
-            </div>
+                angekündigten Skips. Keine Dauer-/Kostenprognose. Eingeklappt,
+                damit der Dialog ruhig bleibt (progressive Disclosure). */}
+            <Accordion className="border-t border-border pt-1">
+              <AccordionItem value="phases">
+                <AccordionTrigger className="text-sm font-medium">
+                  Erwartete Phasen
+                </AccordionTrigger>
+                <AccordionContent>
+                  <div className="flex flex-col gap-1.5 pt-1">
+                    <ol className="flex flex-col gap-1" data-testid="expected-phases">
+                      {expectedPhases({
+                        ki: ki && aiAvailable,
+                        web: effectiveWeb,
+                        approvedQueryCount: webQueries
+                          ? approvedIds(webQueries).length
+                          : null,
+                      }).map((phase, index) => (
+                        <li
+                          key={phase.key}
+                          className="flex items-baseline gap-2 text-xs"
+                        >
+                          <span className="tabular-nums text-muted-foreground/70">
+                            {index + 1}.
+                          </span>
+                          <span className="text-foreground">{phase.label}</span>
+                          {phase.note && (
+                            <span className="text-muted-foreground">
+                              — {phase.note}
+                            </span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="text-xs text-muted-foreground">
+                      Die Dauer hängt vom Umfang der Unterlagen ab — der
+                      Fortschritt ist während der Analyse Schritt für Schritt
+                      sichtbar. Die Kosten sind durch das Limit oben begrenzt.
+                    </p>
+                  </div>
+                </AccordionContent>
+              </AccordionItem>
+            </Accordion>
 
             {/* Tier 2 — only for lead_admin */}
             {role === "lead_admin" && (

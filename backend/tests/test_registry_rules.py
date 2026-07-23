@@ -114,6 +114,19 @@ def test_missing_input_is_needs_input_not_guessed():
     assert out.outcome_label == "needs_input"
 
 
+def test_no_sanction_reason_reads_as_positive_outcome():
+    """Regression 2026-07-23: «Keine Sanktion angegeben.» las sich wie ein
+    Mangel, obwohl das Ergebnis positiv ist — der Grund nennt jetzt Kontext
+    und Folge."""
+    rule = next(
+        r for r in reg.rules.values()
+        if r.condition.get("type") == "conditional_human_gate"
+    )
+    out = evaluate_rule(rule, RuleInputs(sanction_answer=False), rule_version=RV)
+    assert out.mapping_key == "no"
+    assert "keine zusätzliche menschliche Prüfung nötig" in out.reason
+
+
 def test_max18_not_applicable_with_implementation_partner():
     rule = _rule("INNO.DURATION.MAX18_WITHOUT_IMPLEMENTATION_PARTNER")
     out = evaluate_rule(rule, RuleInputs(partners=[_impl(swiss_value_creation=True)]), rule_version=RV)

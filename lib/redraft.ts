@@ -217,9 +217,11 @@ export class RedraftError extends Error {
 
 // R4.2 — Owner-approved Microcopy je Reason-Code (docs/repair/message-catalog.md
 // §R4.2). Text und CTA-Label sind freigegeben; Änderungen laufen über den Katalog.
+// Ohne ctaLabel rendert der Hinweis bewusst ohne Aktion (z. B. field_not_supported:
+// es gibt dort keine echte Aktion — Katalog-Update 2026-07-23).
 export interface AiReasonInfo {
   text: string
-  ctaLabel: string
+  ctaLabel?: string
 }
 
 export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
@@ -289,7 +291,6 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
   },
   field_not_supported: {
     text: "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
-    ctaLabel: "Strukturvorlage nutzen",
   },
 }
 

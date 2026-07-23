@@ -1,18 +1,18 @@
 # LIVE WEB SMOKE REPORT
 
 - Provider: `firecrawl`
-- Timestamp: `2026-07-21T20:28:52+00:00`
+- Timestamp: `2026-07-23T19:49:03+00:00`
 - Execution Mode: `live`
 - Calls: `3`
-- Duration ms: `7583`
+- Duration ms: `11733`
 - Credits/Cost: `not_available`
 - Status: `passed`
 - Reason Codes: none
-- Result ID: `72a3b582-4b0a-41ba-9111-861fde61675c`
-- Research Task ID: `3388e4fc-87e1-486f-84e7-8503d81772d9`
-- Approval ID: `eac0ee14-09ec-4209-b0de-483a6bb4954e`
-- Source ID: `51dc5379-6684-41fa-a137-2ada0e8e87e8`
-- Source Version ID: `15c3774c-ee3b-4fd4-897b-9e24a5c81000`
+- Result ID: `9f855e4f-9986-44a4-8aab-232ec612c908`
+- Research Task ID: `b3bf9b71-2cd5-485a-8f0e-4e756e9875b2`
+- Approval ID: `245b2dbc-a0eb-46bb-9b9e-9918bd971475`
+- Source ID: `670c8e85-3d10-4e41-a9d0-444bd6504668`
+- Source Version ID: `80dc9613-6381-4b87-b7db-665386450262`
 - Public Domain: `www.bfe.admin.ch`
 - query_hash: `4d54037dd45c40dce2627af494a78d45e0ed2d22f55dae23e298159f94fa71f7`
 - risk_level: `low`

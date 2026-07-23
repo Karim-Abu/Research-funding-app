@@ -249,7 +249,12 @@ def h_conditional_human_gate(rule: RuleDef, inputs: RuleInputs) -> Handled:
     if answer is None:
         return "missing", observed, "Angabe zur wissenschaftlichen Integrität fehlt."
     if answer is False:
-        return "no", observed, "Keine Sanktion angegeben."
+        return (
+            "no",
+            observed,
+            "Keine Sanktion wegen Verletzung der wissenschaftlichen Integrität "
+            "angegeben — keine zusätzliche menschliche Prüfung nötig.",
+        )
     if inputs.human_decision_present:
         return "yes_reviewed", observed, "Sanktion angegeben — menschliche Entscheidung erforderlich."
     return "yes_unreviewed", observed, "Sanktion angegeben, noch nicht geprüft."

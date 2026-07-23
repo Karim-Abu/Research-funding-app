@@ -18,13 +18,26 @@ function partnerCellTarget(index: number, key: string) {
   return `partner:${index}:${key}`
 }
 
-function CopyValue({ runId, enabled, targetType, targetKey, value, label }: Readonly<{
+// Deutsche Spaltennamen für Kopier-Beschriftungen — rohe Feld-Keys erreichen
+// die UI (auch den a11y-Tree) nicht.
+const PARTNER_COLUMN_LABELS: Record<string, string> = {
+  name: "Partner",
+  partner_type: "Typ",
+  project_role: "Rolle",
+  country: "Land",
+  research_partner_eligibility_status: "Prüfstatus",
+}
+
+function CopyValue({ runId, enabled, targetType, targetKey, value, label, iconOnly = false, text = "Kopieren" }: Readonly<{
   runId: string | null
   enabled: boolean
   targetType: StructuredCopyTarget
   targetKey: string
   value: string
   label: string
+  /** Leiser Icon-Button direkt neben dem Wert (Zellen-Kopie in der Tabelle). */
+  iconOnly?: boolean
+  text?: string
 }>) {
   const [copied, setCopied] = React.useState(false)
   const [note, setNote] = React.useState<string | null>(null)
@@ -44,11 +57,29 @@ function CopyValue({ runId, enabled, targetType, targetKey, value, label }: Read
       setNote("Automatisches Kopieren ist nicht möglich.")
     }
   }
+  if (iconOnly) {
+    return (
+      <span className="inline-flex flex-col items-start gap-1">
+        <Button
+          type="button"
+          size="icon-xs"
+          variant="ghost"
+          className="text-muted-foreground"
+          onClick={() => void copy()}
+          aria-label={label}
+          title={label}
+        >
+          {copied ? <Check className="size-3.5" /> : <Copy className="size-3.5" />}
+        </Button>
+        {note && <span role="status" className="text-[11px] text-muted-foreground">{note}</span>}
+      </span>
+    )
+  }
   return (
     <span className="inline-flex flex-col items-start gap-1">
       <Button type="button" size="sm" variant="outline" onClick={() => void copy()} aria-label={label}>
         {copied ? <Check data-icon="inline-start" /> : <Copy data-icon="inline-start" />}
-        {copied ? "Kopiert" : "Kopieren"}
+        {copied ? "Kopiert" : text}
       </Button>
       {note && <span role="status" className="text-[11px] text-muted-foreground">{note}</span>}
     </span>
@@ -113,8 +144,48 @@ export function StructuredTransfer({
             <thead><tr className="border-b border-border text-muted-foreground"><th className="p-2">Partner</th><th className="p-2">Typ</th><th className="p-2">Rolle</th><th className="p-2">Land</th><th className="p-2">Prüfstatus</th><th className="p-2">Übernahme</th></tr></thead>
             <tbody>{snapshot.partners.map((partner) => {
               const rowText = [partner.name, partner.partner_type, partner.project_role, partner.country, partner.eligibility_status].join("\t")
-              const cells: Array<[string, string]> = [["name", partner.name], ["partner_type", partner.partner_type], ["project_role", partner.project_role], ["country", partner.country], ["research_partner_eligibility_status", partner.eligibility_status]]
-              return <tr key={partner.copy_target_row} className="border-b border-border/60 align-top"><td className="p-2">{partner.name}</td><td className="p-2">{partner.partner_type_label ?? partner.partner_type}</td><td className="p-2">{partner.project_role}</td><td className="p-2">{partner.country}</td><td className="p-2">{partner.eligibility_status_label ?? partner.eligibility_status}</td><td className="p-2"><div className="flex flex-wrap gap-1"><CopyValue runId={runId} enabled={copyEventsEnabled} targetType="partner_row" targetKey={partner.copy_target_row} value={rowText} label="Partnerzeile kopieren" />{cells.map(([key, value]) => <CopyValue key={key} runId={runId} enabled={copyEventsEnabled} targetType="partner_cell" targetKey={partnerCellTarget(partner.index, key)} value={value} label={`${key} kopieren`} />)}<label className="flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={checked.has(partner.copy_target_row)} onChange={() => toggle(partner.copy_target_row)} />erfasst</label></div></td></tr>
+              // Kopiert wird immer der Portalwert (Roh-Feld) — angezeigt das Label.
+              const cells: Array<[key: string, displayed: React.ReactNode, copyValue: string]> = [
+                ["name", partner.name, partner.name],
+                ["partner_type", partner.partner_type_label ?? partner.partner_type, partner.partner_type],
+                ["project_role", partner.project_role, partner.project_role],
+                ["country", partner.country, partner.country],
+                ["research_partner_eligibility_status", partner.eligibility_status_label ?? partner.eligibility_status, partner.eligibility_status],
+              ]
+              return (
+                <tr key={partner.copy_target_row} className="border-b border-border/60 align-top">
+                  {cells.map(([key, displayed, copyValue]) => (
+                    <td key={key} className="p-2">
+                      <span className="inline-flex items-center gap-1">
+                        {displayed}
+                        <CopyValue
+                          runId={runId}
+                          enabled={copyEventsEnabled}
+                          targetType="partner_cell"
+                          targetKey={partnerCellTarget(partner.index, key)}
+                          value={copyValue}
+                          label={`${PARTNER_COLUMN_LABELS[key] ?? key} kopieren`}
+                          iconOnly
+                        />
+                      </span>
+                    </td>
+                  ))}
+                  <td className="p-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <CopyValue
+                        runId={runId}
+                        enabled={copyEventsEnabled}
+                        targetType="partner_row"
+                        targetKey={partner.copy_target_row}
+                        value={rowText}
+                        label="Zeile kopieren"
+                        text="Zeile kopieren"
+                      />
+                      <label className="flex items-center gap-1 whitespace-nowrap"><input type="checkbox" checked={checked.has(partner.copy_target_row)} onChange={() => toggle(partner.copy_target_row)} />erfasst</label>
+                    </div>
+                  </td>
+                </tr>
+              )
             })}</tbody>
           </table>
         </div>

@@ -161,7 +161,7 @@ def plan_market_research(
         ),
         queries=[QueryCandidateDto(
             query_text=q.query_text, purpose=q.planner_purpose, public_safe=True,
-            approval_required=True, approval_id=q.approval_id,
+            approval_required=True, approval_id=q.approval_id, status=q.status,
         ) for q in market_queries],
         provider_mode=_provider_mode(settings),
     )
@@ -211,7 +211,7 @@ def preview_market_query(
         return QueryCandidateDto(
             query_text=view.query_text, purpose=purpose,
             public_safe=view.status != "blocked" and view.approval_id is not None,
-            approval_required=True, approval_id=view.approval_id,
+            approval_required=True, approval_id=view.approval_id, status=view.status,
         )
     except brief_service.BriefError as exc:
         db.rollback()

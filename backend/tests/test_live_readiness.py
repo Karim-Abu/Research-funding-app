@@ -102,9 +102,15 @@ def test_capabilities_modes_are_distinct():
     assert get_capabilities(_=object(), settings=fake).generation_mode == "fake_demo"
     off = Settings(ai_eval_mode="off", agent_fake_provider=False)
     assert get_capabilities(_=object(), settings=off).generation_mode == "unavailable"
+    # Hermetisch: Settings() liest sonst backend/.env — seit der Live-Aktivierung
+    # (2026-07-23) stehen dort echte Modell-IDs. Dieses Szenario meint explizit
+    # «real, aber keine Modell-ID konfiguriert».
     live = Settings(
         ai_eval_mode="real", agent_fake_provider=False,
         openai_api_key="sk-test-not-real",
+        agent_model_gpt_56_luna_id=None, agent_model_gpt_56_terra_id=None,
+        agent_model_gpt_56_sol_id=None, agent_model_claude_haiku_45_id=None,
+        agent_model_claude_sonnet_5_id=None, agent_model_claude_fable_5_id=None,
     )
     caps = get_capabilities(_=object(), settings=live)
     assert caps.generation_mode == "live_unavailable"

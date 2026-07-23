@@ -32,6 +32,13 @@ os.environ["SOURCE_STORAGE_DIR"] = _TMP_STORAGE
 os.environ["EXPORT_STORAGE_DIR"] = _TMP_EXPORTS
 os.environ["MAX_UPLOAD_BYTES"] = "1048576"
 os.environ["CHECKPOINT_DB_PATH"] = _TMP_CHECKPOINTS
+# Die Pflicht-Suite ist für die Fake-/CI-Umgebung spezifiziert
+# (docs/evaluation/Provider_Mode_Matrix.md). Seit der Live-Aktivierung
+# (2026-07-23) kann backend/.env AI_EVAL_MODE=real setzen — Prozess-Env schlägt
+# .env, darum hier neutralisieren. Der opt-in Real-Provider-Smoke
+# (RUN_REAL_PROVIDER_SMOKE=true) bleibt unberührt und darf real bleiben.
+if os.environ.get("RUN_REAL_PROVIDER_SMOKE", "").casefold() != "true":
+    os.environ.setdefault("AI_EVAL_MODE", "off")
 
 from fastapi.testclient import TestClient  # noqa: E402
 

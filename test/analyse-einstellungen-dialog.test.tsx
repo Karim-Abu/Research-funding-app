@@ -125,8 +125,12 @@ describe("AnalyseEinstellungenDialog — Deaktivierungs-Gründe (A4)", () => {
 })
 
 describe("AnalyseEinstellungenDialog — erwartete Phasen (A2)", () => {
+  // Seit der Entdichtung (2026-07-23) sind die Phasen eingeklappt — erst der
+  // Trigger-Klick macht die Liste sichtbar (Base-UI unmountet zu Panels).
   it("zeigt die 6 Phasen mit ehrlichem Skip-Hinweis ohne Webrecherche", () => {
     renderDialog("public")
+    expect(screen.queryByTestId("expected-phases")).toBeNull()
+    fireEvent.click(screen.getByRole("button", { name: "Erwartete Phasen" }))
     const list = screen.getByTestId("expected-phases")
     expect(within(list).getByText("Unterlagen vorbereiten")).toBeInTheDocument()
     expect(
@@ -142,6 +146,7 @@ describe("AnalyseEinstellungenDialog — erwartete Phasen (A2)", () => {
   it("kündigt Feldvorschläge ohne KI an, wenn der KI-Schalter aus ist", () => {
     renderDialog("public")
     fireEvent.click(screen.getByRole("switch", { name: /KI-Unterstützung/ }))
+    fireEvent.click(screen.getByRole("button", { name: "Erwartete Phasen" }))
     const list = screen.getByTestId("expected-phases")
     expect(within(list).getByText("— ohne KI-Vorschläge")).toBeInTheDocument()
     expect(within(list).getByText("— ohne KI-Prüfung")).toBeInTheDocument()
@@ -392,6 +397,34 @@ describe("AnalyseEinstellungenDialog — cloud-processing gate", () => {
     // Der Start bleibt unabhängig von der Zahl der Freigaben möglich.
     fireEvent.click(screen.getByLabelText("Reale KI für diesen Evaluationsdurchlauf erlauben"))
     expect(screen.getByRole("button", { name: "Analyse starten" })).toBeEnabled()
+  })
+
+  it("R8: bereits freigegebene Queries erscheinen beim Re-Plan als Freigegeben", async () => {
+    // Regression Freigabe-Bug 2026-07-23: der Plan liefert beim erneuten Öffnen auch
+    // entschiedene Freigaben — sie dürfen keinen Freigeben-Button mehr anbieten.
+    server.use(
+      http.post("/api/projects/p1/market-research/plan", () =>
+        HttpResponse.json({
+          topic: { application_domain: "Robotik", technology_area: "KI",
+                   target_customers: "KMU", region: "Schweiz" },
+          queries: [
+            { ...PLAN_QUERIES[0], status: "approved" },
+            { ...PLAN_QUERIES[1], status: "pending" },
+          ],
+          provider_mode: "fake",
+        })
+      )
+    )
+    renderWithProject()
+    fireEvent.click(screen.getByRole("switch", { name: /Öffentliche Webrecherche/ }))
+    const list = await screen.findByTestId("query-approval-list")
+    const rows = within(list).getAllByTestId("query-approval-row")
+    expect(within(rows[0]).getByText("Freigegeben")).toBeInTheDocument()
+    expect(within(rows[0]).queryByRole("button", { name: /Freigeben/ })).toBeNull()
+    expect(within(rows[1]).getByRole("button", { name: /Freigeben/ })).toBeInTheDocument()
+    expect(screen.getByTestId("query-approval-count")).toHaveTextContent(
+      "1 von 2 Suchanfragen freigegeben"
+    )
   })
 
   it("R8: Bearbeiten prüft neu (Firewall) und lehnt die alte Freigabe ab", async () => {

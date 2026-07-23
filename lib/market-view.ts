@@ -152,7 +152,7 @@ export function isMarketRelevant(sectionId: string): boolean {
 }
 
 export const MARKET_RELEVANCE_HINT =
-  "Markt- und Wettbewerbsanalyse ist vor allem für Value Creation und Solution relevant."
+  "Markt- und Wettbewerbsanalyse ist vor allem für «Value Creation» und «Solution» relevant. Für den aktuell gewählten Abschnitt zeigt dieser Tab deshalb keine Marktdaten — wechseln Sie in einen der beiden Abschnitte, um Marktvergleich und Marktrecherche zu nutzen."
 
 export const MARKET_RELEVANT_EXPLAINER =
   "Dieser Abschnitt beeinflusst Marktbezug, Differenzierung und Innovationsargumentation."

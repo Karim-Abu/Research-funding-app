@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { QualitySummary } from "@/components/review/quality-summary"
@@ -97,6 +97,40 @@ describe("QualitySummary", () => {
     expect(
       screen.getByText(/Risikosignal für die menschliche Prüfung/)
     ).toBeVisible()
+  })
+
+  it("2026-07-23: Verdikt-Zeile + Top-3-Hinweise, Überlauf in den Audit-Details", async () => {
+    const warningFindings = ["Hinweis A", "Hinweis B", "Hinweis C", "Hinweis D", "Hinweis E"].map(
+      (description, i) => ({
+        finding_id: `w${i}`,
+        field_id: null,
+        severity: "warning",
+        description,
+        status: "open",
+        finding_code: `reliability:warn:${i}`,
+        target_type: "draft_claim",
+        target_id: `clm-${i}`,
+      })
+    )
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () =>
+        HttpResponse.json(view({ findings: warningFindings }))
+      )
+    )
+    render(<QualitySummary runId={RUN} />)
+    await waitFor(() =>
+      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+    )
+    // Eine Verdikt-Zeile statt vier Zahlen-Kacheln.
+    expect(screen.getByTestId("quality-metrics")).toHaveTextContent(
+      "3 Aussagen geprüft — 1 gestützt, 2 mit Prüfbedarf, 1 ohne verknüpften Beleg."
+    )
+    const visibleList = screen.getByTestId("reliability-warnings")
+    expect(within(visibleList).getAllByRole("listitem")).toHaveLength(3)
+    expect(screen.getByText(/und 2 weitere Hinweisgruppen/)).toBeInTheDocument()
+    // Überlauf vollständig in den Audit-Details — verlagert, nicht gelöscht.
+    expect(screen.getByText("Hinweis D")).not.toBeVisible()
+    expect(screen.getByText("Hinweis E")).not.toBeVisible()
   })
 
   it("shows an empty state and runs a pass on demand", async () => {

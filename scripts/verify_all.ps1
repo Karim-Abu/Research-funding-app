@@ -70,6 +70,12 @@ try {
 
     Write-Host "-- backend: pytest (ohne DOCX-Render-Smoke — eigene Gate-Zeile) --"
     Remove-Item Env:\DATABASE_URL -ErrorAction SilentlyContinue
+    # Seit der Live-Aktivierung (23.07.2026) kann backend/.env AI_EVAL_MODE=real
+    # setzen. Die Pflicht-Suite ist für die Fake-/CI-Umgebung spezifiziert
+    # (docs/evaluation/Provider_Mode_Matrix.md); tests/conftest.py neutralisiert
+    # zusätzlich hermetisch. (Hinweis: $env:X = "" LÖSCHT in PowerShell die
+    # Variable — leere Strings lassen sich hier nicht setzen.)
+    $env:AI_EVAL_MODE = "off"
     & $py -m pytest -q -p no:warnings --basetemp=$pytestBase --ignore=tests/test_docx_render_smoke.py
     $R.backend = if ($LASTEXITCODE -eq 0) { "pass" } else { "FAIL" }
 
@@ -106,9 +112,12 @@ try {
     $env:DATABASE_URL = "sqlite:///./var/verify_e2e.db"; $env:APP_ENV = "development"
     $env:AGENT_FAKE_PROVIDER = "true"; $env:WEB_RESEARCH_ENABLED = "true"
     $env:WEB_RESEARCH_FAKE_PROVIDER = "true"; $env:DEMO_DATA_ENABLED = "true"
+    # AI_EVAL_MODE=off verhindert live_fake_conflict, falls backend/.env live ist.
+    $env:AI_EVAL_MODE = "off"
     $beEnv = "`$env:DATABASE_URL='sqlite:///./var/verify_e2e.db';`$env:APP_ENV='development';" +
              "`$env:AGENT_FAKE_PROVIDER='true';`$env:WEB_RESEARCH_ENABLED='true';" +
              "`$env:WEB_RESEARCH_FAKE_PROVIDER='true';`$env:DEMO_DATA_ENABLED='true';" +
+             "`$env:AI_EVAL_MODE='off';" +
              "& '$py' -m uvicorn app.main:app --host 127.0.0.1 --port 8000"
     Start-Process powershell -ArgumentList "-NoProfile","-Command",$beEnv -WorkingDirectory $backend -WindowStyle Hidden
     $feEnv = "`$env:APP_BACKEND_MODE='live';`$env:FASTAPI_BRIDGE_URL='http://127.0.0.1:8000/api/v1';" +

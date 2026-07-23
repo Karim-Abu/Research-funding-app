@@ -217,6 +217,15 @@ export function PublicResearchPanel({
     ))
     .map(({ query }) => query)
   const visibleResults = (workspace?.results ?? []).filter((row) => row.module === activeModule)
+  // Backend liefert je Modul denselben relevance_reason — einmal über der Liste
+  // statt wortgleich auf jeder Karte (nur bei gemischten Gründen je Karte).
+  const distinctRelevanceReasons = [...new Set(
+    visibleResults.map((row) => row.relevance_reason).filter(Boolean)
+  )]
+  const sharedRelevanceReason =
+    visibleResults.length > 1 && distinctRelevanceReasons.length === 1
+      ? distinctRelevanceReasons[0]
+      : null
   const demo = workspace?.provider_mode === "fake_demo"
   const editableBrief = brief?.status === "draft" || editingApproved
   const committedForm = (): ResearchBriefInput | null => form && ({
@@ -337,10 +346,11 @@ export function PublicResearchPanel({
 
           <div className="mt-4 space-y-3" data-testid="research-results">
             {visibleResults.length === 0 && <p className="text-sm text-muted-foreground">Noch keine Resultate für dieses Modul.</p>}
+            {sharedRelevanceReason && <p className="text-xs text-muted-foreground">{sharedRelevanceReason}</p>}
             {visibleResults.map((result) => <article key={result.result_id} className="rounded border p-3">
               <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="font-medium">{result.title}</h4><a href={result.final_url ?? result.source_url} target="_blank" rel="noreferrer" className="break-all text-xs text-primary hover:underline">{result.final_url ?? result.source_url}</a><p className="text-xs text-muted-foreground">{result.publisher ?? result.domain} · {result.published_at ? new Date(result.published_at).toLocaleDateString("de-CH") : "Datum nicht verfügbar"} · Aktualität: {result.freshness_label ?? "unbekannt"}</p></div><Badge variant="outline">{result.execution_mode === "fake_demo" ? "Demo" : result.status === "imported" && result.content_review_status === "reviewed" ? "Inhaltlich geprüft" : result.status === "imported" ? "Übernommen" : result.status === "rejected" ? "Verworfen" : "Kandidat"}</Badge></div>
               {result.snippet && <p className="mt-2 text-sm">{result.snippet}</p>}
-              <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>
+              {!sharedRelevanceReason && result.relevance_reason && <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>}
               <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
                 <div><dt className="font-medium">Potentieller Abschnitt</dt><dd>{(result.potential_sections ?? []).join(", ") || "noch offen"}</dd></div>
                 <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{sourceQualityLabel(result.source_quality)}</dd></div>

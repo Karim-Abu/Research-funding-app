@@ -26,6 +26,11 @@ Nur die tatsächlich verwendeten Routen konfigurieren. Modell-IDs nicht raten:
 Es sind ausschließlich die in der Backend-Umgebung gesetzten und per Preflight
 bestätigten Provider-Modell-IDs zulässig.
 
+Minimal für `generation_mode=real_eval`: Alle drei Kernrollen
+(`CORE_LIVE_ROLE_IDS` = A1 Fakten/Evidenz, A2 Antragstexte, A3 Review) brauchen
+je mindestens eine konfigurierte und preflight-bestätigte Route — d. h. neben
+Terra (A2) und Sonnet 5 (A3) auch Luna und/oder Haiku 4.5 für A1.
+
 `AGENT_MODEL_PRICING_CHF_PER_MILLION` muss für jede verwendete konkrete
 Modell-ID geprüfte CHF-Metadaten enthalten. Erforderliche Felder je Modell-ID:
 `input_chf_per_million`, `output_chf_per_million`, `price_version`,

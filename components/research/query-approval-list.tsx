@@ -12,7 +12,7 @@ import { Check, Loader2, Pencil, X } from "lucide-react"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
-import { approveSearchQuery, rejectSearchQuery } from "@/lib/firewall"
+import { approveSearchQuery, FirewallError, rejectSearchQuery } from "@/lib/firewall"
 import {
   previewMarketQuery,
   queryPurposeLabel,
@@ -36,9 +36,14 @@ export interface ApprovalQuery extends QueryCandidateDto {
 }
 
 export function toApprovalQueries(queries: QueryCandidateDto[]): ApprovalQuery[] {
+  // Bereits entschiedene Queries (Re-Plan) behalten ihren Status — sonst erscheint
+  // eine freigegebene Query erneut als offen und die Wiederholung endet im Konflikt.
   return queries.map((q) => ({
     ...q,
-    decision: q.public_safe && q.approval_id ? "pending" : "blocked",
+    decision:
+      !q.public_safe || !q.approval_id
+        ? "blocked"
+        : ((q.status as QueryDecision | undefined) ?? "pending"),
   }))
 }
 
@@ -95,8 +100,12 @@ export function QueryApprovalList({
       if (approve) await approveSearchQuery(query.approval_id)
       else await rejectSearchQuery(query.approval_id)
       update(index, { decision: approve ? "approved" : "rejected" })
-    } catch {
-      setError("Die Freigabe konnte nicht gespeichert werden. Bitte erneut versuchen.")
+    } catch (err) {
+      setError(
+        err instanceof FirewallError
+          ? err.message
+          : "Die Freigabe konnte nicht gespeichert werden. Bitte erneut versuchen."
+      )
     } finally {
       setBusyIndex(null)
     }

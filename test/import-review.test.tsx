@@ -373,6 +373,64 @@ describe("ImportReview — Entscheidungsaktionen", () => {
     )
   })
 
+  it("lädt nach einer Datumsübernahme die abgeleitete Projektdauer neu", async () => {
+    const startDate = structuredCandidate({
+      candidate_id: "sc-start",
+      candidate_kind: "project_metadata",
+      target_key: "project.start_date",
+      label: "Projektstart",
+      payload_json: { start_date: "2023-03-01" },
+      effective_payload_json: { start_date: "2023-03-01" },
+      current_value_json: null,
+      has_conflict: false,
+      conflict_reason: null,
+    })
+    const duration = (months: number): StructuredImportCandidateDto =>
+      structuredCandidate({
+        candidate_id: "sc-duration",
+        candidate_kind: "project_metadata",
+        target_key: "project.duration_months",
+        label: "Projektdauer",
+        payload_json: { duration_months: 18 },
+        effective_payload_json: { duration_months: 18 },
+        current_value_json: { duration_months: months },
+        has_conflict: false,
+        conflict_reason: null,
+        interaction_mode: "comparison_only",
+        derived_duration_months: months,
+        duration_status: "derived",
+        duration_comparison_status:
+          months === 18 ? "duration_match" : "duration_conflict",
+      })
+    getStructuredImportCandidates
+      .mockResolvedValueOnce([startDate, duration(18)])
+      .mockResolvedValueOnce([
+        structuredCandidate({
+          ...startDate,
+          decision: "accepted",
+        }),
+        duration(54),
+      ])
+    decideStructuredImportCandidate.mockResolvedValueOnce(
+      structuredCandidate({ ...startDate, decision: "accepted" })
+    )
+    await renderReview()
+
+    expect(await screen.findByText(/Abgeleitet: 18 Monate\./)).toBeInTheDocument()
+    // In der strukturierten Sektion ist nur der Startdatum-Kandidat aktionierbar;
+    // die Projektdauer ist «Nur Vergleich» und hat keine Übernehmen-Aktion.
+    const section = screen.getByTestId("structured-import-review")
+    fireEvent.click(within(section).getByRole("button", { name: "Übernehmen" }))
+
+    // Nach der Datumsübernahme werden die strukturierten Kandidaten neu geladen
+    // (initialer Load + Refetch = 2 Aufrufe), sodass die abgeleitete Dauer aktuell ist.
+    await waitFor(() =>
+      expect(getStructuredImportCandidates).toHaveBeenCalledTimes(2)
+    )
+    expect(await screen.findByText(/Abgeleitet: 54 Monate\./)).toBeInTheDocument()
+    expect(screen.queryByText(/Abgeleitet: 18 Monate\./)).not.toBeInTheDocument()
+  })
+
   it("zeigt Vertreter nur eingeklappt und ohne Kontaktfelder", async () => {
     getImportCandidates.mockResolvedValueOnce([])
     getStructuredImportCandidates.mockResolvedValueOnce([

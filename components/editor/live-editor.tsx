@@ -131,13 +131,7 @@ const REASON_CTA_HREF: Record<string, string> = {
   live_actual_model_missing: "/admin",
 }
 
-function A2ReasonNotice({
-  reason,
-  onUseTemplate,
-}: {
-  reason: string
-  onUseTemplate?: () => void
-}) {
+function A2ReasonNotice({ reason }: { reason: string }) {
   const [adminHintOpen, setAdminHintOpen] = React.useState(false)
   const info = AI_REASON_INFO[reason] ?? AI_REASON_INFO[FALLBACK_AI_REASON]
   const href = REASON_CTA_HREF[reason]
@@ -146,43 +140,38 @@ function A2ReasonNotice({
       <p role="status" className="text-xs text-muted-foreground">
         {info.text}
       </p>
-      {href ? (
-        <Link
-          href={href}
-          className={cn(
-            buttonVariants({ variant: "outline", size: "sm" }),
-            "self-start"
-          )}
-        >
-          {info.ctaLabel}
-        </Link>
-      ) : reason === "field_not_supported" ? (
-        <Button
-          size="sm"
-          variant="outline"
-          className="self-start"
-          onClick={onUseTemplate}
-        >
-          {info.ctaLabel}
-        </Button>
-      ) : (
-        <>
-          <Button
-            size="sm"
-            variant="outline"
-            className="self-start"
-            onClick={() => setAdminHintOpen((v) => !v)}
+      {/* Ohne ctaLabel bewusst keine Aktion — ein Button ohne echte Wirkung
+          (ehemals «Strukturvorlage nutzen») wäre irreführend. */}
+      {info.ctaLabel ? (
+        href ? (
+          <Link
+            href={href}
+            className={cn(
+              buttonVariants({ variant: "outline", size: "sm" }),
+              "self-start"
+            )}
           >
             {info.ctaLabel}
-          </Button>
-          {adminHintOpen && (
-            <p className="text-xs text-muted-foreground">
-              Ein freigegebener KI-Provider muss durch Ihre Administration
-              konfiguriert werden. Alle übrigen Funktionen bleiben verfügbar.
-            </p>
-          )}
-        </>
-      )}
+          </Link>
+        ) : (
+          <>
+            <Button
+              size="sm"
+              variant="outline"
+              className="self-start"
+              onClick={() => setAdminHintOpen((v) => !v)}
+            >
+              {info.ctaLabel}
+            </Button>
+            {adminHintOpen && (
+              <p className="text-xs text-muted-foreground">
+                Ein freigegebener KI-Provider muss durch Ihre Administration
+                konfiguriert werden. Alle übrigen Funktionen bleiben verfügbar.
+              </p>
+            )}
+          </>
+        )
+      ) : null}
     </div>
   )
 }
@@ -192,7 +181,7 @@ const RECHECK_NOTICE =
 const ACCEPT_NOTICE =
   "Text übernommen – Qualitätsprüfung erneut erforderlich."
 const LINK_EXPLANATION =
-  "Die Verknüpfung ordnet eine Fundstelle diesem Entwurf zu. Sie bestätigt nicht automatisch den gesamten Text."
+  "Die Verknüpfung ordnet eine Fundstelle diesem Entwurf zu. Sie bestätigt nicht automatisch den gesamten Text. Verknüpfte Fundstellen fliessen in die Evidenz-Prüfbereiche (Abdeckung und Suffizienz), die Zuverlässigkeitsprüfung und die Kopierbereitschaft dieses Felds ein."
 const STALE_LINK_NOTICE =
   "Belege müssen für diese Textversion erneut geprüft werden."
 
@@ -1742,10 +1731,7 @@ export function LiveEditor({
               className="flex flex-col gap-1.5"
               data-testid="a2-field-unavailable"
             >
-              <A2ReasonNotice
-                reason="field_not_supported"
-                onUseTemplate={() => editorRef.current?.focus?.()}
-              />
+              <A2ReasonNotice reason="field_not_supported" />
               <p className="text-xs text-muted-foreground">
                 Abschnittsvorschläge unterstützen aktuell «Abstract»,
                 «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,

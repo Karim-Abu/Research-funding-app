@@ -17,7 +17,7 @@ import pytest
 from sqlalchemy import select
 
 from app.config.settings import get_settings
-from app.db.models import ResearchTask, SearchQueryApproval
+from app.db.models import AuditEvent, ResearchTask, SearchQueryApproval
 from app.db.session import SessionLocal
 from app.market_research.planner import MarketTopic
 from app.market_research.runner import run_market_research
@@ -224,6 +224,57 @@ def test_rejected_approvals_never_execute(client, db, web_fake):
     ) is None
     for approval_id in approval_ids:
         assert db.get(SearchQueryApproval, approval_id).status == "rejected"
+
+
+# --- Re-Plan & Idempotenz: bereits entschiedene Freigaben ----------------------
+
+
+def test_replan_exposes_status_of_decided_approvals(client, db, web_fake):
+    """Regression (Freigabe-Bug 2026-07-23): der Dialog re-plant bei jedem Öffnen.
+    Bereits entschiedene Freigaben müssen ihren Status im Plan-DTO tragen — sonst
+    rendert die UI sie als offen und ein erneutes Freigeben endet im 409."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _project(client, csrf)
+    first = _plan(client, csrf, pid)["queries"]
+    assert all(q["status"] == "pending" for q in first)
+    approved_id = first[0]["approval_id"]
+    assert _approve(client, csrf, approved_id).status_code == 200
+
+    second = _plan(client, csrf, pid)["queries"]
+    by_id = {q["approval_id"]: q for q in second}
+    assert by_id[approved_id]["status"] == "approved"
+    assert all(
+        q["status"] == "pending"
+        for q in second if q["approval_id"] != approved_id
+    )
+
+
+def test_repeated_identical_decision_is_idempotent(client, db, web_fake):
+    """Gleiche Entscheidung wiederholen ist idempotent (200, Zustand unverändert,
+    genau EIN Audit-Event); eine ANDERE Entscheidung auf einer entschiedenen
+    Freigabe bleibt fail-closed 409."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    pid = _project(client, csrf)
+    approval_id = _plan(client, csrf, pid)["queries"][0]["approval_id"]
+
+    assert _approve(client, csrf, approval_id).status_code == 200
+    res = _approve(client, csrf, approval_id)
+    assert res.status_code == 200, res.text
+    db.expire_all()
+    assert db.get(SearchQueryApproval, approval_id).status == "approved"
+    events = db.scalars(
+        select(AuditEvent).where(
+            AuditEvent.action == "search_query.approval_decided",
+            AuditEvent.target_id == approval_id,
+        )
+    ).all()
+    assert len(events) == 1
+
+    conflict = _approve(client, csrf, approval_id, reject=True)
+    assert conflict.status_code == 409, conflict.text
+    assert conflict.json()["code"] == "approval_not_pending"
+    db.expire_all()
+    assert db.get(SearchQueryApproval, approval_id).status == "approved"
 
 
 # --- Bearbeiten: neue Prüfung + neue Freigabe; Lexikon auch für D0 -------------

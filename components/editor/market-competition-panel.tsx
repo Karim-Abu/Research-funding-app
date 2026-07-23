@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Info, AlertTriangle, ArrowRight, Plus, Circle } from "lucide-react"
+import { Info, AlertTriangle, ArrowRight, Plus } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { LiveMarketComparison } from "@/components/editor/live-market-comparison"
 import { MarketResearchPanel } from "@/components/editor/market-research-panel"
@@ -137,31 +137,20 @@ export function MarketCompetitionPanel({
           <div>
             <p className="text-sm font-medium text-foreground">Noch keine Marktanalyse vorhanden</p>
             <p className="text-xs text-muted-foreground">
-              Für eine Markt- und Wettbewerbsanalyse benötigt das System
-              Projektbeschreibung, relevante Quellen und optional bekannte
-              Wettbewerber.
+              Ein Marktvergleich entsteht aus mindestens zwei importierten und
+              fachlich geprüften öffentlichen Quellen. Nächster Schritt: Quellen
+              über die öffentliche Recherche gewinnen oder direkt hinzufügen.
             </p>
           </div>
-          <ul className="flex flex-col gap-1">
-            {[
-              "Projektidee vorhanden",
-              "Markt- oder Konkurrenzquellen vorhanden",
-              "bekannte Wettbewerber angegeben",
-            ].map((item) => (
-              <li key={item} className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                <Circle className="size-3 shrink-0" />
-                {item}
-              </li>
-            ))}
-          </ul>
-          <div className="flex flex-wrap gap-2">
-            <Button variant="outline" size="xs" render={<a href="/quellen" />} nativeButton={false}>
-              Quelle hinzufügen
-            </Button>
-            <Button variant="outline" size="xs" disabled>
-              Offene Marktfrage erstellen
-            </Button>
-          </div>
+          <Button
+            variant="outline"
+            size="xs"
+            className="self-start"
+            render={<a href="/quellen" />}
+            nativeButton={false}
+          >
+            Quelle hinzufügen
+          </Button>
           {marketResearchEnabled && projectId ? (
             <MarketResearchPanel projectId={projectId} onImported={onSourceImported} />
           ) : (

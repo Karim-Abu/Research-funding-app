@@ -74,7 +74,24 @@ haben bereits spezifische, nicht-generische Texte in `handlers.py` — R2.6
 | `provider_unavailable` | «Es ist kein freigegebener KI-Provider konfiguriert.» | «Provider-Konfiguration prüfen» |
 | `run_mode_mismatch` | «Der aktuelle Analysemodus passt nicht zum Feldvorschlag.» | «Analysemodus prüfen» |
 | `missing_sources` | «Für einen belastbaren Vorschlag fehlen passende Quellen.» | «Quelle hinzufügen» |
-| `field_not_supported` | «Für dieses Feld ist noch kein KI-Vorschlag verfügbar.» | «Strukturvorlage nutzen» |
+| `field_not_supported` | «Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.» | — (kein CTA seit 2026-07-23; der frühere «Strukturvorlage nutzen»-Button fokussierte nur den Editor und suggerierte eine nicht existierende Aktion) |
+
+Nachtrag 2026-07-23 (Owner-Freigabe via genehmigten Verbesserungsplan):
+- `field_not_supported` ohne CTA (siehe Tabellenzeile); Hinweis auf unterstützte
+  Felder bleibt direkt darunter im Editor.
+- Quellen-Tab-Erklärung (LINK_EXPLANATION) ergänzt um den konkreten Nutzen:
+  «… Verknüpfte Fundstellen fliessen in die Evidenz-Prüfbereiche (Abdeckung und
+  Suffizienz), die Zuverlässigkeitsprüfung und die Kopierbereitschaft dieses
+  Felds ein.»
+- MARKET_RELEVANCE_HINT erklärt neu, warum der Tab leer ist und wo die Analyse
+  verfügbar ist («Value Creation»/«Solution»).
+- Markt-Empty-State (live): statische Checkliste + dauerhaft deaktivierter
+  Button «Offene Marktfrage erstellen» entfernt; klare Voraussetzung (≥2
+  geprüfte öffentliche Quellen) + Aktion «Quelle hinzufügen».
+- Prüfbefunde: needs_input-Beschreibungen nennen den Anforderungstitel
+  («Anforderung ‹X› benötigt zusätzliche Angaben …»); Sanktions-Beobachtung
+  positiv formuliert («Keine Sanktion … — keine zusätzliche menschliche
+  Prüfung nötig.»).
 
 Hinweise:
 - Interne Block-Reasons (Audit) bleiben unverändert; das Mapping intern → Code

@@ -25,6 +25,9 @@ export interface QueryCandidateDto {
   // R8 Freigabepflicht: pending Freigabe je Query (Entscheid über lib/firewall.ts
   // approveSearchQuery/rejectSearchQuery). Ohne Freigabe wird die Query nie ausgeführt.
   approval_id?: string | null
+  // Persistierter Freigabe-Status ("pending"/"approved"/…): der Plan liefert beim
+  // Re-Plan auch bereits entschiedene Queries; fehlt das Feld, gilt "pending".
+  status?: string | null
 }
 
 // Deutsche Zweck-Labels für die Query-Freigabe (Dialog + Market-Panel) — rohe

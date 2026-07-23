@@ -167,7 +167,15 @@ def get_scoped(
 def decide(
     db: Session, *, approval: SearchQueryApproval, actor_user_id: str, approve: bool
 ) -> SearchQueryApproval:
-    """Approve or reject a pending approval. Only ``pending`` may transition."""
+    """Approve or reject a pending approval.
+
+    Wiederholt der Client dieselbe Entscheidung auf einer bereits entschiedenen
+    Freigabe, ist das idempotent: aktueller Zustand zurück, KEIN neues Audit-Event
+    (der Audit-Trail bildet nur echte Transitionen ab). Jede andere Änderung an
+    einer Nicht-pending-Freigabe (approve↔reject, expired, used) bleibt ein 409.
+    """
+    if approval.status == ("approved" if approve else "rejected"):
+        return approval
     if approval.status != "pending":
         raise ApprovalError(
             "approval_not_pending",

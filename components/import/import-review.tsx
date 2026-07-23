@@ -105,6 +105,16 @@ interface StructuredEditState {
 
 type StructuredConflictState = StructuredEditState
 
+// Die Projektdauer ist ein abgeleiteter Nur-Vergleich-Wert; Start- und Enddatum
+// sind die einzige Quelle. Eine Änderung an einem der Daten muss die abgeleitete
+// Dauer neu berechnen lassen — dafür werden die strukturierten Kandidaten neu
+// geladen (das Backend leitet die Dauer bei jedem Fetch frisch ab).
+const DURATION_INPUT_TARGET_KEYS = ["project.start_date", "project.end_date"]
+
+function affectsDerivedDuration(candidate: StructuredImportCandidateDto): boolean {
+  return DURATION_INPUT_TARGET_KEYS.includes(candidate.target_key)
+}
+
 export function ImportReview() {
   const router = useRouter()
   // Zentrale Run-Auswahl (Ladder) — dieselbe Run-ID wie auf allen Screens.
@@ -387,11 +397,17 @@ export function ImportReview() {
               expected_revision_id: candidate.current_revision_id,
             })
           : await decideStructuredImportCandidate(candidate.candidate_id, payload)
-      setStructuredCandidates((prev) =>
-        prev.map((item) =>
-          item.candidate_id === updated.candidate_id ? updated : item
+      if (affectsDerivedDuration(candidate)) {
+        // Start/Ende geändert → abgeleitete Projektdauer + Vergleichsstatus
+        // (separate Nur-Vergleich-Kachel) neu laden.
+        setStructuredCandidates(await getStructuredImportCandidates(pid))
+      } else {
+        setStructuredCandidates((prev) =>
+          prev.map((item) =>
+            item.candidate_id === updated.candidate_id ? updated : item
+          )
         )
-      )
+      }
     } catch (err) {
       if (
         err instanceof ImportError &&
@@ -467,11 +483,16 @@ export function ImportReview() {
         action === "reset"
           ? await resetStructuredImportCandidate(candidate, projectId)
           : await undoStructuredImportCandidate(candidate, projectId)
-      setStructuredCandidates((current) =>
-        current.map((item) =>
-          item.candidate_id === updated.candidate_id ? updated : item
+      if (affectsDerivedDuration(candidate)) {
+        // Datums-Reset/Undo verändert Start/Ende → abgeleitete Projektdauer neu laden.
+        setStructuredCandidates(await getStructuredImportCandidates(projectId))
+      } else {
+        setStructuredCandidates((current) =>
+          current.map((item) =>
+            item.candidate_id === updated.candidate_id ? updated : item
+          )
         )
-      )
+      }
     } catch (err) {
       const [narrative, structured] = await Promise.all([
         getImportCandidates(projectId),

@@ -81,6 +81,11 @@ export function QualitySummary({ runId }: { runId: string }) {
   const summary = view?.summary ?? null
   const blockers = (view?.findings ?? []).filter((f) => f.severity === "blocker")
   const warnings = (view?.findings ?? []).filter((f) => f.severity === "warning")
+  // 2026-07-23: nur die handlungsrelevantesten Hinweisgruppen im Standardfluss;
+  // der Rest bleibt vollständig in den Audit-Details (verlagert, nicht gelöscht).
+  const groupedWarnings = groupByDescription(warnings)
+  const topWarnings = groupedWarnings.slice(0, 3)
+  const overflowWarnings = groupedWarnings.slice(3)
 
   return (
     <section
@@ -129,15 +134,13 @@ export function QualitySummary({ runId }: { runId: string }) {
 
       {summary && (
         <>
-          <dl className="grid grid-cols-2 gap-3 sm:grid-cols-4" data-testid="quality-metrics">
-            <Metric label="Aussagen" value={summary.claim_count} />
-            {/* «Gestützt» = Suffizienzprüfung bestanden — nicht bloss «ein
-                Zitat existiert» (Verifikation ≠ inhaltliche Stützung). */}
-            <Metric label="Gestützt" value={summary.supported_claims} />
-            <Metric label="Zu prüfen" value={summary.review_required_count} />
-            <Metric label="Nicht belegt" value={summary.unsupported_claims} />
-          </dl>
-          <p className="mt-2 text-xs text-muted-foreground">{METRICS_LEGEND}</p>
+          {/* 2026-07-23: eine Verdikt-Zeile statt vier Zahlen-Kacheln — die
+              Kategorien-Zähler und die Legende liegen in den Audit-Details. */}
+          <p className="text-sm text-foreground" data-testid="quality-metrics">
+            {summary.claim_count} Aussagen geprüft — {summary.supported_claims}{" "}
+            gestützt, {summary.review_required_count} mit Prüfbedarf,{" "}
+            {summary.unsupported_claims} ohne verknüpften Beleg.
+          </p>
           <p className="mt-1 text-xs text-muted-foreground">
             «Qualitätsrisiko» ist ein Risikosignal für die menschliche Prüfung —
             kein Fehler der Anwendung und keine Aussage zur
@@ -150,6 +153,7 @@ export function QualitySummary({ runId }: { runId: string }) {
             data-testid="quality-audit-details"
           >
             <summary className="cursor-pointer">Technische Details (Audit)</summary>
+            <p className="mt-1">{METRICS_LEGEND}</p>
             <p className="mt-1">
               Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis
               der inhaltlichen Wahrheit. Konfliktende Belege:{" "}
@@ -161,6 +165,19 @@ export function QualitySummary({ runId }: { runId: string }) {
               Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie
               Suffizienz (der Beleg scheint die Aussage zu stützen).
             </p>
+            {overflowWarnings.length > 0 && (
+              <div className="mt-2" data-testid="reliability-warnings-overflow">
+                <p className="font-medium">Weitere Hinweise (Prüfung nötig)</p>
+                <ul className="mt-1 flex flex-col gap-1">
+                  {overflowWarnings.map((g) => (
+                    <li key={g.key}>
+                      {g.count > 1 ? `${g.count} × ` : ""}
+                      {g.description}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </details>
 
           {blockers.length > 0 && (
@@ -179,30 +196,27 @@ export function QualitySummary({ runId }: { runId: string }) {
             </div>
           )}
 
-          {warnings.length > 0 && (
+          {topWarnings.length > 0 && (
             <div className="mt-3" data-testid="reliability-warnings">
               <p className="mb-1 text-sm font-medium text-foreground">Hinweise (Prüfung nötig)</p>
               <ul className="flex flex-col gap-1">
-                {groupByDescription(warnings).map((g) => (
+                {topWarnings.map((g) => (
                   <li key={g.key} className="text-xs text-muted-foreground">
                     {g.count > 1 ? `${g.count} × ` : ""}
                     {g.description}
                   </li>
                 ))}
               </ul>
+              {overflowWarnings.length > 0 && (
+                <p className="mt-1 text-xs text-muted-foreground">
+                  … und {overflowWarnings.length} weitere Hinweisgruppen in den
+                  Technischen Details (Audit).
+                </p>
+              )}
             </div>
           )}
         </>
       )}
     </section>
-  )
-}
-
-function Metric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-md border border-border bg-background p-2 text-center">
-      <div className="text-lg font-semibold text-foreground">{value}</div>
-      <div className="text-xs text-muted-foreground">{label}</div>
-    </div>
   )
 }

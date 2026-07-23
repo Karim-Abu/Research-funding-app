@@ -186,16 +186,16 @@ describe("LiveEditor A2 suggestions", () => {
     render(<LiveEditor runId="r1" />)
     await screen.findByText("Projekttitel")
     await openKiAssist()
-    // A non-A2 field → no control, but the availability is explained with the
-    // approved reason + CTA (R4.2).
+    // A non-A2 field → no control; the hint explains honestly which fields are
+    // supported. The former «Strukturvorlage nutzen»-CTA is gone (it only
+    // focused the editor and suggested a nonexistent action — Katalog 2026-07-23).
     expect(screen.queryByTestId("a2-suggestion-control")).not.toBeInTheDocument()
     const unavailable = screen.getByTestId("a2-field-unavailable")
     expect(unavailable).toHaveTextContent(
       "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar."
     )
-    expect(
-      within(unavailable).getByRole("button", { name: "Strukturvorlage nutzen" })
-    ).toBeInTheDocument()
+    expect(unavailable).toHaveTextContent(/Abschnittsvorschläge unterstützen aktuell/)
+    expect(within(unavailable).queryByRole("button")).not.toBeInTheDocument()
   })
 
   it("renders the empty-state hint for the SOL field", async () => {

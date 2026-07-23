@@ -117,7 +117,12 @@ for (const viewport of [
       expect(btnBox!.y + btnBox!.height).toBeLessThanOrEqual(viewport.height + 1)
       await assertNoPageScroll(page)
 
-      // Standardansicht: ehrliche Phasenvorschau statt Schätzwerte.
+      // Ehrliche Phasenvorschau statt Schätzwerte — seit 2026-07-23 eingeklappt
+      // (progressive Disclosure): erst der Trigger zeigt die Liste.
+      await expect(
+        page.getByRole("button", { name: "Erwartete Phasen" })
+      ).toBeVisible()
+      await page.getByRole("button", { name: "Erwartete Phasen" }).click()
       await expect(page.getByTestId("expected-phases")).toBeVisible()
     })
   })
