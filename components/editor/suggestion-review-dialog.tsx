@@ -33,6 +33,9 @@ const WARNING_LABELS: Record<string, string> = {
     "Der Vorschlag stützt sich teilweise auf noch nicht bestätigte (vorgeschlagene) Fakten.",
   application_language_needs_review:
     "Die Antragssprache wurde aus dem vorhandenen Text abgeleitet. Bitte vor der Übernahme prüfen.",
+  // RUN 4B §4 — der Fake-Provider markiert jeden Vorschlag mit diesem Code.
+  fake_demo_no_model:
+    "Demo-Vorschlag ohne echtes KI-Modell — deterministischer Beispieltext, kein fachlicher Inhalt.",
 }
 
 // C2 — Badge-Text je Segmentart: die Klassifikation ist nie nur Farbe (a11y).
@@ -333,7 +336,9 @@ export function SuggestionReviewDialog({
                               KIND_BADGE_CLASS.entfernt
                             )}
                           >
-                            Streichung übernehmen
+                            {/* Whole-only: keine Einzelübernahme — das Badge
+                                benennt nur die Änderungsart. */}
+                            {wholeOnly ? "Streichung" : "Streichung übernehmen"}
                           </span>
                         </div>
                       </div>

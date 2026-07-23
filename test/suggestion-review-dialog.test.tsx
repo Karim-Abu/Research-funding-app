@@ -249,6 +249,23 @@ describe("SuggestionReviewDialog", () => {
     expect(screen.queryByText("Belegdetails anzeigen")).toBeNull()
   })
 
+  it("RUN 4B §4: fake_demo-Warnung erscheint als Klartext, nie als Roh-Code", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({ warnings: ["fake_demo_no_model"] })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    expect(screen.getByTestId("warning-fake_demo_no_model")).toHaveTextContent(
+      "Demo-Vorschlag ohne echtes KI-Modell"
+    )
+    expect(screen.queryByText("fake_demo_no_model")).toBeNull()
+  })
+
   it("RUN 4B §7: «Neuen Vorschlag erzeugen» ruft onRegenerate ohne Ablehnung", () => {
     const onRegenerate = vi.fn()
     const onDismiss = vi.fn()
