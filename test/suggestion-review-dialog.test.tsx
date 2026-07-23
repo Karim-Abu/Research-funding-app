@@ -178,6 +178,77 @@ describe("SuggestionReviewDialog", () => {
     expect(screen.queryByText(/source_version_changed/)).toBeNull()
   })
 
+  it("RUN 4B §5/§6: Fehlende-Angaben-Sektion ohne Requirement-IDs + Beleg-Hauptzeile", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({
+          target_section: "4.5",
+          missing_inputs: [
+            {
+              label: "Schweizer Marktgrösse",
+              reason: "Ohne belegte Zahl bleibt der Abschnitt unvollständig.",
+              key: "swiss_market",
+              requirement_ids: ["REQ.VC.MARKET.SIZE"],
+            },
+          ],
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const missing = screen.getByTestId("missing-inputs-section")
+    expect(missing).toHaveTextContent("Fehlende Angaben (1)")
+    expect(missing).toHaveTextContent("Schweizer Marktgrösse")
+    expect(missing).toHaveTextContent(
+      "Warum wichtig: Ohne belegte Zahl bleibt der Abschnitt unvollständig."
+    )
+    expect(missing).toHaveTextContent("Innolink-Punkt 4.5")
+    expect(missing).toHaveTextContent("bleiben nach einer Übernahme als offene Aufgaben sichtbar")
+    // Keine technischen Requirement-IDs im Hauptfluss.
+    expect(missing).not.toHaveTextContent("REQ.VC.MARKET.SIZE")
+    // Beleg-Hauptzeile in Nutzersprache; Details aufklappbar.
+    expect(screen.getByTestId("evidence-usage")).toHaveTextContent(
+      "Dieser Vorschlag verwendet 1 geprüften Beleg."
+    )
+    expect(screen.getByText("Belegdetails anzeigen")).toBeInTheDocument()
+  })
+
+  it("RUN 4B §6: Read-Pfad ohne Belegdetails bleibt ehrlich (Zahl aus Proposal)", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({
+          evidence: [],
+          proposal: {
+            suggestion_text: "4.5 verbessert.",
+            used_anchor_ids: ["a1", "a2"],
+            used_research_source_ids: [],
+            missing_inputs: [],
+            profile_id: "A2.solution",
+            prompt_version: null,
+            context_hash: null,
+            created_at: new Date().toISOString(),
+            data_mode: "offline",
+            human_review_required: true,
+          },
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const usage = screen.getByTestId("evidence-usage")
+    expect(usage).toHaveTextContent("Dieser Vorschlag verwendet 2 geprüfte Belege.")
+    expect(usage).toHaveTextContent(
+      "Die Fundstellen-Details stehen für gespeicherte Vorschläge nicht zur Verfügung"
+    )
+    expect(screen.queryByText("Belegdetails anzeigen")).toBeNull()
+  })
+
   it("«Eigene Bearbeitung öffnen» ruft onEdit ohne Ablehnung", () => {
     const onEdit = vi.fn()
     const onDismiss = vi.fn()

@@ -95,6 +95,16 @@ export function SuggestionReviewDialog({
   const section = suggestion.section_result
   const chips = rationaleChips(suggestion)
   const wholeOnly = suggestion.accept_mode === "whole_suggestion_only"
+  // RUN 4B §5/§6 — eine Quelle für «Fehlende Angaben» (Manifest-Vorschläge
+  // tragen sie top-level, Legacy im section_result) und ehrliche Belegzahl:
+  // auf dem Read-Pfad gespeicherter Vorschläge ist evidence[] leer, die Zahl
+  // steckt dann in den verwendeten Anker-IDs des Proposals.
+  const missingInputs =
+    suggestion.missing_inputs ?? section?.missing_inputs ?? []
+  const evidenceCount =
+    suggestion.evidence.length > 0
+      ? suggestion.evidence.length
+      : (suggestion.proposal?.used_anchor_ids?.length ?? 0)
 
   const segments = React.useMemo(
     () => diffSuggestion(currentText, suggestion.suggested_text),
@@ -388,16 +398,6 @@ export function SuggestionReviewDialog({
             </p>
           )}
 
-          {suggestion.manifest_id && (
-            <div className="flex flex-wrap gap-1.5 text-[11px] text-muted-foreground" data-testid="suggestion-manifest-summary">
-              <span>Modus: {suggestion.improvement_mode ?? "clearer"}</span>
-              <span>Registry-Punkte: {suggestion.used_rule_ids?.length ?? 0}</span>
-              <span>Belege: {suggestion.source_version_ids?.length ?? 0}</span>
-              <span>Fehlende Angaben: {suggestion.missing_inputs?.length ?? 0}</span>
-              {suggestion.stale_reason && <span>Veraltet</span>}
-            </div>
-          )}
-
           {suggestion.warnings.map((w) => (
             <p
               key={w}
@@ -408,6 +408,53 @@ export function SuggestionReviewDialog({
               {WARNING_LABELS[w] ?? w}
             </p>
           ))}
+
+          {/* RUN 4B §5 — «Fehlende Angaben» als primäre Sektion: Titel, warum,
+              betroffener Innolink-Punkt und nächste Aktion — nie Requirement-
+              IDs. (Ein Schweregrad ist im Vertrag nicht vorhanden.) */}
+          {missingInputs.length > 0 && (
+            <section
+              className="flex flex-col gap-1.5 rounded-md border border-status-partial/40 bg-status-partial/5 px-3 py-2"
+              data-testid="missing-inputs-section"
+            >
+              <p className="text-xs font-semibold text-foreground">
+                Fehlende Angaben ({missingInputs.length})
+              </p>
+              <ul className="flex flex-col gap-1.5">
+                {missingInputs.map((item, index) => (
+                  <li key={`${item.label}-${index}`} className="text-xs">
+                    <span className="font-medium text-foreground">
+                      {item.label}
+                    </span>
+                    {item.reason && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        — Warum wichtig: {item.reason}
+                      </span>
+                    )}
+                    {suggestion.target_section && (
+                      <span className="text-muted-foreground">
+                        {" "}
+                        · Innolink-Punkt {suggestion.target_section}
+                      </span>
+                    )}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-xs text-muted-foreground">
+                Nächste Aktion: Ergänzen Sie die Angabe im Text oder prüfen Sie
+                sie unter{" "}
+                <a
+                  href="/anforderungen"
+                  className="font-medium text-primary underline-offset-2 hover:underline"
+                >
+                  Anforderungen
+                </a>
+                . Die Punkte bleiben nach einer Übernahme als offene Aufgaben
+                sichtbar.
+              </p>
+            </section>
+          )}
 
           {suggestion.rationale && (
             <section className="flex flex-col gap-1">
@@ -429,45 +476,66 @@ export function SuggestionReviewDialog({
                 items={section.removed_or_reframed_claims ?? []}
               />
               <ReviewList title="Neue Claims" items={section.new_claims ?? []} />
-              <ReviewList
-                title="Fehlende Inputs"
-                items={(section.missing_inputs ?? []).map((item) =>
-                  item.reason ? `${item.label}: ${item.reason}` : item.label
-                )}
-              />
             </div>
           )}
 
-          {/* C6 — Belege (bestätigte Anker) und externe Research-Quellen
-              bleiben bewusst getrennte Sektionen. */}
-          {suggestion.evidence.length > 0 && (
-            <section className="flex flex-col gap-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Verwendete Belege
-              </p>
-              <ul className="flex flex-col gap-1">
-                {suggestion.evidence.map((e) => (
-                  <li
-                    key={e.anchor_id}
-                    className="rounded border border-border px-2 py-1 text-xs"
-                  >
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="truncate text-muted-foreground">{e.source_name}</span>
-                      <Badge
-                        variant={
-                          e.verification_status === "exact_verified" ? "default" : "outline"
-                        }
-                      >
-                        {VERIFICATION_LABELS[e.verification_status as VerificationStatus] ??
-                          e.verification_status}
-                      </Badge>
-                    </div>
-                    <p className="mt-1 line-clamp-2">{e.quote}</p>
-                  </li>
-                ))}
-              </ul>
-            </section>
-          )}
+          {/* RUN 4B §6 — Belege: eine Hauptzeile in Nutzersprache, Details
+              aufklappbar; Research-Quellen bleiben bewusst getrennt. */}
+          <section className="flex flex-col gap-1" data-testid="evidence-usage">
+            <p className="text-xs font-medium text-foreground">
+              {evidenceCount === 0
+                ? "Dieser Vorschlag verwendet keine geprüften Belege."
+                : evidenceCount === 1
+                  ? "Dieser Vorschlag verwendet 1 geprüften Beleg."
+                  : `Dieser Vorschlag verwendet ${evidenceCount} geprüfte Belege.`}
+            </p>
+            {suggestion.evidence.length > 0 ? (
+              <details className="rounded-md border border-border px-3 py-2">
+                <summary className="cursor-pointer text-xs font-medium">
+                  Belegdetails anzeigen
+                </summary>
+                <ul className="mt-2 flex flex-col gap-1">
+                  {suggestion.evidence.map((e) => (
+                    <li
+                      key={e.anchor_id}
+                      className="rounded border border-border px-2 py-1 text-xs"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-muted-foreground">
+                          {e.source_name}
+                          {(e.page ?? e.section) && (
+                            <>
+                              {" · "}
+                              {e.page ? `S. ${e.page}` : ""}
+                              {e.page && e.section ? " · " : ""}
+                              {e.section ? `Abschnitt ${e.section}` : ""}
+                            </>
+                          )}
+                        </span>
+                        <Badge
+                          variant={
+                            e.verification_status === "exact_verified" ? "default" : "outline"
+                          }
+                        >
+                          {VERIFICATION_LABELS[e.verification_status as VerificationStatus] ??
+                            e.verification_status}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 line-clamp-2">{e.quote}</p>
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            ) : (
+              evidenceCount > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Die Fundstellen-Details stehen für gespeicherte Vorschläge
+                  nicht zur Verfügung — die Belege selbst finden Sie im Tab
+                  «Quellen».
+                </p>
+              )
+            )}
+          </section>
 
           {suggestion.open_issue_ids.length > 0 && (
             <p className="text-xs text-muted-foreground" data-testid="open-issues">
@@ -506,6 +574,20 @@ export function SuggestionReviewDialog({
 
           <details className="rounded-md border border-border px-3 py-2 text-xs">
             <summary className="cursor-pointer font-medium">Technische Details</summary>
+            {/* RUN 4B §2.1 — die Manifest-Kurzbilanz ist Audit-Info und lebt
+                nur noch hier (verlagert, nicht gelöscht). */}
+            {suggestion.manifest_id && (
+              <div
+                className="mt-2 flex flex-wrap gap-1.5 text-[11px] text-muted-foreground"
+                data-testid="suggestion-manifest-summary"
+              >
+                <span>Modus: {suggestion.improvement_mode ?? "clearer"}</span>
+                <span>Registry-Punkte: {suggestion.used_rule_ids?.length ?? 0}</span>
+                <span>Belege: {suggestion.source_version_ids?.length ?? 0}</span>
+                <span>Fehlende Angaben: {suggestion.missing_inputs?.length ?? 0}</span>
+                {suggestion.stale_reason && <span>Veraltet</span>}
+              </div>
+            )}
             <dl className="mt-2 grid gap-1 text-muted-foreground">
               <div>Zielabschnitt: {suggestion.target_section ?? "–"}</div>
               <div>Generierungsart: {suggestion.generation_kind ?? "nicht verifiziert"}</div>
