@@ -78,6 +78,27 @@ describe("QualitySummary", () => {
     ).toBeNull()
   })
 
+  it("RUN 4A: Reliability-Jargon liegt nur in den aufklappbaren Audit-Details", async () => {
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () => HttpResponse.json(view()))
+    )
+    render(<QualitySummary runId={RUN} />)
+    await waitFor(() =>
+      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+    )
+    const details = screen.getByTestId("quality-audit-details")
+    expect(details.tagName).toBe("DETAILS")
+    // Fachbegriffe sind im DOM (verlagert, nicht gelöscht), aber im
+    // zugeklappten <details> nicht sichtbar.
+    expect(screen.getByText(/Falsches Konsensrisiko/)).not.toBeVisible()
+    expect(screen.getByText(/Semantische Drift/)).not.toBeVisible()
+    expect(screen.getByText(/Beleg-Suffizienzprüfung/)).not.toBeVisible()
+    // Der Klartextsatz bleibt im Standardfluss sichtbar.
+    expect(
+      screen.getByText(/Risikosignal für die menschliche Prüfung/)
+    ).toBeVisible()
+  })
+
   it("shows an empty state and runs a pass on demand", async () => {
     let done = false
     server.use(

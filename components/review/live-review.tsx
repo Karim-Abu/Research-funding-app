@@ -249,19 +249,37 @@ export function LiveReview({ runId }: { runId: string }) {
       )}
 
       {/* Bearbeitungs- und Prüfstand — Ring über die neun Prüfbereiche aus dem
-          autoritativen Check-Status-View (Grau = nicht geprüft). */}
-      {checks && (
-        <ReviewProgressCard
-          progress={areaProgress(checks.areas)}
-          blockingTasks={checks.blocking_task_count}
-          evidenceNotes={checks.evidence_note_count}
-          pruefungNoetig={humanReviewCount(pkg)}
-          recheckRequired={pkg.recheck_required}
-        />
-      )}
+          autoritativen Check-Status-View (Grau = nicht geprüft). RUN 4A: die
+          vier Kennzahlen kommen ausschliesslich aus kanonischen Statusdaten;
+          nicht ausgeführte Prüfungen erscheinen als «Nicht geprüft», nie als 0. */}
+      {checks &&
+        (() => {
+          const pflichtfelder = checks.areas.find(
+            (a) => a.area === "pflichtfelder"
+          )
+          const missingMandatory =
+            pflichtfelder && pflichtfelder.status !== "not_run"
+              ? pflichtfelder.open_blockers + pflichtfelder.open_warnings
+              : null
+          const anyAreaRun = checks.areas.some((a) => a.status !== "not_run")
+          const qualityRisks = anyAreaRun
+            ? checks.areas.reduce((sum, a) => sum + a.open_warnings, 0)
+            : null
+          return (
+            <ReviewProgressCard
+              progress={areaProgress(checks.areas)}
+              blockingTasks={checks.blocking_task_count}
+              evidenceNotes={checks.evidence_note_count}
+              pruefungNoetig={humanReviewCount(pkg)}
+              missingMandatory={missingMandatory}
+              qualityRisks={qualityRisks}
+              recheckRequired={pkg.recheck_required}
+            />
+          )
+        })()}
 
-      {/* Nächste Aufgaben — Top-5 priorisiert aus der Fix Queue (Standard). */}
-      {fixQueue && <NextActionsCard groups={fixQueue.next_actions} limit={5} />}
+      {/* Nächste Aufgaben — bis zu zehn priorisierte Aufgaben (RUN 4A). */}
+      {fixQueue && <NextActionsCard groups={fixQueue.next_actions} limit={10} />}
 
       {/* Approval / blocker panel */}
       <ApprovalPanel

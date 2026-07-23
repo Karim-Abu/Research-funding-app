@@ -139,16 +139,29 @@ export function QualitySummary({ runId }: { runId: string }) {
           </dl>
           <p className="mt-2 text-xs text-muted-foreground">{METRICS_LEGEND}</p>
           <p className="mt-1 text-xs text-muted-foreground">
-            Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis der inhaltlichen
-            Wahrheit. Konfliktende Belege: {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
-            {summary.false_consensus_risk_count}. Semantische Drift: {summary.semantic_drift_count}.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie Suffizienz (der Beleg
-            scheint die Aussage zu stützen). «Qualitätsrisiko» ist ein Risikosignal für die
-            menschliche Prüfung — kein Fehler der Anwendung und keine Aussage zur
+            «Qualitätsrisiko» ist ein Risikosignal für die menschliche Prüfung —
+            kein Fehler der Anwendung und keine Aussage zur
             Förderwahrscheinlichkeit.
           </p>
+          {/* RUN 4A: Reliability-Fachbegriffe verlagert, nicht gelöscht —
+              nur noch in den aufklappbaren Audit-Details. */}
+          <details
+            className="mt-2 text-xs text-muted-foreground"
+            data-testid="quality-audit-details"
+          >
+            <summary className="cursor-pointer">Technische Details (Audit)</summary>
+            <p className="mt-1">
+              Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis
+              der inhaltlichen Wahrheit. Konfliktende Belege:{" "}
+              {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
+              {summary.false_consensus_risk_count}. Semantische Drift:{" "}
+              {summary.semantic_drift_count}.
+            </p>
+            <p className="mt-1">
+              Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie
+              Suffizienz (der Beleg scheint die Aussage zu stützen).
+            </p>
+          </details>
 
           {blockers.length > 0 && (
             <div className="mt-3" data-testid="reliability-blockers">

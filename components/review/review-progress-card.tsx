@@ -124,6 +124,7 @@ function LegendRow({
   help,
   dotClassName,
   accentClassName,
+  displayValue,
 }: {
   label: string
   value: number
@@ -132,6 +133,8 @@ function LegendRow({
   dotClassName?: string
   /** Value accent, applied only when > 0 (mirrors the former tiles). */
   accentClassName?: string
+  /** RUN 4A: ehrlicher Textwert statt Zahl (z. B. «Nicht geprüft» — nie 0). */
+  displayValue?: string
 }) {
   return (
     <div className="flex items-center gap-2 py-0.5">
@@ -149,11 +152,12 @@ function LegendRow({
       </dt>
       <dd
         className={cn(
-          "text-sm font-semibold tabular-nums text-foreground",
-          value > 0 && accentClassName
+          "text-sm font-semibold tabular-nums",
+          displayValue ? "text-muted-foreground" : "text-foreground",
+          !displayValue && value > 0 && accentClassName
         )}
       >
-        {value}
+        {displayValue ?? value}
       </dd>
     </div>
   )
@@ -169,6 +173,8 @@ export function ReviewProgressCard({
   blockingTasks,
   evidenceNotes,
   pruefungNoetig,
+  missingMandatory = null,
+  qualityRisks = null,
   recheckRequired = false,
 }: {
   progress: AreaProgress
@@ -177,6 +183,10 @@ export function ReviewProgressCard({
   /** Technische Zahl der einzelnen Evidenzhinweise (claimgenau). */
   evidenceNotes: number
   pruefungNoetig: number
+  /** RUN 4A: offene Pflichtfeld-Befunde; null = Prüfung nicht ausgeführt. */
+  missingMandatory?: number | null
+  /** RUN 4A: offene Warnhinweise aller Bereiche; null = nicht ausgeführt. */
+  qualityRisks?: number | null
   recheckRequired?: boolean
 }) {
   const ariaLabel =
@@ -248,21 +258,31 @@ export function ReviewProgressCard({
             dotClassName="bg-muted-foreground/50"
           />
 
-          {/* Block B — open items without a denominator (not in the ring). */}
+          {/* Block B — RUN 4A: die vier primären Kennzahlen. «Nicht geprüft»
+              erscheint als Text, nie als Null-Ergebnis. */}
           <div className="my-2 border-t border-border" aria-hidden />
           <LegendRow
-            label="Blockierende Aufgaben"
+            label="Formale Blocker"
             value={blockingTasks}
             help={REVIEW_TILE_HELP.blockierendeAufgaben}
             accentClassName="text-destructive"
           />
           <LegendRow
-            label="Unterliegende Evidenzhinweise"
-            value={evidenceNotes}
-            help={REVIEW_TILE_HELP.evidenzhinweise}
+            label="Fehlende Pflichtangaben"
+            value={missingMandatory ?? 0}
+            displayValue={missingMandatory === null ? "Nicht geprüft" : undefined}
+            help={REVIEW_TILE_HELP.fehlendePflichtangaben}
+            accentClassName="text-destructive"
           />
           <LegendRow
-            label="Prüfung nötig"
+            label="Wichtige Qualitätsrisiken"
+            value={qualityRisks ?? 0}
+            displayValue={qualityRisks === null ? "Nicht geprüft" : undefined}
+            help={REVIEW_TILE_HELP.qualitaetsrisiken}
+            accentClassName="text-status-partial"
+          />
+          <LegendRow
+            label="Offene menschliche Prüfungen"
             value={pruefungNoetig}
             help={REVIEW_TILE_HELP.pruefungNoetig}
             accentClassName="text-status-partial"
@@ -271,6 +291,15 @@ export function ReviewProgressCard({
       </div>
 
       <p className="text-xs text-muted-foreground">{REVIEW_PROGRESS_NOTE}</p>
+
+      {/* RUN 4A: technische Claim-Zahl verlagert, nicht gelöscht. */}
+      <details className="text-xs text-muted-foreground">
+        <summary className="cursor-pointer">Technische Details</summary>
+        <p className="mt-1">
+          Unterliegende Evidenzhinweise (claimgenau): {evidenceNotes}. Sie
+          blockieren nicht automatisch.
+        </p>
+      </details>
     </section>
   )
 }

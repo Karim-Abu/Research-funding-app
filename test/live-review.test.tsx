@@ -1,8 +1,9 @@
 import { describe, it, expect } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { LiveReview } from "@/components/review/live-review"
+import { ReviewProgressCard } from "@/components/review/review-progress-card"
 import { CHECK_AREA_LABELS, type CheckAreaKey } from "@/lib/check-status"
 
 const AREAS = Object.keys(CHECK_AREA_LABELS) as CheckAreaKey[]
@@ -145,19 +146,45 @@ describe("LiveReview", () => {
       expect(row).toHaveTextContent("Nicht geprüft")
       expect(row).not.toHaveTextContent(/^Bestanden$/)
     }
-    // Neue Legende: gruppierte Aufgaben vs. technische Evidenzhinweise.
+    // RUN 4A: Ring-Legende + die vier primären Kennzahlen.
     for (const label of [
       "Bestanden",
       "Teilweise bestanden",
       "Nicht bestanden",
       "Nicht geprüft",
-      "Blockierende Aufgaben",
-      "Unterliegende Evidenzhinweise",
-      "Prüfung nötig",
+      "Formale Blocker",
+      "Fehlende Pflichtangaben",
+      "Wichtige Qualitätsrisiken",
+      "Offene menschliche Prüfungen",
     ]) {
       expect(card).toHaveTextContent(label)
     }
+    // Die technische Claim-Zahl ist verlagert, nicht gelöscht (collapsed).
+    expect(card).toHaveTextContent("Unterliegende Evidenzhinweise")
     expect(card).toHaveTextContent(/keine Aussage zur Förderwahrscheinlichkeit/)
+  })
+
+  it("RUN 4A: nicht ausgeführte Prüfungen erscheinen als «Nicht geprüft», nie als 0", () => {
+    render(
+      <ReviewProgressCard
+        progress={{
+          total: 9,
+          bestanden: 0,
+          teilweise: 0,
+          nichtBestanden: 0,
+          nichtGeprueft: 9,
+        }}
+        blockingTasks={0}
+        evidenceNotes={0}
+        pruefungNoetig={0}
+        missingMandatory={null}
+        qualityRisks={null}
+      />
+    )
+    const card = screen.getByTestId("review-progress-card")
+    // Zwei Kennzahlen ohne ausgeführte Prüfung → Text statt Null; zusammen mit
+    // der Ring-Legende steht «Nicht geprüft» dreimal in der Karte.
+    expect(within(card).getAllByText("Nicht geprüft")).toHaveLength(3)
   })
 
   it("zeigt Blocker als gruppierte Aufgabe, Bereich rot, Freigabe gesperrt", async () => {

@@ -74,6 +74,21 @@ const FIXTURE: GroupedFindingDto[] = [
 ]
 
 describe("NextActionsCard", () => {
+  it("RUN 4A: höchstens zehn priorisierte Aufgaben — jede mit Abschnitt und Aktion", () => {
+    const groups = Array.from({ length: 12 }, (_, i) =>
+      group({ group_key: `g-${i}`, title: `Aufgabe ${i + 1}` })
+    )
+    render(<NextActionsCard groups={groups} limit={10} />)
+    const items = screen.getAllByTestId("fix-queue-next-item")
+    expect(items).toHaveLength(10)
+    // Jede Aufgabe trägt eine klare Aktion (Deep-Link in den Entwurf).
+    for (const item of items) {
+      expect(
+        within(item).getByRole("button", { name: "Im Entwurf öffnen" })
+      ).toBeInTheDocument()
+    }
+  })
+
   it("zeigt die Top-Aufgaben in Prioritätsreihenfolge mit Zählprefix", () => {
     render(<NextActionsCard groups={FIXTURE} limit={5} />)
     const items = screen.getAllByTestId("fix-queue-next-item")

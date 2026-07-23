@@ -47,6 +47,11 @@ export const REVIEW_TILE_HELP = {
     "Technische Zahl der einzelnen Evidenzhinweise hinter den gruppierten Aufgaben. Sie blockieren nicht automatisch.",
   pruefungNoetig:
     "Anforderungen, bei denen eine Person den Systembefund bestätigen oder Angaben ergänzen muss.",
+  // RUN 4A — die vier primären Kennzahlen der Qualitätsübersicht.
+  fehlendePflichtangaben:
+    "Offene Befunde der Pflichtfeld-Prüfung: Pflichtangaben, die noch fehlen oder unvollständig sind.",
+  qualitaetsrisiken:
+    "Offene Hinweise aus allen Prüfbereichen, die die Qualität gefährden können, aber nicht automatisch blockieren.",
 } as const
 
 // ---------------------------------------------------------------------------
