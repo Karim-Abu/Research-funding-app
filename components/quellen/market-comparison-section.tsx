@@ -362,27 +362,31 @@ function ItemRow({
           Fundstelle: {item.coverage_status === "exact_quote_verified" ? "exakt gefunden" : "ungeprüft"}
           {" · "}Inhalt: {SUPPORT_STATUS_LABELS[item.support_status ?? "unreviewed"]}
         </p>
+        {/* RUN 4A A11y: Aktionen pro Eintrag eindeutig benennen (Screenreader
+            hören sonst nur mehrfach «Übernehmen»/«Prüfen»). */}
         <div className="mt-1 flex gap-1">
           <button
             type="button"
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            aria-label={`${item.name}: Übernehmen`}
+            className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => onSetStatus(item.item_id, "accepted")}
           >
             Übernehmen
           </button>
-          <span className="text-[11px] text-muted-foreground">·</span>
+          <span aria-hidden className="text-[11px] text-muted-foreground">·</span>
           <button
             type="button"
-            className="text-[11px] text-muted-foreground hover:text-foreground"
+            aria-label={`${item.name}: Prüfen`}
+            className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
             onClick={() => onSetStatus(item.item_id, "needs_human_review")}
           >
             Prüfen
           </button>
         </div>
         <div className="mt-1 flex flex-wrap gap-1">
-          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "supports")}>Stützt</button>
-          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "partial")}>Teilweise</button>
-          <button type="button" className="text-[11px] text-primary hover:underline" onClick={() => onSetStatus(item.item_id, item.status, "does_not_support")}>Stützt nicht</button>
+          <button type="button" aria-label={`${item.name}: Stützt`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "supports")}>Stützt</button>
+          <button type="button" aria-label={`${item.name}: Stützt teilweise`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "partial")}>Teilweise</button>
+          <button type="button" aria-label={`${item.name}: Stützt nicht`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "does_not_support")}>Stützt nicht</button>
         </div>
       </td>
     </tr>

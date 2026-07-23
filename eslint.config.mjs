@@ -14,6 +14,9 @@ const config = [
       "e2e/**",
       "**/*.config.*",
       "next-env.d.ts",
+      // Python-Cache im Repo-Root — nie linten; unter OneDrive zeitweise
+      // gesperrt (EPERM beim scandir bricht sonst den ganzen Lint-Lauf ab).
+      "**/.pytest_cache/**",
     ],
   },
   {
