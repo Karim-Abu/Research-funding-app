@@ -108,10 +108,16 @@ Backend-Pytest: `test_draft_versions.py` (+ Regression `test_draft_flow.py`,
 ```text
 corepack pnpm lint             → pass
 corepack pnpm exec tsc --noEmit → pass
-corepack pnpm test             → pass (76 Dateien / 561 Tests)
+corepack pnpm test             → pass (76 Dateien / 562 Tests)
 corepack pnpm build            → pass
 playwright test --workers=1    → pass (53 passed, 5 skipped [opt-in-Specs], 0 failed)
-scripts/verify_all.ps1 (einmal) → {{VERIFY_ALL_RESULT}}
+scripts/verify_all.ps1 (einmal) → TECHNISCHES GATE GRÜN — alle 14 deterministischen
+                                  Zeilen pass (backend/migration/vitest/build/
+                                  Playwright-Suite/golden-path 2. Lauf/Import/
+                                  Review-Truth/DOCX/API-/Export-Smoke/no-raw-log/
+                                  testdata/legacy-guard); Live-Kategorien
+                                  unverändert not_run bzw. Artefakt-Status
+                                  (not_run heisst nicht bestanden)
 ```
 
 Browser-E2E: `e2e/run4b-editor.spec.ts` — 5/5 grün (EDITOR-01..04,

@@ -64,10 +64,10 @@ Browser-01 gesamthaft und HUMAN-01 `pending`).
 |---|---|
 | `corepack pnpm lint` | `passed` |
 | `corepack pnpm exec tsc --noEmit` | `passed` |
-| `corepack pnpm test` | `passed` (76 Dateien / 561 Tests) |
+| `corepack pnpm test` | `passed` (76 Dateien / 562 Tests) |
 | `corepack pnpm build` | `passed` |
 | `playwright test --workers=1` (volle Suite) | `passed` (53 passed, 5 skipped [opt-in], 0 failed) |
-| `scripts/verify_all.ps1` (einmal, Abschluss) | siehe `RUN_4_RESULT.md` §6 |
+| `scripts/verify_all.ps1` (einmal, Abschluss) | `passed` — TECHNISCHES GATE GRÜN (alle 14 deterministischen Zeilen); Live-Kategorien unverändert `not_run`/Artefakt-Status |
 
 ## Offene Final-Acceptance-Punkte (unverändert ehrlich)
 
