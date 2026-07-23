@@ -93,7 +93,7 @@ test("RUN 4A — Screenshots der zentralen Screens und Zustände", async ({ page
   // Qualitätsprüfung (vier Kennzahlen, Aufgabenliste).
   await page.goto("/review")
   await expect(
-    page.getByRole("heading", { name: "Qualitätsprüfung" })
+    page.getByRole("heading", { name: "Qualitätsprüfung", exact: true })
   ).toBeVisible({ timeout: 20_000 })
   await shoot(page, "review")
 })
