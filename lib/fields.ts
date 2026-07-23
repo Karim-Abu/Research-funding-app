@@ -133,6 +133,45 @@ export async function updateField(
   return (await res.json()) as PortalFieldDraftDto
 }
 
+// --- Versionshistorie (RUN 4B, additiv) -------------------------------------
+// Metadaten-Liste (neueste zuerst, ohne Volltexte) + Einzelversion-Volltext.
+// Restore ist client-orchestriert: getFieldVersion → updateField (base =
+// aktuelle Version, Text = Altversion) → neue user-Version; identischer Text
+// ist serverseitig ein No-op (keine redundante Version).
+
+export interface DraftVersionSummaryDto {
+  draft_version_id: string
+  created_at: string
+  created_by: CreatedBy
+  generation_kind?: GenerationKind | null
+  character_count: number
+  is_current: boolean
+}
+
+export async function listFieldVersions(
+  runId: string,
+  fieldId: string
+): Promise<DraftVersionSummaryDto[]> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/versions`
+  )
+  if (!res.ok) throw await toError(res)
+  const body = (await res.json()) as { versions?: DraftVersionSummaryDto[] }
+  return body.versions ?? []
+}
+
+export async function getFieldVersion(
+  runId: string,
+  fieldId: string,
+  draftVersionId: string
+): Promise<DraftVersionDto> {
+  const res = await fetch(
+    `/api/runs/${encodeURIComponent(runId)}/fields/${encodeURIComponent(fieldId)}/versions/${encodeURIComponent(draftVersionId)}`
+  )
+  if (!res.ok) throw await toError(res)
+  return (await res.json()) as DraftVersionDto
+}
+
 // --- Copy governance (Slice 3, Council E2-A) --------------------------------
 // One server-side CopyEvent per Innolink copy action. The client never sends
 // the field text — only the version id, warning codes and (when warnings
