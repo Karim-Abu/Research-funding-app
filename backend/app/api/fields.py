@@ -10,6 +10,7 @@ from app.agents import field_drafting, field_drafting_context, suggestion_stalen
 from app.contracts.copy_event import CopyEvent, CopyEventCreate
 from app.contracts.draft import (
     DraftPatch,
+    DraftVersionList,
     EvidenceLinkCreate,
     FieldSuggestionRead,
     FieldSuggestionsRead,
@@ -191,6 +192,24 @@ def get_field(
     return drafts_repo.to_contract(
         db, draft, copy_readiness=readiness.get(field_id)
     )
+
+
+@router.get(
+    "/runs/{run_id}/fields/{field_id}/versions",
+    response_model=DraftVersionList,
+)
+def list_field_versions(
+    run_id: str,
+    field_id: str,
+    context: AuthContext = Depends(require_session),
+    db: Session = Depends(get_db),
+) -> DraftVersionList:
+    """RUN 4B (additiv, read-only): Metadaten-Historie aller Versionen eines
+    Portalfeldes, neueste zuerst — ohne Volltexte (der Einzel-GET darunter
+    liefert den Text einer Version)."""
+    run = _require_run(db, run_id, context.user.workspace_id)
+    draft = _require_draft(db, run, field_id)
+    return DraftVersionList(versions=drafts_repo.list_versions(db, draft))
 
 
 @router.get(

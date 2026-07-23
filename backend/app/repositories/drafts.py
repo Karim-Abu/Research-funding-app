@@ -15,6 +15,7 @@ from sqlalchemy.orm import Session
 from app.agents import a2_fields
 from app.api.errors import ProblemException
 from app.contracts.draft import DraftVersion as DraftVersionSchema
+from app.contracts.draft import DraftVersionSummary as DraftVersionSummarySchema
 from app.contracts.draft import PortalFieldDraft as DraftSchema
 from app.db.models import (
     AnalysisRun,
@@ -422,15 +423,47 @@ def apply_update(
 # --- read model ------------------------------------------------------------
 
 
-def to_version_contract(db: Session, version: DraftVersion) -> DraftVersionSchema:
-    generation_kind = None
+def _generation_kind_for(db: Session, version: DraftVersion) -> str | None:
+    """Provenienz einer Version: Template → rule_template, sonst über die
+    erzeugende Suggestion (source_operation_id); unbekannt → None."""
     if version.created_by == "template":
-        generation_kind = "rule_template"
-    elif version.source_operation_id:
+        return "rule_template"
+    if version.source_operation_id:
         from app.repositories import draft_suggestions as suggestions_repo
 
         suggestion = suggestions_repo.get_by_operation(db, version.source_operation_id)
-        generation_kind = suggestion.generation_kind if suggestion is not None else None
+        return suggestion.generation_kind if suggestion is not None else None
+    return None
+
+
+def list_versions(
+    db: Session, draft: PortalFieldDraft
+) -> list[DraftVersionSummarySchema]:
+    """RUN 4B (additiv): alle Versionen eines Feldes als Metadaten-Liste,
+    neueste zuerst (deterministischer Tie-Break über die ID). Volltexte
+    bleiben dem bestehenden Einzel-GET vorbehalten."""
+    versions = db.scalars(
+        select(DraftVersion)
+        .where(DraftVersion.draft_id == draft.draft_id)
+        .order_by(
+            DraftVersion.created_at.desc(), DraftVersion.draft_version_id.desc()
+        )
+    ).all()
+    return [
+        DraftVersionSummarySchema(
+            draft_version_id=version.draft_version_id,
+            created_at=version.created_at,
+            created_by=version.created_by,
+            generation_kind=_generation_kind_for(db, version),
+            character_count=version.character_count,
+            is_current=version.draft_version_id == draft.current_version_id,
+        )
+        for version in versions
+    ]
+
+
+def to_version_contract(db: Session, version: DraftVersion) -> DraftVersionSchema:
+    generation_kind = _generation_kind_for(db, version)
     return DraftVersionSchema(
         draft_version_id=version.draft_version_id,
         text=version.text,

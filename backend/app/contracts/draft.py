@@ -31,6 +31,25 @@ class DraftVersion(BaseModel):
     ] | None = None
 
 
+class DraftVersionSummary(BaseModel):
+    """RUN 4B (additiv): Metadaten einer Version für die Historienliste —
+    bewusst ohne Volltext (der Text kommt über den bestehenden Einzel-GET
+    /versions/{draft_version_id})."""
+
+    draft_version_id: str
+    created_at: datetime
+    created_by: CreatedBy
+    generation_kind: Literal[
+        "rule_template", "fake_demo", "model_generated"
+    ] | None = None
+    character_count: int
+    is_current: bool = False
+
+
+class DraftVersionList(BaseModel):
+    versions: list[DraftVersionSummary] = []
+
+
 class PortalFieldDraft(BaseModel):
     draft_id: str
     field_id: str
