@@ -1497,6 +1497,9 @@ export function LiveEditor({
       serverText={selected.current_version.text}
       projectId={marketProjectId}
       dataClass={workspaceDataClass}
+      portalQuestion={
+        portalCatalog.find((f) => f.field_id === selected.field_id)?.label
+      }
       subsections={subsectionDefs}
       onJumpToSubsection={selectSubsection}
       activeSubsection={selectedSubsection}
@@ -1535,7 +1538,7 @@ export function LiveEditor({
                   aria-label="Verbesserungsziel"
                 >
                   <option value="clearer">Klarer formulieren</option>
-                  <option value="complete_innolink_requirements">Innolink-Anforderungen vervollständigen</option>
+                  <option value="complete_innolink_requirements">Fehlende Innolink-Punkte ergänzen</option>
                   <option value="shorten">Kürzen</option>
                 </select>
               </label>

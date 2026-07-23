@@ -130,6 +130,10 @@ interface DraftWorkspaceShellProps {
   onSave: () => void
   saveDisabled: boolean
   saveStateLabel: string
+  /** RUN 4B §2.1: originale Portalfrage des Feldes (Registry
+   *  label_or_question) — sichtbar im Feldkopf, wenn sie mehr sagt als der
+   *  Feldname selbst. */
+  portalQuestion?: string
   deinTextBadge?: React.ReactNode
   deinTextHint?: React.ReactNode
   /** Aktionen in der «Dein Text»-Kopfzeile (z. B. «In Notizen verschieben»). */
@@ -196,6 +200,7 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
     onSave,
     saveDisabled,
     saveStateLabel,
+    portalQuestion,
     deinTextBadge,
     deinTextHint,
     deinTextActions,
@@ -601,6 +606,17 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                     <h2 className="text-lg font-semibold text-foreground">{portalPath}</h2>
                     <FieldStatusBadge status={activeVm.status} />
                   </div>
+                  {/* RUN 4B §2.1: die originale Innolink-Frage zum Feld —
+                      nur wenn sie mehr sagt als der Feldname selbst. */}
+                  {portalQuestion &&
+                    portalQuestion.trim() !== activeVm.fieldLabel.trim() && (
+                      <p
+                        className="text-sm text-muted-foreground"
+                        data-testid="portal-question"
+                      >
+                        Portalfrage: {portalQuestion}
+                      </p>
+                    )}
                   {activeVm.helperLabel && (
                     <p className="text-xs text-muted-foreground">{activeVm.helperLabel}</p>
                   )}

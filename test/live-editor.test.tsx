@@ -117,6 +117,35 @@ describe("LiveEditor", () => {
     )
   })
 
+  it("RUN 4B §2.1: zeigt die originale Portalfrage im Feldkopf", async () => {
+    mock()
+    server.use(
+      http.get("/api/runs/r1/portal-fields", () =>
+        HttpResponse.json([
+          {
+            field_id: "INTRO.APP.ABSTRACT",
+            section: "INTRO",
+            label:
+              "Fassen Sie Ihr Innovationsvorhaben in wenigen Sätzen zusammen.",
+            character_limit: 300,
+            mandatory_status: "required",
+            required: true,
+            support_mode: "draft_text",
+            field_kind: "single_editor",
+            display_mode: "draft",
+            draft_available: true,
+            subsections: [],
+          },
+        ])
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await screen.findByLabelText("Entwurf Abstract")
+    expect(await screen.findByTestId("portal-question")).toHaveTextContent(
+      "Portalfrage: Fassen Sie Ihr Innovationsvorhaben in wenigen Sätzen zusammen."
+    )
+  })
+
   it("renders the template draft with badge, hint and Unicode text", async () => {
     mock()
     render(<LiveEditor runId="r1" />)
