@@ -1,7 +1,35 @@
 // C2 — Diff-Klassifikation: beibehalten / entfernt / hinzugefügt / umformuliert.
 import { describe, expect, it } from "vitest"
 
-import { applySegments, countChanges, diffSuggestion } from "@/lib/diff"
+import { applySegments, countChanges, diffSuggestion, summarizeDiff } from "@/lib/diff"
+
+describe("summarizeDiff (RUN 4B §3 — Screenreader-Zusammenfassung)", () => {
+  it("identische Texte ⇒ «Keine Änderungen …»", () => {
+    expect(summarizeDiff(diffSuggestion("A bleibt.", "A bleibt."))).toBe(
+      "Keine Änderungen gegenüber dem aktuellen Text."
+    )
+  })
+
+  it("zählt Ergänzung und Streichung mit korrektem Singular", () => {
+    const segments = diffSuggestion(
+      "Kernaussage bleibt. Diese Wiederholung fliegt raus.",
+      "Kernaussage bleibt. Neue Zielgruppe kommt dazu."
+    )
+    expect(summarizeDiff(segments)).toBe(
+      "Änderungen im Vorschlag: 1 Satz ergänzt, 1 Satz entfernt."
+    )
+  })
+
+  it("weist Umformulierungen aus", () => {
+    const segments = diffSuggestion(
+      "Die Genauigkeit des Verfahrens beträgt 95 Prozent im Labor.",
+      "Die Genauigkeit des Verfahrens beträgt voraussichtlich 95 Prozent im Feldtest."
+    )
+    expect(summarizeDiff(segments)).toBe(
+      "Änderungen im Vorschlag: 1 Satz umformuliert."
+    )
+  })
+})
 
 describe("diffSuggestion", () => {
   it("identische Texte ⇒ alles beibehalten", () => {

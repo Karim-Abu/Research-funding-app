@@ -13,7 +13,13 @@ import {
 } from "@/components/ui/sheet"
 import { Textarea } from "@/components/ui/textarea"
 import { cn } from "@/lib/utils"
-import { applySegments, countChanges, diffSuggestion, type DiffSegment } from "@/lib/diff"
+import {
+  applySegments,
+  countChanges,
+  diffSuggestion,
+  summarizeDiff,
+  type DiffSegment,
+} from "@/lib/diff"
 import { rationaleChips } from "@/lib/suggestion-view"
 import { VERIFICATION_LABELS, type VerificationStatus } from "@/lib/evidence"
 import { charCount } from "@/lib/fields"
@@ -100,6 +106,14 @@ export function SuggestionReviewDialog({
   const [reasonOpen, setReasonOpen] = React.useState(false)
   const [reasonChoice, setReasonChoice] = React.useState<string | null>(null)
   const [reasonText, setReasonText] = React.useState("")
+  // RUN 4B §10 — beim Öffnen landet der Fokus deterministisch auf dem Titel
+  // (nicht auf dem ersten interaktiven Element mitten im Diff).
+  const titleRef = React.useRef<HTMLHeadingElement | null>(null)
+  React.useEffect(() => {
+    if (!open) return
+    const frame = requestAnimationFrame(() => titleRef.current?.focus())
+    return () => cancelAnimationFrame(frame)
+  }, [open, suggestion.suggestion_id])
 
   // Auswahl/Ablehnungsformular je Vorschlag zurücksetzen.
   React.useEffect(() => {
@@ -137,7 +151,13 @@ export function SuggestionReviewDialog({
       >
         <SheetHeader className="shrink-0 border-b border-border px-6 py-4">
           <div className="flex flex-wrap items-center gap-2">
-            <SheetTitle>{label} prüfen</SheetTitle>
+            <SheetTitle
+              ref={titleRef}
+              tabIndex={-1}
+              className="rounded focus:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+            >
+              {label} prüfen
+            </SheetTitle>
             {suggestion.generation_kind && (
               <span
                 className={cn(
@@ -162,6 +182,11 @@ export function SuggestionReviewDialog({
         </SheetHeader>
 
         <div className="flex min-w-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-4">
+          {/* RUN 4B §3 — Screenreader-Zusammenfassung der Änderungen; das
+              visuelle Pendant ist die Markierung im Diff selbst. */}
+          <p className="sr-only" aria-live="polite" data-testid="diff-sr-summary">
+            {summarizeDiff(segments)}
+          </p>
           {/* Fachliche Kurzbilanz VOR dem Diff: was blieb, was fiel weg, was
               fehlt, welche Quellen — plus Textumfang alt → neu. */}
           {section && (

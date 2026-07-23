@@ -80,6 +80,24 @@ describe("SuggestionReviewDialog", () => {
     )
   })
 
+  it("RUN 4B §3/§10: sr-Diff-Zusammenfassung mit aria-live vorhanden", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText={"Satz eins bleibt. Satz zwei fliegt raus."}
+        suggestion={suggestion({
+          suggested_text: "Satz eins bleibt. Ganz neuer Schlusssatz.",
+        })}
+        onAccept={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const summary = screen.getByTestId("diff-sr-summary")
+    expect(summary).toHaveAttribute("aria-live", "polite")
+    expect(summary).toHaveTextContent(/1 Satz ergänzt, 1 Satz entfernt/)
+  })
+
   it("zeigt echten Diff mit Text-Badges und übernimmt einzelne Änderungen", () => {
     const onAcceptPartial = vi.fn()
     render(

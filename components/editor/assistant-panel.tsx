@@ -97,9 +97,11 @@ export function AssistantPanel({
         {TABS.map(([key, label]) => (
           <button
             key={key}
+            id={`assistant-tab-${key}`}
             type="button"
             role="tab"
             aria-selected={tab === key}
+            aria-controls="assistant-tabpanel"
             onClick={() => selectTab(key)}
             className={cn(
               "rounded-md px-2.5 py-1.5 text-left text-xs font-medium transition-colors",
@@ -112,7 +114,14 @@ export function AssistantPanel({
           </button>
         ))}
       </div>
-      <div className="flex min-w-0 flex-1 flex-col gap-3">
+      {/* RUN 4B §10 — ein gemeinsames Tabpanel, per aria-labelledby an den
+          aktiven Tab gebunden (Inhalt wechselt, Panel-Knoten bleibt). */}
+      <div
+        className="flex min-w-0 flex-1 flex-col gap-3"
+        role="tabpanel"
+        id="assistant-tabpanel"
+        aria-labelledby={`assistant-tab-${tab}`}
+      >
 
       {tab === "markt" && (
         <MarketCompetitionPanel

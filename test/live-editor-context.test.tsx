@@ -206,6 +206,12 @@ describe("Versionen tab (RUN 4B: Historie + Wiederherstellen)", () => {
 
     const rows = await screen.findAllByTestId("version-row")
     expect(rows).toHaveLength(2)
+    // RUN 4B §10 — der Panelinhalt ist ein an den aktiven Tab gebundenes
+    // Tabpanel (aria-labelledby).
+    expect(screen.getByRole("tabpanel")).toHaveAttribute(
+      "aria-labelledby",
+      "assistant-tab-versionen"
+    )
     expect(within(rows[0]).getByText("Manuell bearbeitet")).toBeInTheDocument()
     expect(within(rows[0]).getByText("Aktuell")).toBeInTheDocument()
     expect(within(rows[1]).getByText("Strukturvorlage")).toBeInTheDocument()

@@ -33,6 +33,23 @@ export interface DiffSegment {
 // Umformulierung desselben Satzes statt als zwei unabhängige Änderungen.
 const REPHRASE_OVERLAP = 0.4
 
+/** RUN 4B §3 — Zusammenfassung des Diffs in Nutzersprache (Screenreader und
+ *  Sichttext identisch verwendbar). Zählt Sätze je Änderungsart. */
+export function summarizeDiff(segments: DiffSegment[]): string {
+  const added = segments.filter((s) => s.kind === "hinzugefuegt").length
+  const removed = segments.filter((s) => s.kind === "entfernt").length
+  const rephrased = segments.filter((s) => s.kind === "umformuliert").length
+  if (added + removed + rephrased === 0) {
+    return "Keine Änderungen gegenüber dem aktuellen Text."
+  }
+  const noun = (n: number) => (n === 1 ? "Satz" : "Sätze")
+  const parts: string[] = []
+  if (added > 0) parts.push(`${added} ${noun(added)} ergänzt`)
+  if (removed > 0) parts.push(`${removed} ${noun(removed)} entfernt`)
+  if (rephrased > 0) parts.push(`${rephrased} ${noun(rephrased)} umformuliert`)
+  return `Änderungen im Vorschlag: ${parts.join(", ")}.`
+}
+
 interface SentenceToken {
   text: string
   start: number
