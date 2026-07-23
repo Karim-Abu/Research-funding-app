@@ -193,6 +193,117 @@ describe("MarketComparisonSection", () => {
     )
   })
 
+  it("RUN 4A: kompakte Spalten und höchstens fünf Konsequenzen", async () => {
+    const consequences = [
+      "Konsequenz 1",
+      "Konsequenz 2",
+      "Konsequenz 3",
+      "Konsequenz 4",
+      "Konsequenz 5",
+      "Konsequenz 6 (darf nicht erscheinen)",
+    ]
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({
+            consequences,
+            items: [
+              {
+                ...comparison().items[0],
+                target_customer_segment: "Schweizer KMU",
+                core_problem_or_benefit: "Schnellere Qualitätsprüfung",
+                price_business_model: "Abo-Modell",
+                swiss_relevance: "Standort Zürich erwähnt",
+              },
+            ],
+          })
+        )
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    await waitFor(() =>
+      expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
+    )
+    // Mandats-Spalten der kompakten Tabelle.
+    for (const column of [
+      "Anbieter/Alternative",
+      "Zielgruppe",
+      "Kernnutzen",
+      "Differenzierung",
+      "Geschäftsmodell",
+      "Schweiz-Relevanz",
+      "Belege",
+    ]) {
+      expect(screen.getByText(column)).toBeInTheDocument()
+    }
+    expect(screen.getByText("Schweizer KMU")).toBeInTheDocument()
+    expect(screen.getByText("Schnellere Qualitätsprüfung")).toBeInTheDocument()
+    expect(screen.getByText("Abo-Modell")).toBeInTheDocument()
+    // Ehrlicher Gesamtstatus im Sektionskopf.
+    expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
+      "Zur menschlichen Prüfung bereit"
+    )
+    // Höchstens fünf Konsequenzen.
+    const list = screen.getByTestId("market-consequences")
+    expect(list).toHaveTextContent("Was das für den Antrag bedeutet")
+    expect(list).toHaveTextContent("Konsequenz 5")
+    expect(list).not.toHaveTextContent("Konsequenz 6")
+  })
+
+  it("RUN 4A: limited mit item_count 0 erscheint nie als Erfolg", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({
+            status: "limited",
+            items: [],
+            item_count: 0,
+            research_gaps: ["Es fehlen geprüfte Quellen zu Anbietern im Zielmarkt."],
+          })
+        )
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    expect(
+      await screen.findByText(/keine belastbaren Anbieter- oder/)
+    ).toBeInTheDocument()
+    // Kein Erfolgs-Empty-State, keine leere Tabelle.
+    expect(
+      screen.queryByText(/Keine Vergleichseinträge aus live abgerufenen/)
+    ).toBeNull()
+    expect(screen.queryByTestId("market-comparison-table")).toBeNull()
+    // Limitationshinweis + fehlende Evidenz konkret benannt.
+    expect(
+      screen.getByText(/Begrenzte externe Evidenz: Es liegen geprüfte Marktquellen vor/)
+    ).toBeInTheDocument()
+    expect(screen.getByTestId("market-research-gaps")).toHaveTextContent(
+      "Es fehlen geprüfte Quellen zu Anbietern im Zielmarkt."
+    )
+  })
+
+  it("RUN 4A: insufficient nennt fehlende geeignete geprüfte Quellen", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({
+            status: "insufficient_external_evidence",
+            items: [],
+            item_count: 0,
+          })
+        )
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    expect(
+      await screen.findByText(
+        /Für einen belastbaren Marktvergleich fehlen geeignete geprüfte/
+      )
+    ).toBeInTheDocument()
+    expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
+      "Zu wenig geeignete geprüfte Quellen"
+    )
+  })
+
   it("generates a comparison and renders the result", async () => {
     let created = false
     server.use(

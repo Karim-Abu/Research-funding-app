@@ -112,6 +112,17 @@ export interface MarketComparisonDto {
 // User-facing labels (shared by the Quellen table, the editor's Markt tab and
 // the market-comparison sheet). Raw enum values never reach the UI.
 // ---------------------------------------------------------------------------
+// RUN 4A: Vergleichsstatus in Nutzersprache für den Sektionskopf. Der Contract
+// kennt kein wörtliches «complete» — der positive Zustand ist ready_for_review.
+export const COMPARISON_STATUS_LABELS: Record<ComparisonStatus, string> = {
+  draft: "Entwurf",
+  ready_for_review: "Zur menschlichen Prüfung bereit",
+  limited: "Begrenzte externe Evidenz",
+  insufficient_external_evidence: "Zu wenig geeignete geprüfte Quellen",
+  stale: "Veraltet — bitte neu erstellen",
+  failed: "Fehlgeschlagen",
+}
+
 export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
   competitor: "Konkurrent",
   alternative_solution: "Alternative Lösung",

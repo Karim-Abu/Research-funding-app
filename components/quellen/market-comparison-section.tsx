@@ -15,6 +15,7 @@ import {
   getLatestComparison,
   MarketComparisonError,
   updateItemStatus,
+  COMPARISON_STATUS_LABELS,
   ITEM_CATEGORY_LABELS,
   ITEM_RELATION_LABELS,
   ITEM_STATUS_LABELS,
@@ -107,11 +108,17 @@ export function MarketComparisonSection({
       className="rounded-lg border border-border bg-card p-5"
     >
       <div className="mb-1 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <BarChart3 className="size-4 text-muted-foreground" />
           <h3 className="text-sm font-semibold text-foreground">
             Markt- und Konkurrenzvergleich
           </h3>
+          {/* RUN 4A: ehrlicher Gesamtstatus des Vergleichs im Sektionskopf. */}
+          {comparison && (
+            <Badge variant="outline" data-testid="market-comparison-status">
+              {COMPARISON_STATUS_LABELS[comparison.status]}
+            </Badge>
+          )}
         </div>
         <Button
           type="button"
@@ -157,6 +164,22 @@ export function MarketComparisonSection({
         </p>
       )}
 
+      {/* RUN 4A: Limitationshinweise VOR der Tabelle — eine schmale Datenlage
+          darf nie wie ein vollständiger Vergleich wirken. */}
+      {comparison?.status === "insufficient_external_evidence" && (
+        <p className="mb-3 text-sm text-status-partial" role="status">
+          Für einen belastbaren Marktvergleich fehlen geeignete geprüfte
+          Quellen.
+        </p>
+      )}
+
+      {comparison?.status === "limited" && (
+        <p className="mb-3 text-xs text-status-partial" role="status">
+          Begrenzte externe Evidenz: Es liegen geprüfte Marktquellen vor, aber
+          der Konkurrenzvergleich ist noch nicht vollständig.
+        </p>
+      )}
+
       {comparison && comparison.items.length > 0 && (
         <div className="overflow-x-auto" data-testid="market-comparison-table">
           {SUMMARY_SECTIONS.map((section) => {
@@ -172,13 +195,13 @@ export function MarketComparisonSection({
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
                     <tr className="border-b border-border text-muted-foreground">
-                      <th className="py-2 pr-3 font-medium">Eintrag</th>
-                      <th className="py-2 pr-3 font-medium">Kategorie</th>
-                      <th className="py-2 pr-3 font-medium">Kurzbeschreibung</th>
-                      <th className="py-2 pr-3 font-medium">Relevanz</th>
-                      <th className="py-2 pr-3 font-medium">Differenzierungshinweis</th>
-                      <th className="py-2 pr-3 font-medium">Vergleichsdimensionen</th>
-                      <th className="py-2 pr-3 font-medium">Quelle</th>
+                      <th className="py-2 pr-3 font-medium">Anbieter/Alternative</th>
+                      <th className="py-2 pr-3 font-medium">Zielgruppe</th>
+                      <th className="py-2 pr-3 font-medium">Kernnutzen</th>
+                      <th className="py-2 pr-3 font-medium">Differenzierung</th>
+                      <th className="py-2 pr-3 font-medium">Geschäftsmodell</th>
+                      <th className="py-2 pr-3 font-medium">Schweiz-Relevanz</th>
+                      <th className="py-2 pr-3 font-medium">Belege</th>
                       <th className="py-2 pr-3 font-medium">Status</th>
                     </tr>
                   </thead>
@@ -198,23 +221,37 @@ export function MarketComparisonSection({
         </div>
       )}
 
-      {comparison?.status === "insufficient_external_evidence" && (
-        <p className="mb-3 text-sm text-status-partial" role="status">
-          {"Zu wenige extern gepr\u00fcfte Quellen: Es wurden keine Vergleichsaussagen erzeugt."}
-        </p>
-      )}
+      {comparison &&
+        comparison.items.length === 0 &&
+        state === "ready" &&
+        (comparison.status === "limited" ||
+        comparison.status === "insufficient_external_evidence" ? (
+          // RUN 4A: eine leere Tabelle ist kein Erfolg — konkret benennen,
+          // dass belastbare Vergleiche fehlen (Details in den Evidenzlücken).
+          <p className="text-sm text-status-partial" role="status">
+            Es liegen noch keine belastbaren Anbieter- oder
+            Alternativenvergleiche vor. Die offenen Evidenzlücken unten zeigen,
+            welche geprüften Quellen fehlen.
+          </p>
+        ) : (
+          <p className="text-sm text-muted-foreground">
+            Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv
+            geprüften öffentlichen Quellen.
+          </p>
+        ))}
 
-      {comparison?.status === "limited" && (
-        <p className="mb-3 text-xs text-status-partial" role="status">
-          Begrenzter Vergleich: Es liegen nur zwei geeignete externe Quellen vor.
-        </p>
-      )}
-
-      {comparison && comparison.items.length === 0 && state === "ready" && (
-        <p className="text-sm text-muted-foreground">
-          Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv
-          geprüften öffentlichen Quellen.
-        </p>
+      {/* RUN 4A: höchstens fünf konkrete Konsequenzen für den Antrag. */}
+      {comparison && (comparison.consequences?.length ?? 0) > 0 && (
+        <div className="mt-4" data-testid="market-consequences">
+          <p className="text-xs font-medium text-foreground">
+            Was das für den Antrag bedeutet
+          </p>
+          <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
+            {(comparison.consequences ?? []).slice(0, 5).map((entry, i) => (
+              <li key={i}>{entry}</li>
+            ))}
+          </ul>
+        </div>
       )}
 
       {comparison && comparison.research_gaps.length > 0 && (
@@ -267,26 +304,39 @@ function ItemRow({
 }) {
   return (
     <tr className="border-b border-border/60 align-top">
-      <td className="py-2 pr-3 font-medium text-foreground">{item.name}</td>
-      <td className="py-2 pr-3 text-muted-foreground">
-        {ITEM_CATEGORY_LABELS[item.category]}
+      <td className="py-2 pr-3 font-medium text-foreground">
+        {item.name}
+        <span className="block text-[11px] font-normal text-muted-foreground">
+          {ITEM_CATEGORY_LABELS[item.category]} ·{" "}
+          {ITEM_RELATION_LABELS[item.relation_to_project]}
+        </span>
+        {/* RUN 4A: sekundäre Vergleichsdimensionen progressiv statt als
+            eigene, immer sichtbare Spalte. */}
+        <details className="mt-1 text-[11px] font-normal text-muted-foreground">
+          <summary className="cursor-pointer">Weitere Details</summary>
+          <dl className="mt-1 grid grid-cols-[auto_1fr] gap-x-2">
+            <dt>Kurzbeschreibung</dt><dd>{item.description ?? "—"}</dd>
+            <dt>Lösungstyp</dt><dd>{item.solution_type ?? "—"}</dd>
+            <dt>Zentralität</dt><dd>{CENTRALIZATION_LABELS[item.centralization ?? "unclear"]}</dd>
+            <dt>Daten/Zugriff</dt><dd>{item.data_access_model ?? "—"}</dd>
+            <dt>Funktionen</dt><dd>{item.relevant_functions?.join(", ") || "nicht öffentlich belegt"}</dd>
+          </dl>
+        </details>
       </td>
-      <td className="py-2 pr-3 text-muted-foreground">{item.description ?? "—"}</td>
       <td className="py-2 pr-3 text-muted-foreground">
-        {ITEM_RELATION_LABELS[item.relation_to_project]}
+        {item.target_customer_segment ?? "nicht öffentlich belegt"}
+      </td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        {item.core_problem_or_benefit ?? item.description ?? "—"}
       </td>
       <td className="py-2 pr-3 text-muted-foreground">
         {item.differentiation_relevance ?? "—"}
       </td>
       <td className="py-2 pr-3 text-muted-foreground">
-        <dl className="grid grid-cols-[auto_1fr] gap-x-2 text-[11px]">
-          <dt>Lösungstyp</dt><dd>{item.solution_type ?? "—"}</dd>
-          <dt>Zentralität</dt><dd>{CENTRALIZATION_LABELS[item.centralization ?? "unclear"]}</dd>
-          <dt>Daten/Zugriff</dt><dd>{item.data_access_model ?? "—"}</dd>
-          <dt>Schweizer Bezug</dt><dd>{item.swiss_relevance ?? "unbestätigt"}</dd>
-          <dt>Preis/Modell</dt><dd>{item.price_business_model ?? "nicht oeffentlich belegt"}</dd>
-          <dt>Funktionen</dt><dd>{item.relevant_functions?.join(", ") || "nicht oeffentlich belegt"}</dd>
-        </dl>
+        {item.price_business_model ?? "nicht öffentlich belegt"}
+      </td>
+      <td className="py-2 pr-3 text-muted-foreground">
+        {item.swiss_relevance ?? "unbestätigt"}
       </td>
       <td className="py-2 pr-3">
         {item.evidence_quotes.length > 0 ? (
