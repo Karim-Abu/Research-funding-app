@@ -10,7 +10,7 @@ import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from app.contracts.evidence import EvidenceAnchor as AnchorSchema
@@ -274,6 +274,32 @@ def list_anchors_for_run(db: Session, run_id: str) -> list[EvidenceAnchor]:
         )
     )
     return anchors
+
+
+def list_anchors_by_ids(
+    db: Session,
+    anchor_ids: list[str],
+    *,
+    workspace_id: str,
+    run_id: str,
+    project_id: str | None,
+) -> dict[str, EvidenceAnchor]:
+    """Scoped Zitat-Lookup für den Suggestion-Read-Pfad: nur Anker desselben
+    Workspace, die zum zitierenden Run (Application Evidence) oder zu dessen
+    Projekt (Kontext-Anker, vgl. suggestion_context_options) gehören."""
+    if not anchor_ids:
+        return {}
+    scope = [EvidenceAnchor.run_id == run_id]
+    if project_id is not None:
+        scope.append(EvidenceAnchor.project_id == project_id)
+    rows = db.scalars(
+        select(EvidenceAnchor).where(
+            EvidenceAnchor.anchor_id.in_(anchor_ids),
+            EvidenceAnchor.workspace_id == workspace_id,
+            or_(*scope),
+        )
+    )
+    return {anchor.anchor_id: anchor for anchor in rows}
 
 
 # --- links -----------------------------------------------------------------

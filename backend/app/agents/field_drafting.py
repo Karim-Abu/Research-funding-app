@@ -45,6 +45,7 @@ from app.evaluation.data_mode import derive_data_mode
 from app.drafts.charcount import char_count, within_limit
 from app.repositories import audit, controls
 from app.repositories import draft_suggestions as suggestions_repo
+from app.repositories import evidence as evidence_repo
 from app.registry.loader import get_registry
 from app.drafts.sections import (
     SectionStructureError,
@@ -857,8 +858,31 @@ def _suggestion_view(db, run, suggestion, *, evidence: list | None = None,
     Reused-Pfad: warnings fallen auf die Placeholder-Heuristik zurück (kein
     ctx verfügbar) — der DraftProposal übernimmt dieselben safety_notes.
     """
-    anchor_ids = set(suggestion.evidence_anchor_ids or [])
-    used = [e for e in (evidence or []) if e["anchor_id"] in anchor_ids]
+    cited = list(suggestion.evidence_anchor_ids or [])
+    if evidence is None:
+        # Read-/Reuse-Pfad (Final-Acceptance-Slice): gespeicherte Zitate aus den
+        # persistierten EvidenceAnchor-Zeilen projizieren — nur geprüfte Anker
+        # (wie ctx.verified_evidence), Zitierreihenfolge bleibt erhalten.
+        anchors_by_id = evidence_repo.list_anchors_by_ids(
+            db, cited, workspace_id=run.workspace_id,
+            run_id=run.run_id, project_id=run.project_id,
+        )
+        used = [
+            {
+                "anchor_id": anchor.anchor_id,
+                "quote": anchor.quote,
+                "source_name": anchor.source_name,
+                "verification_status": anchor.verification_status,
+                "page": anchor.page,
+                "section": anchor.section,
+            }
+            for anchor in (anchors_by_id.get(anchor_id) for anchor_id in cited)
+            if anchor is not None
+            and anchor.verification_status in ("exact_verified", "human_verified")
+        ]
+    else:
+        anchor_ids = set(cited)
+        used = [e for e in evidence if e["anchor_id"] in anchor_ids]
     config = a2_fields.resolve_field_config(suggestion.field_id)
     warn = warnings if warnings is not None else (
         ["contains_placeholders"] if suggestion.placeholders else []

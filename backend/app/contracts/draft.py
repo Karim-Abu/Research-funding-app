@@ -79,11 +79,30 @@ class EvidenceLinkCreate(BaseModel):
     base_version_id: str
 
 
+class SuggestionEvidenceItem(BaseModel):
+    """Beleg-Eintrag in `suggestion.evidence[]` (Final-Acceptance-Slice):
+    der Read-Pfad projiziert die zitierten, persistierten EvidenceAnchor-Zeilen
+    in genau diese Form (nur geprüfte Anker). Dient als Contract-Validator in
+    Tests; die Response selbst bleibt `suggestion: dict`. Der Frischpfad darf
+    zusätzliche Schlüssel tragen (extra="allow")."""
+
+    model_config = ConfigDict(extra="allow")
+
+    anchor_id: str
+    quote: str
+    source_name: str
+    verification_status: Literal["exact_verified", "human_verified"]
+    page: int | None = None
+    section: str | None = None
+
+
 class FieldSuggestionRead(BaseModel):
     """Read-only Antwort von GET /runs/{id}/fields/{field}/suggestion:
     die offene (proposed) A2-Suggestion zur AKTUELLEN Basisversion — derselbe
     View wie das Redraft-Operation-Result — oder null. Additiv; die Annahme
-    läuft unverändert über updateField mit source_operation_id."""
+    läuft unverändert über updateField mit source_operation_id.
+    Seit dem Final-Acceptance-Slice enthält `suggestion.evidence` auch im
+    Read-Pfad die projizierten geprüften Beleg-Anker (SuggestionEvidenceItem)."""
 
     suggestion: dict | None = None
 
