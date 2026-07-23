@@ -79,7 +79,6 @@ import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-di
 import { MarketComparisonSheet } from "@/components/editor/market-comparison-sheet"
 import { getActiveProjectId, loadIntake } from "@/lib/intake-store"
 import {
-  CREATED_BY_LABELS,
   liveFieldToViewModel,
   pickDefaultTab,
   versionOriginLabel,
@@ -519,11 +518,18 @@ export function LiveEditor({
         a2Suggestion.accept_mode === "whole_suggestion_only" &&
         textOverride === undefined
       ) {
-        await acceptFieldSuggestion(
+        const accepted = await acceptFieldSuggestion(
           runId,
           selected.field_id,
           a2Suggestion.suggestion_id,
           a2Suggestion.base_version_id
+        )
+        // RUN 4B §7 — Replay ist idempotent: der Server meldet ehrlich, dass
+        // KEINE zweite Version entstanden ist.
+        setNotesNotice(
+          accepted.idempotent_replay
+            ? "Bereits übernommen — es wurde keine neue Version erstellt."
+            : null
         )
         const updated = await getField(runId, selected.field_id)
         applyDraft(updated)
@@ -1438,6 +1444,9 @@ export function LiveEditor({
       saveStateLabel={SAVE_STATE_LABEL[saveState]}
       deinTextBadge={
         <>
+          {/* RUN 4B §7 — Herkunft in Nutzersprache («Aus KI-Vorschlag
+              übernommen» nur bei verifizierter Provenienz); die Generierungsart
+              bleibt als eigener Chip sichtbar (Live-KI vs. Demo). */}
           <Badge
             variant={selected.current_version.generation_kind ? "outline" : "secondary"}
             className={cn(
@@ -1445,12 +1454,24 @@ export function LiveEditor({
                 GENERATION_KIND_BADGE_CLASS[selected.current_version.generation_kind]
             )}
           >
-            {selected.current_version.generation_kind
-              ? generationLabel(selected.current_version.generation_kind)
-              : selected.current_version.created_by === "agent"
-                ? "Herkunft nicht verifiziert"
-                : (CREATED_BY_LABELS[selected.current_version.created_by] ?? "Entwurf")}
+            {versionOriginLabel(
+              selected.current_version.created_by,
+              selected.current_version.generation_kind
+            )}
           </Badge>
+          {selected.current_version.created_by === "agent" &&
+            selected.current_version.generation_kind && (
+              <Badge
+                variant="outline"
+                className={
+                  GENERATION_KIND_BADGE_CLASS[
+                    selected.current_version.generation_kind
+                  ]
+                }
+              >
+                {generationLabel(selected.current_version.generation_kind)}
+              </Badge>
+            )}
           {/* C8 — nach einer Übernahme/Änderung: klarer Status statt nur Banner. */}
           {recheck && (
             <Badge
@@ -1859,6 +1880,13 @@ export function LiveEditor({
           }
           onEdit={editSuggestionTarget}
           onDismiss={(reason) => void dismissSuggestion(reason)}
+          onRegenerate={() => {
+            // Regenerate nutzt denselben Redraft-Pfad (idempotent, nie
+            // Auto-Übernahme); das Sheet schliesst, der neue Vorschlag
+            // öffnet es nach Erfolg wieder.
+            setA2ReviewOpen(false)
+            void generateSuggestion()
+          }}
           accepting={a2Accepting}
         />
       )}

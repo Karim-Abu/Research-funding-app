@@ -249,6 +249,28 @@ describe("SuggestionReviewDialog", () => {
     expect(screen.queryByText("Belegdetails anzeigen")).toBeNull()
   })
 
+  it("RUN 4B §7: «Neuen Vorschlag erzeugen» ruft onRegenerate ohne Ablehnung", () => {
+    const onRegenerate = vi.fn()
+    const onDismiss = vi.fn()
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText="x"
+        suggestion={suggestion({ stale_reason: "draft_version_changed" })}
+        onAccept={() => {}}
+        onDismiss={onDismiss}
+        onRegenerate={onRegenerate}
+      />
+    )
+    // Beim veralteten Vorschlag ist Regenerate die empfohlene Aktion —
+    // Übernehmen bleibt deaktiviert.
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled()
+    fireEvent.click(screen.getByTestId("regenerate-suggestion"))
+    expect(onRegenerate).toHaveBeenCalledOnce()
+    expect(onDismiss).not.toHaveBeenCalled()
+  })
+
   it("«Eigene Bearbeitung öffnen» ruft onEdit ohne Ablehnung", () => {
     const onEdit = vi.fn()
     const onDismiss = vi.fn()

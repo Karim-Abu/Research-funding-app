@@ -69,6 +69,9 @@ export interface SuggestionReviewDialogProps {
   onEdit?: () => void
   /** C3/C4 — Ablehnen mit optionalem Grund (wird serverseitig persistiert). */
   onDismiss: (reason?: string) => void
+  /** RUN 4B §7 — «Neuen Vorschlag erzeugen» (Regenerate über den bestehenden
+   *  Redraft-Pfad; der Vorschlag wird nie automatisch übernommen). */
+  onRegenerate?: () => void
   accepting?: boolean
 }
 
@@ -88,6 +91,7 @@ export function SuggestionReviewDialog({
   onAcceptPartial,
   onEdit,
   onDismiss,
+  onRegenerate,
   accepting = false,
 }: SuggestionReviewDialogProps) {
   const overLimit = suggestion.character_count > suggestion.character_limit
@@ -659,6 +663,18 @@ export function SuggestionReviewDialog({
               >
                 Vorschlag ablehnen
               </Button>
+              {/* RUN 4B §7 — Regenerate als benannte Aktion; bei veralteten
+                  Vorschlägen ist es die empfohlene nächste Aktion. */}
+              {onRegenerate && (
+                <Button
+                  variant="outline"
+                  onClick={onRegenerate}
+                  disabled={accepting}
+                  data-testid="regenerate-suggestion"
+                >
+                  Neuen Vorschlag erzeugen
+                </Button>
+              )}
               {onEdit && (
                 <Button variant="outline" onClick={onEdit} disabled={accepting}>
                   Eigene Bearbeitung öffnen
