@@ -35,6 +35,11 @@ export function LiveMarketComparison({
   const sourceBacked =
     comparison?.items.filter((i) => i.confidence_label === "source_backed") ?? []
   const hasItems = (comparison?.items.length ?? 0) > 0
+  // RUN 4B §8 — Anzahl geprüfter Quellen (dedupliziert über die Einträge).
+  const sourceCount = new Set(
+    (comparison?.items ?? []).flatMap((item) => item.source_document_ids)
+  ).size
+  const limitedWithoutItems = comparison?.status === "limited" && !hasItems
 
   return (
     <div className="flex flex-col gap-3" data-testid="live-market-comparison">
@@ -42,13 +47,22 @@ export function LiveMarketComparison({
         <h4 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
           Markt &amp; Wettbewerb
         </h4>
-        <span
-          className={cn(
-            "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-            MARKET_STATUS_STYLE[status]
+        <span className="flex shrink-0 items-center gap-1.5">
+          {comparison && (
+            <span className="text-[11px] text-muted-foreground">
+              {sourceCount === 1
+                ? "1 geprüfte Quelle"
+                : `${sourceCount} geprüfte Quellen`}
+            </span>
           )}
-        >
-          {MARKET_STATUS_LABELS[status]}
+          <span
+            className={cn(
+              "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+              MARKET_STATUS_STYLE[status]
+            )}
+          >
+            {MARKET_STATUS_LABELS[status]}
+          </span>
         </span>
       </div>
 
@@ -59,8 +73,11 @@ export function LiveMarketComparison({
       </p>
 
       {!comparison || sourceBacked.length === 0 ? (
-        <p className="text-xs text-muted-foreground">
-          Noch kein belegter Markt- und Konkurrenzvergleich. Erstellen Sie ihn unter{" "}
+        <p className="text-xs text-muted-foreground" data-testid="market-editor-empty">
+          {/* RUN 4B §8 — limited ohne Einträge ist KEIN leerer Erfolg. */}
+          {limitedWithoutItems
+            ? "Marktinformationen vorhanden, aber noch kein belastbarer Anbieter-/Alternativenvergleich. Details unter "
+            : "Noch kein belegter Markt- und Konkurrenzvergleich. Erstellen Sie ihn unter "}
           <a href="/quellen" className="font-medium text-primary hover:underline">
             Quellen
           </a>
@@ -68,7 +85,8 @@ export function LiveMarketComparison({
         </p>
       ) : (
         <ul className="flex flex-col gap-2">
-          {sourceBacked.slice(0, 4).map((item) => (
+          {/* RUN 4B §8 — höchstens drei relevante Findings. */}
+          {sourceBacked.slice(0, 3).map((item) => (
             <li
               key={item.item_id}
               className="rounded-md border border-border px-3 py-2"
