@@ -1,3 +1,42 @@
+# Live-LLM-Smoke-Bericht — Übersicht
+
+Diese Datei bündelt zwei Berichtsstände desselben Live-Pfads (RUN 3C Phase 2).
+Der Harness überschreibt die Datei bei jedem Lauf vollständig; beim RUN-4A-
+UI-Review (2026-07-23) wurden beide Stände bewusst erhalten, ohne Inhalte
+umzudeuten:
+
+1. **Letzter Live-Versuch** (`2026-07-22T22:34:46Z`, `provider_timeout`) —
+   der konkrete Nachweis für `COMBINED_LIVE_E2E_BLOCKED_BY_PROVIDER_TIMEOUT`
+   (siehe `RUN_3_CLOSURE.md`).
+2. **Historischer Gate-C-Bericht** (`2026-07-22T16:34:09Z`) — Nachweis u. a.
+   für LIVE-02A in `E2E_ACCEPTANCE_MATRIX.md`.
+
+---
+
+# LIVE LLM SMOKE REPORT
+
+- timestamp_utc: `2026-07-22T22:34:46+00:00`
+- status: `failed`
+- provider_routes: `not_available`
+- model_refs: `not_available`
+- preflight_status: `not_available`
+- preflight_fingerprints: `not_available`
+- execution_mode: `live`
+- request_count: `1`
+- provider_call_seconds: `not_available`
+- active_execution_seconds: `not_available`
+- cost_chf: `not_available`
+- web_calls: `1`
+- web_credits: `not_available`
+- fake_fallback_observed: `no`
+- reason_code: `provider_timeout`
+
+## Redacted request ledger
+
+- attempt_id=`c1f20370b4154c04b859698a37f7ba4d`, request_sequence=`1`, provider=`firecrawl`, route_alias=`firecrawl`, purpose=`public_search`, started_at=`2026-07-22T22:34:45+00:00`, finished_at=`2026-07-22T22:34:46+00:00`, http_class=`not_available`, http_status=`not_available`, retryable=`True`, reason_code=`provider_timeout`, input_tokens=`None`, output_tokens=`None`, estimated_cost_chf=`not_available`, actual_cost_chf=`not_available`
+
+---
+
 # RUN 3C Phase 2 – Live-LLM-Smoke-Bericht
 
 ## Status
