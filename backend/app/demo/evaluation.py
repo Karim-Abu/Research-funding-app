@@ -196,6 +196,9 @@ def _ensure_market_comparison(db: Session, project: Project) -> None:
             description="Öffentlich erwähnte Referenzlösung.", relation_to_project="reference",
             confidence_label="source_backed", status="proposed",
             source_document_ids=[doc_id], verified_quote_refs=[ref],
+            # Wie der echte Executor bei verifiziertem Zitat (executor.py):
+            # Fundstelle exakt gefunden, fachliche Stützung noch unreviewed.
+            coverage_status="exact_quote_verified", support_status="unreviewed",
         ))
     db.flush()
 
