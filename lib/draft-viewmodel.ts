@@ -19,6 +19,22 @@ export const CREATED_BY_LABELS: Record<CreatedBy, string> = {
   import: "Aus PDF übernommen – Prüfung nötig",
 }
 
+/** RUN 4B §7/§9 — Herkunft einer Version in Nutzersprache. `agent` heisst nur
+ *  dann «Aus KI-Vorschlag übernommen», wenn die Generierungs-Provenienz
+ *  (generation_kind) verifiziert vorliegt; sonst bleibt der ehrliche
+ *  Vorsichtstext. Alle anderen created_by-Werte nutzen CREATED_BY_LABELS. */
+export function versionOriginLabel(
+  createdBy: CreatedBy,
+  generationKind?: string | null
+): string {
+  if (createdBy === "agent") {
+    return generationKind
+      ? "Aus KI-Vorschlag übernommen"
+      : CREATED_BY_LABELS.agent
+  }
+  return CREATED_BY_LABELS[createdBy] ?? "Entwurf"
+}
+
 export interface VMPerson {
   name: string
   initials: string

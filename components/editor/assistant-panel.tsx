@@ -62,6 +62,9 @@ interface AssistantPanelProps {
   schwaechenContent?: React.ReactNode
   /** Both modes supply the comment-tab body (mock: thread; live: findings + box + approve). */
   kommentareContent: React.ReactNode
+  /** RUN 4B: live liefert die echte Versionshistorie mit Wiederherstellen;
+   * mock fällt auf die VM-Liste zurück. */
+  versionsContent?: React.ReactNode
   /** Rendered under the version list (live: "history not available" note). */
   versionsFootnote?: React.ReactNode
 }
@@ -77,6 +80,7 @@ export function AssistantPanel({
   fehlendeContent,
   schwaechenContent,
   kommentareContent,
+  versionsContent,
   versionsFootnote,
 }: AssistantPanelProps) {
   const [internalTab, setInternalTab] = React.useState<AssistantTab>(defaultTab)
@@ -204,7 +208,11 @@ export function AssistantPanel({
         </Section>
       )}
 
-      {tab === "versionen" && (
+      {tab === "versionen" && versionsContent && (
+        <Section title="Versionen">{versionsContent}</Section>
+      )}
+
+      {tab === "versionen" && !versionsContent && (
         <Section title="Versionen">
           {suggestionExists && (
             <div className="flex items-center justify-between gap-2 rounded-md border border-primary/30 bg-primary/5 px-3 py-2">

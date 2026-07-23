@@ -18,11 +18,14 @@ import {
 import {
   listFields,
   getField,
+  getFieldVersion,
+  listFieldVersions,
   updateField,
   createEvidenceLink,
   deleteEvidenceLink,
   charCount,
   FieldError,
+  type DraftVersionSummaryDto,
   type PortalFieldDraftDto,
 } from "@/lib/fields"
 import {
@@ -79,6 +82,7 @@ import {
   CREATED_BY_LABELS,
   liveFieldToViewModel,
   pickDefaultTab,
+  versionOriginLabel,
   type AssistantTab,
 } from "@/lib/draft-viewmodel"
 import {
@@ -265,6 +269,12 @@ export function LiveEditor({
   const [a2SelectedAnchors, setA2SelectedAnchors] = React.useState<ReadonlySet<string>>(new Set())
   const [a2ContextLoading, setA2ContextLoading] = React.useState(false)
   const [selectedSubsection, setSelectedSubsection] = React.useState<string | null>(null)
+  // RUN 4B §9 — Versionshistorie des aktiven Feldes; geladen, sobald der
+  // Versionen-Tab offen ist (und neu nach jeder gespeicherten Änderung).
+  const [versions, setVersions] = React.useState<DraftVersionSummaryDto[] | null>(null)
+  const [versionsError, setVersionsError] = React.useState<string | null>(null)
+  const [restoringId, setRestoringId] = React.useState<string | null>(null)
+  const [versionNotice, setVersionNotice] = React.useState<string | null>(null)
   const selectedIdRef = React.useRef<string | null>(null)
   const autoSelectedRef = React.useRef(false)
   const editorRef = React.useRef<RichTextEditorHandle>(null)
@@ -599,6 +609,70 @@ export function LiveEditor({
 
   function applyDraft(updated: PortalFieldDraftDto) {
     setFields((prev) => (prev ?? []).map((f) => (f.field_id === updated.field_id ? updated : f)))
+  }
+
+  // RUN 4B §9 — Historie laden, wenn der Versionen-Tab offen ist; baseVersionId
+  // in den Deps hält die Liste nach Speichern/Übernahme/Restore aktuell.
+  React.useEffect(() => {
+    if (assistantTab !== "versionen" || !selectedId) return
+    let active = true
+    setVersionsError(null)
+    listFieldVersions(runId, selectedId)
+      .then((list) => {
+        if (active) setVersions(list)
+      })
+      .catch(() => {
+        if (active)
+          setVersionsError("Die Versionshistorie konnte nicht geladen werden.")
+      })
+    return () => {
+      active = false
+    }
+  }, [assistantTab, selectedId, baseVersionId, runId])
+
+  // RUN 4B §9 — Wiederherstellen ist client-orchestriert über den bestehenden
+  // Versionspfad: Alttext lesen → regulärer PATCH (neue user-Version). Der
+  // Server ist autoritativ: identischer Text erzeugt KEINE redundante Version.
+  async function restoreVersion(versionId: string) {
+    if (!selected) return
+    setRestoringId(versionId)
+    setVersionNotice(null)
+    setErrorMsg(null)
+    try {
+      const old = await getFieldVersion(runId, selected.field_id, versionId)
+      const previousCurrent = selected.current_version.draft_version_id
+      const updated = await updateField(
+        runId,
+        selected.field_id,
+        previousCurrent,
+        old.text
+      )
+      const unchanged =
+        updated.current_version.draft_version_id === previousCurrent
+      applyDraft(updated)
+      setBaseVersionId(updated.current_version.draft_version_id)
+      setLocalText(updated.current_version.text)
+      setSaveState("saved")
+      if (unchanged) {
+        setVersionNotice("Diese Version entspricht bereits dem aktuellen Text.")
+      } else {
+        setVersionNotice(
+          "Frühere Version wiederhergestellt und als neue Version gespeichert."
+        )
+        setRecheck("saved")
+        loadReview()
+      }
+    } catch (e) {
+      if (e instanceof FieldError && e.status === 409) {
+        setConflict(true)
+      } else {
+        setErrorMsg(
+          e instanceof FieldError ? e.message : "Wiederherstellen fehlgeschlagen."
+        )
+      }
+    } finally {
+      setRestoringId(null)
+    }
   }
 
   async function refreshSelected(replaceText: boolean) {
@@ -1672,10 +1746,76 @@ export function LiveEditor({
           fehlendeContent={fehlendeContent}
           schwaechenContent={schwaechenContent}
           kommentareContent={kommentareContent}
-          versionsFootnote={
-            <p className="text-xs text-muted-foreground">
-              Versionshistorie ist in dieser Beta noch nicht verfügbar.
-            </p>
+          versionsContent={
+            <div className="flex flex-col gap-2" data-testid="version-history">
+              {versionNotice && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  {versionNotice}
+                </p>
+              )}
+              {versionsError ? (
+                <p role="alert" className="text-xs text-destructive">
+                  {versionsError}
+                </p>
+              ) : versions === null ? (
+                <p className="text-xs text-muted-foreground" aria-live="polite">
+                  Versionen werden geladen …
+                </p>
+              ) : (
+                <ul className="flex flex-col gap-1">
+                  {versions.map((version) => (
+                    <li
+                      key={version.draft_version_id}
+                      data-testid="version-row"
+                      className="flex items-center justify-between gap-2 rounded-md border border-border px-3 py-2"
+                    >
+                      <div className="min-w-0">
+                        <p className="truncate text-xs font-medium text-foreground">
+                          {versionOriginLabel(
+                            version.created_by,
+                            version.generation_kind
+                          )}
+                        </p>
+                        <p className="text-[11px] text-muted-foreground">
+                          {new Date(version.created_at).toLocaleString("de-CH")}
+                          {" · "}
+                          {version.character_count} Zeichen
+                        </p>
+                      </div>
+                      {version.is_current ? (
+                        <span className="shrink-0 rounded-full bg-muted px-2 py-0.5 text-[10px] text-muted-foreground">
+                          Aktuell
+                        </span>
+                      ) : (
+                        <Button
+                          variant="outline"
+                          size="xs"
+                          disabled={
+                            restoringId !== null ||
+                            saveState === "dirty" ||
+                            saveState === "saving"
+                          }
+                          title={
+                            saveState === "dirty"
+                              ? "Bitte zuerst Ihre ungespeicherten Änderungen speichern oder verwerfen."
+                              : undefined
+                          }
+                          onClick={() => void restoreVersion(version.draft_version_id)}
+                        >
+                          {restoringId === version.draft_version_id
+                            ? "Wird wiederhergestellt …"
+                            : "Wiederherstellen"}
+                        </Button>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              )}
+              <p className="text-xs text-muted-foreground">
+                Wiederherstellen speichert den früheren Text als neue Version —
+                nichts geht verloren.
+              </p>
+            </div>
           }
         />
       }

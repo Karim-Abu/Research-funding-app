@@ -173,21 +173,49 @@ describe("Fehlende Angaben tab (per-field join)", () => {
   })
 })
 
-describe("Versionen tab (current version card)", () => {
-  it("shows the current version with origin, timestamp and beta note", async () => {
+describe("Versionen tab (RUN 4B: Historie + Wiederherstellen)", () => {
+  it("listet die Versionshistorie mit Herkunft, Zeit und Restore-Aktion", async () => {
     mock()
+    server.use(
+      http.get(`/api/runs/r1/fields/${ABSTRACT}/versions`, () =>
+        HttpResponse.json({
+          versions: [
+            {
+              draft_version_id: "v1",
+              created_at: "2026-07-01T09:30:00Z",
+              created_by: "user",
+              generation_kind: null,
+              character_count: 30,
+              is_current: true,
+            },
+            {
+              draft_version_id: "v0",
+              created_at: "2026-06-30T08:00:00Z",
+              created_by: "template",
+              generation_kind: "rule_template",
+              character_count: 44,
+              is_current: false,
+            },
+          ],
+        })
+      )
+    )
     render(<LiveEditor runId="r1" />)
     await screen.findByLabelText("Entwurf Abstract")
     fireEvent.click(screen.getByRole("tab", { name: "Versionen" }))
 
-    // Provenance appears twice since Slice 2: as the editor badge and in the
-    // version card — assert presence, not uniqueness.
-    expect((await screen.findAllByText("Manuell bearbeitet")).length).toBeGreaterThan(0)
-    expect(screen.getByText("Aktuell")).toBeInTheDocument()
-    expect(screen.getByText(/Gespeichert am/)).toBeInTheDocument()
+    const rows = await screen.findAllByTestId("version-row")
+    expect(rows).toHaveLength(2)
+    expect(within(rows[0]).getByText("Manuell bearbeitet")).toBeInTheDocument()
+    expect(within(rows[0]).getByText("Aktuell")).toBeInTheDocument()
+    expect(within(rows[1]).getByText("Strukturvorlage")).toBeInTheDocument()
     expect(
-      screen.getByText("Versionshistorie ist in dieser Beta noch nicht verfügbar.")
+      within(rows[1]).getByRole("button", { name: "Wiederherstellen" })
     ).toBeInTheDocument()
+    // Der frühere Beta-Hinweis ist durch die echte Historie ersetzt.
+    expect(
+      screen.queryByText("Versionshistorie ist in dieser Beta noch nicht verfügbar.")
+    ).toBeNull()
   })
 })
 
