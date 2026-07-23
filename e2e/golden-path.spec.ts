@@ -283,6 +283,16 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     ).toBeVisible({ timeout: 20_000 })
   })
 
+  await test.step("11a. Versionshistorie zeigt die neue Version (RUN 4B)", async () => {
+    await page.getByRole("button", { name: "Prüfen", exact: true }).click()
+    await page.getByRole("tab", { name: "Versionen" }).click()
+    const rows = page.getByTestId("version-row")
+    await expect(rows.first()).toBeVisible({ timeout: 20_000 })
+    expect(await rows.count()).toBeGreaterThanOrEqual(2)
+    await expect(rows.first()).toContainText("Manuell bearbeitet")
+    await expect(page.getByText("Aktuell", { exact: true })).toBeVisible()
+  })
+
   await test.step("12. Qualitätsprüfung durchführen", async () => {
     await page.goto("/review")
     await expect(
