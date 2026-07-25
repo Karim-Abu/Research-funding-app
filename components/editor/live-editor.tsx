@@ -66,13 +66,11 @@ import {
 } from "@/lib/requirements-view"
 import { ReqBucketBadge } from "@/components/anforderungen/requirements-controls"
 import type { RichTextEditorHandle } from "@/components/editor/rich-text-editor"
-import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import { capabilitiesSelfHealing, getCapabilities, type Capabilities } from "@/lib/capabilities"
 import {
   getLatestComparison,
   type MarketComparisonDto,
-  type MarketComparisonItemDto,
 } from "@/lib/market-comparison"
-import { marketArgumentSentence } from "@/lib/market-view"
 import { DraftWorkspaceShell } from "@/components/editor/draft-workspace-shell"
 import { AssistantPanel } from "@/components/editor/assistant-panel"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
@@ -92,7 +90,9 @@ import {
   getRunFieldSuggestion,
   getSuggestionContextOptions,
   isA2Field,
+  isDeterministicRedraftFailure,
   RedraftError,
+  redraftFailureLabel,
   SOLUTION_INNOVATION_FIELD_ID,
   VALUE_CREATION_FIELD_ID,
   type A2Suggestion,
@@ -106,29 +106,29 @@ import {
   generationLabel,
   type GenerationKind,
 } from "@/lib/generation-kind"
-import { subsectionText } from "@/lib/subsections"
+import { buildOutline, subsectionText } from "@/lib/subsections"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
 // R4.2 — jeder KI-Blockgrund nennt Grund + Ausweg. Navigations-CTAs führen zur
 // Quellen-/Analyseseite (Datenklasse, Analyse-Einstellungen, Quellen hinzufügen);
-// Live-Blockgründe führen zum Live-Systemstatus (/admin) — nie zu einem
+// Live-Blockgründe führen zum verständlichen Systemstatus — nie zu einem
 // stillen Demo-Ersatz.
 const REASON_CTA_HREF: Record<string, string> = {
   nda_locked: "/quellen",
   mode_deterministic_only: "/quellen",
   run_mode_mismatch: "/quellen",
   missing_sources: "/quellen",
-  live_provider_key_missing: "/admin",
-  live_fake_conflict: "/admin",
-  live_eval_mode_disabled: "/admin",
-  live_model_id_missing: "/admin",
-  live_price_metadata_missing: "/admin",
-  live_preflight_required: "/admin",
-  live_preflight_expired: "/admin",
-  live_preflight_failed: "/admin",
-  live_preflight_stale_model: "/admin",
-  live_actual_model_missing: "/admin",
+  live_provider_key_missing: "/systemstatus",
+  live_fake_conflict: "/systemstatus",
+  live_eval_mode_disabled: "/systemstatus",
+  live_model_id_missing: "/systemstatus",
+  live_price_metadata_missing: "/systemstatus",
+  live_preflight_required: "/systemstatus",
+  live_preflight_expired: "/systemstatus",
+  live_preflight_failed: "/systemstatus",
+  live_preflight_stale_model: "/systemstatus",
+  live_actual_model_missing: "/systemstatus",
 }
 
 function A2ReasonNotice({ reason }: { reason: string }) {
@@ -244,6 +244,9 @@ export function LiveEditor({
     string | null
   >(null)
   const [a2Error, setA2Error] = React.useState<string | null>(null)
+  // Deterministische Fehler (z. B. fehlende Markerzeile) sind nur durch eine
+  // Textänderung behebbar — «Erneut versuchen» wäre dort irreführend.
+  const [a2ErrorRetryable, setA2ErrorRetryable] = React.useState(true)
   // Transienter Providerfehler auf der Primärroute: zusätzlich zur
   // Wiederholung darf explizit die Alternativroute angeboten werden.
   const [a2RetryAlternative, setA2RetryAlternative] = React.useState(false)
@@ -273,12 +276,24 @@ export function LiveEditor({
   const marketResearchEnabled = caps?.features?.web_research === true
 
   React.useEffect(() => {
+    // Wie auf der Quellen-Seite: kurz nachpollen, solange ein abgelaufener
+    // Live-Preflight sich im Backend selbst erneuert (max. ~60 s).
     let active = true
-    void getCapabilities().then((c) => {
-      if (active) setCaps(c)
-    })
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const load = async () => {
+      const c = await getCapabilities()
+      if (!active) return
+      setCaps(c)
+      if (capabilitiesSelfHealing(c) && attempts < 12) {
+        attempts += 1
+        timer = setTimeout(() => void load(), 5000)
+      }
+    }
+    void load()
     return () => {
       active = false
+      if (timer) clearTimeout(timer)
     }
   }, [])
 
@@ -454,6 +469,7 @@ export function LiveEditor({
     if (!selected) return
     setA2Loading(true)
     setA2Error(null)
+    setA2ErrorRetryable(true)
     setA2RetryAlternative(false)
     setA2UnavailableReason(null)
     try {
@@ -483,6 +499,10 @@ export function LiveEditor({
         setA2UnavailableReason(e.reasonCode)
       } else {
         setA2Error(e instanceof Error ? e.message : "Vorschlag fehlgeschlagen.")
+        // Deterministische Abschnittsfehler: Wiederholen kann nie gelingen.
+        if (e instanceof RedraftError && isDeterministicRedraftFailure(e.code)) {
+          setA2ErrorRetryable(false)
+        }
         // Nur transiente Providerfehler bieten die Alternativroute an.
         if (e instanceof RedraftError && e.retryWithAlternativeModel) {
           setA2RetryAlternative(true)
@@ -550,7 +570,16 @@ export function LiveEditor({
         setA2ReviewOpen(false)
         setConflict(true)
       } else {
-        setA2Error(e instanceof FieldError ? e.message : "Übernehmen fehlgeschlagen.")
+        // Abschnittsstruktur-Fehler beim Übernehmen tragen denselben Klartext
+        // wie beim Erzeugen (Marker benannt statt Generik).
+        const sectionMessage =
+          e instanceof FieldError && e.code.startsWith("section_")
+            ? redraftFailureLabel(e.code)
+            : null
+        setA2Error(
+          sectionMessage ??
+            (e instanceof FieldError ? e.message : "Übernehmen fehlgeschlagen.")
+        )
       }
     }
   }
@@ -775,12 +804,13 @@ export function LiveEditor({
   }
 
   /**
-   * "Als Argument übernehmen" — inserts the sentence as a new paragraph at the
-   * editor cursor (via the editor handle). The editor's onChange then updates
-   * the local buffer + dirty state. Never auto-saves.
+   * "Als Argument übernehmen" — inserts an allowed, source-qualified formulation
+   * as a new paragraph at the editor cursor (via the editor handle). The editor's
+   * onChange then updates the local buffer + dirty state (audited/versioned/undo);
+   * never auto-saves and never bypasses that path.
    */
-  function insertMarketArgument(item: MarketComparisonItemDto) {
-    editorRef.current?.insertTextAtCursor(marketArgumentSentence(item))
+  function insertMarketText(text: string) {
+    editorRef.current?.insertTextAtCursor(text)
   }
 
   /** Contextual shortcut per review hint: placeholder → mark it; evidence → open Belege. */
@@ -893,6 +923,16 @@ export function LiveEditor({
   // R6: sichtbare Unterabschnitte des ausgewählten Composite-Felds (Registry).
   const subsectionDefs =
     portalCatalog.find((p) => p.field_id === selected.field_id)?.subsections ?? []
+  // Parse-Zustand des AKTUELLEN Texts (2026-07-24): Marker, deren Zeile im
+  // Text fehlt, sind nicht wählbar — das Backend braucht nur den Zielmarker,
+  // alle übrigen dürfen fehlen (ziel-tolerante Abschnittsbearbeitung).
+  const subsectionOutline = buildOutline(localText, subsectionDefs)
+  const targetMarkerMissing = Boolean(
+    selectedSubsection &&
+      subsectionOutline.some(
+        (entry) => entry.marker === selectedSubsection && entry.index < 0
+      )
+  )
   const configuredGenerationKind: GenerationKind | null =
     caps?.generation_mode === "fake_demo"
       ? "fake_demo"
@@ -1530,13 +1570,26 @@ export function LiveEditor({
                     className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
                     aria-label="Zielabschnitt für Vorschlag"
                   >
-                    {subsectionDefs.map((section) => (
-                      <option key={section.marker} value={section.marker}>
-                        {section.marker}
+                    {subsectionOutline.map((section) => (
+                      <option
+                        key={section.marker}
+                        value={section.marker}
+                        disabled={section.index < 0}
+                      >
+                        {section.index < 0
+                          ? `${section.marker} — fehlt im Text`
+                          : section.marker}
                       </option>
                     ))}
                   </select>
                 </label>
+              )}
+              {targetMarkerMissing && selectedSubsection && (
+                <p role="status" className="text-xs text-muted-foreground">
+                  «{selectedSubsection}» fehlt im Text — stellen Sie die
+                  Markerzeile wieder her, um diesen Abschnitt gezielt zu
+                  bearbeiten.
+                </p>
               )}
               {/* Was passiert bei der Aktion — in einem Satz, vor dem Klick. */}
               <label className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -1600,7 +1653,9 @@ export function LiveEditor({
                   size="sm"
                   variant="outline"
                   onClick={() => generateSuggestion()}
-                  disabled={a2Loading || capsBlockedReason !== null}
+                  disabled={
+                    a2Loading || capsBlockedReason !== null || targetMarkerMissing
+                  }
                 >
                   <Sparkles data-icon="inline-start" />
                   {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
@@ -1616,7 +1671,11 @@ export function LiveEditor({
                       size="sm"
                       variant="outline"
                       onClick={() => generateSuggestion()}
-                      disabled={a2Loading || capsBlockedReason !== null}
+                      disabled={
+                        a2Loading ||
+                        capsBlockedReason !== null ||
+                        targetMarkerMissing
+                      }
                       data-testid="research-redraft-action"
                     >
                       Mit geprüften Quellen neu formulieren
@@ -1654,11 +1713,8 @@ export function LiveEditor({
                     unbelegte Aussagen
                   </p>
                   <div className="flex items-center gap-2">
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => setA2ReviewOpen(true)}
-                    >
+                    {/* v2 — die EINE Primäraktion des Panels ist das Prüfen. */}
+                    <Button size="sm" onClick={() => setA2ReviewOpen(true)}>
                       Vorschlag prüfen
                     </Button>
                     <Button
@@ -1701,28 +1757,32 @@ export function LiveEditor({
                   <p role="alert" className="text-xs text-destructive">
                     {a2Error}
                   </p>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      size="xs"
-                      variant="outline"
-                      onClick={() => generateSuggestion()}
-                      disabled={a2Loading}
-                    >
-                      Erneut versuchen
-                    </Button>
-                    {/* Nur bei transientem Providerfehler — nie bei Policy-,
-                        Budget-, Schema- oder Refusal-Fehlern. */}
-                    {a2RetryAlternative && (
+                  {/* Deterministische Fehler (fehlende Markerzeile o. Ä.) sind
+                      nur durch eine Textänderung behebbar — kein Retry. */}
+                  {a2ErrorRetryable && (
+                    <div className="flex items-center gap-2">
                       <Button
                         size="xs"
                         variant="outline"
-                        onClick={() => generateSuggestion("alternative")}
+                        onClick={() => generateSuggestion()}
                         disabled={a2Loading}
                       >
-                        Mit alternativem Modell versuchen
+                        Erneut versuchen
                       </Button>
-                    )}
-                  </div>
+                      {/* Nur bei transientem Providerfehler — nie bei Policy-,
+                          Budget-, Schema- oder Refusal-Fehlern. */}
+                      {a2RetryAlternative && (
+                        <Button
+                          size="xs"
+                          variant="outline"
+                          onClick={() => generateSuggestion("alternative")}
+                          disabled={a2Loading}
+                        >
+                          Mit alternativem Modell versuchen
+                        </Button>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1880,7 +1940,7 @@ export function LiveEditor({
         open={marketSheetOpen}
         onOpenChange={setMarketSheetOpen}
         comparison={comparison}
-        onInsertArgument={insertMarketArgument}
+        onInsertText={insertMarketText}
       />
     </>
   )

@@ -55,7 +55,7 @@ from app.drafts.sections import (
     SectionStructureError,
     compact_adjacent_section,
     extract_section,
-    section_spans,
+    target_section_spans,
 )
 
 # R5.7/R8: only these two "big" A2 fields consume advisory research context. R8
@@ -769,7 +769,11 @@ def assemble_a2_context(
     if target_section is not None:
         if not section_markers:
             raise SectionStructureError("section_markers_missing")
-        spans = section_spans(full_draft_text, section_markers)
+        # Ziel-tolerant (2026-07-24): fehlende Nicht-Ziel-Marker sind kein
+        # Blocker mehr — nur der Zielabschnitt muss im Text existieren.
+        spans = target_section_spans(
+            full_draft_text, section_markers, target_section
+        )
         ctx.current_draft_text = extract_section(
             full_draft_text, section_markers, target_section
         )

@@ -64,6 +64,31 @@ const UNAVAILABLE_CAPABILITIES: Capabilities = {
   ai_unavailable_reason: "capabilities_unavailable",
 }
 
+// Reason codes the backend can heal on its own via the lazy preflight
+// auto-refresh (expired/never-run). While one of these is present, the UI
+// re-polls briefly so KI/Webrecherche flip to available without a manual reload.
+// Genuine, non-self-healing reasons (key missing, NDA, live/fake conflict) are
+// deliberately absent — those must not trigger endless polling.
+const AUTO_REFRESHABLE_REASONS = new Set([
+  "live_preflight_expired",
+  "live_preflight_required",
+  "firecrawl_preflight_expired",
+  "firecrawl_preflight_required",
+])
+
+/** True when a live feature is unavailable only because the preflight expired /
+ *  was never run — i.e. the backend is (or will be) auto-refreshing it. */
+export function capabilitiesSelfHealing(caps: Capabilities): boolean {
+  const readiness = caps.feature_readiness ?? {}
+  const codes = [
+    readiness.field_suggestions?.reason_code,
+    readiness.web_research?.reason_code,
+    caps.ai_unavailable_reason,
+    caps.generation_unavailable_reason,
+  ]
+  return codes.some((code) => code != null && AUTO_REFRESHABLE_REASONS.has(code))
+}
+
 export async function getCapabilities(): Promise<Capabilities> {
   if (!isLive("capabilities")) return MOCK_CAPABILITIES
   try {

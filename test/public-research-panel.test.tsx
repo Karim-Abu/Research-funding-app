@@ -366,4 +366,73 @@ describe("PublicResearchPanel", () => {
     expect(await screen.findByText("Treffer zum freigegebenen Recherchemodul; fachlich prüfen.")).toBeInTheDocument()
     expect(screen.getByText("Anderer Grund; fachlich prüfen.")).toBeInTheDocument()
   })
+
+  // 2026-07-24 — geführter Ablauf + Aktions-Hierarchie.
+  it("führt in drei nummerierten Schritten durch den Ablauf", async () => {
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(liveWorkspace())))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    await screen.findByTestId("research-results")
+    expect(screen.getByText("Schritt 1 · Recherchebrief")).toBeInTheDocument()
+    expect(
+      screen.getByText("Schritt 2 · Suchanfragen freigeben und ausführen")
+    ).toBeInTheDocument()
+    expect(
+      screen.getByText("Schritt 3 · Ergebnisse prüfen und übernehmen")
+    ).toBeInTheDocument()
+  })
+
+  it("imported: die Stützt-Frage steht über der Bewertungsreihe", async () => {
+    const workspace = liveWorkspace()
+    workspace.results = [{ ...workspace.results[0], status: "imported" }]
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace)))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    await screen.findByTestId("research-results")
+    expect(
+      screen.getByText("Stützt diese Quelle Ihre Aussagen?")
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Stützt" })).toBeInTheDocument()
+  })
+
+  it("manueller Import ist immer auffindbar und öffnet bei Dienstfehler automatisch", async () => {
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(liveWorkspace())))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    const fallback = await screen.findByTestId("manual-research-fallback")
+    expect(fallback).not.toHaveAttribute("open")
+    expect(
+      screen.getByText("Öffentliche Quelle manuell hinzufügen")
+    ).toBeInTheDocument()
+  })
+
+  it("meldet die Marktvergleich-Bereitschaft mit Zähler und nächster Aktion", async () => {
+    const workspace = liveWorkspace()
+    workspace.results = [{ ...workspace.results[0], status: "imported" }]
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace)))
+    const onEligibilityChange = vi.fn()
+    render(
+      <PublicResearchPanel projectId={PROJECT} onEligibilityChange={onEligibilityChange} />
+    )
+    await screen.findByTestId("research-results")
+    await waitFor(() =>
+      expect(onEligibilityChange).toHaveBeenLastCalledWith({
+        hasEligible: false,
+        eligibleCount: 0,
+        totalImported: 1,
+        nextCandidate: {
+          result_id: workspace.results[0].result_id,
+          title: workspace.results[0].title,
+          missingStep: "review",
+        },
+      })
+    )
+  })
+
+  it("manueller Import ist bei nicht erreichbarem Dienst automatisch geöffnet", async () => {
+    server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json({
+      ...emptyWorkspace(),
+      provider_mode: "unavailable",
+    })))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    const fallback = await screen.findByTestId("manual-research-fallback")
+    expect(fallback).toHaveAttribute("open")
+  })
 })

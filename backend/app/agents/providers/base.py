@@ -9,6 +9,13 @@ from typing import Protocol, runtime_checkable
 class ProviderUsage:
     input_tokens: int = 0
     output_tokens: int = 0
+    # Provider-billed input categories. ``input_tokens`` remains the total
+    # input count for backwards-compatible reporting; the two extra values
+    # make the price calculation auditable when prompt caching is active.
+    cached_input_tokens: int = 0
+    # Cache creation/writes are intentionally separate from cache reads. They
+    # must never silently receive the discounted cache-read price.
+    cache_write_input_tokens: int = 0
     # Anteil der output_tokens, der auf Reasoning entfällt (0, wenn der
     # Provider ihn nicht ausweist). Rein informativ fürs Eval-Reporting.
     reasoning_tokens: int = 0

@@ -156,6 +156,9 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             comparison.status = "draft"
             db.commit()
         except Exception:  # noqa: BLE001
+            logger.exception(
+                "market comparison start failed (comparison_id=%s)", comparison_id
+            )
             db.rollback()
             db.close()
             _safe_fail(comparison_id, operation_id, "MARKET_START_FAILED")
@@ -289,6 +292,9 @@ def comparison_executor(comparison_id: str, operation_id: str) -> None:
             _finish_operation(db, operation_id, "succeeded")
             db.commit()
         except Exception:  # noqa: BLE001
+            logger.exception(
+                "market comparison execution failed (comparison_id=%s)", comparison_id
+            )
             db.rollback()
             _safe_fail(comparison_id, operation_id, "MARKET_EXECUTION_FAILED")
         finally:
@@ -468,6 +474,10 @@ def _safe_fail(comparison_id: str, operation_id: str, code: str) -> None:
         _finish_operation(db, operation_id, "failed", code, "Comparison failed.")
         db.commit()
     except Exception:  # noqa: BLE001
+        logger.exception(
+            "market comparison safe-fail bookkeeping failed (comparison_id=%s)",
+            comparison_id,
+        )
         db.rollback()
     finally:
         db.close()

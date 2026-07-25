@@ -769,6 +769,14 @@ class UsageRecord(Base):
     model: Mapped[str | None] = mapped_column(String, nullable=True)
     input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
     output_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    # Exact provider usage categories; old rows intentionally remain NULL-free
+    # zeroes and are marked unknown_price by their original cost status.
+    cached_input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    cache_write_input_tokens: Mapped[int] = mapped_column(nullable=False, default=0)
+    # USD is the provider billing currency. CHF is a recorded SNB-reference
+    # conversion used for local orientation and existing CHF run guards.
+    cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    fx_chf_per_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
     cost_chf: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
     # EVAL.1 — Kostensemantik: priced | unknown_price | not_applicable.
     # cost_chf=0.0 darf NIE als "kostenlos" gelesen werden; Summen nur über

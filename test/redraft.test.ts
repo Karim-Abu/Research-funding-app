@@ -5,11 +5,48 @@ import {
   acceptFieldSuggestion,
   createRedraft,
   isA2Field,
+  isDeterministicRedraftFailure,
   parseAIProposal,
   RedraftError,
+  redraftFailureLabel,
   STALE_REASON_LABELS,
   staleReasonLabel,
 } from "@/lib/redraft"
+
+// 2026-07-24 — deterministische Abschnittsstruktur-Fehler tragen Klartext mit
+// benanntem Marker; unbekannte Codes fallen auf null zurück (Generik greift).
+describe("redraftFailureLabel", () => {
+  it("nennt den fehlenden Marker im Klartext", () => {
+    const label = redraftFailureLabel("section_marker_missing:4.5.2")
+    expect(label).toContain("«4.5.2»")
+    expect(label).toContain("wieder her")
+  })
+
+  it("kennt Mehrdeutigkeit, Reihenfolge und unbekanntes Ziel", () => {
+    expect(redraftFailureLabel("section_marker_ambiguous:3.2")).toContain(
+      "mehrfach"
+    )
+    expect(redraftFailureLabel("section_markers_out_of_order")).toContain(
+      "Reihenfolge"
+    )
+    expect(redraftFailureLabel("section_target_unknown:9.9")).toContain(
+      "nicht verfügbar"
+    )
+  })
+
+  it("liefert null für unbekannte Codes", () => {
+    expect(redraftFailureLabel("agent_invocation_failed")).toBeNull()
+  })
+})
+
+describe("isDeterministicRedraftFailure", () => {
+  it("markiert section_*-Codes als nicht wiederholbar, Providerfehler nicht", () => {
+    expect(isDeterministicRedraftFailure("section_marker_missing:4.1")).toBe(true)
+    expect(isDeterministicRedraftFailure("section_markers_out_of_order")).toBe(true)
+    expect(isDeterministicRedraftFailure("agent_invocation_failed")).toBe(false)
+    expect(isDeterministicRedraftFailure("timeout")).toBe(false)
+  })
+})
 
 // RUN 4B §4 — jeder kanonische Staleness-Code hat einen Klartext; unbekannte
 // Codes fallen ehrlich auf einen generischen Satz zurück (nie Roh-Enum).

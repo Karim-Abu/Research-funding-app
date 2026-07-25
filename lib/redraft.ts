@@ -238,44 +238,44 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
     ctaLabel: "Provider-Konfiguration prüfen",
   },
   live_provider_key_missing: {
-    text: "Live-KI ist nicht verfügbar. Hinterlegen Sie den API-Schlüssel der konfigurierten Route und führen Sie den Preflight erneut aus.",
-    ctaLabel: "Live-Systemstatus prüfen",
+    text: "KI-Vorschläge sind derzeit nicht verfügbar. Prüfen Sie den Systemstatus oder wenden Sie sich an einen Lead-Admin.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_fake_conflict: {
-    text: "Live-KI ist wegen einer widersprüchlichen Konfiguration nicht verfügbar. Setzen Sie AGENT_FAKE_PROVIDER=false und führen Sie den Preflight erneut aus.",
-    ctaLabel: "Konfiguration korrigieren",
+    text: "KI-Vorschläge sind wegen einer widersprüchlichen Konfiguration nicht verfügbar. Ein Lead-Admin kann die Verbindung im Systemstatus prüfen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_eval_mode_disabled: {
-    text: "Live-KI ist deaktiviert. Setzen Sie AI_EVAL_MODE=real und führen Sie den synthetischen Preflight erneut aus.",
-    ctaLabel: "Live-Modus aktivieren",
+    text: "KI-Vorschläge sind derzeit deaktiviert. Ein Lead-Admin kann den Status der Verbindung prüfen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_model_id_missing: {
-    text: "Live-KI ist nicht verfügbar. Hinterlegen Sie die konkrete AGENT_MODEL_*_ID der Route und führen Sie den Preflight erneut aus.",
-    ctaLabel: "Modellroute konfigurieren",
+    text: "KI-Vorschläge sind nicht vollständig eingerichtet. Prüfen Sie den Systemstatus oder wenden Sie sich an einen Lead-Admin.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_price_metadata_missing: {
     text: "Live-KI ist nicht verfügbar. Ergänzen Sie geprüfte Preis-Metadaten für die konkrete Modell-ID.",
-    ctaLabel: "Preis-Metadaten prüfen",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_preflight_required: {
-    text: "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus den synthetischen Preflight.",
-    ctaLabel: "Live-Systemstatus prüfen",
+    text: "KI-Vorschläge sind noch nicht verfügbar. Ein Lead-Admin kann die Verbindung im Systemstatus prüfen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_preflight_expired: {
-    text: "Der Live-Preflight ist abgelaufen. Führen Sie ihn im Live-Systemstatus erneut aus.",
-    ctaLabel: "Preflight erneut starten",
+    text: "Die letzte Verbindungsprüfung ist nicht mehr aktuell. Ein Lead-Admin kann sie im Systemstatus wiederholen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_preflight_failed: {
-    text: "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten Routenfehler im Live-Systemstatus und wiederholen Sie den Test.",
-    ctaLabel: "Routenfehler prüfen",
+    text: "Die letzte Verbindungsprüfung war nicht erfolgreich. Ein Lead-Admin kann die Verbindung im Systemstatus erneut prüfen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_preflight_stale_model: {
-    text: "Die konfigurierte Modell-ID wurde seit dem Preflight geändert. Führen Sie den synthetischen Preflight erneut aus.",
-    ctaLabel: "Preflight erneut starten",
+    text: "Die KI-Konfiguration wurde seit der letzten Prüfung geändert. Ein Lead-Admin kann sie im Systemstatus erneut prüfen.",
+    ctaLabel: "Systemstatus öffnen",
   },
   live_actual_model_missing: {
-    text: "Der Provider hat im Preflight keine tatsächliche Modell-ID bestätigt. Prüfen Sie die Route im Live-Systemstatus.",
-    ctaLabel: "Route prüfen",
+    text: "Die KI-Verbindung konnte nicht vollständig bestätigt werden. Prüfen Sie den Systemstatus.",
+    ctaLabel: "Systemstatus öffnen",
   },
   no_approved_model_provider: {
     text: "Es ist kein freigegebener KI-Provider aktiv. Die App führt nur regelbasierte Prüfungen aus.",
@@ -331,6 +331,37 @@ const MESSAGES: Record<string, string> = {
   stale_base_version: "Dieser Abschnitt wurde zwischenzeitlich geändert.",
 }
 
+// 2026-07-24 — deterministische Abschnittsstruktur-Fehler (Katalog-Addendum,
+// docs/repair/message-catalog.md). Präfix-Codes tragen den betroffenen Marker
+// nach dem Doppelpunkt (z. B. «section_marker_missing:4.5.2»).
+const REDRAFT_FAILURE_LABELS: Record<string, (marker: string) => string> = {
+  section_marker_missing: (marker) =>
+    `Die Markerzeile «${marker}» fehlt im Text. Stellen Sie die Zeile «${marker}» wieder her oder wählen Sie einen vorhandenen Zielabschnitt.`,
+  section_marker_ambiguous: (marker) =>
+    `Die Markerzeile «${marker}» kommt mehrfach vor. Entfernen Sie die doppelte Zeile, damit der Abschnitt eindeutig bleibt.`,
+  section_markers_out_of_order: () =>
+    "Die Abschnittsmarker stehen nicht in der Reihenfolge der Vorlage. Ordnen Sie die Abschnitte wieder aufsteigend.",
+  section_target_unknown: () =>
+    "Der gewählte Abschnitt ist für dieses Feld nicht verfügbar. Bitte wählen Sie einen gültigen Zielabschnitt.",
+  section_markers_missing: () =>
+    "Der gewählte Abschnitt ist für dieses Feld nicht verfügbar. Bitte wählen Sie einen gültigen Zielabschnitt.",
+}
+
+export function redraftFailureLabel(code: string): string | null {
+  const separator = code.indexOf(":")
+  const prefix = separator === -1 ? code : code.slice(0, separator)
+  const marker = separator === -1 ? "" : code.slice(separator + 1)
+  const build = REDRAFT_FAILURE_LABELS[prefix]
+  return build ? build(marker) : null
+}
+
+/** Deterministisch = vom Nutzer behebbar; ein erneuter Versuch ohne
+ *  Textänderung kann nie gelingen — die UI bietet dann kein
+ *  «Erneut versuchen» an. */
+export function isDeterministicRedraftFailure(code: string): boolean {
+  return code.startsWith("section_")
+}
+
 function reasonMessage(reasonCode: string | null): string | null {
   return reasonCode ? (AI_REASON_INFO[reasonCode]?.text ?? null) : null
 }
@@ -352,6 +383,7 @@ async function toError(res: Response): Promise<RedraftError> {
   }
   const message =
     MESSAGES[code] ??
+    redraftFailureLabel(code) ??
     reasonMessage(reasonCode) ??
     "Der Vorschlag konnte nicht erstellt werden."
   return new RedraftError(res.status, code, message, reasonCode)
@@ -451,6 +483,7 @@ export async function createRedraft(
               500,
               code,
               MESSAGES[code] ??
+                redraftFailureLabel(code) ??
                 reasonMessage(reasonCode) ??
                 "Der Vorschlag konnte nicht erstellt werden.",
               reasonCode,

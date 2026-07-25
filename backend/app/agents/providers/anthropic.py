@@ -161,11 +161,15 @@ class AnthropicProvider:
                     retryable=True, termination_reason=stop_reason,
                 )
             usage = body.get("usage", {})
+            cache_read = int(usage.get("cache_read_input_tokens", 0))
+            cache_write = int(usage.get("cache_creation_input_tokens", 0))
             return ProviderResult(
                 raw_output=text,
                 usage=ProviderUsage(
-                    input_tokens=int(usage.get("input_tokens", 0)),
+                    input_tokens=int(usage.get("input_tokens", 0)) + cache_read + cache_write,
                     output_tokens=int(usage.get("output_tokens", 0)),
+                    cached_input_tokens=cache_read,
+                    cache_write_input_tokens=cache_write,
                 ),
                 model=body.get("model"),
                 termination_reason=stop_reason,
@@ -208,11 +212,15 @@ class AnthropicProvider:
                 termination_reason=stop_reason,
             )
         usage = body.get("usage", {})
+        cache_read = int(usage.get("cache_read_input_tokens", 0))
+        cache_write = int(usage.get("cache_creation_input_tokens", 0))
         return ProviderResult(
             raw_output=text,
             usage=ProviderUsage(
-                input_tokens=int(usage.get("input_tokens", 0)),
+                input_tokens=int(usage.get("input_tokens", 0)) + cache_read + cache_write,
                 output_tokens=int(usage.get("output_tokens", 0)),
+                cached_input_tokens=cache_read,
+                cache_write_input_tokens=cache_write,
             ),
             # Vom Provider gemeldetes Modell (Alias-Auflösung) — Ebene E.
             model=body.get("model"),

@@ -26,7 +26,7 @@ _KEY_TABLES = {
     "import_candidate_revisions", "structured_import_candidate_revisions",
     "project_field_revisions", "suggestion_context_manifests",
 }
-_HEAD = "c3e5a7b9d024"  # RUN 3C versioned suggestion context.
+_HEAD = "c4d7e1f9a2b3"  # Exact USD usage snapshots.
 
 
 def _alembic(db_path: Path, *args: str) -> subprocess.CompletedProcess:
@@ -68,8 +68,16 @@ _FINDING_V2_COLUMNS = {
     "fingerprint", "severity_class", "fix_recommendation", "last_seen_at",
 }
 
-# EVAL.1 — die additiven Kostensemantik-Spalten der Head-Migration.
-_USAGE_COST_COLUMNS = {"cost_status", "price_version"}
+# EVAL.1 + exact USD — additive cost and provider-metering columns.
+_USAGE_COST_COLUMNS = {
+    "cost_status", "price_version", "cached_input_tokens",
+    "cache_write_input_tokens", "cost_usd", "fx_chf_per_usd",
+}
+_LEGACY_USAGE_COST_COLUMNS = {"cost_status", "price_version"}
+_EXACT_USAGE_COLUMNS = {
+    "cached_input_tokens", "cache_write_input_tokens", "cost_usd",
+    "fx_chf_per_usd",
+}
 
 # v2-Vertragsmetadaten sind additiv und enthalten ausschliesslich sichere IDs,
 # Hashes und Zählwerte (nie Prompt-, Query- oder Entwurfstext).
@@ -315,9 +323,8 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
         con.commit()
     finally:
         con.close()
-    # Down one entfernt nur die additive RUN-3C-Ebene. Alle vorherigen
-    # Strukturen (inkl. Rollen-/Skill-, Recherchebrief- und
-    # Copy-Event-Migrationen) sowie alle Bestandsdaten bleiben erhalten.
+    # Down one removes only the exact USD/cache snapshot fields. All previous
+    # product structures and rows remain untouched.
     assert _alembic(db, "downgrade", "-1").returncode == 0
     assert _ROLE_SKILL_COLUMNS <= _columns(db, "agent_invocations")
     assert _LIVE_INVOCATION_COLUMNS <= _columns(db, "agent_invocations")
@@ -344,11 +351,12 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert {
         "source_version_ids", "query_approval_ids", "stale_reason",
     } <= _columns(db, "market_comparisons")
-    assert "suggestion_context_manifests" not in _tables(db)
-    assert not {
+    assert "suggestion_context_manifests" in _tables(db)
+    assert {
         "manifest_id", "improvement_mode", "missing_inputs", "quality_state",
         "stale_reason", "historical_status", "accept_mode",
-    } & _columns(db, "draft_suggestions")
+    } <= _columns(db, "draft_suggestions")
+    assert not _EXACT_USAGE_COLUMNS & _columns(db, "usage_records")
     con = sqlite3.connect(db)
     try:
         assert con.execute(
@@ -378,7 +386,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     assert "target_section" in _columns(db, "review_findings")
     assert "review_comment" in _columns(db, "partners")
     assert "edited_text" in _columns(db, "import_candidates")
-    assert _USAGE_COST_COLUMNS <= _columns(db, "usage_records")
+    assert _LEGACY_USAGE_COST_COLUMNS <= _columns(db, "usage_records")
     assert "import_candidates" in _tables(db)
     assert _FINDING_V2_COLUMNS <= _columns(db, "review_findings")
     assert _FINDING_V2_COLUMNS <= _columns(db, "open_issues")
@@ -466,6 +474,10 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
             "SELECT input_tokens, output_tokens, cost_status, price_version"
             " FROM usage_records WHERE usage_record_id='usg-eval1'"
         ).fetchone()
+        exact_usage = con.execute(
+            "SELECT cached_input_tokens, cache_write_input_tokens, cost_usd, "
+            "fx_chf_per_usd FROM usage_records WHERE usage_record_id='usg-eval1'"
+        ).fetchone()
         cand = con.execute(
             "SELECT extracted_text, edited_text, decision, mapping_version,"
             " mapping_status, section_metadata FROM import_candidates"
@@ -487,6 +499,7 @@ def test_latest_migration_downgrade_upgrade_roundtrip(tmp_path):
     # Die Rohzeilen wurden nach den RUN-2B-Migrationen angelegt; ein reines
     # RUN-3A-Down/Up führt keine historische Revision-Backfill erneut aus.
     assert usage == (11, 22, "not_applicable", None), "usage row mutated in roundtrip"
+    assert exact_usage == (0, 0, None, None), "historical usage was artificially priced"
     assert cand == (
         "Original", "Bearbeitet", "accepted", "legacy-anchor-v1",
         "content_detected", "[]",

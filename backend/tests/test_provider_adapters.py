@@ -139,6 +139,22 @@ def test_openai_without_schema_keeps_legacy_wire_format(openai_key, monkeypatch)
     assert captured["body"]["max_output_tokens"] == 1024
 
 
+def test_openai_captures_provider_reported_cached_input(openai_key, monkeypatch):
+    payload = {
+        **_OPENAI_RESP,
+        "usage": {
+            "input_tokens": 100,
+            "output_tokens": 4,
+            "input_tokens_details": {"cached_tokens": 25},
+        },
+    }
+    _capture_post(monkeypatch, payload)
+    result = OpenAIProvider().generate(_request(None))
+    assert result.usage.input_tokens == 100
+    assert result.usage.cached_input_tokens == 25
+    assert result.usage.cache_write_input_tokens == 0
+
+
 # --- Anthropic ---------------------------------------------------------------
 
 
@@ -176,6 +192,24 @@ def test_anthropic_structured_output_request_and_parsing(anthropic_key, monkeypa
     assert result.model == "actual-anthropic-model"
     assert result.termination_reason == "tool_use"
     assert result.tool_wrapper_normalized is False
+
+
+def test_anthropic_captures_cache_read_and_write_tokens(anthropic_key, monkeypatch):
+    _capture_post(monkeypatch, {
+        "model": "actual-anthropic-model",
+        "stop_reason": "end_turn",
+        "content": [{"type": "text", "text": "{}"}],
+        "usage": {
+            "input_tokens": 10,
+            "cache_read_input_tokens": 20,
+            "cache_creation_input_tokens": 30,
+            "output_tokens": 4,
+        },
+    })
+    result = AnthropicProvider().generate(_request(None))
+    assert result.usage.input_tokens == 60
+    assert result.usage.cached_input_tokens == 20
+    assert result.usage.cache_write_input_tokens == 30
 
 
 # --- Anthropic: native Structured Outputs (output_config.format) -------------

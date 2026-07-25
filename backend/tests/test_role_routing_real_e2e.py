@@ -48,11 +48,11 @@ def test_synthetic_live_run_creates_truthful_a1_a2_a3_artifacts(client):
     _require_complete_live_configuration()
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     preflight = client.post(
-        "/api/v1/admin/live-system-status/preflight",
+        "/api/v1/system-status/connection-check",
         headers=unsafe_headers(csrf),
     )
     assert preflight.status_code == 200, preflight.text
-    assert preflight.json()["status"]["overall_status"] == "available"
+    assert preflight.json()["can_run_connection_check"] is True
 
     project_id, source_version_id = cloud_project_with_source(
         client, csrf, "Synthetic live role-routing smoke"

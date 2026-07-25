@@ -238,16 +238,16 @@ describe("LiveEditor A2 suggestions", () => {
     const control = await screen.findByTestId("a2-suggestion-control")
     expect(
       await within(control).findByText(
-        "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus den synthetischen Preflight."
+        "KI-Vorschläge sind noch nicht verfügbar. Ein Lead-Admin kann die Verbindung im Systemstatus prüfen."
       )
     ).toBeInTheDocument()
     expect(
       within(control).getByRole("button", { name: "Vorschlag erstellen" })
     ).toBeDisabled()
     const cta = within(control).getByRole("link", {
-      name: "Live-Systemstatus prüfen",
+      name: "Systemstatus öffnen",
     })
-    expect(cta).toHaveAttribute("href", "/admin")
+    expect(cta).toHaveAttribute("href", "/systemstatus")
     // Kein stiller Demo-Ersatz und kein irreführender Leerzustand.
     expect(screen.queryByText(/Demo-Vorschlag/)).toBeNull()
     expect(screen.queryByText(/noch nicht erstellt/)).toBeNull()
@@ -270,14 +270,14 @@ describe("LiveEditor A2 suggestions", () => {
     await waitFor(() =>
       expect(
         screen.getByText(
-          "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten Routenfehler im Live-Systemstatus und wiederholen Sie den Test."
+          "Die letzte Verbindungsprüfung war nicht erfolgreich. Ein Lead-Admin kann die Verbindung im Systemstatus erneut prüfen."
         )
       ).toBeInTheDocument()
     )
     const control = screen.getByTestId("a2-suggestion-control")
     expect(
-      within(control).getByRole("link", { name: "Routenfehler prüfen" })
-    ).toHaveAttribute("href", "/admin")
+      within(control).getByRole("link", { name: "Systemstatus öffnen" })
+    ).toHaveAttribute("href", "/systemstatus")
     expect(screen.queryByTestId("suggestion-review-sheet")).toBeNull()
     expect(screen.queryByText(/Demo/)).toBeNull()
   })
@@ -354,6 +354,65 @@ describe("LiveEditor A2 suggestions", () => {
     expect(
       screen.queryByRole("button", { name: "Mit alternativem Modell versuchen" })
     ).toBeNull()
+  })
+
+  it("deterministischer Abschnittsfehler: Klartext mit Marker, kein «Erneut versuchen»", async () => {
+    // Regression «section_marker_missing:4.5.2» (2026-07-24): der echte Grund
+    // erscheint, und ein sinnloser Retry wird nicht angeboten.
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "failed", created_at: new Date().toISOString(),
+          error: {
+            code: "section_marker_missing:4.5.2",
+            status: 422,
+            detail: "Die Markerzeile «4.5.2» fehlt im Text.",
+          },
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    expect(
+      await screen.findByText(/Die Markerzeile «4.5.2» fehlt im Text/)
+    ).toBeInTheDocument()
+    expect(screen.queryByRole("button", { name: "Erneut versuchen" })).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Mit alternativem Modell versuchen" })
+    ).toBeNull()
+  })
+
+  it("Zielabschnitt ohne Markerzeile ist im Dropdown deaktiviert", async () => {
+    // Ziel-tolerantes Gating (2026-07-24): fehlende Marker sind sichtbar,
+    // aber nicht wählbar — vorhandene Abschnitte bleiben bearbeitbar.
+    setBackendMode("live")
+    const text =
+      "4.1 Alt\n4.2 Alt\n4.3 Alt\n4.4 Alt\n4.5.1 Alt\n4.5.3 Alt\n4.5.4 Alt\n4.6 Alt"
+    baseMock(
+      [
+        solDraft({
+          current_version: {
+            draft_version_id: "v1", text, character_count: text.length,
+            created_by: "template", created_at: new Date().toISOString(),
+            content_hash: "h",
+          },
+        }),
+      ],
+      { generation_mode: "real_eval" }
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    const control = await screen.findByTestId("a2-suggestion-control")
+    expect(
+      within(control).getByRole("option", { name: "4.5.2 — fehlt im Text" })
+    ).toBeDisabled()
+    expect(within(control).getByRole("option", { name: "4.2" })).toBeEnabled()
   })
 
   // §10 — Quellen-Redraft nur mit positiv geprüfter Live-Quelle.
@@ -448,9 +507,10 @@ describe("LiveEditor A2 suggestions", () => {
     )
     render(<LiveEditor runId="r1" />)
     await clickGenerate("4.2")
-    // Side-by-side dialog appears with the suggestion.
+    // Side-by-side dialog appears with the suggestion (v3: Inhalte leben in
+    // der Block-Diff-Liste; suggestion-text ist der Spaltenkopf).
     await waitFor(() =>
-      expect(screen.getByTestId("suggestion-text").textContent).toContain("4.2 Neuheit neu")
+      expect(screen.getByTestId("suggestion-diff").textContent).toContain("4.2 Neuheit neu")
     )
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     await waitFor(() =>
@@ -498,7 +558,7 @@ describe("LiveEditor A2 suggestions", () => {
     render(<LiveEditor runId="r1" />)
     await clickGenerate("3.2")
     await waitFor(() =>
-      expect(screen.getByTestId("suggestion-text").textContent).toContain("3.2 Geschäftsmodell")
+      expect(screen.getByTestId("suggestion-diff").textContent).toContain("3.2 Geschäftsmodell")
     )
     // Placeholder warning surfaces; no provider/model names anywhere.
     expect(screen.getByText(/Platzhalter/i)).toBeInTheDocument()

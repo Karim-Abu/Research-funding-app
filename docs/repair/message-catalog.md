@@ -76,6 +76,77 @@ haben bereits spezifische, nicht-generische Texte in `handlers.py` — R2.6
 | `missing_sources` | «Für einen belastbaren Vorschlag fehlen passende Quellen.» | «Quelle hinzufügen» |
 | `field_not_supported` | «Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.» | — (kein CTA seit 2026-07-23; der frühere «Strukturvorlage nutzen»-Button fokussierte nur den Editor und suggerierte eine nicht existierende Aktion) |
 
+Nachtrag 2026-07-24c (Owner-Freigabe via genehmigten Plan «Markt- &
+Konkurrenzvergleich — Absturz + Arbeitsbereich»):
+- P0-Absturz behoben: `market/executor._persist` warf beim Anlegen externer
+  Evidence-Anchors/-Links `NOT NULL constraint failed: evidence_anchors.run_id`
+  (Dev-DB-Drift; die ORM führt `run_id` bereits als nullable, externe
+  Marktanker haben legitim keine run_id). Fix = lokale DB reconciled
+  (`run_id` in `evidence_anchors` + `evidence_links` nullable), Backup
+  `app.db.bak-market-runid-2026-07-24`. Zusätzlich loggt der Executor seine
+  Exceptions jetzt (`logger.exception`), statt sie blind als
+  `MARKET_EXECUTION_FAILED` zu verschlucken.
+- EIN einheitliches Status-Viewmodel (`marketWorkspaceStatus`) für Quellen-Karte,
+  Editor-Rail und Sheet — nie mehr «Fehlgeschlagen» (Karte) und «Nicht
+  analysiert» (Rail) gleichzeitig. Labels: «Noch nicht erstellt» (grau) ·
+  «Letzter Versuch fehlgeschlagen» (rot, Hinweis «Bitte erneut erstellen.») ·
+  «Zu wenige geprüfte Quellen» (orange) · «Begrenzte Evidenz» (orange) ·
+  «Veraltet — neu erstellen» (orange) · «Zur Prüfung bereit» (grün, nur mit
+  Einträgen) · sonst «Keine belegten Einträge» (orange).
+- Marktbild (`deriveMarketPicture`, nur quellengestützte Einträge): Punkte
+  «Lösungsarten», «Kundengruppen», «Typische Funktionen», «Marktsignale»,
+  «Kundenprobleme» (leere Punkte entfallen); offene Lücken bleiben als «Offene
+  Evidenzlücken». Im Sheet als Sektion «Marktbild», in der Rail als Top-2-Zeilen.
+- Bereitschaftszeile ohne «n von 2»-Ratio: «{n} geeignete Quellen ausgewählt —
+  bereit für einen belastbaren Vergleich.» / «1 geeignete Quelle ausgewählt —
+  mindestens 2 empfohlen für einen belastbaren Vergleich. Als Nächstes: …» /
+  «Noch keine geeigneten Quellen — als Nächstes: …».
+- Sichtbarer Grund am deaktivierten «Marktvergleich öffnen»: «Noch kein
+  Vergleich mit Einträgen — unter Quellen erstellen.» bzw. «Letzter Versuch
+  fehlgeschlagen — unter Quellen erneut erstellen.» (Tooltip allein reicht
+  nicht, CLAUDEX §5).
+
+Nachtrag 2026-07-24b (Owner-Freigabe via genehmigten Plan «Prüf-Dialog v2»):
+- Opt-out-Review: alle Änderungen vorausgewählt; Zähler «x von n Änderungen
+  ausgewählt»; EIN Primärbutton «Übernehmen» (Name unverändert/E2E-stabil),
+  der Zweitbutton «Ausgewählte übernehmen (n)» entfällt. Micro-Copy:
+  «Sind alle Änderungen ausgewählt, wird der Vorschlag exakt übernommen;
+  sonst genau Ihre Auswahl.»
+- Streichungen: links reine Referenz (durchgestrichen, ohne Klickelemente);
+  rechts kompakte Kontrollzeile mit Badge «Streichung» + Checkbox
+  (aria «Streichung übernehmen: <Satz>»).
+- Aufklapper neu: «Begründung und Faktenbilanz» (bündelt Begründung +
+  Erhaltene Fakten / Entfernte oder umformulierte Claims / Neue Claims).
+
+Nachtrag 2026-07-24 (Owner-Freigabe via genehmigten Plan «Live-Betrieb Feinschliff»):
+- Abschnittsstruktur-Fehler (deterministisch, KEIN Retry-Angebot; Backend
+  `sections.section_error_detail` = Frontend `REDRAFT_FAILURE_LABELS`):
+  `section_marker_missing:<m>` → «Die Markerzeile ‹m› fehlt im Text. Stellen
+  Sie die Zeile ‹m› wieder her oder wählen Sie einen vorhandenen
+  Zielabschnitt.»; `section_marker_ambiguous:<m>` → «… kommt mehrfach vor …»;
+  `section_markers_out_of_order` → «… nicht in der Reihenfolge der Vorlage …»;
+  `section_target_unknown`/`section_markers_missing` → «Der gewählte Abschnitt
+  ist für dieses Feld nicht verfügbar …». Dropdown-Hinweis: «‹m› — fehlt im
+  Text» bzw. «… stellen Sie die Markerzeile wieder her, um diesen Abschnitt
+  gezielt zu bearbeiten.»
+- Prüf-Dialog: Aufklapper «Was der Vorschlag ändert — <Diff-Zusammenfassung>»
+  und «Offen gelassene Fragen (n)»; Sammel-Auswahl «Alle Streichungen (n)» /
+  «Alle neuen Sätze (n)» / «Alle Umformulierungen (n)»; Fusszeile
+  «x von n Änderungen ausgewählt».
+- Geführte Recherche: «Schritt 1 · Recherchebrief», «Schritt 2 · Suchanfragen
+  freigeben und ausführen», «Schritt 3 · Ergebnisse prüfen und übernehmen»;
+  Karten-Frage «Stützt diese Quelle Ihre Aussagen?»; Karten-Zeile
+  «Quellenqualität: … · Fundstelle: … · Stützung: …» + Aufklapper «Weitere
+  Angaben»; manueller Import als Aufklapper «Öffentliche Quelle manuell
+  hinzufügen».
+- Marktvergleich-Bereitschaft: «{n} von 2 empfohlenen geeigneten Quellen — als
+  Nächstes: ‹Titel› inhaltlich prüfen (Stützt/Teilweise).» / «… ‹Titel›
+  übernehmen und prüfen.» / «… der Vergleich kann erstellt werden; eine zweite
+  geprüfte Quelle macht ihn belastbarer.» (Empfehlung, kein Gate);
+  Leerzustand-Nutzen: «Das liefert der Vergleich: eine belegte Tabelle der
+  Anbieter und Alternativen mit wörtlich verifizierten Zitaten · ‹Was das für
+  den Antrag bedeutet› (bis zu fünf Konsequenzen) · ‹Verwendete Quellen›.»
+
 Nachtrag 2026-07-23 (Owner-Freigabe via genehmigten Verbesserungsplan):
 - `field_not_supported` ohne CTA (siehe Tabellenzeile); Hinweis auf unterstützte
   Felder bleibt direkt darunter im Editor.

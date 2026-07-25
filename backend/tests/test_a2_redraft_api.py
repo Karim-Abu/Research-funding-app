@@ -79,6 +79,56 @@ def test_create_redraft_async_then_result(client, monkeypatch):
     assert op["result"]["character_limit"] == 25000
 
 
+def test_redraft_missing_target_marker_reports_specific_422(client, monkeypatch):
+    """Regression 2026-07-24 («section_marker_missing:4.5.2»): deterministische
+    Abschnittsfehler tragen den spezifischen Code, Status 422 und deutschen
+    Klartext mit benanntem Marker — und bieten keinen Alternativ-Retry an."""
+    db = SessionLocal()
+    try:
+        text = "\n".join(
+            line for line in GOOD_TEXT.splitlines() if not line.startswith("4.2")
+        )
+        run, _draft, base = build_run_with_draft(db, draft_text=text)
+        run_id = run.run_id
+        db.commit()
+    finally:
+        db.close()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "failed"
+    assert op["error"]["code"] == "section_marker_missing:4.2"
+    assert op["error"]["status"] == 422
+    assert "«4.2»" in op["error"]["detail"]
+    # Der Operations-Lesecontract serialisiert das Feld immer — entscheidend
+    # ist, dass es für deterministische Fehler nicht gesetzt/true ist.
+    assert not op["error"].get("retry_with_alternative_model")
+
+
+def test_redraft_tolerates_missing_non_target_marker(client, monkeypatch):
+    """Gegenprobe zur Toleranz: fehlt ein NICHT-Ziel-Marker (4.5.2), gelingt
+    der Redraft des vorhandenen Zielabschnitts trotzdem."""
+    db = SessionLocal()
+    try:
+        text = "\n".join(
+            line for line in GOOD_TEXT.splitlines() if not line.startswith("4.5.2")
+        )
+        run, _draft, base = build_run_with_draft(db, draft_text=text)
+        run_id = run.run_id
+        db.commit()
+    finally:
+        db.close()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "succeeded"
+    assert op["result"]["target_section"] == TARGET_SECTION
+
+
 def test_redraft_result_exposes_concrete_change_metadata_for_review(
     client, monkeypatch
 ):

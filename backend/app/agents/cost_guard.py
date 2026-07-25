@@ -1,10 +1,10 @@
 """CostGuard for model invocations (Milestone 9A).
 
 Enforces call-count / retry / timeout / token limits from the AgentProfile.
-CHF cost is never invented: since EVAL.1 it is resolved via the versioned
-price table (``app.evaluation.pricing``) — a missing entry yields
-``cost_status='unknown_price'`` with ``cost_chf=0.0``, which must never be
-read or summed as "free"; fake/local adapters yield ``not_applicable``.
+Provider costs are USD-first and immutable per call. CHF is stored only as the
+same-call SNB reference conversion; a missing exact USD rule yields
+``cost_status='unknown_price'`` and must never be read or summed as "free".
+Fake/local adapters yield ``not_applicable``.
 """
 from __future__ import annotations
 
@@ -142,7 +142,7 @@ def record_usage(
     run_id: str | None,
     workspace_id: str,
     provider: str,
-    model_id: str,
+    model_id: str | None,
     usage: ProviderUsage,
     adapter_name: str | None = None,
 ) -> UsageRecord:
@@ -157,6 +157,8 @@ def record_usage(
         model_id=model_id,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
+        cached_input_tokens=usage.cached_input_tokens,
+        cache_write_input_tokens=usage.cache_write_input_tokens,
         adapter_name=adapter_name,
     )
     record = UsageRecord(
@@ -167,6 +169,10 @@ def record_usage(
         model=model_id,
         input_tokens=usage.input_tokens,
         output_tokens=usage.output_tokens,
+        cached_input_tokens=usage.cached_input_tokens,
+        cache_write_input_tokens=usage.cache_write_input_tokens,
+        cost_usd=cost.cost_usd,
+        fx_chf_per_usd=cost.fx_chf_per_usd,
         cost_chf=cost.cost_chf,
         cost_status=cost.cost_status,
         price_version=cost.price_version,

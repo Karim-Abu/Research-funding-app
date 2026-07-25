@@ -84,6 +84,69 @@ test("market comparison: fake mode completes honestly empty with gap note", asyn
   await expect(page).toHaveURL(/\/login/, { timeout: 20_000 })
 })
 
+// --- Gesamturteil (Markt- & Konkurrenzvergleich als Entscheidungsunterstützung) ---
+// Die vier geforderten Szenarien. Szenario 4 (insufficient_evidence) läuft im
+// Fake-Web-Modus vollständig. Die drei quellengestützten Zustände
+// (direct_equivalent_found / similar_solutions_found / no_direct_equivalent_in_scope)
+// brauchen source-backed Kandidaten — ein Live-/Ebene-D-Thema. Sie sind hier so
+// geschrieben, dass sie in einer supervised-live/seeded Umgebung greifen und im
+// reinen Fake-Modus (keine Kandidaten) sauber übersprungen werden.
+
+const FORBIDDEN = ["weltweit einzigartig", "keine Konkurrenz", "Es existiert keine solche Lösung", "patentierbar", "Freedom to Operate"]
+
+function assertOverclaimGuard(view: Record<string, unknown>): void {
+  const j = view.competition_judgment as Record<string, unknown> | null
+  expect(j, "view exposes a competition_judgment").toBeTruthy()
+  const disallowed = (j!.disallowed_formulations as string[]) ?? []
+  for (const phrase of FORBIDDEN) expect(disallowed.join(" ")).toContain(phrase)
+  const allowed = ((j!.allowed_formulations as string[]) ?? []).join(" ")
+  for (const phrase of FORBIDDEN) expect(allowed).not.toContain(phrase)
+  expect(allowed).not.toMatch(/\d\s?%/) // keine intransparenten Prozentwerte
+  // Marktstatistiken sind nie Lösungskandidaten.
+  const landscape = view.solution_landscape as { candidates?: Array<{ candidate_type: string }> } | null
+  for (const c of landscape?.candidates ?? []) expect(c.candidate_type).toBeTruthy()
+}
+
+async function generateView(page: Page, projectId: string, mut: Mut): Promise<Record<string, unknown>> {
+  const accepted = await (await page.request.post(
+    `/api/projects/${projectId}/market-comparisons`, { headers: mut() })).json()
+  expect(await waitForOperation(page.request, accepted.operation_id)).toBe("succeeded")
+  return (await (await page.request.get(`/api/market-comparisons/${accepted.resource_id}`)).json())
+}
+
+test("Szenario 4 — insufficient_evidence verhindert Übertreibung", async ({ page }) => {
+  const mut = await login(page)
+  const projectId = await createProject(page.request, mut)
+  const view = await generateView(page, projectId, mut)
+
+  const judgment = view.competition_judgment as Record<string, unknown>
+  expect(judgment.status).toBe("insufficient_evidence")
+  expect(judgment.can_insert_into_application).toBe(false)
+  expect((judgment.allowed_formulations as string[]) ?? []).toHaveLength(0)
+  assertOverclaimGuard(view)
+})
+
+test("Szenarien 1–3 — quellengestützte Urteile (nur mit Kandidaten; sonst übersprungen)", async ({ page }) => {
+  const mut = await login(page)
+  const projectId = await createProject(page.request, mut)
+  const view = await generateView(page, projectId, mut)
+
+  const landscape = view.solution_landscape as { candidates?: unknown[] } | null
+  test.skip(
+    (landscape?.candidates?.length ?? 0) === 0,
+    "Keine source-backed Kandidaten (Fake-Web) — Szenarien 1–3 brauchen supervised-live/seeded Daten."
+  )
+  const judgment = view.competition_judgment as Record<string, unknown>
+  expect(["direct_equivalent_found", "similar_solutions_found", "no_direct_equivalent_in_scope"])
+    .toContain(judgment.status)
+  // Suchraum immer transparent ausgewiesen, nie globale Nichtexistenz.
+  expect(judgment.scope_summary as string).toContain("Im definierten Suchumfang")
+  if (judgment.status === "no_direct_equivalent_in_scope") {
+    expect(judgment.rationale as string).toContain("Im definierten Suchumfang")
+  }
+  assertOverclaimGuard(view)
+})
+
 test("market comparison UI: Quellen section shows the honest empty state", async ({ page }) => {
   const mut = await login(page)
   const projectId = await createProject(page.request, mut)

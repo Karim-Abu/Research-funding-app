@@ -5,7 +5,11 @@ import pytest
 
 from app.agents import a2_fields, field_drafting
 from app.agents import field_drafting_context as context
-from app.drafts.sections import SectionStructureError, merge_section
+from app.drafts.sections import (
+    SectionStructureError,
+    extract_section,
+    merge_section,
+)
 from app.db.session import SessionLocal
 from tests.a2_helpers import (
     FIELD_ID,
@@ -301,8 +305,66 @@ def test_43_surfaces_complete_kpi_chain_as_open_inputs_without_values(db):
 
 
 def test_merge_fails_closed_for_missing_or_duplicate_markers():
+    """Ziel-Toleranz (Freigabe 2026-07-24): fehlende NICHT-Ziel-Marker blocken
+    den Merge nicht mehr; fail-closed bleiben fehlender/mehrdeutiger ZIELmarker
+    und mehrdeutige übrige Marker."""
     markers = ("3.1", "3.2", "3.3")
-    with pytest.raises(SectionStructureError, match="section_marker_missing"):
-        merge_section("3.1 A\n3.3 C", markers, "3.1", "3.1 Neu")
+    # Fehlender ZIELmarker bleibt ein Fehler.
+    with pytest.raises(SectionStructureError, match="section_marker_missing:3.2"):
+        merge_section("3.1 A\n3.3 C", markers, "3.2", "3.2 Neu")
+    # Mehrdeutiger Zielmarker bleibt ein Fehler.
     with pytest.raises(SectionStructureError, match="section_marker_ambiguous"):
         merge_section("3.1 A\n3.2 B\n3.2 B2\n3.3 C", markers, "3.2", "3.2 Neu")
+    # Mehrdeutiger NICHT-Ziel-Marker bleibt ebenfalls fail-closed.
+    with pytest.raises(SectionStructureError, match="section_marker_ambiguous"):
+        merge_section("3.1 A\n3.2 B\n3.2 B2\n3.3 C", markers, "3.1", "3.1 Neu")
+
+
+def test_merge_tolerates_missing_non_target_marker():
+    """Regression «section_marker_missing:4.5.2»: der Nutzer darf 3.1
+    übernehmen, obwohl 3.2 im Text fehlt — der Rest bleibt byte-exakt."""
+    markers = ("3.1", "3.2", "3.3")
+    base = "3.1 Alter Text\n3.3 Schluss bleibt"
+    merged = merge_section(base, markers, "3.1", "3.1 Neu")
+    assert merged == "3.1 Neu\n3.3 Schluss bleibt"
+
+
+def test_extract_tolerates_missing_non_target_marker():
+    markers = ("3.1", "3.2", "3.3")
+    text = "3.1 Erster Abschnitt\n3.3 Letzter Abschnitt"
+    assert extract_section(text, markers, "3.1") == "3.1 Erster Abschnitt"
+    assert extract_section(text, markers, "3.3") == "3.3 Letzter Abschnitt"
+    with pytest.raises(SectionStructureError, match="section_marker_missing:3.2"):
+        extract_section(text, markers, "3.2")
+
+
+def test_context_and_redraft_tolerate_missing_non_target_marker(db):
+    """End-to-end-Regression «section_marker_missing:4.5.2»: Kontextbau und
+    kompletter A2-Redraft für einen VORHANDENEN Abschnitt gelingen, obwohl die
+    Markerzeile 4.5.2 im Feldtext fehlt; der fehlende Abschnitt selbst bleibt
+    mit spezifischem Code gesperrt."""
+    markers = ("4.1", "4.2", "4.3", "4.4", "4.5.1", "4.5.2", "4.5.3", "4.5.4", "4.6")
+    text = "\n".join(
+        line for line in GOOD_TEXT.splitlines()
+        if not line.startswith("4.5.2")
+    )
+    run, draft, base = build_run_with_draft(db, draft_text=text)
+
+    assembled = context.assemble_a2_context(
+        db, run, field_id=FIELD_ID, profile_id="A2.solution_innovation",
+        target_section="4.2", section_markers=markers,
+    )
+    assert assembled.current_draft_text.lstrip().startswith("4.2")
+
+    outcome = field_drafting.run_a2_field_drafting(
+        db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+        base_version_id=base, operation_id="op-tolerant-42", target_section="4.2",
+        provider_resolver=fake_resolver(success_fake(section_bundle())),
+    )
+    assert outcome.status == "succeeded", outcome.reason
+
+    with pytest.raises(SectionStructureError, match="section_marker_missing:4.5.2"):
+        context.assemble_a2_context(
+            db, run, field_id=FIELD_ID, profile_id="A2.solution_innovation",
+            target_section="4.5.2", section_markers=markers,
+        )

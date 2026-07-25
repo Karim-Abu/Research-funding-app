@@ -109,7 +109,7 @@ describe("AnalyseEinstellungenDialog — Deaktivierungs-Gründe (A4)", () => {
     })
     expect(screen.getByText("Nicht verfügbar")).toBeInTheDocument()
     expect(
-      screen.getByText(/Setzen Sie AGENT_FAKE_PROVIDER=false/)
+      screen.getByText(/wegen einer widersprüchlichen Konfiguration/)
     ).toBeInTheDocument()
     expect(screen.queryByText(/^Demo$/)).toBeNull()
     expect(screen.queryByText("Live-KI verfügbar")).toBeNull()

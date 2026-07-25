@@ -22,39 +22,36 @@ REASON_TEXTS_DE: dict[str, str] = {
     ),
     "live_fake_conflict": (
         "Live-KI ist wegen einer widersprüchlichen Konfiguration nicht verfügbar. "
-        "Setzen Sie AGENT_FAKE_PROVIDER=false und führen Sie den Preflight erneut aus."
+        "Öffnen Sie den Systemstatus, um die Verbindung zu prüfen."
     ),
     "live_eval_mode_disabled": (
-        "Live-KI ist deaktiviert. Setzen Sie AI_EVAL_MODE=real und führen Sie "
-        "den synthetischen Preflight erneut aus."
+        "Live-KI ist deaktiviert. Öffnen Sie den Systemstatus, um die Verbindung "
+        "zu prüfen."
     ),
     "live_provider_key_missing": (
         "Live-KI ist nicht verfügbar. Hinterlegen Sie den API-Schlüssel der "
-        "konfigurierten Route und führen Sie den Preflight erneut aus."
+        "konfigurierten Route und öffnen Sie danach den Systemstatus."
     ),
     "live_model_id_missing": (
         "Live-KI ist nicht verfügbar. Hinterlegen Sie die konkrete "
-        "AGENT_MODEL_*_ID der Route und führen Sie den Preflight erneut aus."
+        "AGENT_MODEL_*_ID der Route und öffnen Sie danach den Systemstatus."
     ),
     "live_price_metadata_missing": (
         "Live-KI ist nicht verfügbar. Ergänzen Sie geprüfte Preis-Metadaten "
         "für die konkrete Modell-ID."
     ),
     "live_preflight_required": (
-        "Live-KI ist noch nicht freigegeben. Starten Sie im Live-Systemstatus "
-        "den synthetischen Preflight."
+        "Live-KI ist noch nicht freigegeben. Öffnen Sie den Systemstatus."
     ),
     "live_preflight_expired": (
-        "Der Live-Preflight ist abgelaufen. Führen Sie ihn im Live-Systemstatus "
-        "erneut aus."
+        "Die letzte Verbindungsprüfung ist abgelaufen. Öffnen Sie den Systemstatus."
     ),
     "live_preflight_failed": (
-        "Der Live-Preflight ist fehlgeschlagen. Prüfen Sie den konkreten "
-        "Routenfehler im Live-Systemstatus und wiederholen Sie den Test."
+        "Die Verbindungsprüfung ist fehlgeschlagen. Öffnen Sie den Systemstatus."
     ),
     "live_preflight_stale_model": (
-        "Die konfigurierte Modell-ID wurde seit dem Preflight geändert. "
-        "Führen Sie den synthetischen Preflight erneut aus."
+        "Die konfigurierte Modell-ID wurde seit der letzten Verbindungsprüfung "
+        "geändert. Öffnen Sie den Systemstatus."
     ),
     "live_actual_model_missing": (
         "Der Provider hat im Preflight keine tatsächliche Modell-ID bestätigt. "

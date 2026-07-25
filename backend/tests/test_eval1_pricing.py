@@ -5,6 +5,7 @@ Rein lokal/deterministisch: keine DB, kein Netzwerk, keine echten Preise.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import date
 
 import pytest
 
@@ -49,9 +50,7 @@ def test_fake_provider_string_is_not_applicable():
     assert res.cost_status == COST_STATUS_NOT_APPLICABLE
 
 
-def test_priced_with_zero_cost_stays_priced(monkeypatch):
-    # priced mit 0.0 ist NICHT unknown_price: der Status trägt die Semantik,
-    # nicht der Betrag (cost_chf=0.0 heisst nie automatisch "kostenlos").
+def test_legacy_chf_row_is_not_treated_as_an_exact_usd_price(monkeypatch):
     monkeypatch.setitem(
         PRICE_TABLE,
         ("test_provider", "test-model"),
@@ -61,12 +60,12 @@ def test_priced_with_zero_cost_stays_priced(monkeypatch):
         provider="test_provider", model_id="test-model",
         input_tokens=1000, output_tokens=1000,
     )
-    assert res.cost_status == COST_STATUS_PRICED
+    assert res.cost_status == COST_STATUS_UNKNOWN
     assert res.cost_chf == 0.0
-    assert res.price_version == PRICE_TABLE_VERSION
+    assert res.price_version is None
 
 
-def test_priced_computation_per_1k_tokens(monkeypatch):
+def test_legacy_chf_computation_is_not_used_for_new_usage(monkeypatch):
     monkeypatch.setitem(
         PRICE_TABLE,
         ("test_provider", "test-model"),
@@ -76,8 +75,8 @@ def test_priced_computation_per_1k_tokens(monkeypatch):
         provider="test_provider", model_id="test-model",
         input_tokens=2000, output_tokens=1000,
     )
-    assert res.cost_status == COST_STATUS_PRICED
-    assert res.cost_chf == pytest.approx(2 * 0.5 + 1 * 1.5)
+    assert res.cost_status == COST_STATUS_UNKNOWN
+    assert res.cost_usd is None
 
 
 def test_price_table_rows_carry_source_and_date():
@@ -92,7 +91,7 @@ def test_price_table_initially_empty_no_real_prices():
     assert pricing.PRICE_TABLE == {}
 
 
-def test_deployment_price_requires_version_and_evidence(monkeypatch):
+def test_chf_only_deployment_configuration_is_not_used(monkeypatch):
     settings = get_settings()
     monkeypatch.setattr(settings, "agent_model_pricing_chf_per_million", {
         "evidenced-model": {
@@ -111,9 +110,8 @@ def test_deployment_price_requires_version_and_evidence(monkeypatch):
         provider="openai_direct", model_id="evidenced-model",
         input_tokens=1_000_000, output_tokens=1_000_000,
     )
-    assert priced.cost_status == COST_STATUS_PRICED
-    assert priced.cost_chf == pytest.approx(10.0)
-    assert priced.price_version == "2026-07-15.v1"
+    assert priced.cost_status == COST_STATUS_UNKNOWN
+    assert priced.cost_usd is None
     unknown = resolve_cost(
         provider="openai_direct", model_id="unversioned-model",
         input_tokens=1, output_tokens=1,
@@ -135,3 +133,59 @@ def test_sum_only_priced():
     ]
     assert sum_priced_chf(records) == pytest.approx(2.0)
     assert sum_priced_chf([]) == 0.0
+
+
+def test_public_usd_price_uses_cache_read_tokens():
+    res = resolve_cost(
+        provider="openai_direct",
+        model_id="gpt-5.6-luna",
+        input_tokens=20_000,
+        cached_input_tokens=5_000,
+        output_tokens=3_000,
+        occurred_at=date(2026, 7, 24),
+    )
+    # (15k * $1 + 5k * $0.10 + 3k * $6) / 1M
+    assert res.cost_status == COST_STATUS_PRICED
+    assert res.cost_usd == pytest.approx(0.0335)
+    assert res.cost_chf == pytest.approx(0.0335 * pricing.SNB_USD_CHF_REFERENCE_RATE)
+    assert res.price_version == "2026-07-24.gpt56-luna"
+
+
+def test_sonnet_five_price_changes_on_first_september():
+    intro = resolve_cost(
+        provider="anthropic_direct", model_id="claude-sonnet-5",
+        input_tokens=20_000, output_tokens=3_000,
+        occurred_at=date(2026, 8, 31),
+    )
+    standard = resolve_cost(
+        provider="anthropic_direct", model_id="claude-sonnet-5",
+        input_tokens=20_000, output_tokens=3_000,
+        occurred_at=date(2026, 9, 1),
+    )
+    assert intro.cost_usd == pytest.approx(0.07)
+    assert standard.cost_usd == pytest.approx(0.105)
+    assert intro.price_version != standard.price_version
+
+
+def test_cache_write_is_never_guessed_as_cache_read_price():
+    res = resolve_cost(
+        provider="anthropic_direct", model_id="claude-sonnet-5",
+        input_tokens=100, cached_input_tokens=10, cache_write_input_tokens=5,
+        output_tokens=20, occurred_at=date(2026, 7, 24),
+    )
+    assert res.cost_status == COST_STATUS_UNKNOWN
+    assert res.cost_usd is None
+
+
+def test_pilot_run_before_catalogue_documentation_date_is_priced():
+    # The catalogue was documented on 2026-07-24, but the models already served
+    # the live pilot from 2026-07-23 at the same published rates. A pilot call on
+    # 2026-07-23 must therefore price (not stay fail-closed unknown).
+    for model_id in ("gpt-5.6-luna", "gpt-5.6-terra", "claude-sonnet-5"):
+        res = resolve_cost(
+            provider="openai_direct", model_id=model_id,
+            input_tokens=20_000, output_tokens=3_000,
+            occurred_at=date(2026, 7, 23),
+        )
+        assert res.cost_status == COST_STATUS_PRICED, model_id
+        assert res.cost_usd is not None and res.cost_usd > 0

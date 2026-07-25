@@ -37,6 +37,90 @@ export type ItemStatus =
   | "needs_human_review"
 export type SupportStatus = "unreviewed" | "supports" | "partial" | "does_not_support"
 
+// Analytical candidate types (Lösungslandschaft). Market statistics are never a
+// candidate — they live in the market picture only.
+export type CandidateType =
+  | "direct_competitor"
+  | "adjacent_solution"
+  | "reference_infrastructure"
+  | "substitute"
+  | "open_source_solution"
+  | "manual_or_internal_alternative"
+
+export type CompetitionJudgmentStatus =
+  | "direct_equivalent_found"
+  | "similar_solutions_found"
+  | "no_direct_equivalent_in_scope"
+  | "insufficient_evidence"
+
+export interface MarketPicturePointDto {
+  label: string
+  value: string
+}
+
+export interface MarketPictureDto {
+  size_and_growth: MarketPicturePointDto[]
+  segments: MarketPicturePointDto[]
+  trends: MarketPicturePointDto[]
+  demand_indicators: MarketPicturePointDto[]
+  swiss_relevance: MarketPicturePointDto[]
+  gaps: string[]
+}
+
+export interface SolutionLandscapeCandidateDto {
+  item_id: string
+  name: string
+  candidate_type: CandidateType
+  description?: string | null
+  target_customer_segment?: string | null
+  offering_summary?: string | null
+  strengths?: string | null
+  weaknesses?: string | null
+  differentiation_relevance?: string | null
+  relation_to_project: ItemRelation
+  relevant_functions: string[]
+  overlaps: string[]
+  evidencing_differentiators: string[]
+  unverified_differentiators: string[]
+  source_document_ids: string[]
+  evidence_quotes: EvidenceQuoteDto[]
+  status: ItemStatus
+  confidence_label: ConfidenceLabel
+  support_status?: string | null
+  source_scope_ok: boolean
+  allowed_formulations: string[]
+  disallowed_formulations: string[]
+}
+
+export interface SolutionLandscapeDto {
+  candidates: SolutionLandscapeCandidateDto[]
+  candidate_count_by_type: Partial<Record<CandidateType, number>>
+}
+
+export interface CompetitionJudgmentDto {
+  status: CompetitionJudgmentStatus
+  rationale: string
+  scope_summary: string
+  relevant_candidate_count: number
+  key_overlaps: string[]
+  evidenced_differentiators: string[]
+  plausible_unverified_differentiators: string[]
+  open_evidence_gaps: string[]
+  allowed_formulations: string[]
+  disallowed_formulations: string[]
+  can_insert_into_application: boolean
+}
+
+// The user's own project idea, shown as the explicit basis of the comparison.
+// `idea` is confidential (project description) — display only, never sent out.
+export interface ComparisonBasisDto {
+  title: string
+  idea: string
+  innovation_field?: string | null
+  search_focus?: string | null
+  search_aspects: string[]
+}
+
 export interface AsyncAcceptedDto {
   operation_id: string
   resource_type: string
@@ -80,6 +164,12 @@ export interface MarketComparisonItemDto {
   cell_evidence?: Record<string, string[]>
   coverage_status?: "exact_quote_verified" | null
   support_status?: SupportStatus | null
+  candidate_type?: CandidateType | null
+  overlaps?: string[]
+  evidencing_differentiators?: string[]
+  unverified_differentiators?: string[]
+  allowed_formulations?: string[]
+  disallowed_formulations?: string[]
 }
 
 export interface MarketComparisonDto {
@@ -106,6 +196,11 @@ export interface MarketComparisonDto {
   updated_at: string
   error?: string | null
   items: MarketComparisonItemDto[]
+  market_picture?: MarketPictureDto | null
+  solution_landscape?: SolutionLandscapeDto | null
+  competition_judgment?: CompetitionJudgmentDto | null
+  comparison_basis?: ComparisonBasisDto | null
+  scope_stale?: boolean
 }
 
 // ---------------------------------------------------------------------------
@@ -195,6 +290,31 @@ export const CENTRALIZATION_LABELS: Record<NonNullable<MarketComparisonItemDto["
   decentralized: "dezentral",
   hybrid: "hybrid",
   unclear: "unklar",
+}
+
+// Lösungslandschaft: user-facing German labels for the analytical candidate types.
+export const CANDIDATE_TYPE_LABELS: Record<CandidateType, string> = {
+  direct_competitor: "Direkter Wettbewerber",
+  adjacent_solution: "Angrenzende Lösung",
+  reference_infrastructure: "Referenz-Infrastruktur",
+  substitute: "Substitut",
+  open_source_solution: "Open-Source-Lösung",
+  manual_or_internal_alternative: "Manuelle/interne Alternative",
+}
+
+// Gesamturteil labels + tone (green = clear, orange = attention/limited, gray = neutral).
+export const JUDGMENT_STATUS_LABELS: Record<CompetitionJudgmentStatus, string> = {
+  direct_equivalent_found: "Direkt vergleichbare Lösung gefunden",
+  similar_solutions_found: "Ähnliche Lösungen gefunden",
+  no_direct_equivalent_in_scope: "Keine direkt gleichwertige Lösung im Suchraum",
+  insufficient_evidence: "Quellenlage noch nicht ausreichend",
+}
+
+export const JUDGMENT_STATUS_TONE: Record<CompetitionJudgmentStatus, "positive" | "attention" | "neutral"> = {
+  direct_equivalent_found: "attention",
+  similar_solutions_found: "attention",
+  no_direct_equivalent_in_scope: "positive",
+  insufficient_evidence: "neutral",
 }
 
 const STATUS_MESSAGES: Record<number, string> = {

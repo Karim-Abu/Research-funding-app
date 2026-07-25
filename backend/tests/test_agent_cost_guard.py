@@ -53,6 +53,27 @@ def test_fake_provider_cost_is_zero(db):
     assert rec.price_version is None
 
 
+def test_usage_record_persists_cache_metering_and_usd_snapshot(db):
+    run_id = make_run(db)
+    rec = cost_guard.record_usage(
+        db,
+        run_id=run_id,
+        workspace_id="ws-demo",
+        provider="openai_direct",
+        model_id="gpt-5.6-luna",
+        usage=ProviderUsage(
+            input_tokens=20_000,
+            cached_input_tokens=5_000,
+            output_tokens=3_000,
+        ),
+    )
+    assert rec.cached_input_tokens == 5_000
+    assert rec.cache_write_input_tokens == 0
+    assert rec.cost_status == "priced"
+    assert rec.cost_usd == pytest.approx(0.0335)
+    assert rec.fx_chf_per_usd == pytest.approx(0.8065)
+
+
 def test_output_token_cap(db):
     from app.agents.registry import (
         AgentProfileDef,

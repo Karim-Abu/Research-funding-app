@@ -1,156 +1,197 @@
-import { fireEvent, render, screen, waitFor, within } from "@testing-library/react"
-import { describe, expect, it } from "vitest"
+import { fireEvent, render, screen, waitFor } from "@testing-library/react"
+import { beforeEach, describe, expect, it, vi } from "vitest"
 import { KostenScreen } from "@/components/kosten/kosten-screen"
-import { RUNS, SERVICES, USAGE_LIMITS } from "@/lib/kosten-mock-data"
-import type { KostenRunViewModel } from "@/lib/kosten"
+import { getProjectCosts, type ProjectCostViewDto } from "@/lib/kosten-live"
+
+let mode: "live" | "mock" = "live"
+let activeProjectId: string | null = "project-1"
+
+vi.mock("@/components/providers/app-providers", () => ({
+  useSession: () => ({ mode }),
+}))
+
+vi.mock("@/components/providers/workflow-run-provider", () => ({
+  useActiveRun: () => ({ projectId: activeProjectId, loading: false }),
+}))
+
+vi.mock("@/lib/kosten-live", async () => {
+  const actual = await vi.importActual<typeof import("@/lib/kosten-live")>("@/lib/kosten-live")
+  return { ...actual, getProjectCosts: vi.fn() }
+})
+
+const mockedGetProjectCosts = vi.mocked(getProjectCosts)
+
+const exact: ProjectCostViewDto = {
+  project_id: "project-1",
+  billing_currency: "USD",
+  chf_reference_source: "https://www.snb.ch/example",
+  chf_reference_rate: 0.8065,
+  chf_reference_as_of: "2026-07-17",
+  runs: [{
+    id: "run-1",
+    started_at: "2026-07-24T10:00:00Z",
+    ended_at: "2026-07-24T10:01:30Z",
+    status: "completed",
+    processing_mode: "live",
+    user: "Anna Keller",
+    max_cost_chf: 2,
+    input_tokens: 20_000,
+    cached_input_tokens: 5_000,
+    cache_write_input_tokens: 0,
+    output_tokens: 3_000,
+    llm_calls: 1,
+    web_calls: 0,
+    cost: { status: "priced", usd: 0.0335, chf_reference: 0.02701775, known_usd: 0.0335, known_chf_reference: 0.02701775, unpriced_call_count: 0 },
+    executions: [{
+      id: "usage-1", role_label: "Textvorschlag", role_id: "A2_INNOSUISSE_PROPOSAL_WRITER", provider: "openai_direct", model: "gpt-5.6-luna", status: "succeeded",
+      input_tokens: 20_000, cached_input_tokens: 5_000, cache_write_input_tokens: 0, output_tokens: 3_000, latency_ms: 900,
+      cost: { status: "priced", usd: 0.0335, chf_reference: 0.02701775, known_usd: 0.0335, known_chf_reference: 0.02701775, unpriced_call_count: 0 },
+      price_version: "2026-07-24.gpt56-luna",
+    }],
+  }],
+}
 
 describe("KostenScreen", () => {
-  it("rendert Kopf, KPI-Übersicht und Budgetinformationen", () => {
-    render(<KostenScreen role="member" />)
+  beforeEach(() => {
+    mode = "live"
+    activeProjectId = "project-1"
+    mockedGetProjectCosts.mockClear()
+    mockedGetProjectCosts.mockResolvedValue(exact)
+  })
+
+  it("zeigt nur echte USD-Daten und die klar markierte CHF-Orientierung", async () => {
+    render(<KostenScreen />)
 
     expect(screen.getByRole("heading", { level: 1, name: "Kosten & Laufzeit" })).toBeInTheDocument()
-    expect(screen.getByText(/Budgetverbrauch, Durchlauf-Historie/)).toBeInTheDocument()
-    expect(screen.getByText(/Struktur und Darstellung entsprechen/)).toBeInTheDocument()
-    expect(screen.getByText("Projektverbrauch")).toBeInTheDocument()
-    expect(screen.getByText("Ø Kosten pro Lauf")).toBeInTheDocument()
-    expect(screen.getByText("Ø Laufzeit")).toBeInTheDocument()
-    expect(screen.getByText("Höchster bekannter Betrag")).toBeInTheDocument()
-    expect(screen.getAllByText(/mind\. CHF 4\.20/).length).toBeGreaterThan(0)
-    expect(screen.getByText(/Restbudget:/)).toBeInTheDocument()
-    expect(screen.getByText(/höchstens CHF 15\.80/)).toBeInTheDocument()
+    await waitFor(() => expect(screen.getByText("Exakte KI-Kosten")).toBeInTheDocument())
+    expect(screen.getAllByText(/\$0\.0335/).length).toBeGreaterThan(0)
+    expect(screen.getByText(/CHF-Orientierung: 1 USD = 0\.8065 CHF/)).toBeInTheDocument()
+    expect(screen.getByText("Externe KI-Aufrufe aus 1 Durchlauf")).toBeInTheDocument()
+    expect(screen.queryByText(/Beispieldaten|Projektlimit|Beispiel-Limit/)).toBeNull()
   })
 
-  it("zeigt Modell, Provider, Laufzeit, Kosten und alle Run-Status", () => {
-    render(<KostenScreen role="member" />)
-    const table = screen.getByRole("table", { name: "Durchlauf-Historie" })
+  it("zeigt deutsche Status-Labels statt roher Backend-Keys und keinen Preis-Hinweis bei vollständiger Bepreisung", async () => {
+    render(<KostenScreen />)
 
-    expect(within(table).getByRole("columnheader", { name: "Modell / Provider" })).toBeInTheDocument()
-    expect(within(table).getByRole("columnheader", { name: "Laufzeit" })).toBeInTheDocument()
-    expect(within(table).getByRole("columnheader", { name: "Kosten" })).toBeInTheDocument()
-    expect(within(table).getAllByText(/Claude \+ OpenAI \+ Firecrawl/).length).toBeGreaterThan(0)
-    expect(within(table).getAllByText("2 min 8 s").length).toBeGreaterThan(0)
-    expect(within(table).getAllByText("Abgeschlossen").length).toBeGreaterThan(0)
-    expect(within(table).getByText("Gestoppt: Kostenlimit")).toBeInTheDocument()
-    expect(within(table).getByText("Fehlgeschlagen")).toBeInTheDocument()
-    expect(within(table).getByText("Abgebrochen")).toBeInTheDocument()
+    expect(await screen.findByText("Abgeschlossen")).toBeInTheDocument()
+    expect(screen.queryByText("completed")).toBeNull()
+    expect(screen.queryByTestId("pricing-notice")).toBeNull()
   })
 
-  it("öffnet den Drawer und zeigt Übersicht, Audit und Ausführungsaufschlüsselung", async () => {
-    render(<KostenScreen role="member" />)
-    const table = screen.getByRole("table", { name: "Durchlauf-Historie" })
-    const runRow = within(table).getAllByRole("row", { name: /Details zu Analyse vom/ })[0]
-
-    fireEvent.keyDown(runRow, { key: "Enter" })
-
-    const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText("Abgeschlossen")).toBeInTheDocument()
-    expect(within(dialog).getByText("2 min 8 s")).toBeInTheDocument()
-    expect(within(dialog).getAllByText("~ CHF 0.72").length).toBeGreaterThan(0)
-    expect(within(dialog).getByText(/Claude \+ OpenAI \+ Firecrawl/)).toBeInTheDocument()
-    expect(within(dialog).getByText(/Audit-Referenz:/)).toBeInTheDocument()
-    expect(within(dialog).getByText("AE-2031")).toBeInTheDocument()
-    expect(within(dialog).getByText("Faktenanalyse")).toBeInTheDocument()
-    expect(within(dialog).getByText("Textvorschläge")).toBeInTheDocument()
-    expect(within(dialog).queryByText("Faktenanalyse v2")).toBeNull()
-
-    fireEvent.click(within(dialog).getByRole("button", { name: "Technische Details" }))
-    expect(await within(dialog).findByText(/Faktenanalyse v2/)).toBeInTheDocument()
-    fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))
-    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull())
+  it("zeigt Aufrufe nach Rolle gruppiert mit dem Modell darunter", async () => {
+    render(<KostenScreen />)
+    await screen.findByText("Durchlauf-Historie")
+    fireEvent.click(screen.getByRole("button", { name: /Analyse-Durchlauf/ }))
+    expect(screen.getByText("Innovationstext-Assistent")).toBeInTheDocument()
+    expect(screen.getByText(/gpt-5\.6-luna · 1 Aufruf/)).toBeInTheDocument()
+    expect(screen.queryByText(/openai_direct/)).toBeNull()
+    expect(screen.getByText("Schutzlimit pro Lauf")).toBeInTheDocument()
   })
 
-  it("sucht und stellt Filter sowie Sortierung bereit", () => {
-    render(<KostenScreen role="member" />)
-    const search = screen.getByLabelText("Nach Nutzer:in oder Audit-Referenz suchen")
-
-    fireEvent.change(search, { target: { value: "AE-2029" } })
-    expect(screen.getByText(/1 Durchlauf/)).toBeInTheDocument()
-    expect(screen.getAllByText("Abschnitt neu erstellt").length).toBeGreaterThan(0)
-    expect(screen.getByRole("combobox", { name: "Status filtern" })).toBeInTheDocument()
-    expect(screen.getByRole("combobox", { name: "Art filtern" })).toBeInTheDocument()
-    expect(screen.getByRole("combobox", { name: "Provider oder Modell filtern" })).toBeInTheDocument()
-    expect(screen.getByRole("combobox", { name: "Durchläufe sortieren" })).toBeInTheDocument()
-
-    fireEvent.click(screen.getByRole("button", { name: "Zurücksetzen" }))
-    expect(screen.getAllByText(/8 Durchläufe/).length).toBeGreaterThan(0)
+  it("kennzeichnet unvollständige Preise einmal zentral statt eine exakte Summe zu behaupten", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      runs: [{ ...exact.runs[0], cost: { status: "partial", known_usd: 0.01, known_chf_reference: 0.008, unpriced_call_count: 1 } }],
+    })
+    render(<KostenScreen />)
+    const notice = await screen.findByTestId("pricing-notice")
+    expect(notice).toHaveTextContent("Für 1 von 1 KI-Aufrufen lag zum Ausführungszeitpunkt noch keine veröffentlichte USD-Preisregel vor")
+    expect(screen.getAllByTestId("pricing-notice")).toHaveLength(1)
+    expect(screen.getByText(/Mindestens \$0\.0100/)).toBeInTheDocument()
+    expect(screen.getByText("1 Aufruf unbepreist")).toBeInTheDocument()
+    expect(screen.getByText("Unvollständig bepreist")).toBeInTheDocument()
+    expect(screen.queryByText(/nicht vollständig bepreist/)).toBeNull()
   })
 
-  it("zeigt einen verständlichen Filter-Leerzustand", () => {
-    render(<KostenScreen role="member" />)
-    fireEvent.change(
-      screen.getByLabelText("Nach Nutzer:in oder Audit-Referenz suchen"),
-      { target: { value: "nicht vorhanden" } }
-    )
-    expect(screen.getByText("Keine passenden Durchläufe")).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Filter zurücksetzen" })).toBeInTheDocument()
+  it("zeigt laufende und gestoppte Durchläufe mit verständlichen Status-Labels", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      runs: [
+        { ...exact.runs[0], id: "run-a", status: "running", ended_at: null },
+        { ...exact.runs[0], id: "run-b", status: "stopped", stop_reason: "cost_budget_exhausted" },
+      ],
+    })
+    render(<KostenScreen />)
+    expect(await screen.findByText("Läuft")).toBeInTheDocument()
+    expect(screen.getByText("Gestoppt: Kostenlimit")).toBeInTheDocument()
+    expect(screen.queryByText("running")).toBeNull()
+    expect(screen.queryByText("stopped")).toBeNull()
   })
 
-  it("zeigt Provideraggregation ohne Qualitätsversprechen", () => {
-    render(<KostenScreen role="member" />)
-    expect(screen.getByRole("heading", { name: "Modelle & Provider" })).toBeInTheDocument()
-    expect(screen.getByRole("table", { name: "Modell- und Provider-Nutzung" })).toBeInTheDocument()
-    expect(screen.getAllByText("Technisch erfolgreich").length).toBeGreaterThan(0)
-    expect(screen.getByText(/keine Bewertung der inhaltlichen Qualität/)).toBeInTheDocument()
+  it("fasst interne Aufrufe ohne externe Kosten in einer Zeile zusammen", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      runs: [{
+        ...exact.runs[0],
+        llm_calls: 2,
+        executions: [
+          ...exact.runs[0].executions,
+          {
+            id: "usage-seed", role_label: "KI-Aufruf", provider: null, model: null, status: "recorded",
+            input_tokens: 0, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 0, latency_ms: null,
+            cost: { status: "not_applicable", known_usd: 0, known_chf_reference: 0, unpriced_call_count: 0 },
+            price_version: null,
+          },
+        ],
+      }],
+    })
+    render(<KostenScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: /Analyse-Durchlauf/ }))
+    expect(screen.getByText("1 interner Aufruf ohne externe KI-Kosten.")).toBeInTheDocument()
+    expect(screen.queryByText("Unbekannter Dienst")).toBeNull()
+    expect(screen.getByText("Externe KI-Aufrufe aus 1 Durchlauf")).toBeInTheDocument()
   })
 
-  it("beschränkt Dienste und Limitbearbeitung auf lead_admin", () => {
-    const { rerender } = render(<KostenScreen role="member" />)
-    expect(screen.queryByRole("heading", { name: "Dienste & Verbindung" })).toBeNull()
-    expect(screen.queryByRole("button", { name: "Beispiel-Limit pro Lauf bearbeiten" })).toBeNull()
-
-    rerender(<KostenScreen role="lead_admin" />)
-    expect(screen.getByRole("heading", { name: "Dienste & Verbindung" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Beispiel-Limit pro Lauf bearbeiten" })).toBeInTheDocument()
-    const testButtons = screen.getAllByRole("button", { name: "Verbindung testen" })
-    expect(testButtons).toHaveLength(SERVICES.length)
-    for (const button of testButtons) expect(button).toBeDisabled()
-    expect(screen.getAllByText("In der Beispielansicht nicht verfügbar.")).toHaveLength(SERVICES.length)
+  it("zeigt je Rolle einen Preis oder einen Strich mit einer gemeinsamen Fussnote", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      runs: [{
+        ...exact.runs[0],
+        llm_calls: 2,
+        cost: { status: "partial", known_usd: 0.0335, known_chf_reference: 0.027, unpriced_call_count: 1 },
+        executions: [
+          ...exact.runs[0].executions,
+          {
+            id: "usage-2", role_label: "gpt-5.6-terra", role_id: "A3_INNOSUISSE_CRITICAL_REVIEWER", provider: "openai_direct", model: "gpt-5.6-terra", status: "succeeded",
+            input_tokens: 500, cached_input_tokens: 0, cache_write_input_tokens: 0, output_tokens: 100, latency_ms: 800,
+            cost: { status: "unknown_price", known_usd: 0, known_chf_reference: 0, unpriced_call_count: 1 },
+            price_version: null,
+          },
+        ],
+      }],
+    })
+    render(<KostenScreen />)
+    fireEvent.click(await screen.findByRole("button", { name: /Analyse-Durchlauf/ }))
+    expect(screen.getByText("Innovationstext-Assistent")).toBeInTheDocument()
+    expect(screen.getByText("Qualitätskoordinator")).toBeInTheDocument()
+    expect(screen.getAllByText(/\$0\.0335/).length).toBeGreaterThan(0)
+    expect(screen.getByLabelText("Kein Preis bekannt")).toBeInTheDocument()
+    expect(screen.getByText("Für 1 Aufruf lag zum Ausführungszeitpunkt noch keine Preisregel vor.")).toBeInTheDocument()
   })
 
-  it("ändert das Beispiel-Limit nur lokal und validiert den Wertebereich", () => {
-    render(<KostenScreen role="lead_admin" />)
-    fireEvent.click(screen.getByRole("button", { name: "Beispiel-Limit pro Lauf bearbeiten" }))
-    const input = screen.getByLabelText("Limit pro Lauf (CHF)")
-    fireEvent.change(input, { target: { value: "6" } })
-    fireEvent.click(screen.getByRole("button", { name: "Beispiel-Limit übernehmen" }))
-    expect(screen.getByRole("alert")).toHaveTextContent("Zulässig")
-
-    fireEvent.change(input, { target: { value: "3" } })
-    fireEvent.click(screen.getByRole("button", { name: "Beispiel-Limit übernehmen" }))
-    expect(screen.getByText("CHF 3.00")).toBeInTheDocument()
-    expect(screen.getByText(/werden nicht gespeichert/)).toBeInTheDocument()
+  it("nennt Firecrawl-Web-Recherche ehrlich ohne USD-Preis und interne Werkzeuge korrekt", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      web_research_calls: 64,
+      runs: [{ ...exact.runs[0], web_calls: 12 }],
+    })
+    render(<KostenScreen />)
+    const note = await screen.findByTestId("firecrawl-note")
+    expect(note).toHaveTextContent("Web-Recherche (Firecrawl): 64 Aufrufe — kreditbasiert, kein USD-Preis je Aufruf")
+    fireEvent.click(screen.getByRole("button", { name: /Analyse-Durchlauf/ }))
+    expect(screen.getByText("12 interne Werkzeug-Aufrufe (Quellen- und Feldabrufe); keine externen KI-Kosten.")).toBeInTheDocument()
   })
 
-  it("rendert leere und unvollständige Daten ohne erfundene Werte", async () => {
-    const { rerender } = render(
-      <KostenScreen role="member" runs={[]} services={[]} usage={USAGE_LIMITS} />
-    )
-    expect(screen.getByText("Noch keine Durchläufe")).toBeInTheDocument()
-    expect(screen.getByText("Keine Modell- oder Providerdaten verfügbar.")).toBeInTheDocument()
-
-    const incompleteRun: KostenRunViewModel = {
-      id: "incomplete",
-      startedAt: "2026-06-11T09:00:00+02:00",
-      type: "analysis",
-      user: "Mara Beispiel",
-      status: "completed",
-      kiEnabled: true,
-      webEnabled: false,
-      providerLabels: [],
-      modelLabels: [],
-      cost: { status: "unavailable" },
-      executions: [],
-    }
-    rerender(<KostenScreen role="member" runs={[incompleteRun]} />)
-    expect(screen.getAllByText("Nicht verfügbar").length).toBeGreaterThan(0)
-    fireEvent.click(screen.getByRole("button", { name: /Details zu Analyse vom/ }))
-    const dialog = await screen.findByRole("dialog")
-    expect(within(dialog).getByText("Keine Audit-Referenz verfügbar.")).toBeInTheDocument()
-    expect(within(dialog).getAllByText("Nicht verfügbar").length).toBeGreaterThan(0)
+  it("zeigt keine Firecrawl-Zeile, wenn keine Web-Recherche stattfand", async () => {
+    render(<KostenScreen />)
+    await screen.findByText("Exakte KI-Kosten")
+    expect(screen.queryByTestId("firecrawl-note")).toBeNull()
   })
 
-  it("behält die übergebenen Beispielwerte unverändert", () => {
-    render(<KostenScreen role="member" runs={RUNS} />)
-    expect(RUNS[0].cost).toEqual({ status: "estimated", amountChf: 0.72 })
+  it("zeigt im Mock-Modus keine erfundenen Kosten", () => {
+    mode = "mock"
+    render(<KostenScreen />)
+    expect(screen.getByText("Noch keine Live-Daten")).toBeInTheDocument()
+    expect(mockedGetProjectCosts).not.toHaveBeenCalled()
   })
 })

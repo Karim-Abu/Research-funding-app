@@ -369,6 +369,9 @@ def _execute(
         spent = ProviderUsage(
             spent.input_tokens + result.usage.input_tokens,
             spent.output_tokens + result.usage.output_tokens,
+            spent.cached_input_tokens + result.usage.cached_input_tokens,
+            spent.cache_write_input_tokens + result.usage.cache_write_input_tokens,
+            spent.reasoning_tokens + result.usage.reasoning_tokens,
         )
         try:
             parsed = json.loads(result.raw_output)
@@ -715,7 +718,10 @@ def _try_route(inv, profile, request, registry, resolver, route_key, deadline=No
         if result is not None and request.run_id is not None:
             rec = cost_guard.record_usage(
                 db, run_id=request.run_id, workspace_id=request.workspace_id,
-                provider=route.provider, model_id=requested_model_id,
+                # Costing uses only the model actually confirmed in the
+                # provider response. A missing or unknown confirmation remains
+                # visibly unpriced instead of inheriting the requested alias.
+                provider=route.provider, model_id=result.model,
                 usage=result.usage, adapter_name=adapter_name,
             )
             usage_record_id = rec.usage_record_id

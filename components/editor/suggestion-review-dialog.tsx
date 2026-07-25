@@ -18,7 +18,6 @@ import {
   countChanges,
   diffSuggestion,
   summarizeDiff,
-  type DiffSegment,
 } from "@/lib/diff"
 import { rationaleChips } from "@/lib/suggestion-view"
 import { VERIFICATION_LABELS, type VerificationStatus } from "@/lib/evidence"
@@ -36,21 +35,6 @@ const WARNING_LABELS: Record<string, string> = {
   // RUN 4B §4 — der Fake-Provider markiert jeden Vorschlag mit diesem Code.
   fake_demo_no_model:
     "Demo-Vorschlag ohne echtes KI-Modell — deterministischer Beispieltext, kein fachlicher Inhalt.",
-}
-
-// C2 — Badge-Text je Segmentart: die Klassifikation ist nie nur Farbe (a11y).
-const KIND_LABELS: Record<DiffSegment["kind"], string> = {
-  beibehalten: "Beibehalten",
-  entfernt: "Entfernt",
-  hinzugefuegt: "Neu",
-  umformuliert: "Umformuliert",
-}
-
-const KIND_BADGE_CLASS: Record<DiffSegment["kind"], string> = {
-  beibehalten: "border-border bg-muted/40 text-muted-foreground",
-  entfernt: "border-destructive/30 bg-destructive/10 text-destructive",
-  hinzugefuegt: "border-status-fulfilled/40 bg-status-fulfilled/10 text-status-fulfilled",
-  umformuliert: "border-status-partial/40 bg-status-partial/10 text-status-partial",
 }
 
 // C3 — konkrete, optionale Ablehnungsgründe (plus Freitext).
@@ -101,6 +85,10 @@ export function SuggestionReviewDialog({
   const label = generationLabel(suggestion.generation_kind)
   const section = suggestion.section_result
   const chips = rationaleChips(suggestion)
+  // 2026-07-24 — die Chip-Wand ist in zwei einklappbare Gruppen aufgeteilt:
+  // Änderungs-Begründungen (entfernt/neu) und offen gelassene Fragen.
+  const changeChips = chips.filter((chip) => chip.tone !== "offen")
+  const openChips = chips.filter((chip) => chip.tone === "offen")
   const wholeOnly = suggestion.accept_mode === "whole_suggestion_only"
   // RUN 4B §5/§6 — eine Quelle für «Fehlende Angaben» (Manifest-Vorschläge
   // tragen sie top-level, Legacy im section_result) und ehrliche Belegzahl:
@@ -132,31 +120,122 @@ export function SuggestionReviewDialog({
     return () => cancelAnimationFrame(frame)
   }, [open, suggestion.suggestion_id])
 
+  // v2 (2026-07-24, Opt-out): ALLE Änderungen sind vorausgewählt — der
+  // Standardfluss «alles übernehmen» bleibt EIN Klick, abgewählt wird nur,
+  // was man nicht will. Nichts passiert ohne den Übernehmen-Klick (HITL).
+  const allChangeIndices = React.useMemo(
+    () =>
+      segments
+        .map((segment, index) => ({ segment, index }))
+        .filter(({ segment }) => segment.kind !== "beibehalten")
+        .map(({ index }) => index),
+    [segments]
+  )
+
   // Auswahl/Ablehnungsformular je Vorschlag zurücksetzen.
   React.useEffect(() => {
-    setSelected(new Set())
+    setSelected(new Set(allChangeIndices))
     setReasonOpen(false)
     setReasonChoice(null)
     setReasonText("")
-  }, [suggestion.suggestion_id])
-
-  function toggleSegment(index: number) {
-    setSelected((previous) => {
-      const next = new Set(previous)
-      if (next.has(index)) next.delete(index)
-      else next.add(index)
-      return next
-    })
-  }
+  }, [suggestion.suggestion_id, allChangeIndices])
 
   function confirmDismiss() {
     const reason = [reasonChoice, reasonText.trim()].filter(Boolean).join(" — ")
     onDismiss(reason || undefined)
   }
 
-  function acceptSelected() {
-    if (!onAcceptPartial || selected.size === 0) return
+  // v2-Accept-Weiche: Sind ALLE Änderungen ausgewählt, läuft die exakte
+  // Komplett-Übernahme (byte-gleich → ehrliche Herkunft «agent»); der Merge
+  // (applySegments) ist nachweislich nicht byte-identisch und bleibt dem
+  // Teil-Fall vorbehalten (Herkunft «user»).
+  function handleAccept() {
+    if (wholeOnly || !onAcceptPartial || selected.size === changeCount) {
+      onAccept()
+      return
+    }
+    if (selected.size === 0) return
     onAcceptPartial(applySegments(currentText, segments, selected))
+  }
+
+  // 2026-07-24 — Sammel-Auswahl je Änderungsart (reine Auswahl-Logik;
+  // applySegments bleibt unverändert).
+  const groupIndices = React.useMemo(() => {
+    const removed: number[] = []
+    const added: number[] = []
+    const rephrased: number[] = []
+    segments.forEach((segment, index) => {
+      if (segment.kind === "entfernt") removed.push(index)
+      else if (segment.kind === "hinzugefuegt") added.push(index)
+      else if (segment.kind === "umformuliert") rephrased.push(index)
+    })
+    return { removed, added, rephrased }
+  }, [segments])
+
+  function toggleGroup(indices: number[]) {
+    setSelected((previous) => {
+      const next = new Set(previous)
+      const allSelected = indices.every((index) => next.has(index))
+      for (const index of indices) {
+        if (allSelected) next.delete(index)
+        else next.add(index)
+      }
+      return next
+    })
+  }
+
+  // v3 (2026-07-24) — Block-Paarung wie im klassischen Diff: konsekutive
+  // Änderungssegmente bilden EINEN Änderungsblock (alter Text links, neuer
+  // rechts daneben); unveränderte Sätze sind Kontextzeilen in voller Breite.
+  type DiffRow =
+    | { type: "context"; index: number }
+    | { type: "change"; indices: number[] }
+  const diffRows = React.useMemo<DiffRow[]>(() => {
+    const rows: DiffRow[] = []
+    let hunk: number[] = []
+    segments.forEach((segment, index) => {
+      if (segment.kind === "beibehalten") {
+        if (hunk.length > 0) {
+          rows.push({ type: "change", indices: hunk })
+          hunk = []
+        }
+        rows.push({ type: "context", index })
+      } else {
+        hunk.push(index)
+      }
+    })
+    if (hunk.length > 0) rows.push({ type: "change", indices: hunk })
+    return rows
+  }, [segments])
+
+  function hunkSummary(indices: number[]): string {
+    const removed = indices.filter((i) => segments[i].kind === "entfernt").length
+    const added = indices.filter(
+      (i) => segments[i].kind === "hinzugefuegt"
+    ).length
+    const rephrased = indices.filter(
+      (i) => segments[i].kind === "umformuliert"
+    ).length
+    const parts: string[] = []
+    if (removed > 0)
+      parts.push(removed === 1 ? "1 Streichung" : `${removed} Streichungen`)
+    if (added > 0)
+      parts.push(added === 1 ? "1 neuer Satz" : `${added} neue Sätze`)
+    if (rephrased > 0)
+      parts.push(
+        rephrased === 1 ? "1 Umformulierung" : `${rephrased} Umformulierungen`
+      )
+    return parts.join(" · ")
+  }
+
+  function hunkAriaLabel(indices: number[]): string {
+    if (indices.length === 1) {
+      const segment = segments[indices[0]]
+      return segment.kind === "entfernt"
+        ? `Streichung übernehmen: ${segment.before ?? ""}`
+        : `Änderung übernehmen: ${segment.after ?? ""}`
+    }
+    return `Änderungsblock übernehmen: ${hunkSummary(indices)}`
   }
 
   return (
@@ -204,189 +283,245 @@ export function SuggestionReviewDialog({
           <p className="sr-only" aria-live="polite" data-testid="diff-sr-summary">
             {summarizeDiff(segments)}
           </p>
-          {/* Fachliche Kurzbilanz VOR dem Diff: was blieb, was fiel weg, was
-              fehlt, welche Quellen — plus Textumfang alt → neu. */}
-          {section && (
-            <div
-              className="flex flex-wrap gap-1.5"
-              data-testid="suggestion-summary"
-            >
-              {/* Fallbacks: Feld-Level-Vorschläge tragen nicht alle
-                  Section-Listen — fehlende Liste = 0, nie ein Renderfehler. */}
-              {[
-                `Erhaltene Fakten: ${section.preserved_facts?.length ?? 0}`,
-                `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims?.length ?? 0}`,
-                `Neu eingeführte Aussagen: ${section.new_claims?.length ?? 0}`,
-                `Fehlende Angaben: ${section.missing_inputs?.length ?? 0}`,
-                `Verwendete Belege: ${suggestion.evidence.length}`,
-                `Research-Quellen: ${suggestion.research_sources?.length ?? 0}`,
-                `Zeichen: ${charCount(currentText)} → ${charCount(suggestion.suggested_text)}`,
-              ].map((item) => (
-                <span
-                  key={item}
-                  className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
-                >
-                  {item}
-                </span>
-              ))}
-            </div>
-          )}
-          {/* C5 — konkrete Begründung statt Pauschalsatz. */}
-          {chips.length > 0 && (
-            <div className="flex flex-wrap gap-1.5" data-testid="rationale-chips">
-              {chips.map((chip) => (
-                <span
-                  key={chip.text}
-                  className={cn(
-                    "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
-                    chip.tone === "entfernt" &&
-                      "border-status-partial/40 bg-status-partial/10 text-status-partial",
-                    chip.tone === "neu" &&
-                      "border-primary/30 bg-primary/10 text-primary",
-                    chip.tone === "offen" &&
-                      "border-border bg-muted/50 text-muted-foreground"
-                  )}
-                >
-                  {chip.text}
-                </span>
-              ))}
-            </div>
-          )}
-
-          {/* C2 — echter Satz-Diff, side-by-side, vertikal gross. */}
-          <div className="grid min-w-0 gap-4 md:grid-cols-2">
-            <section className="flex min-w-0 flex-col gap-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Aktueller Text
-              </p>
-              <div
-                data-testid="current-text"
-                className="flex flex-col gap-1.5 rounded-md border border-border bg-muted/20 px-3 py-2"
-              >
-                {segments.filter((s) => s.before !== null).length === 0 && (
-                  <p className="text-sm text-muted-foreground">(leer)</p>
+          {/* 2026-07-24 — ruhige Zusammenfassung statt Chip-Wand: die eine
+              wichtige Zeile steht in der Summary, Details ein Klick dahinter. */}
+          {(section || changeChips.length > 0) && (
+            <details className="rounded-md border border-border px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-foreground">
+                Was der Vorschlag ändert — {summarizeDiff(segments)}
+              </summary>
+              <div className="mt-2 flex flex-col gap-2">
+                {/* Fachliche Kurzbilanz: was blieb, was fiel weg, was fehlt,
+                    welche Quellen — plus Textumfang alt → neu. Fallbacks:
+                    fehlende Section-Liste = 0, nie ein Renderfehler. */}
+                {section && (
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    data-testid="suggestion-summary"
+                  >
+                    {[
+                      `Erhaltene Fakten: ${section.preserved_facts?.length ?? 0}`,
+                      `Entfernte/umformulierte Aussagen: ${section.removed_or_reframed_claims?.length ?? 0}`,
+                      `Neu eingeführte Aussagen: ${section.new_claims?.length ?? 0}`,
+                      `Fehlende Angaben: ${section.missing_inputs?.length ?? 0}`,
+                      `Verwendete Belege: ${suggestion.evidence.length}`,
+                      `Research-Quellen: ${suggestion.research_sources?.length ?? 0}`,
+                      `Zeichen: ${charCount(currentText)} → ${charCount(suggestion.suggested_text)}`,
+                    ].map((item) => (
+                      <span
+                        key={item}
+                        className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                      >
+                        {item}
+                      </span>
+                    ))}
+                  </div>
                 )}
-                {segments.map((segment, index) =>
-                  segment.before === null ? null : (
-                    <div key={`before-${index}`} className="flex flex-col gap-0.5">
-                      {segment.kind !== "beibehalten" && (
-                        <span
-                          className={cn(
-                            "inline-flex w-fit items-center rounded-full border px-1.5 py-px text-[10px] font-medium",
-                            KIND_BADGE_CLASS[segment.kind]
-                          )}
-                        >
-                          {KIND_LABELS[segment.kind]}
-                        </span>
-                      )}
-                      <p
+                {/* C5 — konkrete Begründung statt Pauschalsatz. */}
+                {changeChips.length > 0 && (
+                  <div
+                    className="flex flex-wrap gap-1.5"
+                    data-testid="rationale-chips"
+                  >
+                    {changeChips.map((chip) => (
+                      <span
+                        key={chip.text}
                         className={cn(
-                          "whitespace-pre-wrap text-sm leading-relaxed",
-                          segment.kind === "entfernt" &&
-                            "text-destructive line-through decoration-destructive/60"
+                          "inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-medium",
+                          chip.tone === "entfernt" &&
+                            "border-status-partial/40 bg-status-partial/10 text-status-partial",
+                          chip.tone === "neu" &&
+                            "border-primary/30 bg-primary/10 text-primary"
                         )}
                       >
-                        {segment.kind === "umformuliert" && segment.words
-                          ? segment.words
-                              .filter((w) => w.kind !== "hinzugefuegt")
-                              .map((w, wi) => (
-                                <span
-                                  key={wi}
-                                  className={cn(
-                                    w.kind === "entfernt" &&
-                                      "bg-destructive/10 text-destructive line-through"
-                                  )}
-                                >
-                                  {w.text}{" "}
-                                </span>
-                              ))
-                          : segment.before}
-                      </p>
-                    </div>
-                  )
+                        {chip.text}
+                      </span>
+                    ))}
+                  </div>
                 )}
               </div>
-            </section>
+            </details>
+          )}
+          {openChips.length > 0 && (
+            <details
+              className="rounded-md border border-border px-3 py-2"
+              data-testid="open-questions"
+            >
+              <summary className="cursor-pointer text-xs font-medium text-foreground">
+                Offen gelassene Fragen ({openChips.length})
+              </summary>
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {openChips.map((chip) => (
+                  <span
+                    key={chip.text}
+                    className="inline-flex items-center rounded-full border border-border bg-muted/50 px-2 py-0.5 text-[11px] font-medium text-muted-foreground"
+                  >
+                    {chip.text}
+                  </span>
+                ))}
+              </div>
+            </details>
+          )}
 
-            <section className="flex min-w-0 flex-col gap-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+          {/* 2026-07-24 — Sammel-Auswahl je Änderungsart statt 38 Einzelklicks. */}
+          {!wholeOnly && onAcceptPartial && changeCount > 0 && (
+            <div
+              className="flex flex-wrap items-center gap-1.5"
+              data-testid="batch-selection"
+            >
+              <span className="text-xs text-muted-foreground">Sammel-Auswahl:</span>
+              {groupIndices.removed.length > 0 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  aria-pressed={groupIndices.removed.every((i) => selected.has(i))}
+                  onClick={() => toggleGroup(groupIndices.removed)}
+                >
+                  Alle Streichungen ({groupIndices.removed.length})
+                </Button>
+              )}
+              {groupIndices.added.length > 0 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  aria-pressed={groupIndices.added.every((i) => selected.has(i))}
+                  onClick={() => toggleGroup(groupIndices.added)}
+                >
+                  Alle neuen Sätze ({groupIndices.added.length})
+                </Button>
+              )}
+              {groupIndices.rephrased.length > 0 && (
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="outline"
+                  aria-pressed={groupIndices.rephrased.every((i) => selected.has(i))}
+                  onClick={() => toggleGroup(groupIndices.rephrased)}
+                >
+                  Alle Umformulierungen ({groupIndices.rephrased.length})
+                </Button>
+              )}
+            </div>
+          )}
+
+          {/* v3 (2026-07-24) — Block-Paarung wie im klassischen Diff:
+              zusammenhängende Änderungen bilden EINEN Block (alter Text links,
+              neuer Text direkt daneben, EINE Checkbox pro Block); unveränderte
+              Sätze stehen einmal in voller Breite. Kein Volltext-Duplikat. */}
+          <div className="min-w-0 overflow-hidden rounded-md border border-border">
+            <div className="grid grid-cols-1 gap-x-4 border-b border-border bg-muted/30 px-3 py-1.5 md:grid-cols-2">
+              <p
+                data-testid="current-text"
+                className="text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+              >
+                Aktueller Text
+              </p>
+              <p
+                data-testid="suggestion-text"
+                className="text-xs font-semibold uppercase tracking-wide text-primary"
+              >
                 {label}
               </p>
-              <div
-                data-testid="suggestion-text"
-                className="flex flex-col gap-1.5 rounded-md border border-primary/40 bg-primary/5 px-3 py-2"
-              >
-                {segments.map((segment, index) =>
-                  segment.after === null ? (
-                    // Streichungen sind rechts als übernehmbare Änderung wählbar.
-                    segment.kind === "entfernt" ? (
-                      <div key={`after-${index}`} className="flex flex-col gap-0.5">
-                        <div className="flex w-fit items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {!wholeOnly && (
-                            <input
-                              type="checkbox"
-                              checked={selected.has(index)}
-                              onChange={() => toggleSegment(index)}
-                              aria-label={`Streichung übernehmen: ${segment.before ?? ""}`}
-                            />
-                          )}
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium",
-                              KIND_BADGE_CLASS.entfernt
-                            )}
-                          >
-                            {/* Whole-only: keine Einzelübernahme — das Badge
-                                benennt nur die Änderungsart. */}
-                            {wholeOnly ? "Streichung" : "Streichung übernehmen"}
-                          </span>
-                        </div>
-                      </div>
-                    ) : null
-                  ) : (
-                    <div key={`after-${index}`} className="flex flex-col gap-0.5">
-                      {segment.kind !== "beibehalten" && (
-                        <div className="flex w-fit items-center gap-1.5 text-[11px] text-muted-foreground">
-                          {!wholeOnly && (
-                            <input
-                              type="checkbox"
-                              checked={selected.has(index)}
-                              onChange={() => toggleSegment(index)}
-                              aria-label={`Änderung übernehmen: ${segment.after}`}
-                            />
-                          )}
-                          <span
-                            className={cn(
-                              "inline-flex items-center rounded-full border px-1.5 py-px text-[10px] font-medium",
-                              KIND_BADGE_CLASS[segment.kind]
-                            )}
-                          >
-                            {KIND_LABELS[segment.kind]}
-                          </span>
-                        </div>
+            </div>
+            <div className="flex flex-col px-3 py-2" data-testid="suggestion-diff">
+              {segments.length === 0 && (
+                <p className="text-sm text-muted-foreground">(leer)</p>
+              )}
+              {diffRows.map((row) =>
+                row.type === "context" ? (
+                  <p
+                    key={`ctx-${row.index}`}
+                    className="whitespace-pre-wrap py-0.5 text-sm leading-relaxed text-muted-foreground"
+                  >
+                    {segments[row.index].after ?? segments[row.index].before}
+                  </p>
+                ) : (
+                  <div
+                    key={`hunk-${row.indices[0]}`}
+                    data-diff-hunk={row.indices[0]}
+                    className="my-1 grid grid-cols-1 gap-x-4 gap-y-1.5 rounded-md border border-border/70 bg-muted/10 px-2.5 py-2 md:grid-cols-2"
+                  >
+                    <div className="flex min-w-0 flex-col gap-1">
+                      {row.indices.every((i) => segments[i].before === null) ? (
+                        <p className="text-xs italic text-muted-foreground">
+                          — kein bisheriger Text an dieser Stelle —
+                        </p>
+                      ) : (
+                        row.indices.map((i) =>
+                          segments[i].before === null ? null : (
+                            <p
+                              key={`b-${i}`}
+                              className={cn(
+                                "whitespace-pre-wrap text-sm leading-relaxed",
+                                segments[i].kind === "entfernt" &&
+                                  "text-destructive line-through decoration-destructive/60"
+                              )}
+                            >
+                              {segments[i].kind === "umformuliert" &&
+                              segments[i].words
+                                ? segments[i].words
+                                    .filter((w) => w.kind !== "hinzugefuegt")
+                                    .map((w, wi) => (
+                                      <span
+                                        key={wi}
+                                        className={cn(
+                                          w.kind === "entfernt" &&
+                                            "bg-destructive/10 text-destructive line-through"
+                                        )}
+                                      >
+                                        {w.text}{" "}
+                                      </span>
+                                    ))
+                                : segments[i].before}
+                            </p>
+                          )
+                        )
                       )}
-                      <p className="whitespace-pre-wrap text-sm leading-relaxed">
-                        {segment.kind === "umformuliert" && segment.words
-                          ? segment.words
-                              .filter((w) => w.kind !== "entfernt")
-                              .map((w, wi) => (
-                                <span
-                                  key={wi}
-                                  className={cn(
-                                    w.kind === "hinzugefuegt" &&
-                                      "rounded bg-status-fulfilled/15 font-medium"
-                                  )}
-                                >
-                                  {w.text}{" "}
-                                </span>
-                              ))
-                          : segment.after}
-                      </p>
                     </div>
-                  )
-                )}
-              </div>
-            </section>
+                    <div className="flex min-w-0 flex-col gap-1">
+                      <div className="flex w-fit items-center gap-1.5 text-[11px] font-medium text-muted-foreground">
+                        {!wholeOnly && onAcceptPartial && (
+                          <input
+                            type="checkbox"
+                            checked={row.indices.every((i) => selected.has(i))}
+                            onChange={() => toggleGroup(row.indices)}
+                            aria-label={hunkAriaLabel(row.indices)}
+                          />
+                        )}
+                        <span>{hunkSummary(row.indices)}</span>
+                      </div>
+                      {row.indices.map((i) =>
+                        segments[i].after === null ? null : (
+                          <p
+                            key={`a-${i}`}
+                            className="whitespace-pre-wrap text-sm leading-relaxed"
+                          >
+                            {segments[i].kind === "umformuliert" &&
+                            segments[i].words
+                              ? segments[i].words
+                                  .filter((w) => w.kind !== "entfernt")
+                                  .map((w, wi) => (
+                                    <span
+                                      key={wi}
+                                      className={cn(
+                                        w.kind === "hinzugefuegt" &&
+                                          "rounded bg-status-fulfilled/15 font-medium"
+                                      )}
+                                    >
+                                      {w.text}{" "}
+                                    </span>
+                                  ))
+                              : segments[i].after}
+                          </p>
+                        )
+                      )}
+                    </div>
+                  </div>
+                )
+              )}
+            </div>
           </div>
 
           <p className="text-xs text-muted-foreground" data-testid="character-count">
@@ -407,16 +542,22 @@ export function SuggestionReviewDialog({
             </p>
           )}
 
-          {suggestion.warnings.map((w) => (
-            <p
-              key={w}
-              role="status"
-              data-testid={`warning-${w}`}
-              className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900"
-            >
-              {WARNING_LABELS[w] ?? w}
-            </p>
-          ))}
+          {suggestion.warnings.length > 0 && (
+            <div className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2">
+              <ul className="flex flex-col gap-1">
+                {suggestion.warnings.map((w) => (
+                  <li
+                    key={w}
+                    role="status"
+                    data-testid={`warning-${w}`}
+                    className="text-xs text-amber-900"
+                  >
+                    {WARNING_LABELS[w] ?? w}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
 
           {/* RUN 4B §5 — «Fehlende Angaben» als primäre Sektion: Titel, warum,
               betroffener Innolink-Punkt und nächste Aktion — nie Requirement-
@@ -465,27 +606,32 @@ export function SuggestionReviewDialog({
             </section>
           )}
 
-          {suggestion.rationale && (
-            <section className="flex flex-col gap-1">
-              <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                Begründung
-              </p>
-              <p className="text-xs text-foreground">{suggestion.rationale}</p>
-            </section>
-          )}
-
-          {section && (
-            <div className="grid gap-3 md:grid-cols-2">
-              <ReviewList
-                title="Erhaltene Fakten"
-                items={section.preserved_facts ?? []}
-              />
-              <ReviewList
-                title="Entfernte oder umformulierte Claims"
-                items={section.removed_or_reframed_claims ?? []}
-              />
-              <ReviewList title="Neue Claims" items={section.new_claims ?? []} />
-            </div>
+          {/* v2 — Begründung + Faktenbilanz gebündelt hinter EINEM Aufklapper
+              (weniger Overexplain im Standardfluss; Inhalte unverändert). */}
+          {(suggestion.rationale || section) && (
+            <details className="rounded-md border border-border px-3 py-2">
+              <summary className="cursor-pointer text-xs font-medium text-foreground">
+                Begründung und Faktenbilanz
+              </summary>
+              <div className="mt-2 flex flex-col gap-3">
+                {suggestion.rationale && (
+                  <p className="text-xs text-foreground">{suggestion.rationale}</p>
+                )}
+                {section && (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    <ReviewList
+                      title="Erhaltene Fakten"
+                      items={section.preserved_facts ?? []}
+                    />
+                    <ReviewList
+                      title="Entfernte oder umformulierte Claims"
+                      items={section.removed_or_reframed_claims ?? []}
+                    />
+                    <ReviewList title="Neue Claims" items={section.new_claims ?? []} />
+                  </div>
+                )}
+              </div>
+            </details>
           )}
 
           {/* RUN 4B §6 — Belege: eine Hauptzeile in Nutzersprache, Details
@@ -655,51 +801,60 @@ export function SuggestionReviewDialog({
               </div>
             </div>
           ) : (
-            <div className="flex w-full flex-wrap items-center justify-end gap-2">
-              <span className="mr-auto text-[11px] text-muted-foreground">
-                {changeCount === 1
-                  ? "1 Änderung im Vorschlag"
-                  : `${changeCount} Änderungen im Vorschlag`}
-              </span>
-              <Button
-                variant="ghost"
-                onClick={() => setReasonOpen(true)}
-                disabled={accepting}
-              >
-                Vorschlag ablehnen
-              </Button>
-              {/* RUN 4B §7 — Regenerate als benannte Aktion; bei veralteten
-                  Vorschlägen ist es die empfohlene nächste Aktion. */}
-              {onRegenerate && (
+            <div className="flex w-full flex-col gap-1.5">
+              <div className="flex w-full flex-wrap items-center justify-end gap-2">
+                <span className="mr-auto text-[11px] text-muted-foreground">
+                  {/* Ein konsistenter Zähler: Auswahl und Gesamtzahl zusammen. */}
+                  {onAcceptPartial && !wholeOnly
+                    ? `${selected.size} von ${changeCount} Änderungen ausgewählt`
+                    : changeCount === 1
+                      ? "1 Änderung im Vorschlag"
+                      : `${changeCount} Änderungen im Vorschlag`}
+                </span>
                 <Button
-                  variant="outline"
-                  onClick={onRegenerate}
+                  variant="ghost"
+                  onClick={() => setReasonOpen(true)}
                   disabled={accepting}
-                  data-testid="regenerate-suggestion"
                 >
-                  Neuen Vorschlag erzeugen
+                  Vorschlag ablehnen
                 </Button>
-              )}
-              {onEdit && (
-                <Button variant="outline" onClick={onEdit} disabled={accepting}>
-                  Eigene Bearbeitung öffnen
-                </Button>
-              )}
-              {onAcceptPartial && !wholeOnly && (
+                {/* RUN 4B §7 — Regenerate als benannte Aktion; bei veralteten
+                    Vorschlägen ist es die empfohlene nächste Aktion. */}
+                {onRegenerate && (
+                  <Button
+                    variant="outline"
+                    onClick={onRegenerate}
+                    disabled={accepting}
+                    data-testid="regenerate-suggestion"
+                  >
+                    Neuen Vorschlag erzeugen
+                  </Button>
+                )}
+                {onEdit && (
+                  <Button variant="outline" onClick={onEdit} disabled={accepting}>
+                    Eigene Bearbeitung öffnen
+                  </Button>
+                )}
+                {/* v2 — EINE Primäraktion: übernimmt alles (exakt) oder genau
+                    die Auswahl; der frühere Zweitbutton entfällt. */}
                 <Button
-                  variant="outline"
-                  onClick={acceptSelected}
-                  disabled={accepting || selected.size === 0}
+                  onClick={handleAccept}
+                  disabled={
+                    accepting ||
+                    overLimit ||
+                    Boolean(suggestion.stale_reason) ||
+                    (Boolean(onAcceptPartial) && !wholeOnly && selected.size === 0)
+                  }
                 >
-                  Ausgewählte übernehmen ({selected.size})
+                  {accepting ? "Wird übernommen …" : "Übernehmen"}
                 </Button>
+              </div>
+              {onAcceptPartial && !wholeOnly && (
+                <p className="text-right text-[11px] text-muted-foreground">
+                  Sind alle Änderungen ausgewählt, wird der Vorschlag exakt
+                  übernommen; sonst genau Ihre Auswahl.
+                </p>
               )}
-              <Button
-                onClick={onAccept}
-                disabled={accepting || overLimit || Boolean(suggestion.stale_reason)}
-              >
-                {accepting ? "Wird übernommen …" : "Übernehmen"}
-              </Button>
             </div>
           )}
         </SheetFooter>

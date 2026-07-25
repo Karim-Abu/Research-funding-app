@@ -71,6 +71,93 @@ describe("MarketComparisonSection", () => {
     )
   })
 
+  // 2026-07-24 — Fortschritt (ohne «n von 2»-Ratio) + konkrete nächste Aktion.
+  it("zeigt Fortschritt mit nächster Prüfaktion, wenn eine importierte Quelle ungeprüft ist", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(null)
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        disabledReason="Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle vorhanden."
+        readiness={{
+          hasEligible: false,
+          eligibleCount: 0,
+          totalImported: 1,
+          nextCandidate: {
+            result_id: "res-1",
+            title: "Switzerland Cybersecurity Report",
+            missingStep: "review",
+          },
+        }}
+      />
+    )
+    expect(
+      await screen.findByTestId("market-comparison-readiness")
+    ).toHaveTextContent(
+      "Noch keine geeigneten Quellen — als Nächstes: «Switzerland Cybersecurity Report» inhaltlich prüfen (Stützt/Teilweise)."
+    )
+  })
+
+  it("zeigt die Import-Variante und ab 1 geeigneten Quelle die Kann-erstellt-werden-Zeile", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(null)
+      )
+    )
+    const { rerender } = render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{
+          hasEligible: false,
+          eligibleCount: 0,
+          totalImported: 1,
+          nextCandidate: { result_id: "res-2", title: "Marktreport", missingStep: "import" },
+        }}
+      />
+    )
+    expect(
+      await screen.findByTestId("market-comparison-readiness")
+    ).toHaveTextContent("«Marktreport» übernehmen und prüfen.")
+    rerender(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{
+          hasEligible: true,
+          eligibleCount: 1,
+          totalImported: 2,
+          nextCandidate: null,
+        }}
+      />
+    )
+    expect(
+      screen.getByTestId("market-comparison-readiness")
+    ).toHaveTextContent(
+      "1 geeignete Quelle ausgewählt — mindestens 2 empfohlen für einen belastbaren Vergleich."
+    )
+  })
+
+  it("blendet die Fortschrittszeile ohne importierte Quellen aus und erklärt den Mehrwert", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(null)
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: false, eligibleCount: 0, totalImported: 0, nextCandidate: null }}
+      />
+    )
+    await screen.findByText(/Noch kein Vergleich/)
+    expect(screen.queryByTestId("market-comparison-readiness")).toBeNull()
+    expect(
+      screen.getByText(/Das liefert der Vergleich: eine belegte Tabelle/)
+    ).toBeInTheDocument()
+  })
+
   it("renders the comparison table, quote, status label and research gaps", async () => {
     server.use(
       http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
@@ -239,9 +326,9 @@ describe("MarketComparisonSection", () => {
     expect(screen.getByText("Schweizer KMU")).toBeInTheDocument()
     expect(screen.getByText("Schnellere Qualitätsprüfung")).toBeInTheDocument()
     expect(screen.getByText("Abo-Modell")).toBeInTheDocument()
-    // Ehrlicher Gesamtstatus im Sektionskopf.
+    // Ehrlicher Gesamtstatus im Sektionskopf (einheitliches Viewmodel).
     expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
-      "Zur menschlichen Prüfung bereit"
+      "Zur Prüfung bereit"
     )
     // Höchstens fünf Konsequenzen.
     const list = screen.getByTestId("market-consequences")
@@ -300,8 +387,36 @@ describe("MarketComparisonSection", () => {
       )
     ).toBeInTheDocument()
     expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
-      "Zu wenig geeignete geprüfte Quellen"
+      "Zu wenige geprüfte Quellen"
     )
+  })
+
+  it("zeigt das Gesamturteil-Board über dem Detail, wenn das Backend es liefert", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({
+            competition_judgment: {
+              status: "similar_solutions_found",
+              rationale: "Im definierten Suchumfang existieren ähnliche Lösungen.",
+              scope_summary: "Im definierten Suchumfang: 2 geprüfte öffentliche Quellen, 1 untersuchte Lösungskandidaten.",
+              relevant_candidate_count: 1,
+              key_overlaps: [],
+              evidenced_differentiators: [],
+              plausible_unverified_differentiators: [],
+              open_evidence_gaps: [],
+              allowed_formulations: [],
+              disallowed_formulations: ["weltweit einzigartig"],
+              can_insert_into_application: false,
+            },
+          })
+        )
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    const board = await screen.findByTestId("market-section-judgment")
+    expect(board).toHaveTextContent("Ähnliche Lösungen gefunden")
+    expect(board).toHaveTextContent("Im definierten Suchumfang")
   })
 
   it("generates a comparison and renders the result", async () => {

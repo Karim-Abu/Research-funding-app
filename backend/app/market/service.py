@@ -14,6 +14,7 @@ from sqlalchemy.orm import Session
 
 from app.config.settings import get_settings
 from app.contracts.market import (
+    ComparisonBasis,
     EvidenceQuote,
     MarketComparison as MarketComparisonContract,
     MarketComparisonItem as MarketComparisonItemContract,
@@ -25,8 +26,10 @@ from app.db.models import (
     MarketComparison,
     MarketComparisonItem,
     Project,
+    ResearchBrief,
 )
-from app.market import recording, source_scope
+from app.market import judgment, recording, source_scope
+from app.research import brief_service
 from app.research.policy import evaluate_web_research
 
 
@@ -237,7 +240,7 @@ def item_to_contract(item: MarketComparisonItem) -> MarketComparisonItemContract
         for r in (item.verified_quote_refs or [])
         if r.get("quote")
     ]
-    return MarketComparisonItemContract(
+    contract = MarketComparisonItemContract(
         item_id=item.item_id,
         name=item.name,
         category=item.category,
@@ -267,9 +270,88 @@ def item_to_contract(item: MarketComparisonItem) -> MarketComparisonItemContract
         coverage_status=item.coverage_status,
         support_status=item.support_status,
     )
+    contract.candidate_type = judgment.candidate_type_for(contract)
+    contract.overlaps = judgment.overlaps_for(contract)
+    # Only evidenced differentiators live on the flat item; the plausible-but-
+    # unverified ones are surfaced on the SolutionLandscapeCandidate instead.
+    contract.evidencing_differentiators = judgment.split_differentiators(contract)[0]
+    contract.allowed_formulations = judgment.allowed_item_formulations(contract)
+    contract.disallowed_formulations = list(judgment.DISALLOWED_FORMULATIONS)
+    return contract
+
+
+def _scope_stale(db: Session, comparison: MarketComparison) -> bool:
+    """Read-time scope check, kept separate from the runtime status.
+
+    Non-terminal or unscoped comparisons are never marked stale; only a
+    previously scoped, terminal comparison whose current source scope hash no
+    longer matches the stored one counts as stale.
+    """
+    if not comparison.source_scope_hash or comparison.status in ("draft", "failed"):
+        return False
+    sources = source_scope.imported_public_sources(
+        db, comparison.project_id, comparison.workspace_id
+    )
+    return source_scope.source_scope_hash(sources) != comparison.source_scope_hash
+
+
+def _comparison_basis(db: Session, comparison: MarketComparison) -> ComparisonBasis | None:
+    """The project's own idea as the explicit basis of the comparison (read-time).
+
+    ``idea`` is the confidential project description, surfaced for the user's own
+    understanding only — never sent to search/external tools. The public-safe
+    search focus/aspects come from the approved research brief (what was actually
+    searched), so the user sees both their idea and the abstracted search scope.
+    """
+    project = db.get(Project, comparison.project_id)
+    if project is None:
+        return None
+    brief: ResearchBrief | None = None
+    if comparison.research_brief_id:
+        candidate = db.get(ResearchBrief, comparison.research_brief_id)
+        if candidate is not None and candidate.status == "approved":
+            brief = candidate
+    if brief is None:
+        brief = brief_service.active_approved(db, project)
+
+    search_focus: str | None = None
+    search_aspects: list[str] = []
+    if brief is not None:
+        search_focus = (brief.research_goal or "").strip() or None
+        seen: list[str] = []
+        for value in [brief.application_domain, brief.technology_class, brief.region, *(brief.search_tags or [])]:
+            cleaned = (value or "").strip()
+            if cleaned and cleaned not in seen:
+                seen.append(cleaned)
+        search_aspects = seen[:6]
+
+    return ComparisonBasis(
+        title=project.title,
+        idea=project.description,
+        innovation_field=project.innovation_field,
+        search_focus=search_focus,
+        search_aspects=search_aspects,
+    )
 
 
 def view(db: Session, comparison: MarketComparison) -> MarketComparisonView:
     base = comparison_to_contract(db, comparison)
     items = [item_to_contract(i) for i in list_items(db, comparison.comparison_id)]
-    return MarketComparisonView(**base.model_dump(), items=items)
+    scope_stale = _scope_stale(db, comparison)
+    landscape = judgment.build_solution_landscape(items, scope_ok=not scope_stale)
+    market_picture = judgment.build_market_picture(items, base)
+    competition_judgment = judgment.build_competition_judgment(
+        base, items, landscape, scope_stale=scope_stale
+    )
+    fields = base.model_dump()
+    if scope_stale:
+        fields["stale_reason"] = "scope_changed"
+    return MarketComparisonView(
+        **fields,
+        items=items,
+        market_picture=market_picture,
+        solution_landscape=landscape,
+        competition_judgment=competition_judgment,
+        scope_stale=scope_stale,
+        comparison_basis=_comparison_basis(db, comparison),
+    )

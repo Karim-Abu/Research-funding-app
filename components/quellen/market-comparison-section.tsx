@@ -15,7 +15,6 @@ import {
   getLatestComparison,
   MarketComparisonError,
   updateItemStatus,
-  COMPARISON_STATUS_LABELS,
   ITEM_CATEGORY_LABELS,
   ITEM_RELATION_LABELS,
   ITEM_STATUS_LABELS,
@@ -29,13 +28,55 @@ import {
   type MarketComparisonDto,
   type MarketComparisonItemDto,
 } from "@/lib/market-comparison"
+import { JUDGMENT_STATUS_LABELS } from "@/lib/market-comparison"
+import {
+  MARKET_TONE_STYLE,
+  judgmentToneClass,
+  marketPictureFrom,
+  marketWorkspaceStatus,
+} from "@/lib/market-view"
+import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
+import { cn } from "@/lib/utils"
+import type { MarketReadiness } from "@/components/quellen/public-research-panel"
 
 type State = "loading" | "idle" | "generating" | "ready" | "error"
+
+// Empfehlung, KEIN Gate: der Vergleich startet ab 1 geeigneten Quelle; ab 2
+// gilt er als belastbar (Backend-Schwelle «insufficient_external_evidence»).
+const RECOMMENDED_ELIGIBLE_SOURCES = 2
+
+function readinessLine(readiness: MarketReadiness): string {
+  const n = readiness.eligibleCount
+  const count =
+    n === 1 ? "1 geeignete Quelle ausgewählt" : `${n} geeignete Quellen ausgewählt`
+  if (n >= RECOMMENDED_ELIGIBLE_SOURCES) {
+    return `${count} — bereit für einen belastbaren Vergleich.`
+  }
+  if (n === 1) {
+    const base = `${count} — mindestens 2 empfohlen für einen belastbaren Vergleich`
+    if (readiness.nextCandidate?.missingStep === "review") {
+      return `${base}. Als Nächstes: «${readiness.nextCandidate.title}» inhaltlich prüfen.`
+    }
+    if (readiness.nextCandidate?.missingStep === "import") {
+      return `${base}. Als Nächstes: «${readiness.nextCandidate.title}» übernehmen und prüfen.`
+    }
+    return `${base}.`
+  }
+  // n === 0
+  if (readiness.nextCandidate?.missingStep === "review") {
+    return `Noch keine geeigneten Quellen — als Nächstes: «${readiness.nextCandidate.title}» inhaltlich prüfen (Stützt/Teilweise).`
+  }
+  if (readiness.nextCandidate?.missingStep === "import") {
+    return `Noch keine geeigneten Quellen — als Nächstes: «${readiness.nextCandidate.title}» übernehmen und prüfen.`
+  }
+  return "Noch keine geeigneten Quellen — rufen Sie zuerst öffentliche Quellen über die Recherche ab."
+}
 
 export function MarketComparisonSection({
   projectId,
   sourceNames,
   disabledReason,
+  readiness,
 }: {
   projectId: string
   // Anzeigenamen der Projektquellen (source_id → Name) für den Abschnitt
@@ -44,6 +85,9 @@ export function MarketComparisonSection({
   /** Konkreter Grund, warum aktuell kein Vergleich erstellt werden kann —
    *  deaktiviert «Vergleich erstellen» sichtbar statt still. */
   disabledReason?: string | null
+  /** Fortschritt Richtung belastbarem Vergleich (2026-07-24) — vom
+   *  Research-Panel gemeldet; nie ein hartes Gate, nur Orientierung. */
+  readiness?: MarketReadiness | null
 }) {
   const [state, setState] = React.useState<State>("loading")
   const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
@@ -113,10 +157,15 @@ export function MarketComparisonSection({
           <h3 className="text-sm font-semibold text-foreground">
             Markt- und Konkurrenzvergleich
           </h3>
-          {/* RUN 4A: ehrlicher Gesamtstatus des Vergleichs im Sektionskopf. */}
+          {/* RUN 4A: ehrlicher Gesamtstatus des Vergleichs im Sektionskopf.
+              2026-07-24: einheitliches Viewmodel (identisch zu Rail + Sheet). */}
           {comparison && (
-            <Badge variant="outline" data-testid="market-comparison-status">
-              {COMPARISON_STATUS_LABELS[comparison.status]}
+            <Badge
+              variant="outline"
+              data-testid="market-comparison-status"
+              className={cn("border-transparent", MARKET_TONE_STYLE[marketWorkspaceStatus(comparison).tone])}
+            >
+              {marketWorkspaceStatus(comparison).label}
             </Badge>
           )}
         </div>
@@ -142,6 +191,62 @@ export function MarketComparisonSection({
         Nur aus live abgerufenen, vollständig importierten und inhaltlich positiv
         geprüften öffentlichen Quellen — kein automatischer Eintrag in den Antrag.
       </p>
+
+      {/* Vergleichsbasis — die eigene Projektidee, dagegen wird verglichen. */}
+      {comparison?.comparison_basis && (
+        <div className="mb-3">
+          <MarketComparisonBasis basis={comparison.comparison_basis} />
+        </div>
+      )}
+
+      {/* Gesamturteil (Backend) — die zentrale Entscheidungsaussage über dem Detail. */}
+      {comparison?.competition_judgment && (
+        <div data-testid="market-section-judgment" className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="text-xs font-semibold text-foreground">Gesamturteil</span>
+            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", judgmentToneClass(comparison.competition_judgment.status))}>
+              {JUDGMENT_STATUS_LABELS[comparison.competition_judgment.status]}
+            </span>
+            {comparison.scope_stale && (
+              <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}>
+                Suchraum geändert
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-xs text-foreground">{comparison.competition_judgment.rationale}</p>
+          <p className="text-[11px] text-muted-foreground">{comparison.competition_judgment.scope_summary}</p>
+        </div>
+      )}
+
+      {/* Sektion A — Marktbild (Marktinformationen, klar getrennt von den Lösungen unten). */}
+      {(() => {
+        const picture = marketPictureFrom(comparison)
+        if (!comparison?.market_picture || picture.points.length === 0) return null
+        return (
+          <div data-testid="market-section-picture" className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
+            <p className="text-xs font-semibold text-foreground">Marktbild</p>
+            <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen — keine Wettbewerber.</p>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+              {picture.points.map((point) => (
+                <React.Fragment key={point.label}>
+                  <dt className="text-muted-foreground">{point.label}</dt>
+                  <dd className="text-foreground">{point.value}</dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </div>
+        )
+      })()}
+      {/* 2026-07-24 — sichtbarer Fortschritt + konkrete nächste Aktion statt
+          nur eines booleschen Sperrgrunds. */}
+      {readiness && (readiness.totalImported > 0 || readiness.eligibleCount > 0) && (
+        <p
+          className="mb-3 text-xs font-medium text-foreground"
+          data-testid="market-comparison-readiness"
+        >
+          {readinessLine(readiness)}
+        </p>
+      )}
       {disabledReason && (
         <p
           className="mb-3 text-xs text-muted-foreground"
@@ -158,10 +263,18 @@ export function MarketComparisonSection({
       )}
 
       {state === "idle" && !comparison && (
-        <p className="text-sm text-muted-foreground">
-          Noch kein Vergleich. Rufen Sie öffentliche Quellen live ab, importieren
-          und prüfen Sie deren Inhalt positiv und erstellen Sie danach den Vergleich.
-        </p>
+        <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
+          <p>
+            Noch kein Vergleich. Rufen Sie öffentliche Quellen live ab, importieren
+            und prüfen Sie deren Inhalt positiv und erstellen Sie danach den Vergleich.
+          </p>
+          {/* 2026-07-24 — was der fertige Vergleich liefert (Mehrwert). */}
+          <p className="text-xs">
+            Das liefert der Vergleich: eine belegte Tabelle der Anbieter und
+            Alternativen mit wörtlich verifizierten Zitaten · «Was das für den
+            Antrag bedeutet» (bis zu fünf Konsequenzen) · «Verwendete Quellen».
+          </p>
+        </div>
       )}
 
       {/* RUN 4A: Limitationshinweise VOR der Tabelle — eine schmale Datenlage

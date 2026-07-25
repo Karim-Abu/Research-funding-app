@@ -1,5 +1,5 @@
 import { describe, it, expect, vi } from "vitest"
-import { render, screen, fireEvent } from "@testing-library/react"
+import { render, screen, fireEvent, within } from "@testing-library/react"
 import { SuggestionReviewDialog } from "@/components/editor/suggestion-review-dialog"
 import type { A2Suggestion } from "@/lib/redraft"
 
@@ -41,8 +41,12 @@ describe("SuggestionReviewDialog", () => {
         onDismiss={() => {}}
       />
     )
-    expect(screen.getByTestId("current-text").textContent).toContain("Aktueller Entwurf.")
-    expect(screen.getByTestId("suggestion-text").textContent).toContain("4.5 verbessert.")
+    // v3: current-text/suggestion-text sind die Spaltenköpfe (E2E-Kontrakt:
+    // sichtbar); die Textinhalte leben in der Block-Diff-Liste.
+    expect(screen.getByTestId("current-text")).toBeInTheDocument()
+    expect(screen.getByTestId("suggestion-text")).toBeInTheDocument()
+    expect(screen.getByTestId("suggestion-diff").textContent).toContain("Aktueller Entwurf.")
+    expect(screen.getByTestId("suggestion-diff").textContent).toContain("4.5 verbessert.")
     expect(screen.getByTestId("character-count").textContent).toContain("46 / 25000")
     expect(screen.getByText("Quelle.txt")).toBeInTheDocument()
     expect(screen.getByText("Belegte Passage.")).toBeInTheDocument()
@@ -114,20 +118,21 @@ describe("SuggestionReviewDialog", () => {
         onDismiss={() => {}}
       />
     )
-    // Klassifikation als Text-Badge, nicht nur Farbe (a11y).
-    expect(screen.getByText("Entfernt")).toBeInTheDocument()
-    expect(screen.getByText("Neu")).toBeInTheDocument()
-    // Nur den neuen Schlusssatz übernehmen (Checkbox + Aktion).
+    // v3: Klassifikation als Text im Block-Kopf, nicht nur Farbe (a11y).
+    expect(screen.getByText("1 Streichung · 1 neuer Satz")).toBeInTheDocument()
+    // v3 (Opt-out): alles vorausgewählt — die Streichungen per Sammel-Leiste
+    // ABwählen; «Übernehmen» nimmt dann genau die Auswahl (Merge-Pfad).
     fireEvent.click(
-      screen.getByLabelText("Änderung übernehmen: Ganz neuer Schlusssatz.")
+      screen.getByRole("button", { name: "Alle Streichungen (1)" })
     )
-    fireEvent.click(
-      screen.getByRole("button", { name: "Ausgewählte übernehmen (1)" })
-    )
+    expect(
+      screen.getByText("1 von 2 Änderungen ausgewählt")
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     expect(onAcceptPartial).toHaveBeenCalledOnce()
     const merged = onAcceptPartial.mock.calls[0][0] as string
     expect(merged).toContain("Ganz neuer Schlusssatz.")
-    expect(merged).toContain("Satz zwei fliegt raus.") // nicht gewählt ⇒ bleibt
+    expect(merged).toContain("Satz zwei fliegt raus.") // abgewählt ⇒ bleibt
     expect(merged.startsWith("4.2 Neuheit\n")).toBe(true)
   })
 
@@ -334,7 +339,101 @@ describe("SuggestionReviewDialog", () => {
     const chips = screen.getByTestId("rationale-chips")
     expect(chips).toHaveTextContent("Entfernt/Umformuliert: Wiederholte Marktbehauptung")
     expect(chips).toHaveTextContent("Neue Aussage (ungeprüft): Neue Effizienzaussage")
-    expect(chips).toHaveTextContent("Offen gelassen: KPI-Baseline — fehlt")
+    // 2026-07-24 — offene Fragen liegen in einem eigenen Aufklapper.
+    expect(screen.getByTestId("open-questions")).toHaveTextContent(
+      "Offen gelassen: KPI-Baseline — fehlt"
+    )
+  })
+
+  // v2 (2026-07-24) — Opt-out-Vorauswahl, Sammel-Abwahl und Accept-Weiche.
+  it("v2: alles vorausgewählt; alles gewählt → exakter Accept, Abwahl → Merge", () => {
+    const onAccept = vi.fn()
+    const onAcceptPartial = vi.fn()
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText={"Erster Satz bleibt. Zweiter Satz fällt weg."}
+        suggestion={suggestion({
+          suggested_text: "Erster Satz bleibt. Ein neuer Satz kommt dazu.",
+        })}
+        onAccept={onAccept}
+        onAcceptPartial={onAcceptPartial}
+        onDismiss={() => {}}
+      />
+    )
+    // Vorauswahl: beide Änderungen angehakt.
+    expect(
+      screen.getByText("2 von 2 Änderungen ausgewählt")
+    ).toBeInTheDocument()
+    // Alles ausgewählt → byte-exakter Komplett-Pfad (Herkunft agent).
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
+    expect(onAccept).toHaveBeenCalledOnce()
+    expect(onAcceptPartial).not.toHaveBeenCalled()
+    // Sammel-ABwahl der Streichungen → Teilpfad mit Merge.
+    fireEvent.click(
+      screen.getByRole("button", { name: "Alle Streichungen (1)" })
+    )
+    expect(
+      screen.getByText("1 von 2 Änderungen ausgewählt")
+    ).toBeInTheDocument()
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
+    expect(onAcceptPartial).toHaveBeenCalledOnce()
+    const merged = onAcceptPartial.mock.calls[0][0] as string
+    expect(merged).toContain("Zweiter Satz fällt weg.") // abgewählt ⇒ bleibt
+    expect(merged).toContain("Ein neuer Satz kommt dazu.")
+  })
+
+  it("v3: Block-Paarung — alter Text links, Kontrolle rechts, Kontext einmal", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText={"Bleibt. Fällt weg."}
+        suggestion={suggestion({ suggested_text: "Bleibt." })}
+        onAccept={() => {}}
+        onAcceptPartial={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    const diff = screen.getByTestId("suggestion-diff")
+    // Unveränderter Satz erscheint genau EINMAL (Kontextzeile voller Breite).
+    expect(within(diff).getAllByText("Bleibt.")).toHaveLength(1)
+    // Der Änderungsblock: gestrichener Satz links (reine Lektüre) …
+    expect(within(diff).getByText("Fällt weg.")).toBeInTheDocument()
+    // … EINE vorausgewählte Block-Checkbox rechts + Klartext-Zusammenfassung.
+    const box = within(diff).getByLabelText(
+      /Streichung übernehmen: Fällt weg\./
+    )
+    expect(box).toBeChecked()
+    expect(within(diff).getByText("1 Streichung")).toBeInTheDocument()
+    expect(within(diff).getAllByRole("checkbox")).toHaveLength(1)
+    // Spaltenköpfe (E2E-Kontrakt) bleiben sichtbar.
+    expect(screen.getByTestId("current-text")).toHaveTextContent(
+      "Aktueller Text"
+    )
+    expect(screen.getByTestId("suggestion-text")).toBeInTheDocument()
+  })
+
+  it("v2: 0 ausgewählt deaktiviert «Übernehmen»", () => {
+    render(
+      <SuggestionReviewDialog
+        open
+        onOpenChange={() => {}}
+        currentText={"Bleibt. Fällt weg."}
+        suggestion={suggestion({ suggested_text: "Bleibt." })}
+        onAccept={() => {}}
+        onAcceptPartial={() => {}}
+        onDismiss={() => {}}
+      />
+    )
+    fireEvent.click(
+      screen.getByLabelText(/Streichung übernehmen: Fällt weg\./)
+    )
+    expect(
+      screen.getByText("0 von 1 Änderungen ausgewählt")
+    ).toBeInTheDocument()
+    expect(screen.getByRole("button", { name: "Übernehmen" })).toBeDisabled()
   })
 
   // Anf. 3 — fachliche Kurzbilanz VOR dem Diff, gezählt aus dem section_result.

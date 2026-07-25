@@ -22,13 +22,11 @@ import {
   Users,
   PanelLeftClose,
   PanelLeftOpen,
-  FlaskConical,
   Workflow,
   Gauge,
   type LucideIcon,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
-import { flags } from "@/lib/flags"
 import { WORKFLOW_STEPS } from "@/lib/workflow"
 import {
   Tooltip,
@@ -84,17 +82,10 @@ const currentApplication: NavLink[] = [
   ),
 ]
 
-// Projektbezogene Transparenzseiten + Evaluations-Hub. Die
-// technischen Demo-/Evaluationsansichten (Provider-Tabellen, synthetische
-// Läufe) sind bewusst NICHT Teil des Nutzer-Workflows. Der Zugang «Evaluation &
-// Technik» ist im Standardmodus ausgeblendet (Demo-Golden-Path) und nur mit
-// NEXT_PUBLIC_EVAL_VIEWS=on sichtbar; die Routen bleiben direkt erreichbar.
 const moreItems: NavLink[] = [
   { label: "Kosten & Laufzeit", href: "/kosten", icon: Gauge },
   { label: "Rollen & Verantwortung", href: "/ki-team", icon: Workflow },
-  ...(flags.evalViews
-    ? [{ label: "Evaluation & Technik", href: "/admin", icon: FlaskConical }]
-    : []),
+  { label: "Systemstatus", href: "/systemstatus", icon: Gauge },
 ]
 
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
@@ -124,7 +115,7 @@ const PROJECT_INDEPENDENT = new Set([
   "Übersicht",
   "Projekt anlegen",
   "Rollen & Verantwortung",
-  "Evaluation & Technik",
+  "Systemstatus",
 ])
 
 export function Sidebar({

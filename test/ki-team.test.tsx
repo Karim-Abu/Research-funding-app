@@ -353,12 +353,12 @@ describe("Responsibility-Cockpit", () => {
     fireEvent.click(card)
     const dialog = await screen.findByRole("dialog")
     for (const heading of [
-      "Spezialgebiet",
-      "Aufgabe",
-      "Arbeitet mit",
-      "Liefert",
-      "Ihre Prüfung",
-      "Entscheidungsgrenze",
+      "Wobei hilft diese Rolle?",
+      "Was macht sie?",
+      "Womit arbeitet sie?",
+      "Was erhalten Sie?",
+      "Was entscheiden Sie?",
+      "Das entscheidet die Rolle nicht",
       "Aktiv in",
       "Datenzugriff",
     ]) {

@@ -464,6 +464,97 @@ def test_market_comparison_two_reviewed_live_sources_becomes_limited(client, db,
     assert view["source_version_ids"] == sorted(view["source_version_ids"])
 
 
+def test_view_exposes_judgment_landscape_and_market_picture(client, db, web_enabled):
+    """The read-time view layers the analytical objects on top of the persisted
+    comparison: candidates carry a candidate_type, market statistics stay out of
+    the landscape, and the judgment never claims global nonexistence."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    _seed_comparison_sources(
+        db, project_id, project.workspace_id,
+        text=(
+            "Die Plattform Acme ist eine alternative Lösung für den Markt. "
+            "Der Markt wächst laut Bericht. Kunden beschreiben ein Problem."
+        ),
+    )
+    body, op = _generate(client, csrf, project_id)
+    assert op["status"] == "succeeded"
+    view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
+
+    assert view["solution_landscape"] is not None
+    assert view["market_picture"] is not None
+    assert view["competition_judgment"] is not None
+    assert view["scope_stale"] is False
+
+    landscape = view["solution_landscape"]
+    types = {c["candidate_type"] for c in landscape["candidates"]}
+    assert "adjacent_solution" in types  # from legacy alternative_solution
+    # Market statistics never appear as a solution candidate.
+    assert all(c["name"] and c["candidate_type"] for c in landscape["candidates"])
+    assert not any("Markt-Claim" in c["name"] for c in landscape["candidates"])
+
+    judgment = view["competition_judgment"]
+    assert judgment["status"] in (
+        "direct_equivalent_found", "similar_solutions_found",
+        "no_direct_equivalent_in_scope", "insufficient_evidence",
+    )
+    joined = " ".join(judgment["disallowed_formulations"])
+    for phrase in ("weltweit einzigartig", "keine Konkurrenz", "patentierbar"):
+        assert phrase in joined
+    # An unreviewed source-backed candidate is plausible, never a confirmed claim.
+    assert judgment["evidenced_differentiators"] == []
+    # The flat items[] are enriched too (regression: previously dead code).
+    assert any(item.get("candidate_type") for item in view["items"])
+
+
+def test_view_exposes_the_project_idea_as_comparison_basis(client, db, web_enabled):
+    """Ziel 1: die eigene Projektidee ist die sichtbare Vergleichsbasis."""
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    _seed_comparison_sources(db, project_id, project.workspace_id)
+    body, op = _generate(client, csrf, project_id)
+    assert op["status"] == "succeeded"
+    view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
+
+    basis = view["comparison_basis"]
+    assert basis is not None
+    # idea = the confidential project description the user typed at intake.
+    assert basis["idea"] == project.description
+    assert basis["title"] == project.title
+    # No approved research brief seeded → no public-safe search focus yet.
+    assert basis["search_focus"] is None
+    assert basis["search_aspects"] == []
+
+
+def test_comparison_basis_adds_public_safe_search_focus_from_approved_brief(client, db, web_enabled):
+    from app.db.models import ResearchBrief
+
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    project_id = _create_project(client, csrf)
+    project = db.get(Project, project_id)
+    db.add(ResearchBrief(
+        research_brief_id=str(uuid.uuid4()), project_id=project_id,
+        workspace_id=project.workspace_id, version=1, status="approved",
+        research_goal="Lösungen zur automatisierten Anomalieerkennung im Zielmarkt",
+        application_domain="Qualitätssicherung", technology_class="Machine Learning",
+        region="Schweiz", search_tags=["anomaly detection", "industrie"],
+        content_hash="unit-test-hash", created_by="user-anna", approved_by="user-anna",
+    ))
+    db.commit()
+    _seed_comparison_sources(db, project_id, project.workspace_id)
+    body, op = _generate(client, csrf, project_id)
+    assert op["status"] == "succeeded"
+    view = client.get(f"/api/v1/market-comparisons/{body['resource_id']}").json()
+
+    basis = view["comparison_basis"]
+    assert basis["search_focus"] == "Lösungen zur automatisierten Anomalieerkennung im Zielmarkt"
+    assert "Qualitätssicherung" in basis["search_aspects"]
+    assert "Schweiz" in basis["search_aspects"]
+    assert len(basis["search_aspects"]) <= 6
+
+
 def test_market_size_and_customer_problem_categories(client, db, web_enabled):
     """R8 (Anforderung 11): die persistierte Zusammenfassung strukturiert auch
     Marktgrössen-Kandidaten und Kundenprobleme — nur mit verifiziertem Zitat,

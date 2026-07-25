@@ -5,15 +5,18 @@
 // comparison, and offers the wide comparison sheet as the working surface.
 // No draft mutation here, no provider/model/confidence.
 
+import * as React from "react"
 import { Info } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
+import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
 import { cn } from "@/lib/utils"
-import type { MarketComparisonDto } from "@/lib/market-comparison"
+import { JUDGMENT_STATUS_LABELS, type MarketComparisonDto } from "@/lib/market-comparison"
 import {
-  comparisonToMarketStatus,
-  MARKET_STATUS_LABELS,
-  MARKET_STATUS_STYLE,
+  MARKET_TONE_STYLE,
+  deriveMarketPicture,
+  judgmentToneClass,
+  marketWorkspaceStatus,
 } from "@/lib/market-view"
 
 interface LiveMarketComparisonProps {
@@ -31,15 +34,27 @@ export function LiveMarketComparison({
 }: LiveMarketComparisonProps) {
   if (!loaded) return null
 
-  const status = comparisonToMarketStatus(comparison)
+  const status = marketWorkspaceStatus(comparison)
+  const picture = deriveMarketPicture(comparison)
   const sourceBacked =
     comparison?.items.filter((i) => i.confidence_label === "source_backed") ?? []
   const hasItems = (comparison?.items.length ?? 0) > 0
+  // Sichtbarer Grund, warum „Marktvergleich öffnen" ggf. deaktiviert ist
+  // (Tooltip allein reicht nicht — CLAUDEX §5).
+  const openDisabledReason = !onOpenComparison
+    ? null
+    : comparison?.status === "failed"
+      ? "Letzter Versuch fehlgeschlagen — unter Quellen erneut erstellen."
+      : !hasItems
+        ? "Noch kein Vergleich mit Einträgen — unter Quellen erstellen."
+        : null
   // RUN 4B §8 — Anzahl geprüfter Quellen (dedupliziert über die Einträge).
   const sourceCount = new Set(
     (comparison?.items ?? []).flatMap((item) => item.source_document_ids)
   ).size
   const limitedWithoutItems = comparison?.status === "limited" && !hasItems
+  const judgment = comparison?.competition_judgment ?? null
+  const scopeStale = comparison?.scope_stale ?? false
 
   return (
     <div className="flex flex-col gap-3" data-testid="live-market-comparison">
@@ -56,12 +71,13 @@ export function LiveMarketComparison({
             </span>
           )}
           <span
+            data-testid="market-editor-status"
             className={cn(
               "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-              MARKET_STATUS_STYLE[status]
+              MARKET_TONE_STYLE[status.tone]
             )}
           >
-            {MARKET_STATUS_LABELS[status]}
+            {status.label}
           </span>
         </span>
       </div>
@@ -71,6 +87,46 @@ export function LiveMarketComparison({
         Hinweise aus öffentlichen Quellen — fachlich zu prüfen. Kein automatischer
         Eintrag in den Antrag.
       </p>
+
+      {comparison?.comparison_basis && (
+        <MarketComparisonBasis basis={comparison.comparison_basis} compact />
+      )}
+
+      {/* Kompaktes Entscheidungsboard — das Gesamturteil (Backend). */}
+      {judgment && (
+        <div
+          data-testid="market-editor-judgment"
+          className="flex flex-col gap-1 rounded-md border border-border bg-card px-3 py-2"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <span className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
+              Gesamturteil
+            </span>
+            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", judgmentToneClass(judgment.status))}>
+              {JUDGMENT_STATUS_LABELS[judgment.status]}
+            </span>
+          </div>
+          <p className="text-[11px] text-muted-foreground">{judgment.scope_summary}</p>
+          {scopeStale && (
+            <p className="text-[11px] text-status-partial">Suchraum geändert — bitte neu erstellen.</p>
+          )}
+        </div>
+      )}
+
+      {/* Kompaktes Marktbild (Top 2) — die volle Sicht liegt im Sheet. */}
+      {picture.points.length > 0 && (
+        <dl
+          data-testid="market-editor-picture"
+          className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px]"
+        >
+          {picture.points.slice(0, 2).map((point) => (
+            <React.Fragment key={point.label}>
+              <dt className="text-muted-foreground">{point.label}</dt>
+              <dd className="text-foreground">{point.value}</dd>
+            </React.Fragment>
+          ))}
+        </dl>
+      )}
 
       {!comparison || sourceBacked.length === 0 ? (
         <p className="text-xs text-muted-foreground" data-testid="market-editor-empty">
@@ -121,7 +177,8 @@ export function LiveMarketComparison({
         </div>
       )}
 
-      <div className="flex flex-wrap gap-2 border-t border-border pt-2">
+      <div className="flex flex-col gap-1.5 border-t border-border pt-2">
+        <div className="flex flex-wrap gap-2">
         <Button
           size="xs"
           variant="outline"
@@ -143,6 +200,12 @@ export function LiveMarketComparison({
         >
           Quellen öffnen
         </Button>
+        </div>
+        {openDisabledReason && (
+          <p className="text-[11px] text-muted-foreground" data-testid="market-editor-open-disabled-reason">
+            {openDisabledReason}
+          </p>
+        )}
       </div>
     </div>
   )

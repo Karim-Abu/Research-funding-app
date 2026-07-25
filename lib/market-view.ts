@@ -3,7 +3,14 @@
 // Market information is always a working hypothesis with an evidence status —
 // never presented as truth.
 
+import {
+  CANDIDATE_TYPE_LABELS,
+  ITEM_CATEGORY_LABELS,
+  JUDGMENT_STATUS_TONE,
+} from "./market-comparison"
 import type {
+  CandidateType,
+  CompetitionJudgmentStatus,
   MarketComparisonDto,
   MarketComparisonItemDto,
 } from "./market-comparison"
@@ -140,6 +147,191 @@ export function comparisonToMarketStatus(
 export function marketArgumentSentence(item: MarketComparisonItemDto): string {
   const diff = (item.differentiation_relevance ?? "").trim().replace(/\.?$/, ".")
   return `Abgrenzung zu ${item.name}: ${diff}`
+}
+
+// ---------------------------------------------------------------------------
+// EIN ehrliches Status-Viewmodel für alle drei Markt-Oberflächen (Quellen-Karte,
+// Editor-Rail, Sheet). Ersetzt die divergierenden Ableitungen, die „Fehlgeschlagen"
+// und „Nicht analysiert" gleichzeitig zeigen konnten. (2026-07-24)
+// ---------------------------------------------------------------------------
+export type MarketTone = "neutral" | "positive" | "attention" | "error"
+
+export interface MarketWorkspaceStatus {
+  label: string
+  tone: MarketTone
+  /** Kurzer nächster Schritt / Grund — nur wenn hilfreich. */
+  hint?: string
+}
+
+export const MARKET_TONE_STYLE: Record<MarketTone, string> = {
+  neutral: "bg-muted text-muted-foreground",
+  positive: "bg-status-fulfilled/12 text-status-fulfilled",
+  attention: "bg-status-partial/12 text-status-partial",
+  error: "bg-destructive/12 text-destructive",
+}
+
+export function marketWorkspaceStatus(
+  comparison: MarketComparisonDto | null
+): MarketWorkspaceStatus {
+  if (!comparison) return { label: "Noch nicht erstellt", tone: "neutral" }
+  const hasItems = comparison.items.length > 0
+  switch (comparison.status) {
+    case "failed":
+      return {
+        label: "Letzter Versuch fehlgeschlagen",
+        tone: "error",
+        hint: "Bitte erneut erstellen.",
+      }
+    case "insufficient_external_evidence":
+      return {
+        label: "Zu wenige geprüfte Quellen",
+        tone: "attention",
+        hint: "Mindestens zwei geeignete öffentliche Quellen nötig.",
+      }
+    case "limited":
+      return {
+        label: "Begrenzte Evidenz",
+        tone: "attention",
+        hint: hasItems
+          ? undefined
+          : "Marktinformationen vorhanden, aber noch kein belastbarer Vergleich.",
+      }
+    case "stale":
+      return { label: "Veraltet — neu erstellen", tone: "attention" }
+    case "draft":
+      return { label: "Wird erstellt …", tone: "neutral" }
+    case "ready_for_review":
+      return hasItems
+        ? { label: "Zur Prüfung bereit", tone: "positive" }
+        : {
+            label: "Keine belegten Einträge",
+            tone: "attention",
+            hint: "Es wurden keine quellengestützten Vergleichseinträge gefunden.",
+          }
+    default:
+      return { label: "Noch nicht erstellt", tone: "neutral" }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Marktbild — beantwortet die vier/fünf Kernfragen ausschliesslich aus
+// quellengestützten Einträgen (keine unbelegten Claims, CLAUDEX §7). Reine
+// Ableitung fürs Sheet und (gekürzt) die Editor-Rail. (2026-07-24)
+// ---------------------------------------------------------------------------
+export interface MarketPicturePoint {
+  label: string
+  value: string
+}
+
+export interface MarketPicture {
+  points: MarketPicturePoint[]
+  gaps: string[]
+  hasContent: boolean
+}
+
+// Kategorien, die eine „Lösungsart/Anbieter" darstellen (nicht Marktsignal/Problem).
+const SOLUTION_CATEGORIES = new Set([
+  "competitor",
+  "alternative_solution",
+  "substitute",
+  "incumbent_process",
+  "reference_solution",
+  "unknown",
+])
+
+function joinDistinct(values: (string | null | undefined)[], limit: number): string {
+  const seen: string[] = []
+  for (const raw of values) {
+    const value = (raw ?? "").trim()
+    if (value && !seen.includes(value)) seen.push(value)
+  }
+  if (seen.length === 0) return ""
+  const shown = seen.slice(0, limit).join(" · ")
+  return seen.length > limit ? `${shown} …` : shown
+}
+
+export function deriveMarketPicture(
+  comparison: MarketComparisonDto | null
+): MarketPicture {
+  const backed =
+    comparison?.items.filter((i) => i.confidence_label === "source_backed") ?? []
+  const points: MarketPicturePoint[] = []
+
+  // 1) Lösungsarten / Anbieter — Anzahl je Kategorie (nur echte Lösungskategorien).
+  const byCategory = new Map<string, number>()
+  for (const item of backed) {
+    if (!SOLUTION_CATEGORIES.has(item.category)) continue
+    byCategory.set(item.category, (byCategory.get(item.category) ?? 0) + 1)
+  }
+  if (byCategory.size > 0) {
+    const value = [...byCategory.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([category, count]) => `${ITEM_CATEGORY_LABELS[category as keyof typeof ITEM_CATEGORY_LABELS] ?? category} (${count})`)
+      .join(" · ")
+    points.push({ label: "Lösungsarten", value })
+  }
+
+  // 2) Kundengruppen — belegte Zielsegmente.
+  const segments = joinDistinct(backed.map((i) => i.target_customer_segment), 3)
+  if (segments) points.push({ label: "Kundengruppen", value: segments })
+
+  // 3) Typische Funktionen — Vereinigung der belegten Funktionslisten.
+  const functions = joinDistinct(
+    backed.flatMap((i) => i.relevant_functions ?? []),
+    5
+  )
+  if (functions) points.push({ label: "Typische Funktionen", value: functions })
+
+  // 4) Marktsignale/Trends — belegte Marktgrössen-Aussagen (Namen).
+  const signals = joinDistinct(
+    backed.filter((i) => i.category === "market_size_claim").map((i) => i.name),
+    3
+  )
+  if (signals) points.push({ label: "Marktsignale", value: signals })
+
+  // 5) Kundenprobleme — belegte Problem-Aussagen (Namen).
+  const problems = joinDistinct(
+    backed.filter((i) => i.category === "customer_problem").map((i) => i.name),
+    3
+  )
+  if (problems) points.push({ label: "Kundenprobleme", value: problems })
+
+  const gaps = comparison?.research_gaps ?? []
+  return { points, gaps, hasContent: points.length > 0 || gaps.length > 0 }
+}
+
+// ---------------------------------------------------------------------------
+// Gesamturteil / Lösungslandschaft helpers (backend-derived, read-time). The
+// backend competition_judgment / solution_landscape / market_picture are the
+// single source of truth; these helpers only translate them for display.
+// ---------------------------------------------------------------------------
+export function candidateTypeLabel(type: CandidateType): string {
+  return CANDIDATE_TYPE_LABELS[type]
+}
+
+export function judgmentToneClass(status: CompetitionJudgmentStatus): string {
+  return MARKET_TONE_STYLE[JUDGMENT_STATUS_TONE[status]]
+}
+
+/**
+ * Market picture for the compact rail. Prefers the backend market_picture and
+ * falls back to the client-side derivation for older responses without it.
+ */
+export function marketPictureFrom(comparison: MarketComparisonDto | null): MarketPicture {
+  const backend = comparison?.market_picture
+  if (!backend) return deriveMarketPicture(comparison)
+  const points: MarketPicturePoint[] = []
+  const push = (label: string, values: { value: string }[]) => {
+    const value = joinDistinct(values.map((p) => p.value), 4)
+    if (value) points.push({ label, value })
+  }
+  push("Marktgrösse & Wachstum", backend.size_and_growth)
+  push("Segmente", backend.segments)
+  push("Trends", backend.trends)
+  push("Nachfrage", backend.demand_indicators)
+  push("Schweiz-Relevanz", backend.swiss_relevance)
+  const gaps = backend.gaps ?? []
+  return { points, gaps, hasContent: points.length > 0 || gaps.length > 0 }
 }
 
 // ---------------------------------------------------------------------------

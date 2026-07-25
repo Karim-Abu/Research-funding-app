@@ -160,32 +160,32 @@ export function RoleDrawer({
                 </div>
               </div>
               <SheetDescription className="sr-only">
-                Aufgabe, Ergebnis, Prüfbedarf und technische Zuordnung der
+                Aufgabe, Ergebnis, menschliche Entscheidung und technische Zuordnung der
                 Funktion {role.name}.
               </SheetDescription>
             </SheetHeader>
 
             <div className="flex flex-col gap-5 p-4 sm:p-5">
-              <Field label="Spezialgebiet" icon={Activity}>
+              <Field label="Wobei hilft diese Rolle?" icon={Activity}>
                 {role.specialization}
               </Field>
 
-              <Field label="Aufgabe" icon={ListChecks}>
+              <Field label="Was macht sie?" icon={ListChecks}>
                 {role.task}
               </Field>
 
               <div className="grid gap-4 rounded-lg bg-muted/45 p-4 sm:grid-cols-2">
-                <Field label="Arbeitet mit" icon={Database}>
+                <Field label="Womit arbeitet sie?" icon={Database}>
                   {role.worksWith}
                 </Field>
-                <Field label="Liefert" icon={ArrowRight}>
+                <Field label="Was erhalten Sie?" icon={ArrowRight}>
                   {role.outputSummary}
                 </Field>
               </div>
 
               <div className="rounded-lg border border-status-partial/30 bg-status-partial/5 p-4">
                 <Field
-                  label="Ihre Prüfung"
+                  label="Was entscheiden Sie?"
                   icon={UserRoundCheck}
                   iconClassName="text-status-partial"
                 >
@@ -194,7 +194,7 @@ export function RoleDrawer({
               </div>
 
               <div className="rounded-lg bg-muted/35 p-4">
-                <Field label="Entscheidungsgrenze" icon={ShieldAlert}>
+                <Field label="Das entscheidet die Rolle nicht" icon={ShieldAlert}>
                   {role.decisionBoundary}
                 </Field>
               </div>

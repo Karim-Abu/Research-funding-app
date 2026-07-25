@@ -101,6 +101,20 @@ function approvalErrors(form: ResearchBriefInput): BriefFieldErrors {
   return errors
 }
 
+/** Clientseitige Bereitschafts-Sicht für den Marktvergleich (2026-07-24).
+ *  Spiegel der Backend-Regel (market/source_scope.imported_public_sources);
+ *  das Backend bleibt autoritativ — hier nur Anzeige/Fortschritt. */
+export interface MarketReadiness {
+  hasEligible: boolean
+  eligibleCount: number
+  totalImported: number
+  nextCandidate: {
+    result_id: string
+    title: string
+    missingStep: "review" | "import"
+  } | null
+}
+
 export function PublicResearchPanel({
   projectId,
   dataClass = "public",
@@ -110,9 +124,9 @@ export function PublicResearchPanel({
   projectId: string
   dataClass?: DataClass
   onImported?: () => void
-  /** Meldet, ob mindestens eine live abgerufene, importierte und inhaltlich
-   *  positiv geprüfte Quelle vorliegt (Gate für den Marktvergleich). */
-  onEligibilityChange?: (hasEligible: boolean) => void
+  /** Meldet die Marktvergleich-Bereitschaft (Gate + Fortschritt + nächste
+   *  sinnvolle Aktion) — abgeleitet aus den Workspace-Ergebnissen. */
+  onEligibilityChange?: (readiness: MarketReadiness) => void
 }) {
   const blocked = isExternalBlocked(flatToPrivacyClass(dataClass))
   const [workspace, setWorkspace] = React.useState<ResearchWorkspaceDto | null>(null)
@@ -144,20 +158,36 @@ export function PublicResearchPanel({
   }, [blocked, refresh])
 
   // Marktvergleich-Gate: gleiche Bedingungen wie das Backend
-  // (market/source_scope.imported_public_sources) — das Backend bleibt autoritativ.
-  const hasEligibleSource = Boolean(
-    workspace?.results.some(
-      (r) =>
-        r.status === "imported" &&
-        r.content_review_status === "reviewed" &&
-        (r.support_status === "supports" ||
-          r.support_status === "partially_supports") &&
-        r.execution_mode !== "fake_demo"
-    )
-  )
+  // (market/source_scope.imported_public_sources) — das Backend bleibt
+  // autoritativ. 2026-07-24: zusätzlich Fortschritt + nächste Aktion, damit
+  // die Markt-Sektion «n von 2» und einen konkreten nächsten Schritt zeigt.
+  const marketReadiness = React.useMemo<MarketReadiness>(() => {
+    const results = workspace?.results ?? []
+    const live = results.filter((r) => r.execution_mode !== "fake_demo")
+    const isEligible = (r: (typeof results)[number]) =>
+      r.status === "imported" &&
+      r.content_review_status === "reviewed" &&
+      (r.support_status === "supports" ||
+        r.support_status === "partially_supports")
+    const eligible = live.filter(isEligible)
+    const imported = live.filter((r) => r.status === "imported")
+    const reviewCandidate = imported.find((r) => !isEligible(r))
+    const importCandidate = live.find((r) => r.status === "candidate")
+    const next = reviewCandidate
+      ? { result_id: reviewCandidate.result_id, title: reviewCandidate.title, missingStep: "review" as const }
+      : importCandidate
+        ? { result_id: importCandidate.result_id, title: importCandidate.title, missingStep: "import" as const }
+        : null
+    return {
+      hasEligible: eligible.length > 0,
+      eligibleCount: eligible.length,
+      totalImported: imported.length,
+      nextCandidate: next,
+    }
+  }, [workspace])
   React.useEffect(() => {
-    onEligibilityChange?.(hasEligibleSource)
-  }, [hasEligibleSource, onEligibilityChange])
+    onEligibilityChange?.(marketReadiness)
+  }, [marketReadiness, onEligibilityChange])
 
   const act = async (operation: () => Promise<unknown>) => {
     setBusy(true)
@@ -257,6 +287,12 @@ export function PublicResearchPanel({
       )}
       {error && <p role="alert" className="mt-3 text-sm text-destructive">{error}</p>}
 
+      {/* 2026-07-24 — geführter Ablauf: drei nummerierte Schritte statt
+          gleichrangiger Boxen. */}
+      <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+        Schritt 1 · Recherchebrief
+      </p>
+
       {!brief && (
         <Button className="mt-4" variant="outline" disabled={busy} onClick={() => void act(() => suggestResearchBrief(projectId))}>
           {busy && <Loader2 className="size-4 animate-spin" />} Recherchebrief vorschlagen
@@ -314,6 +350,9 @@ export function PublicResearchPanel({
           </div>
 
           {visibleQueries.length > 0 && <div className="mt-3">
+            <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+              Schritt 2 · Suchanfragen freigeben und ausführen
+            </p>
             <QueryApprovalList
               projectId={projectId}
               queries={visibleQueries}
@@ -344,19 +383,27 @@ export function PublicResearchPanel({
             <div className="mt-2"><QueryApprovalList projectId={projectId} queries={historicalQueries} onChange={() => undefined} /></div>
           </details>}
 
-          <div className="mt-4 space-y-3" data-testid="research-results">
+          <p className="mt-4 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+            Schritt 3 · Ergebnisse prüfen und übernehmen
+          </p>
+          <div className="mt-2 space-y-3" data-testid="research-results">
             {visibleResults.length === 0 && <p className="text-sm text-muted-foreground">Noch keine Resultate für dieses Modul.</p>}
             {sharedRelevanceReason && <p className="text-xs text-muted-foreground">{sharedRelevanceReason}</p>}
             {visibleResults.map((result) => <article key={result.result_id} className="rounded border p-3">
               <div className="flex items-start justify-between gap-2"><div className="min-w-0"><h4 className="font-medium">{result.title}</h4><a href={result.final_url ?? result.source_url} target="_blank" rel="noreferrer" className="break-all text-xs text-primary hover:underline">{result.final_url ?? result.source_url}</a><p className="text-xs text-muted-foreground">{result.publisher ?? result.domain} · {result.published_at ? new Date(result.published_at).toLocaleDateString("de-CH") : "Datum nicht verfügbar"} · Aktualität: {result.freshness_label ?? "unbekannt"}</p></div><Badge variant="outline">{result.execution_mode === "fake_demo" ? "Demo" : result.status === "imported" && result.content_review_status === "reviewed" ? "Inhaltlich geprüft" : result.status === "imported" ? "Übernommen" : result.status === "rejected" ? "Verworfen" : "Kandidat"}</Badge></div>
               {result.snippet && <p className="mt-2 text-sm">{result.snippet}</p>}
               {!sharedRelevanceReason && result.relevance_reason && <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>}
-              <dl className="mt-2 grid gap-1 text-xs sm:grid-cols-2">
-                <div><dt className="font-medium">Potentieller Abschnitt</dt><dd>{(result.potential_sections ?? []).join(", ") || "noch offen"}</dd></div>
-                <div><dt className="font-medium">Vorläufige Quellenqualität</dt><dd>{sourceQualityLabel(result.source_quality)}</dd></div>
-                <div><dt className="font-medium">Fundstellenabdeckung</dt><dd>{coverageStatusLabel(result.coverage_status)}</dd></div>
-                <div><dt className="font-medium">Inhaltliche Stützung</dt><dd>{supportLabel(result.support_status ?? "not_checked")}</dd></div>
-              </dl>
+              {/* 2026-07-24 — eine gedämpfte Zeile statt 4-Zellen-Grid; Werte
+                  als eigene Elemente (Tests matchen exakt auf die Labels). */}
+              <p className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
+                <span>Quellenqualität: <span>{sourceQualityLabel(result.source_quality)}</span></span>
+                <span>Fundstelle: <span>{coverageStatusLabel(result.coverage_status)}</span></span>
+                <span>Stützung: <span>{supportLabel(result.support_status ?? "not_checked")}</span></span>
+              </p>
+              <details className="mt-1 text-xs text-muted-foreground">
+                <summary className="cursor-pointer">Weitere Angaben</summary>
+                <p className="mt-1">Potentieller Abschnitt: {(result.potential_sections ?? []).join(", ") || "noch offen"}</p>
+              </details>
               {result.content_safety_status === "quarantined" && <p className="mt-2 rounded border border-status-partial/40 bg-status-partial/10 p-2 text-xs">{"Nicht vertrauensw\u00fcrdiges Inhaltssignal: Die Seite muss vor der Verwendung ausdr\u00fccklich gepr\u00fcft werden."}</p>}
               {result.status === "imported" && result.content_safety_status === "quarantined" && <Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports", true))}>{"Ausdr\u00fccklich gepr\u00fcft und unterst\u00fctzend"}</Button>}
               {result.possible_duplicate_source_id && <p className="mt-2 text-xs text-muted-foreground">{"M\u00f6gliches Duplikat erkannt; die Quellen wurden nicht automatisch zusammengef\u00fchrt."}</p>}
@@ -372,7 +419,27 @@ export function PublicResearchPanel({
                 <div><dt className="font-medium">Grenze</dt><dd>Keine Aussage zu Verfügbarkeit oder Interesse. Endgültige Beitragsberechtigung menschlich prüfen.</dd></div>
               </dl>}
               {result.source_locations.map((location, index) => <details key={`${location.source_version_id}-${index}`} className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Fundstelle aus abgerufener Seite</summary><p className="mt-1 whitespace-pre-wrap rounded bg-muted p-2">{location.excerpt}</p><p className="text-muted-foreground">Fundstelle exakt abgerufen – fachliche Stützung nicht bestätigt.</p></details>)}
-              <div className="mt-3 flex flex-wrap gap-2"><Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>{result.status === "candidate" && result.execution_mode !== "fake_demo" && <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und prüfen</Button>}{result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}{result.status === "imported" && <><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports"))}>Stützt</Button><Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "partially_supports"))}>Teilweise</Button><Button size="xs" variant="ghost" onClick={() => void act(() => reviewResearchResult(result.result_id, "does_not_support"))}>Stützt nicht</Button></>}</div>
+              {/* 2026-07-24 — EINE Primäraktion je Status: candidate → Übernahme,
+                  imported → die Stützt-Frage als segmentierte Reihe. */}
+              <div className="mt-3 flex flex-col gap-1.5">
+                {result.status === "imported" && (
+                  <p className="text-xs font-medium text-foreground">Stützt diese Quelle Ihre Aussagen?</p>
+                )}
+                <div className="flex flex-wrap items-center gap-2">
+                  {result.status === "candidate" && result.execution_mode !== "fake_demo" && (
+                    <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und prüfen</Button>
+                  )}
+                  {result.status === "imported" && (
+                    <span className="inline-flex overflow-hidden rounded-md border border-border">
+                      <Button size="xs" variant="ghost" className="rounded-none" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports"))}>Stützt</Button>
+                      <Button size="xs" variant="ghost" className="rounded-none border-l border-border" onClick={() => void act(() => reviewResearchResult(result.result_id, "partially_supports"))}>Teilweise</Button>
+                      <Button size="xs" variant="ghost" className="rounded-none border-l border-border" onClick={() => void act(() => reviewResearchResult(result.result_id, "does_not_support"))}>Stützt nicht</Button>
+                    </span>
+                  )}
+                  <Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>
+                  {result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}
+                </div>
+              </div>
               <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Technische Details</summary><p>Ausführungsmodus: {result.execution_mode ?? "unbekannt"} · Task-ID: {result.task_id}</p></details>
             </article>)}
           </div>
@@ -380,16 +447,17 @@ export function PublicResearchPanel({
         </div>
       )}
 
-      {/* RUN 4A: der manuelle Import hängt nicht mehr am freigegebenen Brief —
-          bei nicht erreichbarem Recherchedienst steht er immer bereit. */}
-      {(workspace?.provider_mode === "unavailable" || error) && <div className="mt-4 rounded border p-3" data-testid="manual-research-fallback">
-        <h4 className="text-sm font-medium">Manueller Quellenimport</h4>
+      {/* RUN 4A: der manuelle Import hängt nicht am freigegebenen Brief.
+          2026-07-24: immer auffindbar (Aufklapper), automatisch geöffnet bei
+          nicht erreichbarem Recherchedienst oder Fehler. */}
+      <details className="mt-4 rounded border p-3" data-testid="manual-research-fallback" open={workspace?.provider_mode === "unavailable" || Boolean(error)}>
+        <summary className="cursor-pointer text-sm font-medium">Öffentliche Quelle manuell hinzufügen</summary>
         <p className="mt-1 text-xs text-muted-foreground">Bei Netz- oder Recherchedienstfehlern: öffentliche URL und selbst kopierten Seiteninhalt einfügen. Der Server ruft die URL nicht ab. Alternativ steht der bestehende PDF-Upload auf dieser Seite zur Verfügung.</p>
         <div className="mt-2 grid gap-2 md:grid-cols-2"><BriefField label="Öffentliche HTTPS-URL" value={manualUrl} onChange={setManualUrl} disabled={busy} /><BriefField label="Titel" value={manualTitle} onChange={setManualTitle} disabled={busy} /></div>
         <Label className="mt-2 block" htmlFor="manual-research-content">Kopierter Seiteninhalt</Label>
         <Textarea id="manual-research-content" value={manualContent} disabled={busy} onChange={(event) => setManualContent(event.target.value)} rows={6} />
         <Button className="mt-2" size="sm" variant="outline" disabled={busy || !manualUrl.trim() || !manualContent.trim()} onClick={() => void act(async () => { await createUrlSource(projectId, manualUrl, manualTitle || null, PUBLIC_SOURCE_CLASSIFICATION, manualContent); setManualUrl(""); setManualTitle(""); setManualContent(""); onImported?.() })}>Manuell als Quelle übernehmen</Button>
-      </div>}
+      </details>
     </section>
   )
 }

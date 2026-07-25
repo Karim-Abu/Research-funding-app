@@ -360,9 +360,11 @@ describe("Markt tab + comparison sheet", () => {
 
     await waitFor(() =>
       expect(textarea.value).toContain(
-        "Abgrenzung zu Acme Plattform: Verarbeitet Rezyklate bei niedrigerer Prozesstemperatur."
+        "Abgrenzung zu Acme Plattform: Verarbeitet Rezyklate bei niedrigerer Prozesstemperatur"
       )
     )
+    // Every inserted statement carries a source hint (HITL, source-qualified).
+    expect(textarea.value).toContain("gestützt auf")
     // Inserted, not saved: the editor is dirty and the sheet says so.
     expect(within(sheet).getByText(/noch nicht gespeichert/)).toBeInTheDocument()
     expect(screen.getByText("Änderungen")).toBeInTheDocument()

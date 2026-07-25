@@ -17,6 +17,7 @@ from app.api.errors import ProblemException
 from app.contracts.run import AsyncAccepted
 from app.db.models import AnalysisRun, AsyncOperation, PortalFieldDraft
 from app.db.session import SessionLocal
+from app.drafts.sections import section_error_detail
 from app.fields import reason_codes
 from app.repositories import audit
 from app.runs.constants import TERMINAL_OPERATION_STATUSES
@@ -137,6 +138,9 @@ def execute_a2_operation(
         # R4.2: Verfügbarkeits-Skips (z. B. mode_deterministic_only) tragen
         # den Katalog-Reason; reine Generierungsfehler bleiben generisch.
         mapped = reason_codes.maybe_reason(outcome.reason or "")
+        # Abschnittsstruktur-Fehler sind deterministisch und nutzerbehebbar
+        # (2026-07-24): 422 + Klartext mit benanntem Marker statt nacktem 500.
+        section_detail = section_error_detail(outcome.reason or "")
         # Nur transiente Providerfehler auf der Primärroute dürfen den
         # expliziten Alternativ-Versuch anbieten — nie Policy/Budget/Schema/
         # Refusal, und nie nachdem die Alternative selbst versucht wurde.
@@ -151,9 +155,11 @@ def execute_a2_operation(
         op.error = {
             "type": "/problems/redraft_failed",
             "title": "Redraft Error",
-            "status": 503 if mapped else 500,
+            "status": 503 if mapped else (422 if section_detail else 500),
             "code": outcome.reason or "ai_unavailable",
-            "detail": mapped[1] if mapped else "Es konnte kein Vorschlag erstellt werden.",
+            "detail": mapped[1] if mapped else (
+                section_detail or "Es konnte kein Vorschlag erstellt werden."
+            ),
             "correlation_id": op.correlation_id or str(uuid.uuid4()),
             **({"reason_code": mapped[0]} if mapped else {}),
             **({"retry_with_alternative_model": True} if retry_alternative else {}),

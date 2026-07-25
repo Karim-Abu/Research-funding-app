@@ -96,4 +96,60 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
       "Noch kein belegter Markt- und Konkurrenzvergleich."
     )
   })
+
+  // 2026-07-24 — failed zeigt einen ehrlichen Fehlversuch (nie «Nicht
+  // analysiert») samt sichtbarem Grund am deaktivierten Öffnen-Button.
+  it("failed: einheitlicher Fehlversuch-Status + sichtbarer Öffnen-Grund", () => {
+    render(
+      <LiveMarketComparison
+        comparison={comparison({ status: "failed", items: [], item_count: 0 })}
+        loaded
+        onOpenComparison={vi.fn()}
+      />
+    )
+    expect(screen.getByTestId("market-editor-status")).toHaveTextContent(
+      "Letzter Versuch fehlgeschlagen"
+    )
+    expect(screen.queryByText("Nicht analysiert")).toBeNull()
+    expect(
+      screen.getByRole("button", { name: "Marktvergleich öffnen" })
+    ).toBeDisabled()
+    expect(
+      screen.getByTestId("market-editor-open-disabled-reason")
+    ).toHaveTextContent("Letzter Versuch fehlgeschlagen — unter Quellen erneut erstellen.")
+  })
+
+  it("zeigt ein kompaktes Marktbild aus belegten Einträgen", () => {
+    render(
+      <LiveMarketComparison comparison={comparison()} loaded onOpenComparison={vi.fn()} />
+    )
+    expect(screen.getByTestId("market-editor-picture")).toHaveTextContent("Lösungsarten")
+  })
+
+  it("zeigt das Gesamturteil als kompaktes Entscheidungsboard, wenn vorhanden", () => {
+    render(
+      <LiveMarketComparison
+        comparison={comparison({
+          competition_judgment: {
+            status: "no_direct_equivalent_in_scope",
+            rationale: "…",
+            scope_summary: "Im definierten Suchumfang: 2 geprüfte öffentliche Quellen, 2 untersuchte Lösungskandidaten.",
+            relevant_candidate_count: 2,
+            key_overlaps: [],
+            evidenced_differentiators: [],
+            plausible_unverified_differentiators: [],
+            open_evidence_gaps: [],
+            allowed_formulations: [],
+            disallowed_formulations: [],
+            can_insert_into_application: false,
+          },
+        })}
+        loaded
+        onOpenComparison={vi.fn()}
+      />
+    )
+    const board = screen.getByTestId("market-editor-judgment")
+    expect(board).toHaveTextContent("Keine direkt gleichwertige Lösung im Suchraum")
+    expect(board).toHaveTextContent("Im definierten Suchumfang")
+  })
 })

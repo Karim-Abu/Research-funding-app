@@ -111,11 +111,12 @@ export function RoleCard({
           <AvailabilityBadge role={role} />
         </span>
         <span className="mt-1.5 block text-sm leading-relaxed text-muted-foreground">
+          <span className="font-medium text-foreground">Wobei hilft sie?</span>{" "}
           {role.specialization}
         </span>
         {catalog && (
           <span className="mt-3 block border-t border-border/70 pt-3 text-sm text-foreground">
-            <span className="font-medium">Liefert:</span>{" "}
+            <span className="font-medium">Was erhalten Sie?</span>{" "}
             {role.outputSummary}
           </span>
         )}

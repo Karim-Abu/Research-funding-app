@@ -1,12 +1,14 @@
 "use client"
 
-// Wide, read-only market-comparison table for the Entwurf screen (M10.3).
-// A competitor comparison needs horizontal space — the compact Markt tab links
-// here. "Als Argument übernehmen" inserts a German sentence into the LOCAL
-// editor buffer only (HITL: the user reviews and saves; nothing is auto-saved).
-// Status changes (accept/reject) stay on the Quellen screen.
+// Wide, read-only market-comparison detail for the Entwurf screen (M10.3).
+// Structured as: Gesamturteil (decision) → Marktbild (market picture, statistics
+// only) → Lösungslandschaft (solution candidates grouped by type). Only allowed,
+// source-qualified formulations can be inserted; disallowed statements are shown
+// as a hard block. Insertion writes into the LOCAL editor buffer only (HITL:
+// the user reviews and saves; the normal onChange/version/undo path is used).
 
 import * as React from "react"
+import { Info, Lock } from "lucide-react"
 import {
   Sheet,
   SheetContent,
@@ -16,32 +18,57 @@ import {
 } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { MARKET_HYPOTHESIS_NOTE } from "@/lib/market-view"
+import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
+import { cn } from "@/lib/utils"
 import {
-  ITEM_CATEGORY_LABELS,
+  MARKET_HYPOTHESIS_NOTE,
+  MARKET_TONE_STYLE,
+  judgmentToneClass,
+  marketPictureFrom,
+  marketWorkspaceStatus,
+} from "@/lib/market-view"
+// CANDIDATE_TYPE_LABELS/JUDGMENT_STATUS_LABELS are consumed directly below.
+import {
+  CANDIDATE_TYPE_LABELS,
   CONFIDENCE_LABELS,
   CONFIDENCE_STYLE,
+  ITEM_CATEGORY_LABELS,
   ITEM_STATUS_LABELS,
+  JUDGMENT_STATUS_LABELS,
+  type CandidateType,
+  type CompetitionJudgmentDto,
   type MarketComparisonDto,
   type MarketComparisonItemDto,
+  type SolutionLandscapeCandidateDto,
 } from "@/lib/market-comparison"
 
 const INSERT_BLOCKED_HINT =
-  "Nur belegte, nicht abgelehnte Einträge mit Differenzierungshinweis können übernommen werden."
+  "Nur belegte, auf den Suchraum eingeschränkte Aussagen können übernommen werden."
+const SOURCE_HINT = "gestützt auf die im Vergleich verwendeten geprüften öffentlichen Quellen"
+
+// Stable display order for the Lösungslandschaft groups.
+const CANDIDATE_TYPE_ORDER: CandidateType[] = [
+  "direct_competitor",
+  "adjacent_solution",
+  "substitute",
+  "open_source_solution",
+  "reference_infrastructure",
+  "manual_or_internal_alternative",
+]
 
 interface MarketComparisonSheetProps {
   open: boolean
   onOpenChange: (open: boolean) => void
   comparison: MarketComparisonDto | null
-  /** Inserts the argument sentence into the local draft buffer (unsaved). */
-  onInsertArgument: (item: MarketComparisonItemDto) => void
+  /** Inserts a source-qualified formulation into the local draft buffer (unsaved). */
+  onInsertText: (text: string) => void
 }
 
 export function MarketComparisonSheet({
   open,
   onOpenChange,
   comparison,
-  onInsertArgument,
+  onInsertText,
 }: MarketComparisonSheetProps) {
   const [inserted, setInserted] = React.useState(false)
 
@@ -50,17 +77,22 @@ export function MarketComparisonSheet({
   }, [open])
 
   const items = comparison?.items ?? []
-  const insertableOf = (item: MarketComparisonItemDto) =>
-    item.confidence_label === "source_backed" &&
-    item.status !== "rejected" &&
-    Boolean(item.differentiation_relevance?.trim())
-  const hasBlockedRows = items.some((item) => !insertableOf(item))
+  const status = marketWorkspaceStatus(comparison)
+  const picture = marketPictureFrom(comparison)
+  const judgment = comparison?.competition_judgment ?? null
+  const landscape = comparison?.solution_landscape ?? null
+  const scopeStale = comparison?.scope_stale ?? false
+
+  function insert(text: string) {
+    onInsertText(`${text} (${SOURCE_HINT})`)
+    setInserted(true)
+  }
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
       <SheetContent
         side="right"
-        className="w-[760px] gap-0 overflow-y-auto sm:max-w-[760px]"
+        className="gap-0 overflow-y-auto data-[side=right]:w-[940px] data-[side=right]:max-w-[95vw] data-[side=right]:sm:max-w-[95vw]"
         data-testid="market-comparison-sheet"
       >
         <SheetHeader>
@@ -68,115 +100,80 @@ export function MarketComparisonSheet({
           <SheetDescription>{MARKET_HYPOTHESIS_NOTE}</SheetDescription>
         </SheetHeader>
 
-        <div className="flex flex-col gap-3 px-4 pb-4">
-          {inserted && (
-            <p
-              role="status"
-              className="rounded-md border border-status-fulfilled/30 bg-status-fulfilled/8 px-3 py-2 text-xs text-foreground"
+        <div className="flex flex-col gap-4 px-4 pb-6">
+          <div className="flex flex-wrap items-center gap-2">
+            <span
+              data-testid="market-sheet-status"
+              className={cn(
+                "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                MARKET_TONE_STYLE[status.tone]
+              )}
             >
-              Argument eingefügt — noch nicht gespeichert. Prüfen und speichern
-              Sie den Text im Editor.
+              {status.label}
+            </span>
+            {status.hint && <span className="text-[11px] text-muted-foreground">{status.hint}</span>}
+            {scopeStale && (
+              <span
+                data-testid="market-sheet-stale"
+                className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}
+              >
+                Suchraum geändert — neu erstellen
+              </span>
+            )}
+          </div>
+
+          {comparison?.comparison_basis && <MarketComparisonBasis basis={comparison.comparison_basis} />}
+
+          {inserted && (
+            <p role="status" className="rounded-md border border-status-fulfilled/30 bg-status-fulfilled/8 px-3 py-2 text-[11px] text-foreground">
+              Aussage eingefügt — noch nicht gespeichert. Prüfen und speichern Sie den Text im Editor.
             </p>
           )}
 
-          {items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">
-              Noch keine Vergleichseinträge. Erstellen Sie den Vergleich unter
-              Quellen aus importierten öffentlichen Quellen.
-            </p>
+          {judgment && <JudgmentCard judgment={judgment} onInsert={insert} />}
+
+          {/* Sektion A — Marktbild (nur Marktinformationen, keine Lösungskandidaten). */}
+          {picture.points.length > 0 && (
+            <section data-testid="market-picture" className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
+              <p className="text-xs font-semibold text-foreground">Marktbild</p>
+              <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen (Grösse, Segmente, Trends, Nachfrage) — keine Wettbewerber.</p>
+              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
+                {picture.points.map((point) => (
+                  <React.Fragment key={point.label}>
+                    <dt className="text-muted-foreground">{point.label}</dt>
+                    <dd className="text-foreground">{point.value}</dd>
+                  </React.Fragment>
+                ))}
+              </dl>
+            </section>
+          )}
+
+          {/* Sektion B — Lösungslandschaft (Kandidaten nach Typ; getrennt vom Marktbild). */}
+          {landscape && landscape.candidates.length > 0 ? (
+            <section data-testid="market-solution-landscape" className="flex flex-col gap-3">
+              <div>
+                <p className="text-xs font-semibold text-foreground">Lösungslandschaft</p>
+                <p className="text-[11px] text-muted-foreground">Gefundene Lösungen und Alternativen, gruppiert nach Art.</p>
+              </div>
+              {CANDIDATE_TYPE_ORDER.map((type) => {
+                const group = landscape.candidates.filter((c) => c.candidate_type === type)
+                if (group.length === 0) return null
+                return (
+                  <div key={type}>
+                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                      {CANDIDATE_TYPE_LABELS[type]} ({group.length})
+                    </p>
+                    <ul className="flex flex-col gap-2">
+                      {group.map((candidate) => (
+                        <CandidateCard key={candidate.item_id} candidate={candidate} onInsert={insert} />
+                      ))}
+                    </ul>
+                  </div>
+                )
+              })}
+            </section>
           ) : (
-            <div className="overflow-x-auto">
-              <table className="w-full border-collapse text-left text-xs">
-                <thead>
-                  <tr className="border-b border-border text-muted-foreground">
-                    <th className="py-2 pr-3 font-medium">Wettbewerber / Lösung</th>
-                    <th className="py-2 pr-3 font-medium">Zielgruppe</th>
-                    <th className="py-2 pr-3 font-medium">Stärke</th>
-                    <th className="py-2 pr-3 font-medium">Schwäche / Lücke</th>
-                    <th className="py-2 pr-3 font-medium">Differenzierung</th>
-                    <th className="py-2 pr-3 font-medium">Quelle</th>
-                    <th className="py-2 pr-3 font-medium">Status</th>
-                    <th className="py-2 font-medium">
-                      <span className="sr-only">Aktion</span>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {items.map((item) => {
-                    const insertable = insertableOf(item)
-                    return (
-                      <tr key={item.item_id} className="border-b border-border/60 align-top">
-                        <td className="py-2 pr-3">
-                          <p className="font-medium text-foreground">{item.name}</p>
-                          <p className="text-[11px] text-muted-foreground">
-                            {ITEM_CATEGORY_LABELS[item.category]}
-                          </p>
-                        </td>
-                        <td className="py-2 pr-3 text-muted-foreground">
-                          {item.target_customer_segment?.trim() || "—"}
-                        </td>
-                        <td className="py-2 pr-3 text-muted-foreground">
-                          {item.strengths?.trim() || "—"}
-                        </td>
-                        <td className="py-2 pr-3 text-muted-foreground">
-                          {item.weaknesses?.trim() || "—"}
-                        </td>
-                        <td className="py-2 pr-3 text-muted-foreground">
-                          {item.differentiation_relevance?.trim() || "—"}
-                        </td>
-                        <td className="py-2 pr-3">
-                          {item.evidence_quotes.length > 0 ? (
-                            <blockquote className="border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
-                              „{item.evidence_quotes[0].quote}“
-                            </blockquote>
-                          ) : (
-                            <span className="text-[11px] text-muted-foreground">
-                              Kein belegtes Zitat
-                            </span>
-                          )}
-                        </td>
-                        <td className="py-2 pr-3">
-                          <div className="flex flex-col items-start gap-1">
-                            <Badge
-                              variant="secondary"
-                              className={CONFIDENCE_STYLE[item.confidence_label]}
-                            >
-                              {CONFIDENCE_LABELS[item.confidence_label]}
-                            </Badge>
-                            {item.status !== "proposed" && (
-                              <span className="text-[11px] text-muted-foreground">
-                                {ITEM_STATUS_LABELS[item.status]}
-                              </span>
-                            )}
-                          </div>
-                        </td>
-                        <td className="py-2">
-                          <Button
-                            size="xs"
-                            variant="outline"
-                            disabled={!insertable}
-                            title={insertable ? undefined : INSERT_BLOCKED_HINT}
-                            onClick={() => {
-                              onInsertArgument(item)
-                              setInserted(true)
-                            }}
-                          >
-                            Als Argument übernehmen
-                          </Button>
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-              {/* Visible reason — disabled buttons swallow their title tooltip
-                  (pointer-events-none), so the rule is stated once below. */}
-              {hasBlockedRows && (
-                <p className="mt-2 text-[11px] text-muted-foreground">
-                  {INSERT_BLOCKED_HINT}
-                </p>
-              )}
-            </div>
+            items.length > 0 && <LegacyTable items={items} onInsert={insert} />
           )}
 
           {comparison && comparison.research_gaps.length > 0 && (
@@ -190,13 +187,14 @@ export function MarketComparisonSheet({
             </div>
           )}
 
+          {items.length === 0 && !judgment && (
+            <p className="text-sm text-muted-foreground">
+              Noch keine Vergleichseinträge. Erstellen Sie den Vergleich unter Quellen aus importierten öffentlichen Quellen.
+            </p>
+          )}
+
           <div className="flex items-center gap-2 border-t border-border pt-3">
-            <Button
-              size="sm"
-              variant="ghost"
-              render={<a href="/quellen" />}
-              nativeButton={false}
-            >
+            <Button size="sm" variant="ghost" render={<a href="/quellen" />} nativeButton={false}>
               Quellen öffnen
             </Button>
             <span className="text-[11px] text-muted-foreground">
@@ -206,5 +204,222 @@ export function MarketComparisonSheet({
         </div>
       </SheetContent>
     </Sheet>
+  )
+}
+
+function JudgmentCard({
+  judgment,
+  onInsert,
+}: {
+  judgment: CompetitionJudgmentDto
+  onInsert: (text: string) => void
+}) {
+  return (
+    <section data-testid="market-judgment" className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-semibold text-foreground">Gesamturteil</h3>
+        <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", judgmentToneClass(judgment.status))}>
+          {JUDGMENT_STATUS_LABELS[judgment.status]}
+        </span>
+      </div>
+      <p className="text-xs text-foreground">{judgment.rationale}</p>
+      <p className="text-[11px] text-muted-foreground">{judgment.scope_summary}</p>
+
+      {judgment.key_overlaps.length > 0 && (
+        <div className="text-[11px]">
+          <span className="font-medium text-foreground">Überschneidungen: </span>
+          <span className="text-muted-foreground">{judgment.key_overlaps.join(" · ")}</span>
+        </div>
+      )}
+      {judgment.evidenced_differentiators.length > 0 && (
+        <div className="text-[11px]">
+          <p className="font-medium text-foreground">Belegte Differenzierung</p>
+          <ul className="list-disc pl-4 text-muted-foreground">
+            {judgment.evidenced_differentiators.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
+      )}
+      {judgment.plausible_unverified_differentiators.length > 0 && (
+        <div className="text-[11px]">
+          <p className="font-medium text-status-partial">Plausibel, aber noch ungeprüft</p>
+          <ul className="list-disc pl-4 text-muted-foreground">
+            {judgment.plausible_unverified_differentiators.map((d, i) => <li key={i}>{d}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {/* Antragsfähige (zulässige) Aussagen — nur wenn belegt & Suchraum aktuell. */}
+      {judgment.allowed_formulations.length > 0 && (
+        <div className="flex flex-col gap-1.5">
+          <p className="text-[11px] font-medium text-foreground">Für den Antrag zulässige Aussagen</p>
+          {judgment.allowed_formulations.map((text, i) => (
+            <div key={i} className="flex items-start justify-between gap-2 rounded-md border border-border px-2.5 py-1.5">
+              <span className="text-[11px] text-foreground">{text}</span>
+              <Button
+                size="xs"
+                variant="outline"
+                disabled={!judgment.can_insert_into_application}
+                title={judgment.can_insert_into_application ? undefined : INSERT_BLOCKED_HINT}
+                onClick={() => onInsert(text)}
+              >
+                Übernehmen
+              </Button>
+            </div>
+          ))}
+          {!judgment.can_insert_into_application && (
+            <p className="text-[11px] text-muted-foreground">{INSERT_BLOCKED_HINT}</p>
+          )}
+        </div>
+      )}
+
+      {/* Overclaim-Schutz: sichtbarer Sperr-Block. */}
+      {judgment.disallowed_formulations.length > 0 && (
+        <div data-testid="market-disallowed" className="rounded-md border border-destructive/30 bg-destructive/5 px-2.5 py-2">
+          <p className="flex items-center gap-1.5 text-[11px] font-medium text-destructive">
+            <Lock className="size-3" /> Nicht zulässige Aussagen (nicht übernehmbar)
+          </p>
+          <ul className="mt-1 list-disc pl-4 text-[11px] text-muted-foreground">
+            {judgment.disallowed_formulations.map((text, i) => <li key={i}>{text}</li>)}
+          </ul>
+        </div>
+      )}
+
+      {judgment.open_evidence_gaps.length > 0 && (
+        <div className="text-[11px]">
+          <p className="font-medium text-foreground">Offene Evidenzlücken</p>
+          <ul className="list-disc pl-4 text-muted-foreground">
+            {judgment.open_evidence_gaps.slice(0, 5).map((g, i) => <li key={i}>{g}</li>)}
+          </ul>
+        </div>
+      )}
+    </section>
+  )
+}
+
+function CandidateCard({
+  candidate,
+  onInsert,
+}: {
+  candidate: SolutionLandscapeCandidateDto
+  onInsert: (text: string) => void
+}) {
+  const insertable = candidate.allowed_formulations.length > 0 && candidate.source_scope_ok
+  return (
+    <li className="rounded-md border border-border px-3 py-2.5">
+      <div className="flex items-start justify-between gap-2">
+        <p className="text-xs font-semibold text-foreground">{candidate.name}</p>
+        <Badge variant="secondary" className={CONFIDENCE_STYLE[candidate.confidence_label]}>
+          {CONFIDENCE_LABELS[candidate.confidence_label]}
+        </Badge>
+      </div>
+      {candidate.overlaps.length > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">Überschneidungen: </span>
+          {candidate.overlaps.join(" · ")}
+        </p>
+      )}
+      {candidate.evidencing_differentiators.length > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          <span className="font-medium text-foreground">Belegte Differenzierung: </span>
+          {candidate.evidencing_differentiators.join(" ")}
+        </p>
+      )}
+      {candidate.unverified_differentiators.length > 0 && (
+        <p className="mt-1 text-[11px] text-muted-foreground">
+          <span className="font-medium text-status-partial">Plausibel (ungeprüft): </span>
+          {candidate.unverified_differentiators.join(" ")}
+        </p>
+      )}
+      {candidate.evidence_quotes.length > 0 && (
+        <blockquote className="mt-1 border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
+          „{candidate.evidence_quotes[0].quote}“
+        </blockquote>
+      )}
+      {candidate.allowed_formulations.map((text, i) => (
+        <Button
+          key={i}
+          size="xs"
+          variant="outline"
+          className="mt-1.5"
+          disabled={!insertable}
+          title={insertable ? undefined : INSERT_BLOCKED_HINT}
+          onClick={() => onInsert(text)}
+        >
+          Als Argument übernehmen
+        </Button>
+      ))}
+    </li>
+  )
+}
+
+// Fallback for comparisons that predate the analytical landscape (no
+// solution_landscape on the response): the original per-item table.
+function LegacyTable({
+  items,
+  onInsert,
+}: {
+  items: MarketComparisonItemDto[]
+  onInsert: (text: string) => void
+}) {
+  const insertableOf = (item: MarketComparisonItemDto) =>
+    item.confidence_label === "source_backed" &&
+    item.status !== "rejected" &&
+    Boolean(item.differentiation_relevance?.trim())
+  return (
+    <div className="overflow-x-auto">
+      <table className="w-full border-collapse text-left text-xs">
+        <thead>
+          <tr className="border-b border-border text-muted-foreground">
+            <th className="py-2 pr-3 font-medium">Wettbewerber / Lösung</th>
+            <th className="py-2 pr-3 font-medium">Differenzierung</th>
+            <th className="py-2 pr-3 font-medium">Quelle</th>
+            <th className="py-2 pr-3 font-medium">Status</th>
+            <th className="py-2 font-medium"><span className="sr-only">Aktion</span></th>
+          </tr>
+        </thead>
+        <tbody>
+          {items.map((item) => {
+            const insertable = insertableOf(item)
+            return (
+              <tr key={item.item_id} className="border-b border-border/60 align-top">
+                <td className="py-2 pr-3">
+                  <p className="font-medium text-foreground">{item.name}</p>
+                  <p className="text-[11px] text-muted-foreground">{ITEM_CATEGORY_LABELS[item.category]}</p>
+                </td>
+                <td className="py-2 pr-3 text-muted-foreground">{item.differentiation_relevance?.trim() || "—"}</td>
+                <td className="py-2 pr-3">
+                  {item.evidence_quotes.length > 0 ? (
+                    <blockquote className="border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
+                      „{item.evidence_quotes[0].quote}“
+                    </blockquote>
+                  ) : (
+                    <span className="text-[11px] text-muted-foreground">Kein belegtes Zitat</span>
+                  )}
+                </td>
+                <td className="py-2 pr-3">
+                  <Badge variant="secondary" className={CONFIDENCE_STYLE[item.confidence_label]}>
+                    {CONFIDENCE_LABELS[item.confidence_label]}
+                  </Badge>
+                  {item.status !== "proposed" && (
+                    <span className="block text-[11px] text-muted-foreground">{ITEM_STATUS_LABELS[item.status]}</span>
+                  )}
+                </td>
+                <td className="py-2">
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={!insertable}
+                    title={insertable ? undefined : INSERT_BLOCKED_HINT}
+                    onClick={() => onInsert(`Abgrenzung zu ${item.name}: ${item.differentiation_relevance?.trim() ?? ""}`)}
+                  >
+                    Als Argument übernehmen
+                  </Button>
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
   )
 }

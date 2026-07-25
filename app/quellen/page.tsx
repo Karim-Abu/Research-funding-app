@@ -8,7 +8,10 @@ import { AnalyseEinstellungenDialog } from "@/components/run/analyse-einstellung
 import { LiveRunBanner } from "@/components/run/live-run-banner"
 import { AI_REASON_INFO, FALLBACK_AI_REASON } from "@/lib/redraft"
 import { SourceTable } from "@/components/quellen/source-table"
-import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
+import {
+  PublicResearchPanel,
+  type MarketReadiness,
+} from "@/components/quellen/public-research-panel"
 import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
 import {
   AnalysisProgressBanner,
@@ -64,7 +67,7 @@ import {
   UPLOAD_HINT_KEY,
   type SourceDocumentDto,
 } from "@/lib/sources"
-import { getCapabilities, type Capabilities } from "@/lib/capabilities"
+import { capabilitiesSelfHealing, getCapabilities, type Capabilities } from "@/lib/capabilities"
 import {
   cancelRun,
   createRun,
@@ -602,9 +605,10 @@ function QuellenPageContent() {
   const [capabilities, setCapabilities] = React.useState<Capabilities | null>(
     null
   )
-  // Marktvergleich-Gate: mindestens eine live abgerufene, importierte und
-  // inhaltlich positiv geprüfte Quelle (gemeldet vom Research-Panel).
-  const [marketSourceEligible, setMarketSourceEligible] = React.useState(false)
+  // Marktvergleich-Gate + Fortschritt (2026-07-24): Bereitschaft, Zähler und
+  // nächste sinnvolle Aktion — gemeldet vom Research-Panel.
+  const [marketReadiness, setMarketReadiness] =
+    React.useState<MarketReadiness | null>(null)
   // Einmaliger Hinweis aus dem Intake: Projekt gespeichert, Upload offen.
   const [uploadHint, setUploadHint] = React.useState(false)
   // RUN 4A: Primärantrags-Metadaten für die Zweck-Gruppierung der Quellen.
@@ -618,7 +622,22 @@ function QuellenPageContent() {
   React.useEffect(() => {
     if (!liveMode) return
     setProjectId(getActiveProjectId())
-    void getCapabilities().then(setCapabilities)
+    // Der abgelaufene Live-Preflight heilt sich im Backend beim Capabilities-
+    // Read selbst (lazy Auto-Refresh). Kurz nachpollen (max. ~60 s), bis KI/
+    // Webrecherche verfügbar sind — dann aufhören (kein Dauer-Polling).
+    let stopped = false
+    let attempts = 0
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const loadCapabilities = async () => {
+      const caps = await getCapabilities()
+      if (stopped) return
+      setCapabilities(caps)
+      if (capabilitiesSelfHealing(caps) && attempts < 12) {
+        attempts += 1
+        timer = setTimeout(() => void loadCapabilities(), 5000)
+      }
+    }
+    void loadCapabilities()
     try {
       if (window.sessionStorage.getItem(UPLOAD_HINT_KEY) === "1") {
         window.sessionStorage.removeItem(UPLOAD_HINT_KEY)
@@ -626,6 +645,10 @@ function QuellenPageContent() {
       }
     } catch {
       // Storage blockiert — kein Hinweis.
+    }
+    return () => {
+      stopped = true
+      if (timer) clearTimeout(timer)
     }
   }, [liveMode])
 
@@ -1070,7 +1093,7 @@ function QuellenPageContent() {
                 projectId={projectId}
                 dataClass={effectiveDataClass ?? "confidential"}
                 onImported={refreshSources}
-                onEligibilityChange={setMarketSourceEligible}
+                onEligibilityChange={setMarketReadiness}
               />
             )}
             {projectId && capabilities?.features?.market_comparison && (
@@ -1079,8 +1102,9 @@ function QuellenPageContent() {
                 sourceNames={Object.fromEntries(
                   liveSources.map((s) => [s.source_id, s.name])
                 )}
+                readiness={marketReadiness}
                 disabledReason={
-                  marketSourceEligible
+                  marketReadiness?.hasEligible
                     ? null
                     : "Noch keine live abgerufene, importierte und inhaltlich positiv geprüfte Quelle vorhanden."
                 }

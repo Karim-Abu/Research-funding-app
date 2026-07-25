@@ -121,8 +121,19 @@ class Settings(BaseSettings):
     agent_model_claude_fable_5_id: str | None = None
     agent_quality_ceiling_enabled: bool = False
     provider_preflight_ttl_seconds: int = 60 * 60 * 6
-    # JSON mapping provider model id -> versioned price evidence object. A live
-    # deployment supplies only prices it has verified; missing means unknown.
+    # Lazy auto-refresh: when the app is in use (a capabilities read happens) and
+    # the live preflight is expired / near expiry / never run, kick ONE background
+    # refresh instead of leaving live features silently unavailable. Fail-closed
+    # (never fakes readiness) and cost-bounded (only while a user is active, with
+    # an in-flight lock + a per-process cooldown). Set false to require the manual
+    # Live-System-Status trigger.
+    provider_preflight_auto_refresh: bool = True
+    # Refresh proactively once the remaining TTL drops below this margin, so an
+    # active user rarely meets the expired state at all.
+    provider_preflight_refresh_margin_seconds: int = 60 * 30
+    # Deprecated historic CHF configuration, retained only for backwards
+    # compatible settings parsing. Exact pricing is USD-first in
+    # evaluation.pricing; this mapping never prices a new provider call.
     agent_model_pricing_chf_per_million: dict[str, dict[str, Any]] = {}
 
     # R6 Rubric v0: deterministische Reviewer-Heuristiken (severity_class

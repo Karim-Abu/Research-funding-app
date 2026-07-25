@@ -23,7 +23,6 @@ const LIVE_RESOURCES: ReadonlySet<string> = new Set([
   "fields",
   "review",
   "exports",
-  "live-system-status",
 ])
 
 let currentMode: BackendMode = "mock"

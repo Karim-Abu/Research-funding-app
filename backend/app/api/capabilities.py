@@ -68,6 +68,11 @@ def get_capabilities(
     settings: Settings = Depends(settings_dep),
     db: Session | None = Depends(get_db),
 ) -> Capabilities:
+    # Lazy, cost-bounded: while the app is in use, keep the live preflight fresh
+    # in the background so KI/Webrecherche don't silently expire (TTL). Non-blocking,
+    # fail-closed — the refreshed state is reflected on the next capabilities read.
+    from app.evaluation.auto_preflight import maybe_refresh
+    maybe_refresh(db, settings)
     from app.evaluation.preflight import firecrawl_readiness
     web_state = firecrawl_readiness(db, settings)
     web_readiness = FeatureReadiness(

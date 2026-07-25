@@ -161,11 +161,15 @@ class OpenAIProvider:
                 ),
             )
         usage = body.get("usage", {})
+        cached_input_tokens = int(
+            (usage.get("input_tokens_details") or {}).get("cached_tokens", 0)
+        )
         return ProviderResult(
             raw_output=text,
             usage=ProviderUsage(
                 input_tokens=int(usage.get("input_tokens", 0)),
                 output_tokens=int(usage.get("output_tokens", 0)),
+                cached_input_tokens=cached_input_tokens,
                 reasoning_tokens=int(
                     (usage.get("output_tokens_details") or {}).get(
                         "reasoning_tokens", 0

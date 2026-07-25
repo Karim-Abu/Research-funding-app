@@ -33,7 +33,11 @@ from app.drafts import (
     is_empty,
 )
 from app.drafts.charcount import within_limit
-from app.drafts.sections import SectionStructureError, merge_section
+from app.drafts.sections import (
+    SectionStructureError,
+    merge_section,
+    section_error_detail,
+)
 from app.registry import PortalFieldDef, get_registry
 from app.repositories import audit
 from app.repositories import evidence as evidence_repo
@@ -365,7 +369,10 @@ def apply_update(
         except SectionStructureError as exc:
             raise ProblemException(
                 status=422, code=exc.code, title="Unprocessable Entity",
-                detail="Die Abschnittsstruktur ist unvollstaendig oder mehrdeutig.",
+                detail=(
+                    section_error_detail(exc.code)
+                    or "Die Abschnittsstruktur ist unvollstaendig oder mehrdeutig."
+                ),
             ) from exc
     if not within_limit(final_text, draft.character_limit):
         raise ProblemException(

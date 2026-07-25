@@ -33,7 +33,7 @@ describe("LiveRunBanner", () => {
     render(
       <LiveRunBanner
         processingMode="deterministic_only"
-        disabledReason="Live-KI ist deaktiviert. Setzen Sie AI_EVAL_MODE=real und führen Sie den synthetischen Preflight erneut aus."
+        disabledReason="Live-KI ist deaktiviert. Öffnen Sie den Systemstatus, um die Verbindung zu prüfen."
         onCreate={onCreate}
       />
     )
