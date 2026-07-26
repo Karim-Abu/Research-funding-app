@@ -1100,6 +1100,48 @@ def _partner_names(structured: dict) -> list[str]:
     return names
 
 
+# --------------------------------------------------------------------------
+# 2026-07-26 — Halluzinationsschutz: technische Kennungen dürfen keine Zahlen
+# erlauben.
+#
+# ``allowed_facts._NUMBER_RE`` erkennt jede Ziffernfolge an einer
+# Nicht-Wortgrenze. Im rohen INPUT-Payload stehen aber UUIDs (``run_id``,
+# ``primary_application_source_id``, …) und reine Telemetrie
+# (``character_count``, ``item_count``). Deren Ziffern landeten dadurch in der
+# Erlaubt-Basis, und ``_is_derivable`` erzeugte daraus per Arithmetik weitere
+# „erlaubte" Zahlen. Folge: eine erfundene Zahl konnte die Prüfung zufällig
+# passieren (gemessen ~5 % pro Lauf; sichtbar als sporadisch rote
+# ``invented_numeric_token``-Fälle).
+#
+# Diese Projektion gilt AUSSCHLIESSLICH für die Erlaubt-Basis. Das an den
+# Provider gesendete Payload bleibt unverändert — nur die Frage „welche Zahl
+# darf im Text vorkommen" wird auf inhaltstragende Felder eingeschränkt.
+# --------------------------------------------------------------------------
+_IDENTIFIER_KEY_RE = re.compile(r"(?:^|_)(?:id|ids|hash|hashes|uuid|version)$", re.IGNORECASE)
+_TELEMETRY_KEYS = frozenset({
+    "context_components", "character_count", "item_count", "character_limit",
+    "research_candidate_count",
+})
+_UUID_RE = re.compile(
+    r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b"
+)
+
+
+def _facts_only(value: object) -> object:
+    """Entfernt Kennungen und Telemetrie — nur für die Erlaubt-Basis."""
+    if isinstance(value, dict):
+        return {
+            key: _facts_only(item)
+            for key, item in value.items()
+            if key not in _TELEMETRY_KEYS and not _IDENTIFIER_KEY_RE.search(str(key))
+        }
+    if isinstance(value, list):
+        return [_facts_only(item) for item in value]
+    if isinstance(value, str):
+        return _UUID_RE.sub("", value)
+    return value
+
+
 def build_allowed_facts(
     ctx: A2Context, input_payload: dict
 ) -> allowed_facts.AllowedFactsManifest:
@@ -1112,10 +1154,14 @@ def build_allowed_facts(
     stehen (ein wegen Budget entfallener Partner gilt nie als bekannt).
     """
     payload_text = _json(input_payload)
+    # Erlaubt-Basis ohne Kennungen/Telemetrie (siehe _facts_only) …
     components = [
         *ctx.visible_components,
-        ("structured_input_payload", payload_text),
+        ("structured_input_payload", _json(_facts_only(input_payload))),
     ]
+    # … der Sichtbarkeitstest für Partnernamen nutzt weiterhin das echte,
+    # unveränderte Payload — sonst gälte ein tatsächlich gesendeter Name als
+    # nicht gesendet.
     visible_text = "\n".join([payload_text, *(text for _kind, text in ctx.visible_components)])
     haystack = visible_text.casefold()
     names = [
