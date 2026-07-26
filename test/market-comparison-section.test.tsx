@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { MarketComparisonSection } from "@/components/quellen/market-comparison-section"
@@ -45,6 +45,12 @@ function comparison(overrides: Record<string, unknown> = {}) {
     ],
     ...overrides,
   }
+}
+
+// Die Lösungslandschaft-Tabelle, Marktbild-Prüfliste, Konsequenzen und
+// Quellenliste liegen hinter «Details öffnen» (Ergebnis-zuerst-Ansicht).
+async function openDetails() {
+  fireEvent.click(await screen.findByRole("button", { name: "Details öffnen" }))
 }
 
 describe("MarketComparisonSection", () => {
@@ -185,6 +191,7 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
+    await openDetails()
     await waitFor(() =>
       expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
     )
@@ -235,6 +242,7 @@ describe("MarketComparisonSection", () => {
         sourceNames={{ s1: "Marktbericht (öffentlich)", s2: "Branchenstudie" }}
       />
     )
+    await openDetails()
     const table = await screen.findByTestId("market-comparison-table")
     // Lösungen: nach Lösungsart gruppiert, keine Kategorie-Sammeltitel mehr.
     expect(table).toHaveTextContent("Lösungslandschaft")
@@ -280,6 +288,7 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
+    await openDetails()
     const supports = await screen.findByRole("button", {
       name: "Marktwachstum Bericht: Stützt",
     })
@@ -310,6 +319,7 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
+    await openDetails()
     await waitFor(() =>
       expect(screen.getByText("Inhaltlich geprüft")).toBeInTheDocument()
     )
@@ -381,9 +391,12 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
-    await waitFor(() =>
-      expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
-    )
+    await openDetails()
+    let table: HTMLElement
+    await waitFor(() => {
+      table = screen.getByTestId("market-comparison-table")
+      expect(table).toBeInTheDocument()
+    })
     // Mandats-Spalten der kompakten Tabelle.
     for (const column of [
       "Anbieter/Alternative",
@@ -396,9 +409,11 @@ describe("MarketComparisonSection", () => {
     ]) {
       expect(screen.getByText(column)).toBeInTheDocument()
     }
-    expect(screen.getByText("Schweizer KMU")).toBeInTheDocument()
-    expect(screen.getByText("Schnellere Qualitätsprüfung")).toBeInTheDocument()
-    expect(screen.getByText("Abo-Modell")).toBeInTheDocument()
+    // Scoped auf die Tabelle: «Was bereits bekannt ist» zeigt dieselben
+    // belegten Werte (z. B. Kundengruppe) ausserhalb der Tabelle nochmals.
+    expect(within(table!).getByText("Schweizer KMU")).toBeInTheDocument()
+    expect(within(table!).getByText("Schnellere Qualitätsprüfung")).toBeInTheDocument()
+    expect(within(table!).getByText("Abo-Modell")).toBeInTheDocument()
     // Ehrlicher Gesamtstatus im Sektionskopf (einheitliches Viewmodel).
     expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
       "Zur Prüfung bereit"
@@ -524,6 +539,7 @@ describe("MarketComparisonSection", () => {
     render(<MarketComparisonSection projectId={PROJECT} />)
     const btn = await screen.findByRole("button", { name: "Vergleich erstellen" })
     fireEvent.click(btn)
+    await openDetails()
     await waitFor(() =>
       expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
     )

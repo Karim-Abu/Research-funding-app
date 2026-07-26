@@ -102,6 +102,13 @@ function renderSheet(dto: MarketComparisonDto, onInsertText = vi.fn()) {
 }
 
 describe("MarketComparisonSheet", () => {
+  it("gliedert sich in genau drei Abschnitte: Ergebnis, Gefundene Lösungen, Was noch fehlt", () => {
+    renderSheet(comparison())
+    expect(screen.getByTestId("market-result")).toHaveTextContent("Ergebnis")
+    expect(screen.getByTestId("market-solutions")).toHaveTextContent("Gefundene Lösungen")
+    expect(screen.getByTestId("market-gaps-section")).toHaveTextContent("Was noch fehlt")
+  })
+
   it("zeigt das Gesamturteil und trennt Marktbild von der Lösungslandschaft", () => {
     renderSheet(comparison())
     expect(screen.getByTestId("market-judgment")).toBeInTheDocument()

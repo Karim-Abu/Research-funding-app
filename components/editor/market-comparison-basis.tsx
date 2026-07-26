@@ -3,36 +3,15 @@
 // Vergleichsbasis — makes explicit "das ist deine Projektidee, dagegen wurde
 // verglichen". Read-only display of the project's own idea (confidential project
 // description, never sent out) plus the public-safe search focus the market
-// search actually used. Shared by the sheet, the editor rail and the Quellen
-// section. Editing the idea happens where it is entered (/intake).
+// search actually used. Shared by the sheet and the Quellen section (the
+// editor rail shows only a one-line "Verglichen mit" summary instead).
+// Editing the idea happens where it is entered (/intake).
 
 import { Info, Pencil, Target } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import type { ComparisonBasisDto } from "@/lib/market-comparison"
 
-export function MarketComparisonBasis({
-  basis,
-  compact = false,
-}: {
-  basis: ComparisonBasisDto
-  compact?: boolean
-}) {
-  if (compact) {
-    return (
-      <div
-        data-testid="market-basis-compact"
-        className="rounded-md border border-border bg-muted/20 px-3 py-2"
-      >
-        <p className="text-[11px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Vergleichsbasis
-        </p>
-        <p className="text-[11px] text-foreground">
-          <span className="font-medium">{basis.title}</span> — dagegen wird verglichen.
-        </p>
-      </div>
-    )
-  }
-
+export function MarketComparisonBasis({ basis }: { basis: ComparisonBasisDto }) {
   return (
     <section
       data-testid="market-basis"

@@ -221,7 +221,7 @@ export function PublicResearchPanel({
 
   if (blocked) {
     return (
-      <section className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
+      <section id="public-research-panel" className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
         <div className="flex items-center gap-2"><ShieldAlert className="size-4" /><h3 className="font-semibold">Öffentliche Recherche</h3></div>
         <p className="mt-1 text-xs text-muted-foreground">Für NDA-geschützte oder unklare Datenklassen werden keine externen Dienste aufgerufen.</p>
       </section>
@@ -266,7 +266,7 @@ export function PublicResearchPanel({
   })
 
   return (
-    <section className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
+    <section id="public-research-panel" className="rounded-lg border border-border bg-card p-5" data-testid="public-research-panel">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2"><Globe className="size-4" /><h3 className="font-semibold">Öffentliche Recherche</h3></div>

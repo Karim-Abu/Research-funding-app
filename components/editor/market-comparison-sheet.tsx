@@ -23,6 +23,7 @@ import { MarketGapList, MarketPictureList } from "@/components/editor/market-blo
 import { cn } from "@/lib/utils"
 import {
   CANDIDATE_TYPE_ORDER,
+  JUDGMENT_INSUFFICIENT_HINT,
   MARKET_HYPOTHESIS_NOTE,
   MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
@@ -137,59 +138,70 @@ export function MarketComparisonSheet({
             </p>
           )}
 
-          {judgment && <JudgmentCard judgment={judgment} onInsert={insert} />}
+          {/* Drei Abschnitte, mehr nicht: Ergebnis → Gefundene Lösungen → Was
+              noch fehlt. Marktaussagen und Quellen liegen dahinter/eine Ebene
+              tiefer (Marktbild eingeklappt, «Quellen öffnen» im Footer). */}
+          <section data-testid="market-result" className="flex flex-col gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ergebnis</h2>
+            {judgment ? (
+              <JudgmentCard judgment={judgment} onInsert={insert} />
+            ) : (
+              items.length === 0 && (
+                <p className="text-sm text-muted-foreground">
+                  Noch keine Vergleichseinträge. Erstellen Sie den Vergleich unter Quellen aus importierten öffentlichen Quellen.
+                </p>
+              )
+            )}
+          </section>
 
-          {/* Sektion A — Marktbild (nur Marktinformationen, keine Lösungskandidaten). */}
-          {picture.points.length > 0 && (
-            <section data-testid="market-picture" className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
-              <p className="text-xs font-semibold text-foreground">Marktbild</p>
-              <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen — keine Wettbewerber.</p>
-              <MarketPictureList points={picture.points} />
-            </section>
-          )}
+          <section data-testid="market-solutions" className="flex flex-col gap-3">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Gefundene Lösungen</h2>
 
-          {/* Sektion B — Lösungslandschaft (Kandidaten nach Typ; getrennt vom Marktbild). */}
-          {landscape && landscape.candidates.length > 0 ? (
-            <section data-testid="market-solution-landscape" className="flex flex-col gap-3">
-              <div>
-                <p className="text-xs font-semibold text-foreground">Lösungslandschaft</p>
-                <p className="text-[11px] text-muted-foreground">Gefundene Lösungen und Alternativen, gruppiert nach Art.</p>
+            {/* Marktbild — Marktinformationen, keine Lösungskandidaten; per Default eingeklappt. */}
+            {picture.points.length > 0 && (
+              <details data-testid="market-picture" className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
+                <summary className="cursor-pointer text-xs font-semibold text-foreground">Marktbild (Marktinformationen)</summary>
+                <p className="mb-1 mt-1 text-[11px] text-muted-foreground">Marktinformationen — keine Wettbewerber.</p>
+                <MarketPictureList points={picture.points} />
+              </details>
+            )}
+
+            {/* Lösungslandschaft (Kandidaten nach Typ; getrennt vom Marktbild). */}
+            {landscape && landscape.candidates.length > 0 ? (
+              <div data-testid="market-solution-landscape" className="flex flex-col gap-3">
+                {CANDIDATE_TYPE_ORDER.map((type) => {
+                  const group = landscape.candidates.filter((c) => c.candidate_type === type)
+                  if (group.length === 0) return null
+                  return (
+                    <div key={type}>
+                      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
+                        {CANDIDATE_TYPE_LABELS[type]} ({group.length})
+                      </p>
+                      <ul className="flex flex-col gap-2">
+                        {group.map((candidate) => (
+                          <CandidateCard key={candidate.item_id} candidate={candidate} onInsert={insert} />
+                        ))}
+                      </ul>
+                    </div>
+                  )
+                })}
               </div>
-              {CANDIDATE_TYPE_ORDER.map((type) => {
-                const group = landscape.candidates.filter((c) => c.candidate_type === type)
-                if (group.length === 0) return null
-                return (
-                  <div key={type}>
-                    <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-muted-foreground">
-                      {CANDIDATE_TYPE_LABELS[type]} ({group.length})
-                    </p>
-                    <ul className="flex flex-col gap-2">
-                      {group.map((candidate) => (
-                        <CandidateCard key={candidate.item_id} candidate={candidate} onInsert={insert} />
-                      ))}
-                    </ul>
-                  </div>
-                )
-              })}
-            </section>
-          ) : items.length > 0 ? (
-            <LegacyTable items={items} onInsert={insert} />
-          ) : (
-            hasMarketClaims && (
-              <p className="text-xs text-status-partial" role="status" data-testid="market-only-claims">
-                Im Suchumfang wurden bisher nur Marktaussagen gefunden, aber keine
-                vergleichbaren Lösungen. Die offenen Evidenzlücken zeigen, was fehlt.
-              </p>
-            )
-          )}
+            ) : items.length > 0 ? (
+              <LegacyTable items={items} onInsert={insert} />
+            ) : (
+              hasMarketClaims && (
+                <p className="text-xs text-status-partial" role="status" data-testid="market-only-claims">
+                  Im Suchumfang wurden bisher nur Marktaussagen gefunden, aber keine
+                  vergleichbaren Lösungen. Die offenen Evidenzlücken zeigen, was fehlt.
+                </p>
+              )
+            )}
+          </section>
 
-          <MarketGapList gaps={marketGaps(comparison)} limit={3} compact testId="market-gaps" />
-
-          {items.length === 0 && !judgment && (
-            <p className="text-sm text-muted-foreground">
-              Noch keine Vergleichseinträge. Erstellen Sie den Vergleich unter Quellen aus importierten öffentlichen Quellen.
-            </p>
-          )}
+          <section data-testid="market-gaps-section" className="flex flex-col gap-2">
+            <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Was noch fehlt</h2>
+            <MarketGapList gaps={marketGaps(comparison)} limit={3} compact testId="market-gaps" />
+          </section>
 
           <div className="flex items-center gap-2 border-t border-border pt-3">
             <Button size="sm" variant="ghost" render={<a href="/quellen" />} nativeButton={false}>
@@ -222,6 +234,11 @@ function JudgmentCard({
       </div>
       <p className="text-xs text-foreground">{judgment.rationale}</p>
       <p className="text-[11px] text-muted-foreground">{judgment.scope_summary}</p>
+      {judgment.status === "insufficient_evidence" && (
+        <p className="text-[11px] text-muted-foreground" data-testid="market-judgment-insufficient-hint">
+          {JUDGMENT_INSUFFICIENT_HINT}
+        </p>
+      )}
 
       {judgment.key_overlaps.length > 0 && (
         <div className="text-[11px]">

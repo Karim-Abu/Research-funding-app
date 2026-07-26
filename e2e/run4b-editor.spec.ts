@@ -524,10 +524,10 @@ test.describe.serial("RUN 4B — Schreibassistent", () => {
       "Marktinformationen vorhanden, aber noch kein belastbarer Anbieter-/Alternativenvergleich."
     )
     await expect(
-      page.getByRole("button", { name: "Marktvergleich öffnen" })
+      page.getByRole("button", { name: "Details öffnen" })
     ).toBeDisabled()
 
-    // (b) belegte Einträge → höchstens drei Findings, Sheet öffnet die
+    // (b) belegte Einträge → Rail zeigt nur Kennzahlen, Sheet öffnet die
     // zentrale Tabelle; im Editor existiert kein «Vergleich erstellen».
     await page.unroute(`**/api/projects/${projectId}/market-comparisons/latest`)
     await page.route(
@@ -569,12 +569,10 @@ test.describe.serial("RUN 4B — Schreibassistent", () => {
     await page.goto(`/editor?field=${VC}`)
     await page.getByRole("button", { name: "Prüfen", exact: true }).click()
     await page.getByRole("tab", { name: "Markt & Wettbewerb" }).click()
-    await expect(page.getByText("Anbieter 1")).toBeVisible({ timeout: 20_000 })
-    await expect(page.getByText("Anbieter 3")).toBeVisible()
-    await expect(page.getByText("Anbieter 4")).toHaveCount(0)
-    await expect(page.getByText("5 geprüfte Quellen")).toBeVisible()
+    await expect(page.getByText("5 geprüfte Quellen")).toBeVisible({ timeout: 20_000 })
+    await expect(page.getByText("5 Lösungen gefunden")).toBeVisible()
     await expect(page.getByText(/Vergleich erstellen/)).toHaveCount(0)
-    await page.getByRole("button", { name: "Marktvergleich öffnen" }).click()
+    await page.getByRole("button", { name: "Details öffnen" }).click()
     await expect(page.getByText("Markt- und Konkurrenzvergleich (Detail)").or(
       page.getByRole("dialog")
     ).first()).toBeVisible({ timeout: 20_000 })

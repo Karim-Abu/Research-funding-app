@@ -350,6 +350,16 @@ export function judgmentToneClass(status: CompetitionJudgmentStatus): string {
 }
 
 /**
+ * «Quellenlage noch nicht ausreichend» nennt nur das Ergebnis — Nutzer fragen
+ * zu Recht, wieso und ab wann es reicht. Diese Erklärung nennt das Kriterium
+ * (mind. ein durch eine geprüfte Quelle belegter UND inhaltlich bestätigter
+ * Lösungskandidat) und den nächsten Schritt, ohne die Backend-Urteilslogik
+ * zu ändern — reine Anzeige-Ergänzung.
+ */
+export const JUDGMENT_INSUFFICIENT_HINT =
+  "Ausreichend heisst: mindestens ein Lösungskandidat, der durch eine geprüfte öffentliche Quelle belegt und inhaltlich bestätigt ist. Bisher liegt das im untersuchten Suchumfang nicht vor. Nächster Schritt: weitere passende Quellen ergänzen oder gefundene Kandidaten unter Quellen inhaltlich bestätigen — danach wird der Vergleich neu bewertet."
+
+/**
  * Market picture for the compact rail. Prefers the backend market_picture and
  * falls back to the client-side derivation for older responses without it.
  */
@@ -394,6 +404,29 @@ export function marketGaps(comparison: MarketComparisonDto | null): string[] {
 
 /** Einheitlicher Veraltet-Hinweis für Karte, Rail und Sheet. */
 export const MARKET_STALE_BADGE = "Suchraum geändert — neu erstellen"
+
+// ---------------------------------------------------------------------------
+// Die drei Kennzahlen, die eine Ergebnis-zuerst-Ansicht braucht (Quellen-Karte,
+// Editor-Rail): Quellen, gefundene Lösungen, offene Lücken — an einer Stelle
+// abgeleitet, statt in jeder Oberfläche neu gezählt.
+// ---------------------------------------------------------------------------
+export interface MarketSummaryCounts {
+  sourceCount: number
+  solutionCount: number
+  gapCount: number
+}
+
+export function marketSummaryCounts(
+  comparison: MarketComparisonDto | null
+): MarketSummaryCounts {
+  const items = comparison?.items ?? []
+  const sourceCount = new Set(items.flatMap((item) => item.source_document_ids)).size
+  const byType = comparison?.solution_landscape?.candidate_count_by_type
+  const solutionCount = byType
+    ? Object.values(byType).reduce((sum: number, n) => sum + (n ?? 0), 0)
+    : items.filter((item) => candidateTypeOf(item) !== null).length
+  return { sourceCount, solutionCount, gapCount: marketGaps(comparison).length }
+}
 
 // ---------------------------------------------------------------------------
 // Relevance — market & competition matter most for Value Creation and Solution.
