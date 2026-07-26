@@ -6,15 +6,18 @@ import type {
   ReviewFindingDto,
   ReviewPackageDto,
 } from "./review"
+import { REQ_FALLBACK } from "./requirements-view"
 
 // ---------------------------------------------------------------------------
-// Fallbacks — never show raw ids/enums/undefined.
+// Fallbacks — never show raw ids/enums/undefined. «Portalfeld» und «Beleg»
+// teilen den Wortlaut mit der Anforderungsansicht (REQ_FALLBACK), damit
+// derselbe Zustand nicht in zwei Screens unterschiedlich heisst.
 // ---------------------------------------------------------------------------
 export const REVIEW_FALLBACKS = {
   title: "Unbenannter Prüfbefund",
-  field: "Keinem konkreten Portalfeld zugeordnet",
+  field: REQ_FALLBACK.portal,
   status: "Noch nicht geprüft",
-  evidence: "Noch kein Beleg verknüpft",
+  evidence: REQ_FALLBACK.evidence,
   noReview: "Noch keine Qualitätsprüfung durchgeführt",
 } as const
 

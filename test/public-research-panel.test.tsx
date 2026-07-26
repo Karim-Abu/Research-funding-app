@@ -198,6 +198,10 @@ describe("PublicResearchPanel", () => {
           results: workspace.results.map((row) => ({
             ...row,
             status: "imported" as const,
+            // Der Import setzt Stützung/Prüfstatus automatisch (kein manueller
+            // Stützt/Teilweise/Stützt-nicht-Schritt mehr, 2026-07-26).
+            content_review_status: "reviewed",
+            support_status: "supports",
             source_document_id: "source-1",
             source_locations: [{
               source_id: "source-1", source_version_id: "version-1",
@@ -214,16 +218,15 @@ describe("PublicResearchPanel", () => {
       "href", "https://research.example.edu/report",
     )
     expect(screen.getByText("Kandidat")).toBeInTheDocument()
-    // Anf. 9 — die drei primären Entscheidungen pro Resultat.
     expect(screen.getByRole("button", { name: /Öffnen/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Verwerfen" })).toBeInTheDocument()
     fireEvent.click(screen.getByRole("button", { name: "Übernehmen und prüfen" }))
-    expect(await screen.findByText("Übernommen")).toBeInTheDocument()
+    expect(await screen.findByText("Inhaltlich geprüft")).toBeInTheDocument()
     expect(screen.getByText("Fundstelle aus abgerufener Seite")).toBeInTheDocument()
-    // Nach dem Import: die drei Prüf-Entscheidungen.
-    expect(screen.getByRole("button", { name: "Stützt" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Teilweise" })).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Stützt nicht" })).toBeInTheDocument()
+    // Kein manueller Stützt/Teilweise/Stützt-nicht-Schritt mehr nach dem Import.
+    expect(screen.queryByRole("button", { name: "Stützt" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Teilweise" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Stützt nicht" })).toBeNull()
   })
 
   it("marks demo results honestly and never offers import", async () => {
@@ -381,16 +384,20 @@ describe("PublicResearchPanel", () => {
     ).toBeInTheDocument()
   })
 
-  it("imported: die Stützt-Frage steht über der Bewertungsreihe", async () => {
+  it("imported: keine manuelle Stützt-Abfrage mehr, KI-Fund gilt als gestützt", async () => {
     const workspace = liveWorkspace()
-    workspace.results = [{ ...workspace.results[0], status: "imported" }]
+    workspace.results = [{
+      ...workspace.results[0], status: "imported",
+      content_review_status: "reviewed", support_status: "supports",
+    }]
     server.use(http.get(`/api/projects/${PROJECT}/research-workspace`, () => HttpResponse.json(workspace)))
     render(<PublicResearchPanel projectId={PROJECT} />)
     await screen.findByTestId("research-results")
-    expect(
-      screen.getByText("Stützt diese Quelle Ihre Aussagen?")
-    ).toBeInTheDocument()
-    expect(screen.getByRole("button", { name: "Stützt" })).toBeInTheDocument()
+    expect(screen.getByText("Inhaltlich geprüft")).toBeInTheDocument()
+    expect(screen.queryByText("Stützt diese Quelle Ihre Aussagen?")).toBeNull()
+    expect(screen.queryByRole("button", { name: "Stützt" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Teilweise" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Stützt nicht" })).toBeNull()
   })
 
   it("manueller Import ist immer auffindbar und öffnet bei Dienstfehler automatisch", async () => {

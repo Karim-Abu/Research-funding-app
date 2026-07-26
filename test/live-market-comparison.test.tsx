@@ -90,6 +90,30 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
     ).toBeDisabled()
   })
 
+  // Marktstatistiken sind keine Wettbewerber — auch nicht in der kompakten Rail.
+  it("führt Marktaussagen nicht als Wettbewerbs-Findings", () => {
+    const claim = {
+      ...item("m1", "s1"),
+      name: "Marktwachstum 2032",
+      category: "market_size_claim" as const,
+    }
+    render(
+      <LiveMarketComparison
+        comparison={comparison({ items: [claim], item_count: 1 })}
+        loaded
+        onOpenComparison={vi.fn()}
+      />
+    )
+    // Die Marktaussage gehört ins Marktbild …
+    expect(screen.getByTestId("market-editor-picture")).toHaveTextContent(
+      "Marktwachstum 2032"
+    )
+    // … und erzeugt keine Findings-Liste, sondern eine ehrliche Leerzeile.
+    expect(screen.getByTestId("market-editor-empty")).toHaveTextContent(
+      "Bisher nur Marktinformationen gefunden, noch keine vergleichbaren Lösungen."
+    )
+  })
+
   it("ohne Vergleich: neutraler Leerzustand mit Quellen-Link", () => {
     render(<LiveMarketComparison comparison={null} loaded />)
     expect(screen.getByTestId("market-editor-empty")).toHaveTextContent(

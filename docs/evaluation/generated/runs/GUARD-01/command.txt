@@ -1,0 +1,1 @@
+backend/.venv/Scripts/python.exe scripts/check_testdata_markers.py --root .

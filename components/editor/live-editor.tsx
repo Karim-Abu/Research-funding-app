@@ -180,10 +180,15 @@ const RECHECK_NOTICE =
   "Änderungen gespeichert. Eine erneute Prüfung ist vor der Freigabe erforderlich."
 const ACCEPT_NOTICE =
   "Text übernommen – Qualitätsprüfung erneut erforderlich."
+// Ein Satz sichtbar; die Wirkungskette steht im Aufklapper darunter (R1).
 const LINK_EXPLANATION =
-  "Die Verknüpfung ordnet eine Fundstelle diesem Entwurf zu. Sie bestätigt nicht automatisch den gesamten Text. Verknüpfte Fundstellen fliessen in die Evidenz-Prüfbereiche (Abdeckung und Suffizienz), die Zuverlässigkeitsprüfung und die Kopierbereitschaft dieses Felds ein."
+  "Eine Verknüpfung ordnet diesem Entwurf eine Fundstelle zu — sie bestätigt nicht den gesamten Text."
+const LINK_EXPLANATION_DETAILS =
+  "Verknüpfte Fundstellen fliessen in die Evidenz-Prüfbereiche (Abdeckung und Suffizienz), die Zuverlässigkeitsprüfung und die Kopierbereitschaft dieses Felds ein."
 const STALE_LINK_NOTICE =
   "Belege müssen für diese Textversion erneut geprüft werden."
+// Wie viele wählbare Belege ohne Aufklappen sichtbar sind.
+const ANCHOR_PREVIEW_COUNT = 5
 
 const SAVE_STATE_LABEL: Record<SaveState, string> = {
   saving: "Speichert …",
@@ -231,6 +236,8 @@ export function LiveEditor({
   const [notesNotice, setNotesNotice] = React.useState<string | null>(null)
   // Controlled assistant tab — lets review hints open the Belege tab directly.
   const [assistantTab, setAssistantTab] = React.useState<AssistantTab | null>(null)
+  // Die Beleg-Auswahl bleibt standardmässig kurz (R4); der Rest auf Anforderung.
+  const [showAllAnchors, setShowAllAnchors] = React.useState(false)
   // M10.3: live market comparison for the Markt tab + wide sheet.
   const [caps, setCaps] = React.useState<Capabilities | null>(null)
   const [comparison, setComparison] = React.useState<MarketComparisonDto | null>(null)
@@ -970,7 +977,13 @@ export function LiveEditor({
   // --- Right panel: Belege (live evidence cards + linking) ---
   const belegeContent = (
     <div className="flex flex-col gap-3">
-      <p className="text-xs text-muted-foreground">{LINK_EXPLANATION}</p>
+      <div className="text-xs text-muted-foreground">
+        <p>{LINK_EXPLANATION}</p>
+        <details className="mt-1">
+          <summary className="cursor-pointer">Wofür zählt eine Verknüpfung?</summary>
+          <p className="mt-1">{LINK_EXPLANATION_DETAILS}</p>
+        </details>
+      </div>
       {hasStaleLink && (
         <p className="rounded-md border border-amber-300 bg-amber-50 px-3 py-2 text-xs text-amber-900">
           {STALE_LINK_NOTICE}
@@ -1007,6 +1020,10 @@ export function LiveEditor({
                   )}
                 </p>
                 <div className="flex flex-wrap items-center gap-1.5">
+                  {/* Bewusst das lange Label: die verknüpfte Belegliste ist die
+                      Primärfläche und muss den Vorbehalt («fachliche Prüfung
+                      offen») mittragen. Die Auswahlliste unten ist sekundär und
+                      nutzt die Kurzform. */}
                   {anchor && (
                     <SupportStatusBadge
                       status={
@@ -1061,7 +1078,7 @@ export function LiveEditor({
           </a>
         </p>
       ) : (
-        anchors.map((a) => (
+        (showAllAnchors ? anchors : anchors.slice(0, ANCHOR_PREVIEW_COUNT)).map((a) => (
           <div key={a.anchor_id} className="rounded border border-border px-2 py-2 text-xs">
             <div className="flex items-center justify-between gap-2">
               <span className="truncate text-muted-foreground">{a.source_name}</span>
@@ -1086,6 +1103,16 @@ export function LiveEditor({
             </Button>
           </div>
         ))
+      )}
+      {!showAllAnchors && anchors.length > ANCHOR_PREVIEW_COUNT && (
+        <Button
+          variant="ghost"
+          size="xs"
+          className="self-start"
+          onClick={() => setShowAllAnchors(true)}
+        >
+          {`Alle ${anchors.length} Belege anzeigen`}
+        </Button>
       )}
     </div>
   )
@@ -1644,9 +1671,9 @@ export function LiveEditor({
                 className="text-xs text-muted-foreground"
                 data-testid="a2-action-explainer"
               >
-                Der ausgewählte Abschnitt wird neu strukturiert: Vorhandene
-                Fakten bleiben erhalten, fehlende Angaben werden separat
-                ausgewiesen, und nichts wird ohne Ihre Prüfung übernommen.
+                Der ausgewählte Abschnitt wird neu strukturiert — vorhandene
+                Fakten bleiben erhalten, nichts wird ohne Ihre Prüfung
+                übernommen.
               </p>
               <div className="flex flex-wrap items-center gap-2">
                 <Button
@@ -1690,8 +1717,7 @@ export function LiveEditor({
                   data-testid="a2-pending"
                   className="text-xs text-muted-foreground"
                 >
-                  Vorschlag wird erzeugt … Ihr Entwurf bleibt unverändert, bis
-                  Sie den Vorschlag prüfen und übernehmen.
+                  Vorschlag wird erzeugt … Ihr Entwurf bleibt unverändert.
                 </p>
               )}
               {a2Suggestion && !a2ReviewOpen && (
@@ -1793,15 +1819,14 @@ export function LiveEditor({
             >
               <A2ReasonNotice reason="field_not_supported" />
               <p className="text-xs text-muted-foreground">
-                Abschnittsvorschläge unterstützen aktuell «Abstract»,
-                «Executive Summary», «Lösung &amp; Innovation», «Wertschöpfung»,
-                «Finanzielle Unabhängigkeit» und «Management-Stunden».
+                Verfügbar für Abstract, Executive Summary, Lösung &amp;
+                Innovation, Wertschöpfung, Finanzielle Unabhängigkeit und
+                Management-Stunden.
               </p>
             </div>
           )}
           <p className="text-[11px] text-muted-foreground">
-            Vorschläge werden nie automatisch übernommen — Sie prüfen, übernehmen
-            oder verwerfen selbst.
+            Vorschläge werden nie automatisch übernommen.
           </p>
         </div>
       }

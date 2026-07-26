@@ -17,11 +17,10 @@ export function MarketResearchPanel({
   onImported?: () => void
 }) {
   return (
+    // R1: kein eigener Erklärsatz — das Panel darunter führt seinen eigenen Kopf
+    // samt Datenschutzregel; ein fünfter Disclaimer über derselben Fläche
+    // erhöht nur die Dichte.
     <section data-testid="market-research-panel" className="flex flex-col gap-2">
-      <p className="text-[11px] text-muted-foreground">
-        Marktquellen werden im gemeinsamen Recherchearbeitsbereich geplant, geprüft und
-        übernommen. Ein Snippet allein ist kein Beleg.
-      </p>
       <PublicResearchPanel projectId={projectId} onImported={onImported} />
     </section>
   )

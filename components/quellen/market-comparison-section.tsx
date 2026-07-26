@@ -15,12 +15,11 @@ import {
   getLatestComparison,
   MarketComparisonError,
   updateItemStatus,
-  ITEM_CATEGORY_LABELS,
   ITEM_RELATION_LABELS,
   ITEM_STATUS_LABELS,
+  CANDIDATE_TYPE_LABELS,
   CONFIDENCE_LABELS,
   CONFIDENCE_STYLE,
-  SUMMARY_SECTIONS,
   CENTRALIZATION_LABELS,
   SUPPORT_STATUS_LABELS,
   type ItemStatus,
@@ -30,11 +29,19 @@ import {
 } from "@/lib/market-comparison"
 import { JUDGMENT_STATUS_LABELS } from "@/lib/market-comparison"
 import {
+  CANDIDATE_TYPE_ORDER,
+  MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
+  QUOTE_NOT_CONFIRMED_NOTE,
+  candidateTypeOf,
   judgmentToneClass,
+  marketGaps,
   marketPictureFrom,
+  marketStaleExplanation,
   marketWorkspaceStatus,
+  quoteNeedsConfirmation,
 } from "@/lib/market-view"
+import { MarketGapList, MarketPictureList } from "@/components/editor/market-blocks"
 import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
 import { cn } from "@/lib/utils"
 import type { MarketReadiness } from "@/components/quellen/public-research-panel"
@@ -42,7 +49,9 @@ import type { MarketReadiness } from "@/components/quellen/public-research-panel
 type State = "loading" | "idle" | "generating" | "ready" | "error"
 
 // Empfehlung, KEIN Gate: der Vergleich startet ab 1 geeigneten Quelle; ab 2
-// gilt er als belastbar (Backend-Schwelle «insufficient_external_evidence»).
+// entfällt die Backend-Schwelle «insufficient_external_evidence». Zwei Quellen
+// machen einen Vergleich möglich, aber nicht belastbar — das darf die UI nicht
+// versprechen (die Aussagekraft bleibt auf den Suchumfang beschränkt).
 const RECOMMENDED_ELIGIBLE_SOURCES = 2
 
 function readinessLine(readiness: MarketReadiness): string {
@@ -50,12 +59,12 @@ function readinessLine(readiness: MarketReadiness): string {
   const count =
     n === 1 ? "1 geeignete Quelle ausgewählt" : `${n} geeignete Quellen ausgewählt`
   if (n >= RECOMMENDED_ELIGIBLE_SOURCES) {
-    return `${count} — bereit für einen belastbaren Vergleich.`
+    return `${count} — der Vergleich kann erstellt werden. Seine Aussagekraft bleibt auf die geprüften Quellen beschränkt.`
   }
   if (n === 1) {
-    const base = `${count} — mindestens 2 empfohlen für einen belastbaren Vergleich`
+    const base = `${count} — mindestens 2 empfohlen, damit der Vergleich mehr als einen Blickwinkel abdeckt`
     if (readiness.nextCandidate?.missingStep === "review") {
-      return `${base}. Als Nächstes: «${readiness.nextCandidate.title}» inhaltlich prüfen.`
+      return `${base}. Als Nächstes: «${readiness.nextCandidate.title}» ausdrücklich freigeben (nicht vertrauenswürdiges Inhaltssignal).`
     }
     if (readiness.nextCandidate?.missingStep === "import") {
       return `${base}. Als Nächstes: «${readiness.nextCandidate.title}» übernehmen und prüfen.`
@@ -64,7 +73,7 @@ function readinessLine(readiness: MarketReadiness): string {
   }
   // n === 0
   if (readiness.nextCandidate?.missingStep === "review") {
-    return `Noch keine geeigneten Quellen — als Nächstes: «${readiness.nextCandidate.title}» inhaltlich prüfen (Stützt/Teilweise).`
+    return `Noch keine geeigneten Quellen — als Nächstes: «${readiness.nextCandidate.title}» ausdrücklich freigeben (nicht vertrauenswürdiges Inhaltssignal).`
   }
   if (readiness.nextCandidate?.missingStep === "import") {
     return `Noch keine geeigneten Quellen — als Nächstes: «${readiness.nextCandidate.title}» übernehmen und prüfen.`
@@ -146,6 +155,21 @@ export function MarketComparisonSection({
     [load]
   )
 
+  // Strikte Trennung: Marktaussagen (Marktgrösse, Kundenprobleme) sind KEINE
+  // Lösungskandidaten und dürfen nie in der Anbieter-/Alternativen-Tabelle stehen.
+  const marketClaims = (comparison?.items ?? []).filter(
+    (item) => candidateTypeOf(item) === null
+  )
+  const solutions = (comparison?.items ?? []).filter(
+    (item) => candidateTypeOf(item) !== null
+  )
+  // Marktbild ausschliesslich aus den Backend-Marktdaten — keine aus Lösungen
+  // abgeleiteten Ersatzpunkte, sonst entsteht wieder die Vermischung.
+  const picturePoints = comparison?.market_picture
+    ? marketPictureFrom(comparison).points
+    : []
+  const staleExplanation = marketStaleExplanation(comparison)
+
   return (
     <section
       data-testid="market-comparison-section"
@@ -188,9 +212,19 @@ export function MarketComparisonSection({
         </Button>
       </div>
       <p className="mb-3 text-xs text-muted-foreground">
-        Nur aus live abgerufenen, vollständig importierten und inhaltlich positiv
-        geprüften öffentlichen Quellen — kein automatischer Eintrag in den Antrag.
+        Nur aus geprüften öffentlichen Quellen — kein automatischer Eintrag in
+        den Antrag.
       </p>
+
+      {/* Veraltung immer mit Grund — «Veraltet» allein sagt nicht, was zu tun ist. */}
+      {staleExplanation && (
+        <p
+          className="mb-3 text-xs text-status-partial"
+          data-testid="market-comparison-stale-reason"
+        >
+          {staleExplanation}
+        </p>
+      )}
 
       {/* Vergleichsbasis — die eigene Projektidee, dagegen wird verglichen. */}
       {comparison?.comparison_basis && (
@@ -209,7 +243,7 @@ export function MarketComparisonSection({
             </span>
             {comparison.scope_stale && (
               <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}>
-                Suchraum geändert
+                {MARKET_STALE_BADGE}
               </span>
             )}
           </div>
@@ -219,24 +253,32 @@ export function MarketComparisonSection({
       )}
 
       {/* Sektion A — Marktbild (Marktinformationen, klar getrennt von den Lösungen unten). */}
-      {(() => {
-        const picture = marketPictureFrom(comparison)
-        if (!comparison?.market_picture || picture.points.length === 0) return null
-        return (
-          <div data-testid="market-section-picture" className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
-            <p className="text-xs font-semibold text-foreground">Marktbild</p>
-            <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen — keine Wettbewerber.</p>
-            <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-              {picture.points.map((point) => (
-                <React.Fragment key={point.label}>
-                  <dt className="text-muted-foreground">{point.label}</dt>
-                  <dd className="text-foreground">{point.value}</dd>
-                </React.Fragment>
-              ))}
-            </dl>
-          </div>
-        )
-      })()}
+      {(picturePoints.length > 0 || marketClaims.length > 0) && (
+        <div data-testid="market-section-picture" className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
+          <p className="text-xs font-semibold text-foreground">Marktbild</p>
+          <p className="mb-1 text-[11px] text-muted-foreground">
+            Marktinformationen — keine Wettbewerber.
+          </p>
+          <MarketPictureList points={picturePoints} />
+          {/* Marktaussagen bleiben prüfbar — nur eben nicht als «Anbieter». */}
+          {marketClaims.length > 0 && (
+            <details className="mt-2" data-testid="market-claims-review">
+              <summary className="cursor-pointer text-xs font-medium text-foreground">
+                Marktaussagen prüfen ({marketClaims.length})
+              </summary>
+              <ul className="mt-2 flex flex-col gap-2">
+                {marketClaims.map((item) => (
+                  <MarketClaimRow
+                    key={item.item_id}
+                    item={item}
+                    onSetStatus={setItemStatus}
+                  />
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      )}
       {/* 2026-07-24 — sichtbarer Fortschritt + konkrete nächste Aktion statt
           nur eines booleschen Sperrgrunds. */}
       {readiness && (readiness.totalImported > 0 || readiness.eligibleCount > 0) && (
@@ -293,17 +335,28 @@ export function MarketComparisonSection({
         </p>
       )}
 
+      {/* Sektion B — Lösungslandschaft: die eigentliche Vergleichstabelle,
+          gruppiert nach Lösungsart. Enthält nie Marktstatistiken. */}
       {comparison && comparison.items.length > 0 && (
         <div className="overflow-x-auto" data-testid="market-comparison-table">
-          {SUMMARY_SECTIONS.map((section) => {
-            const items = comparison.items.filter((i) =>
-              section.categories.includes(i.category)
-            )
+          <p className="mb-1 text-xs font-semibold text-foreground">Lösungslandschaft</p>
+          <p className="mb-2 text-[11px] text-muted-foreground">
+            Gefundene Lösungen und Alternativen, gruppiert nach Art — verglichen mit
+            der Vergleichsbasis oben.
+          </p>
+          {solutions.length === 0 && (
+            <p className="text-xs text-status-partial" role="status">
+              Im Suchumfang wurden bisher nur Marktaussagen gefunden, aber keine
+              vergleichbaren Lösungen. Die offenen Evidenzlücken unten zeigen, was fehlt.
+            </p>
+          )}
+          {CANDIDATE_TYPE_ORDER.map((type) => {
+            const items = solutions.filter((i) => candidateTypeOf(i) === type)
             if (items.length === 0) return null
             return (
-              <div key={section.title} className="mb-4 last:mb-0">
+              <div key={type} className="mb-4 last:mb-0">
                 <p className="mb-1 text-xs font-medium text-foreground">
-                  {section.title}
+                  {CANDIDATE_TYPE_LABELS[type]} ({items.length})
                 </p>
                 <table className="w-full border-collapse text-left text-xs">
                   <thead>
@@ -367,16 +420,11 @@ export function MarketComparisonSection({
         </div>
       )}
 
-      {comparison && comparison.research_gaps.length > 0 && (
-        <div className="mt-4" data-testid="market-research-gaps">
-          <p className="text-xs font-medium text-foreground">Offene Evidenzlücken</p>
-          <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-            {comparison.research_gaps.map((gap, i) => (
-              <li key={i}>{gap}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <MarketGapList
+        gaps={marketGaps(comparison)}
+        limit={3}
+        testId="market-research-gaps"
+      />
 
       {comparison && comparison.items.some((i) => i.source_document_ids.length > 0) && (
         <div className="mt-4" data-testid="market-used-sources">
@@ -419,10 +467,16 @@ function ItemRow({
     <tr className="border-b border-border/60 align-top">
       <td className="py-2 pr-3 font-medium text-foreground">
         {item.name}
+        {/* Die Lösungsart steht bereits im Gruppentitel — hier nur der Bezug
+            zum eigenen Projekt und die belegten Überschneidungen. */}
         <span className="block text-[11px] font-normal text-muted-foreground">
-          {ITEM_CATEGORY_LABELS[item.category]} ·{" "}
           {ITEM_RELATION_LABELS[item.relation_to_project]}
         </span>
+        {(item.overlaps?.length ?? 0) > 0 && (
+          <span className="block text-[11px] font-normal text-muted-foreground">
+            Überschneidungen: {item.overlaps?.join(" · ")}
+          </span>
+        )}
         {/* RUN 4A: sekundäre Vergleichsdimensionen progressiv statt als
             eigene, immer sichtbare Spalte. */}
         <details className="mt-1 text-[11px] font-normal text-muted-foreground">
@@ -443,7 +497,7 @@ function ItemRow({
         {item.core_problem_or_benefit ?? item.description ?? "—"}
       </td>
       <td className="py-2 pr-3 text-muted-foreground">
-        {item.differentiation_relevance ?? "—"}
+        {item.differentiation_relevance?.trim() || "nicht öffentlich belegt"}
       </td>
       <td className="py-2 pr-3 text-muted-foreground">
         {item.price_business_model ?? "nicht öffentlich belegt"}
@@ -466,42 +520,112 @@ function ItemRow({
         )}
       </td>
       <td className="py-2 pr-3">
-        <Badge variant="secondary" className={CONFIDENCE_STYLE[item.confidence_label]}>
-          {item.status === "accepted"
-            ? ITEM_STATUS_LABELS.accepted
-            : CONFIDENCE_LABELS[item.confidence_label]}
-        </Badge>
-        <p className="mt-1 text-[11px] text-muted-foreground">
-          Fundstelle: {item.coverage_status === "exact_quote_verified" ? "exakt gefunden" : "ungeprüft"}
-          {" · "}Inhalt: {SUPPORT_STATUS_LABELS[item.support_status ?? "unreviewed"]}
-        </p>
-        {/* RUN 4A A11y: Aktionen pro Eintrag eindeutig benennen (Screenreader
-            hören sonst nur mehrfach «Übernehmen»/«Prüfen»). */}
-        <div className="mt-1 flex gap-1">
-          <button
-            type="button"
-            aria-label={`${item.name}: Übernehmen`}
-            className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onSetStatus(item.item_id, "accepted")}
-          >
-            Übernehmen
-          </button>
-          <span aria-hidden className="text-[11px] text-muted-foreground">·</span>
-          <button
-            type="button"
-            aria-label={`${item.name}: Prüfen`}
-            className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-            onClick={() => onSetStatus(item.item_id, "needs_human_review")}
-          >
-            Prüfen
-          </button>
-        </div>
-        <div className="mt-1 flex flex-wrap gap-1">
-          <button type="button" aria-label={`${item.name}: Stützt`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "supports")}>Stützt</button>
-          <button type="button" aria-label={`${item.name}: Stützt teilweise`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "partial")}>Teilweise</button>
-          <button type="button" aria-label={`${item.name}: Stützt nicht`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "does_not_support")}>Stützt nicht</button>
-        </div>
+        <EvidenceStatus item={item} />
+        <ReviewActions item={item} onSetStatus={onSetStatus} />
       </td>
     </tr>
+  )
+}
+
+/**
+ * Ein exaktes Zitat belegt eine Fundstelle, nicht die fachliche Richtigkeit —
+ * beides wird getrennt und ausgeschrieben (CLAUDEX §6, kein «Textstelle
+ * gefunden» als scheinbare Bestätigung).
+ */
+function EvidenceStatus({ item }: { item: MarketComparisonItemDto }) {
+  return (
+    <>
+      <Badge variant="secondary" className={CONFIDENCE_STYLE[item.confidence_label]}>
+        {item.status === "accepted"
+          ? ITEM_STATUS_LABELS.accepted
+          : CONFIDENCE_LABELS[item.confidence_label]}
+      </Badge>
+      {item.status !== "accepted" && quoteNeedsConfirmation(item) && (
+        <p className="mt-1 text-[11px] text-status-partial">{QUOTE_NOT_CONFIRMED_NOTE}</p>
+      )}
+      <p className="mt-1 text-[11px] text-muted-foreground">
+        Fundstelle: {item.coverage_status === "exact_quote_verified" ? "exakt gefunden" : "ungeprüft"}
+        {" · "}Inhalt: {SUPPORT_STATUS_LABELS[item.support_status ?? "unreviewed"]}
+      </p>
+    </>
+  )
+}
+
+/** RUN 4A A11y: Aktionen pro Eintrag eindeutig benennen (Screenreader hören
+ *  sonst nur mehrfach «Übernehmen»/«Prüfen»). */
+function ReviewActions({
+  item,
+  onSetStatus,
+}: {
+  item: MarketComparisonItemDto
+  onSetStatus: (itemId: string, status: ItemStatus, supportStatus?: SupportStatus) => void
+}) {
+  return (
+    <>
+      <div className="mt-1 flex gap-1">
+        <button
+          type="button"
+          aria-label={`${item.name}: Übernehmen`}
+          className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onSetStatus(item.item_id, "accepted")}
+        >
+          Übernehmen
+        </button>
+        <span aria-hidden className="text-[11px] text-muted-foreground">·</span>
+        <button
+          type="button"
+          aria-label={`${item.name}: Prüfen`}
+          className="rounded text-[11px] text-muted-foreground hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+          onClick={() => onSetStatus(item.item_id, "needs_human_review")}
+        >
+          Prüfen
+        </button>
+      </div>
+      <div className="mt-1 flex flex-wrap gap-1">
+        <button type="button" aria-label={`${item.name}: Stützt`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "supports")}>Stützt</button>
+        <button type="button" aria-label={`${item.name}: Stützt teilweise`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "partial")}>Teilweise</button>
+        <button type="button" aria-label={`${item.name}: Stützt nicht`} className="rounded text-[11px] text-primary hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring" onClick={() => onSetStatus(item.item_id, item.status, "does_not_support")}>Stützt nicht</button>
+      </div>
+    </>
+  )
+}
+
+/**
+ * Marktaussage (Marktgrösse, Kundenproblem) — bleibt vollständig prüfbar, wird
+ * aber nie als Anbieter/Alternative dargestellt.
+ */
+function MarketClaimRow({
+  item,
+  onSetStatus,
+}: {
+  item: MarketComparisonItemDto
+  onSetStatus: (itemId: string, status: ItemStatus, supportStatus?: SupportStatus) => void
+}) {
+  return (
+    <li className="rounded-md border border-border bg-card px-3 py-2">
+      <p className="text-xs font-medium text-foreground">{item.name}</p>
+      {item.description && (
+        <p className="text-[11px] text-muted-foreground">{item.description}</p>
+      )}
+      {item.evidence_quotes.length > 0 && (
+        <blockquote className="mt-1 border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
+          „{item.evidence_quotes[0].quote}“
+        </blockquote>
+      )}
+      {item.evidence_quotes[0]?.source_url && (
+        <a
+          href={item.evidence_quotes[0].source_url}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 block break-all text-[11px] text-primary hover:underline"
+        >
+          Quelle öffnen
+        </a>
+      )}
+      <div className="mt-1">
+        <EvidenceStatus item={item} />
+        <ReviewActions item={item} onSetStatus={onSetStatus} />
+      </div>
+    </li>
   )
 }

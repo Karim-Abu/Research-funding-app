@@ -19,12 +19,18 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
+import { MarketGapList, MarketPictureList } from "@/components/editor/market-blocks"
 import { cn } from "@/lib/utils"
 import {
+  CANDIDATE_TYPE_ORDER,
   MARKET_HYPOTHESIS_NOTE,
+  MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
+  candidateTypeOf,
   judgmentToneClass,
+  marketGaps,
   marketPictureFrom,
+  marketStaleExplanation,
   marketWorkspaceStatus,
 } from "@/lib/market-view"
 // CANDIDATE_TYPE_LABELS/JUDGMENT_STATUS_LABELS are consumed directly below.
@@ -35,7 +41,6 @@ import {
   ITEM_CATEGORY_LABELS,
   ITEM_STATUS_LABELS,
   JUDGMENT_STATUS_LABELS,
-  type CandidateType,
   type CompetitionJudgmentDto,
   type MarketComparisonDto,
   type MarketComparisonItemDto,
@@ -45,16 +50,6 @@ import {
 const INSERT_BLOCKED_HINT =
   "Nur belegte, auf den Suchraum eingeschränkte Aussagen können übernommen werden."
 const SOURCE_HINT = "gestützt auf die im Vergleich verwendeten geprüften öffentlichen Quellen"
-
-// Stable display order for the Lösungslandschaft groups.
-const CANDIDATE_TYPE_ORDER: CandidateType[] = [
-  "direct_competitor",
-  "adjacent_solution",
-  "substitute",
-  "open_source_solution",
-  "reference_infrastructure",
-  "manual_or_internal_alternative",
-]
 
 interface MarketComparisonSheetProps {
   open: boolean
@@ -76,12 +71,21 @@ export function MarketComparisonSheet({
     if (!open) setInserted(false)
   }, [open])
 
-  const items = comparison?.items ?? []
+  // Marktaussagen (Marktgrösse, Kundenprobleme) sind KEINE Lösungskandidaten
+  // und dürfen nie in einer Anbieter-/Alternativen-Tabelle stehen — dieselbe
+  // Trennung wie in der Quellen-Sektion (lib/market-comparison, CANDIDATE_TYPE).
+  const items = (comparison?.items ?? []).filter(
+    (item) => candidateTypeOf(item) !== null
+  )
+  const hasMarketClaims = (comparison?.items ?? []).some(
+    (item) => candidateTypeOf(item) === null
+  )
   const status = marketWorkspaceStatus(comparison)
   const picture = marketPictureFrom(comparison)
   const judgment = comparison?.competition_judgment ?? null
   const landscape = comparison?.solution_landscape ?? null
   const scopeStale = comparison?.scope_stale ?? false
+  const staleExplanation = marketStaleExplanation(comparison)
 
   function insert(text: string) {
     onInsertText(`${text} (${SOURCE_HINT})`)
@@ -117,10 +121,13 @@ export function MarketComparisonSheet({
                 data-testid="market-sheet-stale"
                 className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}
               >
-                Suchraum geändert — neu erstellen
+                {MARKET_STALE_BADGE}
               </span>
             )}
           </div>
+          {staleExplanation && (
+            <p className="-mt-2 text-[11px] text-muted-foreground">{staleExplanation}</p>
+          )}
 
           {comparison?.comparison_basis && <MarketComparisonBasis basis={comparison.comparison_basis} />}
 
@@ -136,15 +143,8 @@ export function MarketComparisonSheet({
           {picture.points.length > 0 && (
             <section data-testid="market-picture" className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
               <p className="text-xs font-semibold text-foreground">Marktbild</p>
-              <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen (Grösse, Segmente, Trends, Nachfrage) — keine Wettbewerber.</p>
-              <dl className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-xs">
-                {picture.points.map((point) => (
-                  <React.Fragment key={point.label}>
-                    <dt className="text-muted-foreground">{point.label}</dt>
-                    <dd className="text-foreground">{point.value}</dd>
-                  </React.Fragment>
-                ))}
-              </dl>
+              <p className="mb-1 text-[11px] text-muted-foreground">Marktinformationen — keine Wettbewerber.</p>
+              <MarketPictureList points={picture.points} />
             </section>
           )}
 
@@ -172,20 +172,18 @@ export function MarketComparisonSheet({
                 )
               })}
             </section>
+          ) : items.length > 0 ? (
+            <LegacyTable items={items} onInsert={insert} />
           ) : (
-            items.length > 0 && <LegacyTable items={items} onInsert={insert} />
+            hasMarketClaims && (
+              <p className="text-xs text-status-partial" role="status" data-testid="market-only-claims">
+                Im Suchumfang wurden bisher nur Marktaussagen gefunden, aber keine
+                vergleichbaren Lösungen. Die offenen Evidenzlücken zeigen, was fehlt.
+              </p>
+            )
           )}
 
-          {comparison && comparison.research_gaps.length > 0 && (
-            <div>
-              <p className="text-xs font-medium text-foreground">Offene Evidenzlücken</p>
-              <ul className="mt-1 list-disc pl-5 text-xs text-muted-foreground">
-                {comparison.research_gaps.map((gap, i) => (
-                  <li key={i}>{gap}</li>
-                ))}
-              </ul>
-            </div>
-          )}
+          <MarketGapList gaps={marketGaps(comparison)} limit={3} compact testId="market-gaps" />
 
           {items.length === 0 && !judgment && (
             <p className="text-sm text-muted-foreground">
@@ -284,14 +282,8 @@ function JudgmentCard({
         </div>
       )}
 
-      {judgment.open_evidence_gaps.length > 0 && (
-        <div className="text-[11px]">
-          <p className="font-medium text-foreground">Offene Evidenzlücken</p>
-          <ul className="list-disc pl-4 text-muted-foreground">
-            {judgment.open_evidence_gaps.slice(0, 5).map((g, i) => <li key={i}>{g}</li>)}
-          </ul>
-        </div>
-      )}
+      {/* Die Evidenzlücken stehen einmal je Fläche — als eigener Abschnitt
+          unter dem Urteil, nicht zusätzlich hier drin (siehe `marketGaps`). */}
     </section>
   )
 }

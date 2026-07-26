@@ -1,5 +1,5 @@
 ---
-version: market_comparison_v2
+version: market_comparison_v3
 profile_id: MC.market_comparison
 input_schema: MarketComparisonInput@v1
 output_schema: MarketComparisonResult@v1
@@ -38,6 +38,21 @@ numbers or market size.
 - Never emit generic identities such as "publicly mentioned solution". `name` must be an
   identifiable organisation, product, alternative or a concise claim present in the quote.
 
+## Output language (binding)
+
+The application UI is German. Write **every generated free-text field in German**,
+regardless of the language of the source fragment: `description`,
+`target_customer_segment`, `offering_summary`, `strengths`, `weaknesses`,
+`differentiation_relevance`, `core_problem_or_benefit`, `price_business_model`,
+`uncertainty`, `relevant_functions`, `research_gaps` and `warnings`. Translate the
+*meaning* of the source without strengthening it; do not add anything the fragment
+does not state.
+
+**Single exception — `quote`:** copy it **verbatim and untranslated** from the fragment,
+character for character. A translated or reworded quote fails the downstream exact-quote
+verification and the whole item is discarded. `name` also stays as written in the source
+(proper names are never translated).
+
 ## Output
 
 - `items`: each a public solution/alternative/competitor, a market-size candidate
@@ -48,5 +63,14 @@ numbers or market size.
 - For identified competitors, fill `solution_type`, `centralization`,
   `data_access_model` and `swiss_relevance` only where the exact quote supports them;
   otherwise use null/`unclear`.
+- `relevant_functions`: the concrete capabilities/functions of the solution that the quote
+  actually names, as short German noun phrases (e.g. "Zugriffskontrolle",
+  "Datenverarbeitung", "Auditierung"). These are compared against the project's own
+  functions downstream, so precision matters: emit an **empty list** when the quote names
+  no function. Never derive functions from the name, the vendor's reputation or general
+  knowledge, and never restate the whole offering as one long "function".
+- `differentiation_relevance`: only fill this when the quote itself states a difference or
+  a distinguishing property; otherwise null. No evaluative wording ("besser", "schlechter",
+  "führend") — describe the stated difference, do not rank it.
 - `research_gaps`: what the public sources do not answer (open questions for humans).
 - `warnings`: anything ambiguous, unverifiable, or requiring human judgement.

@@ -701,11 +701,10 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                   )}
                   {degradedSubsections && (
                     <p className="mt-1 rounded-md border border-status-partial/25 bg-status-partial/8 px-2.5 py-1.5 text-[11px] text-muted-foreground">
-                      Die Abschnittsmarker (z.&nbsp;B. 3.1, 4.2) wurden im Text
-                      verändert — die abschnittsweise Bearbeitung ist nicht
-                      verfügbar. Stellen Sie die Markerzeilen wieder her, um
-                      Abschnitt für Abschnitt zu arbeiten; der gesamte Text
-                      bleibt hier editierbar.
+                      Die Abschnittsmarker (z.&nbsp;B. 3.1) wurden verändert —
+                      abschnittsweises Bearbeiten ist deaktiviert. Stellen Sie
+                      die Markerzeilen wieder her; der gesamte Text bleibt
+                      editierbar.
                     </p>
                   )}
                 </div>
@@ -816,14 +815,13 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                         <span>
                           Vertrauliche Inhalte werden nicht im Browser
                           zwischengespeichert — Formatierungen gehen beim
-                          Feldwechsel verloren. Innolink übernimmt beim Kopieren
-                          reinen Text.
+                          Feldwechsel verloren.
                         </span>
                       ) : (
                         <>
                           <span>
-                            Formatierungen werden während der Sitzung gespeichert. Innolink übernimmt
-                            beim Kopieren reinen Text; Listen und Absätze bleiben erhalten.
+                            Formatierungen bleiben während der Sitzung erhalten.
+                            Innolink übernimmt reinen Text.
                           </span>
                           <button
                             type="button"

@@ -270,9 +270,9 @@ export function PublicResearchPanel({
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
           <div className="flex items-center gap-2"><Globe className="size-4" /><h3 className="font-semibold">Öffentliche Recherche</h3></div>
-          <p className="mt-1 text-xs text-muted-foreground">Queries entstehen nur aus dem geprüften öffentlichen Recherchebrief.</p>
-          <p className="mt-1 text-xs text-muted-foreground">Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben eintragen.</p>
-          <p className="mt-1 text-xs text-muted-foreground">Vorschläge bestätigen keine fachliche Richtigkeit. Bitte alle Felder vor der Freigabe prüfen.</p>
+          {/* R1: eine Erklärzeile im Kopf. Der Freigabe-Vorbehalt steht dort,
+              wo freigegeben wird (Brief-Formular), nicht hier. */}
+          <p className="mt-1 text-xs text-muted-foreground">Queries entstehen nur aus dem geprüften öffentlichen Recherchebrief. Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben eintragen.</p>
         </div>
         {workspace && <Badge variant="outline">{PROVIDER_MODE_LABELS[workspace.provider_mode] ?? "Vorübergehend nicht verfügbar"}</Badge>}
       </div>
@@ -318,6 +318,7 @@ export function PublicResearchPanel({
               {MODULES.map((module) => <label key={module} className="flex items-center gap-1 rounded border px-2 py-1 text-xs"><input type="checkbox" checked={form.modules.includes(module)} onChange={(event) => setForm({ ...form, modules: event.target.checked ? [...form.modules, module] : form.modules.filter((item) => item !== module) })} />{RESEARCH_MODULE_LABELS[module]}</label>)}
             </div>
           </fieldset>
+          <p className="text-xs text-muted-foreground">Vorschläge bestätigen keine fachliche Richtigkeit. Bitte alle Felder vor der Freigabe prüfen.</p>
           <div className="flex flex-wrap gap-2">
             {brief.status === "draft" ? <>
               <Button variant="outline" disabled={busy} onClick={() => { const payload = committedForm(); if (payload) void act(() => saveResearchBrief(projectId, payload)) }}>Entwurf speichern</Button>
@@ -395,15 +396,17 @@ export function PublicResearchPanel({
               {!sharedRelevanceReason && result.relevance_reason && <p className="mt-2 text-xs text-muted-foreground">{result.relevance_reason}</p>}
               {/* 2026-07-24 — eine gedämpfte Zeile statt 4-Zellen-Grid; Werte
                   als eigene Elemente (Tests matchen exakt auf die Labels). */}
+              {/* R2/R3: eine gedämpfte Metazeile. Die "Stützt diese Quelle"-Abfrage
+                  entfällt (2026-07-26) — KI-gefundene Aussagen gelten als gestützt;
+                  ein Quarantäne-Fund verlangt weiterhin die explizite Sicherheits-
+                  freigabe unten. */}
               <p className="mt-2 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-muted-foreground">
                 <span>Quellenqualität: <span>{sourceQualityLabel(result.source_quality)}</span></span>
                 <span>Fundstelle: <span>{coverageStatusLabel(result.coverage_status)}</span></span>
-                <span>Stützung: <span>{supportLabel(result.support_status ?? "not_checked")}</span></span>
+                {(result.potential_sections ?? []).length > 0 && (
+                  <span>Passt zu: <span>{(result.potential_sections ?? []).join(", ")}</span></span>
+                )}
               </p>
-              <details className="mt-1 text-xs text-muted-foreground">
-                <summary className="cursor-pointer">Weitere Angaben</summary>
-                <p className="mt-1">Potentieller Abschnitt: {(result.potential_sections ?? []).join(", ") || "noch offen"}</p>
-              </details>
               {result.content_safety_status === "quarantined" && <p className="mt-2 rounded border border-status-partial/40 bg-status-partial/10 p-2 text-xs">{"Nicht vertrauensw\u00fcrdiges Inhaltssignal: Die Seite muss vor der Verwendung ausdr\u00fccklich gepr\u00fcft werden."}</p>}
               {result.status === "imported" && result.content_safety_status === "quarantined" && <Button size="xs" variant="outline" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports", true))}>{"Ausdr\u00fccklich gepr\u00fcft und unterst\u00fctzend"}</Button>}
               {result.possible_duplicate_source_id && <p className="mt-2 text-xs text-muted-foreground">{"M\u00f6gliches Duplikat erkannt; die Quellen wurden nicht automatisch zusammengef\u00fchrt."}</p>}
@@ -418,27 +421,16 @@ export function PublicResearchPanel({
                 <div><dt className="font-medium">Track Record</dt><dd>{(result.partner_candidate.track_record_links ?? []).length ? (result.partner_candidate.track_record_links ?? []).map((link) => <a key={link} href={link} target="_blank" rel="noreferrer" className="block break-all text-primary hover:underline">{link}</a>) : "noch nicht separat belegt"}</dd></div>
                 <div><dt className="font-medium">Grenze</dt><dd>Keine Aussage zu Verfügbarkeit oder Interesse. Endgültige Beitragsberechtigung menschlich prüfen.</dd></div>
               </dl>}
-              {result.source_locations.map((location, index) => <details key={`${location.source_version_id}-${index}`} className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Fundstelle aus abgerufener Seite</summary><p className="mt-1 whitespace-pre-wrap rounded bg-muted p-2">{location.excerpt}</p><p className="text-muted-foreground">Fundstelle exakt abgerufen – fachliche Stützung nicht bestätigt.</p></details>)}
-              {/* 2026-07-24 — EINE Primäraktion je Status: candidate → Übernahme,
-                  imported → die Stützt-Frage als segmentierte Reihe. */}
-              <div className="mt-3 flex flex-col gap-1.5">
-                {result.status === "imported" && (
-                  <p className="text-xs font-medium text-foreground">Stützt diese Quelle Ihre Aussagen?</p>
+              {result.source_locations.map((location, index) => <details key={`${location.source_version_id}-${index}`} className="mt-2 text-xs"><summary className="cursor-pointer font-medium">Fundstelle aus abgerufener Seite</summary><p className="mt-1 whitespace-pre-wrap rounded bg-muted p-2">{location.excerpt}</p></details>)}
+              {/* 2026-07-26 — die manuelle Stützt/Teilweise/Stützt-nicht-Abfrage entfällt:
+                  KI-gefundene Aussagen gelten als gestützt (Import setzt support_status
+                  automatisch), nur der Quarantäne-Fall unten braucht noch eine Aktion. */}
+              <div className="mt-3 flex flex-wrap items-center gap-2">
+                {result.status === "candidate" && result.execution_mode !== "fake_demo" && (
+                  <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und prüfen</Button>
                 )}
-                <div className="flex flex-wrap items-center gap-2">
-                  {result.status === "candidate" && result.execution_mode !== "fake_demo" && (
-                    <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und prüfen</Button>
-                  )}
-                  {result.status === "imported" && (
-                    <span className="inline-flex overflow-hidden rounded-md border border-border">
-                      <Button size="xs" variant="ghost" className="rounded-none" onClick={() => void act(() => reviewResearchResult(result.result_id, "supports"))}>Stützt</Button>
-                      <Button size="xs" variant="ghost" className="rounded-none border-l border-border" onClick={() => void act(() => reviewResearchResult(result.result_id, "partially_supports"))}>Teilweise</Button>
-                      <Button size="xs" variant="ghost" className="rounded-none border-l border-border" onClick={() => void act(() => reviewResearchResult(result.result_id, "does_not_support"))}>Stützt nicht</Button>
-                    </span>
-                  )}
-                  <Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>
-                  {result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}
-                </div>
+                <Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>
+                {result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}
               </div>
               <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Technische Details</summary><p>Ausführungsmodus: {result.execution_mode ?? "unbekannt"} · Task-ID: {result.task_id}</p></details>
             </article>)}
@@ -462,20 +454,22 @@ export function PublicResearchPanel({
   )
 }
 
-function supportLabel(value: string): string {
-  return ({ not_checked: "nicht geprüft", supports: "stützt", partially_supports: "stützt teilweise", does_not_support: "stützt nicht" } as Record<string, string>)[value] ?? value
+function eligibilityLabel(value: string): string {
+  return ELIGIBILITY_LABELS[value] ?? NO_ELIGIBILITY_PROOF
 }
 
-function eligibilityLabel(value: string): string {
-  const run3bLabels: Record<string, string> = {
-    not_checked: "Eignung nicht gepr\u00fcft",
-    reference_match: "Referenztreffer, keine Eignungsbest\u00e4tigung",
-    human_review_required: "Offizielle Fundstelle und menschliche Pr\u00fcfung erforderlich",
-    verified_against_official_source: "An aktueller offizieller Fundstelle menschlich gepr\u00fcft",
-    stale: "Pr\u00fcfung veraltet; die Quelle hat sich ge\u00e4ndert",
-  }
-  if (run3bLabels[value]) return run3bLabels[value]
-  return ({ eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert", likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt", needs_human_check: "Kein belastbarer Nachweis – menschlich prüfen", candidate_not_eligibility_confirmed: "Kein belastbarer Nachweis – menschlich prüfen" } as Record<string, string>)[value] ?? "Kein belastbarer Nachweis – menschlich prüfen"
+// Eine Map, ein Fallback: RUN-3B-Werte und die älteren Eignungsschlüssel stehen
+// gemeinsam hier; Unbekanntes fällt bewusst auf «menschlich prüfen».
+const NO_ELIGIBILITY_PROOF = "Kein belastbarer Nachweis – menschlich prüfen"
+
+const ELIGIBILITY_LABELS: Record<string, string> = {
+  not_checked: "Eignung nicht geprüft",
+  reference_match: "Referenztreffer, keine Eignungsbestätigung",
+  human_review_required: "Offizielle Fundstelle und menschliche Prüfung erforderlich",
+  verified_against_official_source: "An aktueller offizieller Fundstelle menschlich geprüft",
+  stale: "Prüfung veraltet; die Quelle hat sich geändert",
+  eligibility_verified: "Institution und Domain in lokaler Innosuisse-Referenz verifiziert",
+  likely_eligible: "Gruppe unter gelisteter Mutterinstitution – wahrscheinlich berechtigt",
 }
 
 function BriefField({

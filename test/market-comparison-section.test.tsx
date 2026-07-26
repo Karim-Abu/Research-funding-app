@@ -97,7 +97,7 @@ describe("MarketComparisonSection", () => {
     expect(
       await screen.findByTestId("market-comparison-readiness")
     ).toHaveTextContent(
-      "Noch keine geeigneten Quellen — als Nächstes: «Switzerland Cybersecurity Report» inhaltlich prüfen (Stützt/Teilweise)."
+      "Noch keine geeigneten Quellen — als Nächstes: «Switzerland Cybersecurity Report» ausdrücklich freigeben (nicht vertrauenswürdiges Inhaltssignal)."
     )
   })
 
@@ -135,8 +135,28 @@ describe("MarketComparisonSection", () => {
     expect(
       screen.getByTestId("market-comparison-readiness")
     ).toHaveTextContent(
-      "1 geeignete Quelle ausgewählt — mindestens 2 empfohlen für einen belastbaren Vergleich."
+      "1 geeignete Quelle ausgewählt — mindestens 2 empfohlen, damit der Vergleich mehr als einen Blickwinkel abdeckt."
     )
+  })
+
+  // Zwei Quellen machen den Vergleich möglich, aber nicht belastbar — die UI
+  // darf das nicht versprechen.
+  it("verspricht bei zwei Quellen keine Belastbarkeit", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(null)
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: true, eligibleCount: 2, totalImported: 2, nextCandidate: null }}
+      />
+    )
+    const line = await screen.findByTestId("market-comparison-readiness")
+    expect(line).toHaveTextContent("der Vergleich kann erstellt werden")
+    expect(line).toHaveTextContent("bleibt auf die geprüften Quellen beschränkt")
+    expect(line.textContent).not.toMatch(/belastbar/i)
   })
 
   it("blendet die Fortschrittszeile ohne importierte Quellen aus und erklärt den Mehrwert", async () => {
@@ -184,7 +204,9 @@ describe("MarketComparisonSection", () => {
     ).toBeNull()
   })
 
-  it("groups items into the five summary sections and lists used source names", async () => {
+  // Kernregel: Marktstatistiken sind keine Wettbewerber. Sie erscheinen in der
+  // Marktbild-Prüfliste, niemals als Zeile der Anbieter-/Alternativen-Tabelle.
+  it("trennt Marktaussagen von der Lösungstabelle und listet die verwendeten Quellen", async () => {
     const items = [
       comparison().items[0],
       {
@@ -213,18 +235,69 @@ describe("MarketComparisonSection", () => {
         sourceNames={{ s1: "Marktbericht (öffentlich)", s2: "Branchenstudie" }}
       />
     )
-    await waitFor(() =>
-      expect(screen.getByTestId("market-comparison-table")).toBeInTheDocument()
-    )
-    expect(screen.getByText("Marktgrössen-Kandidaten")).toBeInTheDocument()
-    expect(screen.getByText("Wettbewerber und Alternativen")).toBeInTheDocument()
-    expect(screen.getByText("Kundenprobleme")).toBeInTheDocument()
+    const table = await screen.findByTestId("market-comparison-table")
+    // Lösungen: nach Lösungsart gruppiert, keine Kategorie-Sammeltitel mehr.
+    expect(table).toHaveTextContent("Lösungslandschaft")
+    expect(table).toHaveTextContent("Angrenzende Lösung (1)")
+    expect(table).toHaveTextContent("Acme Plattform")
+    // Marktaussagen stehen NICHT in der Vergleichstabelle.
+    expect(table).not.toHaveTextContent("Marktwachstum Bericht")
+    expect(table).not.toHaveTextContent("Manuelle Prüfung dauert lange")
+    expect(screen.queryByText("Marktgrössen-Kandidaten")).toBeNull()
+    expect(screen.queryByText("Wettbewerber und Alternativen")).toBeNull()
+    // …sondern in der Prüfliste des Marktbilds.
+    const claims = screen.getByTestId("market-claims-review")
+    expect(claims).toHaveTextContent("Marktaussagen prüfen (2)")
+    expect(claims).toHaveTextContent("Marktwachstum Bericht")
+    expect(claims).toHaveTextContent("Manuelle Prüfung dauert lange")
     const used = screen.getByTestId("market-used-sources")
     expect(used).toHaveTextContent("Verwendete Quellen")
     expect(used).toHaveTextContent("Marktbericht (öffentlich)")
     expect(used).toHaveTextContent("Branchenstudie")
     // Nie rohe IDs in der Standard-UI.
     expect(used).not.toHaveTextContent("s1")
+  })
+
+  // Die Trennung darf die menschliche Prüfung nicht wegnehmen (HITL).
+  it("lässt Marktaussagen weiterhin fachlich prüfen", async () => {
+    const claim = {
+      ...comparison().items[0],
+      item_id: "i2",
+      name: "Marktwachstum Bericht",
+      category: "market_size_claim",
+    }
+    let patched: { itemId?: string; body?: unknown } = {}
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ items: [claim], item_count: 1 }))
+      ),
+      http.post(
+        "/api/market-comparison-items/:itemId/status",
+        async ({ params, request }) => {
+          patched = { itemId: params.itemId as string, body: await request.json() }
+          return HttpResponse.json({ ok: true })
+        }
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    const supports = await screen.findByRole("button", {
+      name: "Marktwachstum Bericht: Stützt",
+    })
+    fireEvent.click(supports)
+    await waitFor(() => expect(patched.itemId).toBe("i2"))
+    expect(patched.body).toMatchObject({ support_status: "supports" })
+  })
+
+  it("erklärt, warum ein Vergleich veraltet ist", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ scope_stale: true, stale_reason: "scope_changed" }))
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    expect(
+      await screen.findByTestId("market-comparison-stale-reason")
+    ).toHaveTextContent("Suchraum")
   })
 
   it("shows «Inhaltlich geprüft» after human acceptance instead of the quote status", async () => {

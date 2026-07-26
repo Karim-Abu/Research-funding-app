@@ -7,6 +7,7 @@ import {
   candidateTypeLabel,
   deriveMarketPicture,
   judgmentToneClass,
+  marketGaps,
   marketPictureFrom,
   marketWorkspaceStatus,
 } from "@/lib/market-view"
@@ -171,6 +172,75 @@ describe("marketPictureFrom", () => {
       })
     )
     expect(picture.points.some((p) => p.label === "Lösungsarten")).toBe(true)
+  })
+
+  // UI-Bereinigung: dieselbe Fundstelle trägt oft mehrere Rubriken. Ohne
+  // zeilenübergreifende Dedupe standen wortgleiche Zeilen untereinander.
+  it("zeigt denselben Wert nicht in zwei Rubriken", () => {
+    const fragment = "Fragment nennt einen Umsatzwert für den Schweizer Biotech-Sektor 2023."
+    const picture = marketPictureFrom(
+      comparison({
+        market_picture: {
+          size_and_growth: [{ label: "Studie", value: fragment }],
+          segments: [],
+          trends: [],
+          demand_indicators: [{ label: "Studie", value: fragment }],
+          swiss_relevance: [],
+          gaps: [],
+        },
+      })
+    )
+    const labels = picture.points.map((p) => p.label)
+    expect(labels).toEqual(["Marktgrösse & Wachstum"])
+    expect(labels).not.toContain("Nachfrage")
+  })
+
+  it("behält eine Rubrik, sobald sie einen eigenen Wert trägt", () => {
+    const shared = "Gemeinsames Fragment."
+    const picture = marketPictureFrom(
+      comparison({
+        market_picture: {
+          size_and_growth: [{ label: "A", value: shared }],
+          segments: [],
+          trends: [],
+          demand_indicators: [
+            { label: "A", value: shared },
+            { label: "B", value: "Eigener Nachfragewert." },
+          ],
+          swiss_relevance: [],
+          gaps: [],
+        },
+      })
+    )
+    const demand = picture.points.find((p) => p.label === "Nachfrage")
+    expect(demand?.value).toBe("Eigener Nachfragewert.")
+  })
+})
+
+describe("marketGaps", () => {
+  it("nutzt die Urteilsliste (Obermenge) statt beide Listen zu mischen", () => {
+    const dto = comparison({
+      research_gaps: ["Basis-Lücke"],
+      competition_judgment: {
+        status: "insufficient_evidence",
+        rationale: "r",
+        scope_summary: "s",
+        relevant_candidate_count: 0,
+        key_overlaps: [],
+        evidenced_differentiators: [],
+        plausible_unverified_differentiators: [],
+        open_evidence_gaps: ["Basis-Lücke", "Zusatz-Lücke"],
+        allowed_formulations: [],
+        disallowed_formulations: [],
+        can_insert_into_application: false,
+      },
+    })
+    expect(marketGaps(dto)).toEqual(["Basis-Lücke", "Zusatz-Lücke"])
+  })
+
+  it("fällt auf research_gaps zurück, wenn das Urteil keine Lücken führt", () => {
+    expect(marketGaps(comparison({ research_gaps: ["Nur hier"] }))).toEqual(["Nur hier"])
+    expect(marketGaps(null)).toEqual([])
   })
 })
 

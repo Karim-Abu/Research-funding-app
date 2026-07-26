@@ -53,10 +53,12 @@ export function MarketComparisonBasis({
           Projektidee bearbeiten
         </Button>
       </div>
-      <p className="text-[11px] text-muted-foreground">Dagegen wird verglichen.</p>
-
       <div>
-        <p className="text-[11px] font-medium text-muted-foreground">Deine Projektidee</p>
+        {/* R2: «Vergleichsbasis» (Überschrift) und «Deine Projektidee» sagen
+            bereits, was hier steht — ein dritter Erklärsatz entfällt. */}
+        <p className="text-[11px] font-medium text-muted-foreground">
+          Deine Projektidee — dagegen wird verglichen.
+        </p>
         <p className="text-xs font-semibold text-foreground">{basis.title}</p>
         {basis.idea && (
           <p className="mt-0.5 whitespace-pre-line text-xs text-foreground">{basis.idea}</p>

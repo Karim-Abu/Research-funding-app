@@ -15,8 +15,11 @@ describe("MarketResearchPanel", () => {
     )
     render(<MarketResearchPanel projectId="p1" />)
     expect(await screen.findByTestId("public-research-panel")).toBeInTheDocument()
-    expect(screen.getByText(/gemeinsamen Recherchearbeitsbereich/)).toBeInTheDocument()
-    expect(screen.getByText(/Snippet allein ist kein Beleg/)).toBeInTheDocument()
+    // Der Editor-Wrapper trägt keinen eigenen Erklärsatz mehr — das Panel
+    // bringt seinen Kopf samt Datenschutzregel selbst mit (UI-Bereinigung R1).
+    expect(
+      screen.getByText(/Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben/)
+    ).toBeInTheDocument()
     expect(screen.queryByLabelText(/Anwendungsbereich/)).toBeNull()
   })
 

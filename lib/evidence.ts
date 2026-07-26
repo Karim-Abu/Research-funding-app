@@ -91,11 +91,8 @@ export const EVIDENCE_SOURCE_TYPE_LABELS: Record<EvidenceSourceType, string> = {
 }
 
 // "Fundstelle bestätigt" = the quote exists verbatim in the source. It does NOT
-// mean the statement has been fachlich (substantively) approved.
-export const VERIFIED_EXPLANATION =
-  "«Fundstelle bestätigt» bedeutet, dass das Zitat exakt in der Quelle vorkommt. Es bedeutet nicht, dass die Aussage fachlich geprüft oder genehmigt wurde."
-
-// Shorter inline hint used directly on the Evidenz screens.
+// mean the statement has been fachlich (substantively) approved. Einzige
+// Fassung dieses Hinweises — die frühere Langvariante war nie gerendert.
 export const EVIDENCE_VERIFIED_HINT =
   "«Fundstelle bestätigt» bedeutet, dass der Text in der Quelle auffindbar ist — " +
   "keine inhaltliche Freigabe. Die fachliche Bewertung erfolgt in der Qualitätsprüfung."

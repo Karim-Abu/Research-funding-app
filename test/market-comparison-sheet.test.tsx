@@ -186,4 +186,39 @@ describe("MarketComparisonSheet", () => {
     renderSheet(comparison({ comparison_basis: null }))
     expect(screen.queryByTestId("market-basis")).toBeNull()
   })
+
+  // UI-Bereinigung B1: `open_evidence_gaps` ist im Backend eine Obermenge von
+  // `research_gaps` — beide zu rendern zeigte dieselbe Lücke zweimal im Dialog.
+  it("zeigt die offenen Evidenzlücken genau einmal", () => {
+    const shared = "Rival AG: Textstelle gefunden, inhaltlich noch nicht bestätigt."
+    renderSheet(comparison({ research_gaps: [shared] }))
+    expect(screen.getAllByText("Offene Evidenzlücken")).toHaveLength(1)
+    expect(screen.getAllByText(shared)).toHaveLength(1)
+  })
+
+  // UI-Bereinigung B2: Marktaussagen sind keine Lösungskandidaten und dürfen
+  // nie unter «Wettbewerber / Lösung» erscheinen.
+  it("stellt Marktaussagen nie als Wettbewerber dar", () => {
+    const marketClaim = {
+      item_id: "mc-1",
+      name: "Swiss biotech sector revenue 2023",
+      category: "market_size_claim" as const,
+      relation: "unclear" as const,
+      short_description: "Umsatz des Schweizer Biotech-Sektors.",
+      differentiation_relevance: null,
+      evidence_quotes: [],
+      source_document_ids: ["s1"],
+      status: "proposed" as const,
+      confidence_label: "source_backed" as const,
+    }
+    renderSheet(
+      comparison({
+        items: [marketClaim as never],
+        solution_landscape: { candidates: [], candidate_count_by_type: {} },
+      })
+    )
+    expect(screen.queryByText("Wettbewerber / Lösung")).toBeNull()
+    expect(screen.queryByText("Swiss biotech sector revenue 2023")).toBeNull()
+    expect(screen.getByTestId("market-only-claims")).toBeInTheDocument()
+  })
 })

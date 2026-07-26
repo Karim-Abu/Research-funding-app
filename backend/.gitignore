@@ -11,6 +11,13 @@ __pycache__/
 # Local SQLite database
 *.db
 *.db-journal
+*.db-shm
+*.db-wal
+# Backups tragen einen Zeitstempel-Suffix und enden daher NICHT auf .db —
+# ohne diese Zeile rutschen sie an "*.db" vorbei in den Commit (2026-07-26:
+# app.db.bak-20260726010529, 50 MB mit vertraulichen Projektdaten).
+*.db.bak*
+app.db.bak-*
 
 # Local source binary storage
 var/

@@ -11,13 +11,22 @@ import { Info } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
 import { cn } from "@/lib/utils"
-import { JUDGMENT_STATUS_LABELS, type MarketComparisonDto } from "@/lib/market-comparison"
 import {
+  CONFIDENCE_LABELS,
+  JUDGMENT_STATUS_LABELS,
+  type MarketComparisonDto,
+} from "@/lib/market-comparison"
+import {
+  MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
-  deriveMarketPicture,
+  candidateTypeOf,
   judgmentToneClass,
+  marketGaps,
+  marketPictureFrom,
+  marketStaleExplanation,
   marketWorkspaceStatus,
 } from "@/lib/market-view"
+import { MarketGapList, MarketPictureList } from "@/components/editor/market-blocks"
 
 interface LiveMarketComparisonProps {
   comparison: MarketComparisonDto | null
@@ -35,9 +44,18 @@ export function LiveMarketComparison({
   if (!loaded) return null
 
   const status = marketWorkspaceStatus(comparison)
-  const picture = deriveMarketPicture(comparison)
+  // Gleiche Ableitung wie Sheet und Quellen-Sektion — sonst tragen dieselben
+  // Daten in der Rail andere Rubriken als in der Detailansicht.
+  const picture = marketPictureFrom(comparison)
+  // Nur Lösungskandidaten erscheinen als Wettbewerbs-Findings — Marktstatistiken
+  // gehören ins Marktbild darüber, nie in diese Liste.
   const sourceBacked =
-    comparison?.items.filter((i) => i.confidence_label === "source_backed") ?? []
+    comparison?.items.filter(
+      (i) => i.confidence_label === "source_backed" && candidateTypeOf(i) !== null
+    ) ?? []
+  const onlyMarketClaims =
+    sourceBacked.length === 0 &&
+    (comparison?.items.some((i) => candidateTypeOf(i) === null) ?? false)
   const hasItems = (comparison?.items.length ?? 0) > 0
   // Sichtbarer Grund, warum „Marktvergleich öffnen" ggf. deaktiviert ist
   // (Tooltip allein reicht nicht — CLAUDEX §5).
@@ -55,6 +73,7 @@ export function LiveMarketComparison({
   const limitedWithoutItems = comparison?.status === "limited" && !hasItems
   const judgment = comparison?.competition_judgment ?? null
   const scopeStale = comparison?.scope_stale ?? false
+  const staleExplanation = marketStaleExplanation(comparison)
 
   return (
     <div className="flex flex-col gap-3" data-testid="live-market-comparison">
@@ -108,24 +127,25 @@ export function LiveMarketComparison({
           </div>
           <p className="text-[11px] text-muted-foreground">{judgment.scope_summary}</p>
           {scopeStale && (
-            <p className="text-[11px] text-status-partial">Suchraum geändert — bitte neu erstellen.</p>
+            <>
+              <p className="text-[11px] text-status-partial">{MARKET_STALE_BADGE}</p>
+              {staleExplanation && (
+                <p className="text-[11px] text-muted-foreground">{staleExplanation}</p>
+              )}
+            </>
           )}
         </div>
       )}
 
       {/* Kompaktes Marktbild (Top 2) — die volle Sicht liegt im Sheet. */}
       {picture.points.length > 0 && (
-        <dl
-          data-testid="market-editor-picture"
-          className="grid grid-cols-[auto_1fr] gap-x-2 gap-y-0.5 rounded-md border border-border bg-muted/20 px-3 py-2 text-[11px]"
-        >
-          {picture.points.slice(0, 2).map((point) => (
-            <React.Fragment key={point.label}>
-              <dt className="text-muted-foreground">{point.label}</dt>
-              <dd className="text-foreground">{point.value}</dd>
-            </React.Fragment>
-          ))}
-        </dl>
+        <div className="rounded-md border border-border bg-muted/20 px-3 py-2">
+          <MarketPictureList
+            points={picture.points}
+            limit={2}
+            testId="market-editor-picture"
+          />
+        </div>
       )}
 
       {!comparison || sourceBacked.length === 0 ? (
@@ -133,7 +153,9 @@ export function LiveMarketComparison({
           {/* RUN 4B §8 — limited ohne Einträge ist KEIN leerer Erfolg. */}
           {limitedWithoutItems
             ? "Marktinformationen vorhanden, aber noch kein belastbarer Anbieter-/Alternativenvergleich. Details unter "
-            : "Noch kein belegter Markt- und Konkurrenzvergleich. Erstellen Sie ihn unter "}
+            : onlyMarketClaims
+              ? "Bisher nur Marktinformationen gefunden, noch keine vergleichbaren Lösungen. Details unter "
+              : "Noch kein belegter Markt- und Konkurrenzvergleich. Erstellen Sie ihn unter "}
           <a href="/quellen" className="font-medium text-primary hover:underline">
             Quellen
           </a>
@@ -159,23 +181,14 @@ export function LiveMarketComparison({
                 </blockquote>
               )}
               <span className="mt-1 inline-block text-[11px] text-muted-foreground">
-                Textstelle gefunden
+                {CONFIDENCE_LABELS.source_backed}
               </span>
             </li>
           ))}
         </ul>
       )}
 
-      {comparison && comparison.research_gaps.length > 0 && (
-        <div>
-          <p className="text-[11px] font-medium text-foreground">Offene Evidenzlücken</p>
-          <ul className="mt-1 list-disc pl-5 text-[11px] text-muted-foreground">
-            {comparison.research_gaps.slice(0, 3).map((gap, i) => (
-              <li key={i}>{gap}</li>
-            ))}
-          </ul>
-        </div>
-      )}
+      <MarketGapList gaps={marketGaps(comparison)} limit={3} compact />
 
       <div className="flex flex-col gap-1.5 border-t border-border pt-2">
         <div className="flex flex-wrap gap-2">

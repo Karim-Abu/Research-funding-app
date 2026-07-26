@@ -128,8 +128,8 @@ skills:
     prompt_asset: skill_prompts/research_public_evidence_synthesis_skill_v2.md
   - skill_id: research.market_comparison
     role_id: RESEARCH_EVIDENCE_SYNTHESIZER
-    version: market_comparison_v2
-    prompt_asset: prompts/market_comparison_v2.md
+    version: market_comparison_v3
+    prompt_asset: prompts/market_comparison_v3.md
   - skill_id: evidence.claim_support_verification
     role_id: EVIDENCE_SUPPORT_VERIFIER
     version: evidence_claim_support_verification_skill_v2

@@ -33,11 +33,13 @@ import {
 import {
   REQ_FALLBACK,
   REQ_CATEGORY_ORDER,
+  REQ_FILTER_LABELS,
   REQ_FILTER_ORDER,
   REQ_NEUTRAL_ACTION,
   EVIDENCE_STATE_LABELS,
   HUMAN_STATE_LABELS,
   categorize,
+  dedupeRuleEvidence,
   liveStatusToBucket,
   matchesFilter,
   primaryActionFor,
@@ -448,13 +450,17 @@ function LiveRequirementRow({
         <ReqBucketBadge bucket={row.bucket} />
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="text-sm font-medium text-foreground">{row.title}</span>
-          <span className="truncate text-xs text-muted-foreground">
-            {row.reasoning}
-          </span>
+          {/* R2: aufgeklappt steht die volle Begründung unter «Systembefund» —
+              die abgeschnittene Vorschau wäre dann dieselbe Aussage doppelt. */}
+          {!expanded && (
+            <span className="truncate text-xs text-muted-foreground">
+              {row.reasoning}
+            </span>
+          )}
         </div>
         {row.evidenceState === "missing" && (
           <span className="shrink-0 rounded-full bg-status-partial/10 px-2 py-0.5 text-xs text-status-partial">
-            Ohne Beleg
+            {REQ_FILTER_LABELS.no_evidence}
           </span>
         )}
         {row.humanState === "needed" && (
@@ -490,21 +496,24 @@ function LiveRequirementRow({
             {relevanceFor(row.category)}
           </p>
 
-          {/* Status row: evidence + human review */}
-          <div className="flex flex-wrap gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground">
-              <FileText className="size-3.5 text-muted-foreground" />
-              {row.evidenceState === "missing"
-                ? REQ_FALLBACK.evidence
-                : EVIDENCE_STATE_LABELS[row.evidenceState]}
-            </span>
-            <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground">
-              <CheckCircle2 className="size-3.5 text-muted-foreground" />
-              {row.humanState === "needed"
-                ? REQ_FALLBACK.human
-                : HUMAN_STATE_LABELS[row.humanState]}
-            </span>
-          </div>
+          {/* R2: nur Zustände zeigen, die die Kopfzeile nicht schon nennt —
+              «Ohne Beleg» und «Prüfung nötig» stehen dort bereits als Chip. */}
+          {(row.evidenceState !== "missing" || row.humanState !== "needed") && (
+            <div className="flex flex-wrap gap-2">
+              {row.evidenceState !== "missing" && (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground">
+                  <FileText className="size-3.5 text-muted-foreground" />
+                  {EVIDENCE_STATE_LABELS[row.evidenceState]}
+                </span>
+              )}
+              {row.humanState !== "needed" && (
+                <span className="inline-flex items-center gap-1.5 rounded-md border border-border bg-card px-2.5 py-1 text-xs text-foreground">
+                  <CheckCircle2 className="size-3.5 text-muted-foreground" />
+                  {HUMAN_STATE_LABELS[row.humanState]}
+                </span>
+              )}
+            </div>
+          )}
 
           {/* Open points */}
           {row.openPoints.length > 0 && (
@@ -527,7 +536,7 @@ function LiveRequirementRow({
               <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
                 Regelgrundlage
               </p>
-              {row.ruleEvidence.map((evidence) => (
+              {dedupeRuleEvidence(row.ruleEvidence).map(({ evidence, mergedSourceTitles }) => (
                 <div
                   key={`${evidence.rule_id}:${evidence.source_ref}`}
                   className="rounded-md border border-border bg-card px-3 py-2"
@@ -539,7 +548,7 @@ function LiveRequirementRow({
                     {evidence.evidence_quote}
                   </p>
                   <p className="mt-1 text-xs text-muted-foreground">
-                    Quelle: {evidence.source_title} · Registry{" "}
+                    Quelle: {mergedSourceTitles.join(" · ")} · Registry{" "}
                     {evidence.registry_version}
                     {evidence.last_verified
                       ? ` · geprüft ${evidence.last_verified}`
@@ -615,10 +624,6 @@ function LiveRowActions({ row }: { row: LiveRow }) {
           {action.label}
         </Button>
       ))}
-      <span className="text-xs text-muted-foreground">
-        Befunde erscheinen automatisch in der Qualitätsprüfung. Bestätigung und
-        Korrektur erfolgen dort.
-      </span>
     </div>
   )
 }

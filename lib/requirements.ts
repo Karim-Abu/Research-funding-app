@@ -65,12 +65,6 @@ export interface RequirementAssessmentDto {
   rule_evidence?: RuleEvidenceDto[]
 }
 
-export const REVIEW_STATUS_LABELS: Record<ReviewStatus, string> = {
-  not_required: "Keine Bestätigung nötig",
-  required: "Menschliche Bestätigung offen",
-  confirmed: "Menschlich bestätigt",
-}
-
 // German user-facing labels (RUN 4A status catalog). `open` heisst bewusst
 // «Prüfung nötig», nicht «Nicht erfüllt»: das Backend nutzt `open` auch für
 // «menschliche Entscheidung nötig» und «semantisch nicht bewertet»
@@ -90,13 +84,6 @@ export const STATUS_REASONS: Record<RequirementStatus, string> = {
   open: "Nicht maschinell entscheidbar — eine Person muss diesen Punkt prüfen.",
   needs_input: "Erforderliche Daten fehlen.",
   blocked: "Die Regel ist verletzt.",
-}
-
-export const BASIS_LABELS: Record<AssessmentBasis, string> = {
-  deterministic_rule: "Regelbasiert",
-  semantic_assessment: "Inhaltliche Prüfung",
-  hybrid: "Regel + menschliche Bestätigung",
-  human_override: "Manuell entschieden",
 }
 
 export const STALE_NOTICE =

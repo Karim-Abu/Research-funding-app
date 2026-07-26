@@ -73,9 +73,8 @@ export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
 
 // Erläuterung unter Beleg-Listen: was die Stufe aussagt — und was nicht.
 export const SUPPORT_LADDER_HINT =
-  "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar. " +
-  "Ob die Aussage fachlich gestützt ist, zeigen die Stufen «Teilweise/Stark " +
-  "gestützt» – die abschliessende Bewertung bleibt bei Ihnen."
+  "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar — " +
+  "die fachliche Bewertung bleibt bei Ihnen."
 
 export function isSupportStatus(value: unknown): value is SupportStatus {
   return typeof value === "string" && value in SUPPORT_STATUS_LABELS

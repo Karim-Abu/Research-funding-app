@@ -399,7 +399,9 @@ def test_anchor_passage_exact_selector_reaches_reviewed_text_after_cover(
         "excerpt": target,
         "quote_hash": quote_hash,
         "safety_status": "passed",
-        "content_review_status": "unreviewed",
+        # Import auto-marks a non-quarantined AI-found result as reviewed
+        # (2026-07-26) — no manual "Stützt" step needed.
+        "content_review_status": "reviewed",
     }]
     assert "SEARCH_SNIPPET_MUST_NOT_BECOME_EVIDENCE" not in response.text
 

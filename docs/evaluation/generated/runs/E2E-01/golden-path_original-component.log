@@ -1,0 +1,6 @@
+
+Running 1 test using 1 worker
+
+  ok 1 [chromium] › e2e\golden-path.spec.ts:63:5 › Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Reload (9.5s)
+
+  1 passed (10.3s)

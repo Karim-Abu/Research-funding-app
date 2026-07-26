@@ -194,7 +194,7 @@ describe("LiveEditor A2 suggestions", () => {
     expect(unavailable).toHaveTextContent(
       "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar."
     )
-    expect(unavailable).toHaveTextContent(/Abschnittsvorschläge unterstützen aktuell/)
+    expect(unavailable).toHaveTextContent(/Verfügbar für Abstract/)
     expect(within(unavailable).queryByRole("button")).not.toBeInTheDocument()
   })
 
