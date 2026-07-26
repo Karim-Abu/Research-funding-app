@@ -129,7 +129,7 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
       />
     )
     expect(screen.getByTestId("market-editor-status")).toHaveTextContent(
-      "Letzter Versuch fehlgeschlagen"
+      "Erstellung fehlgeschlagen"
     )
     expect(screen.queryByText("Nicht analysiert")).toBeNull()
     expect(

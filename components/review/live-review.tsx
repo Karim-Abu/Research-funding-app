@@ -123,6 +123,15 @@ export function LiveReview({ runId }: { runId: string }) {
     }
   }
 
+  // Hauptaktion der Qualitätsprüfungs-Karte: zur Aufgabenliste, in der jede
+  // Aufgabe zur betroffenen Stelle im Entwurf führt.
+  function showCheckpoints() {
+    const target =
+      document.querySelector('[data-testid="fix-queue-next"]') ??
+      document.querySelector('[data-testid="grouped-findings"]')
+    target?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }
+
   function jumpToTasks() {
     const firstFailed = checks?.areas.find((a) => a.status === "failed")
     const target = firstFailed
@@ -341,7 +350,9 @@ export function LiveReview({ runId }: { runId: string }) {
         </section>
       )}
 
-      {reliabilityEnabled && <QualitySummary runId={runId} />}
+      {reliabilityEnabled && (
+        <QualitySummary runId={runId} onShowCheckpoints={showCheckpoints} />
+      )}
     </div>
   )
 }

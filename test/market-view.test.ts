@@ -9,9 +9,10 @@ import {
   judgmentToneClass,
   marketGaps,
   marketPictureFrom,
-  marketWorkspaceStatus,
+  marketUiState,
 } from "@/lib/market-view"
 import type {
+  CompetitionJudgmentDto,
   ItemCategory,
   ConfidenceLabel,
   MarketComparisonDto,
@@ -53,41 +54,121 @@ function comparison(
   }
 }
 
-describe("marketWorkspaceStatus", () => {
-  it("liefert einen neutralen Zustand ohne Vergleich", () => {
-    expect(marketWorkspaceStatus(null)).toEqual({
-      label: "Noch nicht erstellt",
-      tone: "neutral",
+// EINE Statuswahrheit: jeder Zustand liefert Badge, Antwort, nächsten Schritt
+// und die Entscheidung, ob eine Marktaussage in den Antrag darf.
+describe("marketUiState", () => {
+  const judgment = (over: Partial<CompetitionJudgmentDto> = {}): CompetitionJudgmentDto => ({
+    status: "no_direct_equivalent_in_scope",
+    rationale: "Im definierten Suchumfang wurden keine gleichwertigen Lösungen identifiziert.",
+    scope_summary: "Im definierten Suchumfang: 4 geprüfte öffentliche Quellen, 1 untersuchte Lösungskandidaten.",
+    relevant_candidate_count: 1,
+    key_overlaps: [],
+    evidenced_differentiators: [],
+    plausible_unverified_differentiators: [],
+    open_evidence_gaps: [],
+    allowed_formulations: ["Im definierten Suchumfang …"],
+    disallowed_formulations: [],
+    can_insert_into_application: true,
+    ...over,
+  })
+
+  const candidate = (confidence_label: ConfidenceLabel) => ({
+    item_id: "c1",
+    name: "Rival AG",
+    candidate_type: "direct_competitor" as const,
+    relation_to_project: "competing" as const,
+    relevant_functions: [],
+    overlaps: [],
+    evidencing_differentiators: [],
+    unverified_differentiators: [],
+    source_document_ids: ["s1"],
+    evidence_quotes: [],
+    status: "proposed" as const,
+    confidence_label,
+    source_scope_ok: true,
+    allowed_formulations: [],
+    disallowed_formulations: [],
+  })
+
+  /** Vergleich, der die Abdeckungsschwelle erfüllt (2 Quellen, belegter Kandidat). */
+  const covered = (over: Partial<MarketComparisonDto> = {}) =>
+    comparison({
+      source_version_ids: ["v1", "v2"],
+      solution_landscape: {
+        candidates: [candidate("source_backed")],
+        candidate_count_by_type: { direct_competitor: 1 },
+      },
+      competition_judgment: judgment(),
+      ...over,
     })
+
+  it("ohne Vergleich: nicht gestartet, keine Übernahme", () => {
+    const ui = marketUiState(null)
+    expect(ui.status).toBe("not_started")
+    expect(ui.label).toBe("Noch nicht erstellt")
+    expect(ui.canInsert).toBe(false)
   })
 
-  it("zeigt failed als Fehlversuch mit Retry-Hinweis (nie «Nicht analysiert»)", () => {
-    const status = marketWorkspaceStatus(comparison({ status: "failed" }))
-    expect(status.label).toBe("Letzter Versuch fehlgeschlagen")
-    expect(status.tone).toBe("error")
-    expect(status.hint).toMatch(/erneut/i)
+  it("failed schlägt jede Ergebnisaussage", () => {
+    const ui = marketUiState(comparison({ status: "failed" }))
+    expect(ui.status).toBe("failed")
+    expect(ui.tone).toBe("error")
+    expect(ui.canInsert).toBe(false)
   })
 
-  it("benennt zu wenige geprüfte Quellen", () => {
-    expect(
-      marketWorkspaceStatus(comparison({ status: "insufficient_external_evidence" })).label
-    ).toBe("Zu wenige geprüfte Quellen")
+  it("dünne Laufzeitlage wird «Weitere Recherche nötig»", () => {
+    const ui = marketUiState(comparison({ status: "insufficient_external_evidence" }))
+    expect(ui.status).toBe("research_needed")
+    expect(ui.label).toBe("Weitere Recherche nötig")
+    expect(ui.nextStep).toMatch(/zu wenige geeignete geprüfte öffentliche Quellen/)
+    expect(ui.canInsert).toBe(false)
   })
 
-  it("ist erst mit Einträgen «Zur Prüfung bereit», sonst ehrlich leer", () => {
-    const withItems = marketWorkspaceStatus(
-      comparison({
-        status: "ready_for_review",
-        items: [item({ category: "competitor", confidence_label: "source_backed" })],
+  it("ohne belegten Lösungskandidaten bleibt es bei «Weitere Recherche nötig»", () => {
+    const ui = marketUiState(covered({ solution_landscape: { candidates: [], candidate_count_by_type: {} } }))
+    expect(ui.status).toBe("research_needed")
+    expect(ui.nextStep).toMatch(/kein konkreter Anbieter/)
+    expect(ui.canInsert).toBe(false)
+  })
+
+  it("unter zwei geprüften Quellen wird nie übernommen", () => {
+    const ui = marketUiState(covered({ source_version_ids: ["v1"] }))
+    expect(ui.status).toBe("research_needed")
+    expect(ui.nextStep).toMatch(/weniger als zwei geprüfte öffentliche Quellen/)
+    expect(ui.canInsert).toBe(false)
+  })
+
+  it("bei ausreichender Abdeckung ist die Aussage übernehmbar", () => {
+    const ui = marketUiState(covered())
+    expect(ui.status).toBe("application_ready")
+    expect(ui.tone).toBe("positive")
+    expect(ui.canInsert).toBe(true)
+  })
+
+  it("ein veralteter Suchraum sperrt die Übernahme trotz gutem Urteil", () => {
+    const ui = marketUiState(covered({ scope_stale: true }))
+    expect(ui.status).toBe("stale")
+    expect(ui.canInsert).toBe(false)
+  })
+
+  it("noch nicht einbezogene Quellen gelten als veraltet und sperren die Übernahme", () => {
+    const ui = marketUiState(covered(), { unusedSourceCount: 7 })
+    expect(ui.status).toBe("stale")
+    expect(ui.summary).toMatch(/7 geprüfte Quellen sind dazugekommen|7 geprüfte Quellen/)
+    expect(ui.canInsert).toBe(false)
+  })
+
+  it("ohne zulässige Formulierung bleibt es bei «Zur Prüfung bereit»", () => {
+    const ui = marketUiState(
+      covered({
+        competition_judgment: judgment({
+          allowed_formulations: [],
+          can_insert_into_application: false,
+        }),
       })
     )
-    expect(withItems).toEqual({ label: "Zur Prüfung bereit", tone: "positive" })
-
-    const withoutItems = marketWorkspaceStatus(
-      comparison({ status: "ready_for_review", items: [] })
-    )
-    expect(withoutItems.label).toBe("Keine belegten Einträge")
-    expect(withoutItems.tone).toBe("attention")
+    expect(ui.status).toBe("ready_for_review")
+    expect(ui.canInsert).toBe(false)
   })
 })
 
@@ -243,6 +324,7 @@ describe("marketGaps", () => {
     expect(marketGaps(null)).toEqual([])
   })
 })
+
 
 describe("candidateTypeLabel / judgmentToneClass", () => {
   it("übersetzt Kandidatentypen und liefert Ton-Klassen", () => {

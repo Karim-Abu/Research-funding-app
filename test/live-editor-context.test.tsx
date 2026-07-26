@@ -311,6 +311,8 @@ describe("Markt tab + comparison sheet", () => {
           research_gaps: ["Marktgrösse Schweiz unbelegt"],
           warnings: [],
           item_count: 1,
+          // Zwei geprüfte Quellen — erst dann darf überhaupt übernommen werden.
+          source_version_ids: ["sv1", "sv2"],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           items: [

@@ -132,8 +132,16 @@ test("reliability UI: Quality Summary renders in the Review Center", async ({ pa
   await page.goto("/review")
   const card = page.getByTestId("quality-summary")
   await expect(card).toBeVisible({ timeout: 20_000 })
-  await expect(card).toContainText("Qualitätsübersicht")
-  await expect(page.getByTestId("quality-metrics")).toBeVisible()
+  await expect(card).toContainText("Qualitätsprüfung: Belege")
+  // Standardansicht: ein Status in Klartext; die Kennzahlen liegen in den
+  // technischen Prüfinformationen (zugeklappt, deshalb nicht sichtbar).
+  await expect(card.getByTestId("quality-status")).toBeVisible()
+  await expect(page.getByTestId("quality-metrics")).not.toBeVisible()
+  // useInnerText: der Wortlaut bleibt im DOM (Audit), nur unsichtbar.
+  await expect(card).not.toContainText(
+    /Suffizienz|Konsensrisiko|Semantische Drift/,
+    { useInnerText: true }
+  )
   // No provider/model branding anywhere on the page.
   await expect(page.locator("body")).not.toContainText(/firecrawl|anthropic|haiku/i)
 

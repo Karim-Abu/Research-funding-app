@@ -16,7 +16,7 @@ import {
   MARKET_TONE_STYLE,
   candidateTypeOf,
   marketSummaryCounts,
-  marketWorkspaceStatus,
+  marketUiState,
 } from "@/lib/market-view"
 
 interface LiveMarketComparisonProps {
@@ -34,7 +34,7 @@ export function LiveMarketComparison({
 }: LiveMarketComparisonProps) {
   if (!loaded) return null
 
-  const status = marketWorkspaceStatus(comparison)
+  const ui = marketUiState(comparison)
   // Nur Lösungskandidaten zählen als Funde — Marktstatistiken sind keine
   // Wettbewerbs-Findings.
   const sourceBacked =
@@ -67,10 +67,10 @@ export function LiveMarketComparison({
           data-testid="market-editor-status"
           className={cn(
             "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-            MARKET_TONE_STYLE[status.tone]
+            MARKET_TONE_STYLE[ui.tone]
           )}
         >
-          {status.label}
+          {ui.label}
         </span>
       </div>
 

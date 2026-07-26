@@ -23,16 +23,12 @@ import { MarketGapList, MarketPictureList } from "@/components/editor/market-blo
 import { cn } from "@/lib/utils"
 import {
   CANDIDATE_TYPE_ORDER,
-  JUDGMENT_INSUFFICIENT_HINT,
   MARKET_HYPOTHESIS_NOTE,
-  MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
   candidateTypeOf,
-  judgmentToneClass,
   marketGaps,
   marketPictureFrom,
-  marketStaleExplanation,
-  marketWorkspaceStatus,
+  marketUiState,
 } from "@/lib/market-view"
 // CANDIDATE_TYPE_LABELS/JUDGMENT_STATUS_LABELS are consumed directly below.
 import {
@@ -49,7 +45,7 @@ import {
 } from "@/lib/market-comparison"
 
 const INSERT_BLOCKED_HINT =
-  "Nur belegte, auf den Suchraum eingeschränkte Aussagen können übernommen werden."
+  "Noch keine Aussage für den Antrag übernehmbar — die geprüfte Vergleichsabdeckung trägt sie nicht. Erst weitere Recherche, dann Vergleich neu erstellen."
 const SOURCE_HINT = "gestützt auf die im Vergleich verwendeten geprüften öffentlichen Quellen"
 
 interface MarketComparisonSheetProps {
@@ -81,12 +77,10 @@ export function MarketComparisonSheet({
   const hasMarketClaims = (comparison?.items ?? []).some(
     (item) => candidateTypeOf(item) === null
   )
-  const status = marketWorkspaceStatus(comparison)
+  const ui = marketUiState(comparison)
   const picture = marketPictureFrom(comparison)
   const judgment = comparison?.competition_judgment ?? null
   const landscape = comparison?.solution_landscape ?? null
-  const scopeStale = comparison?.scope_stale ?? false
-  const staleExplanation = marketStaleExplanation(comparison)
 
   function insert(text: string) {
     onInsertText(`${text} (${SOURCE_HINT})`)
@@ -106,29 +100,20 @@ export function MarketComparisonSheet({
         </SheetHeader>
 
         <div className="flex flex-col gap-4 px-4 pb-6">
-          <div className="flex flex-wrap items-center gap-2">
+          {/* Eine Statusaussage, ein nächster Schritt — identisch abgeleitet wie
+              in Quellen-Karte und Editor-Rail. */}
+          <div className="flex flex-col gap-1">
             <span
               data-testid="market-sheet-status"
               className={cn(
-                "inline-flex shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
-                MARKET_TONE_STYLE[status.tone]
+                "inline-flex w-fit shrink-0 items-center rounded-full px-2 py-0.5 text-[11px] font-medium",
+                MARKET_TONE_STYLE[ui.tone]
               )}
             >
-              {status.label}
+              {ui.label}
             </span>
-            {status.hint && <span className="text-[11px] text-muted-foreground">{status.hint}</span>}
-            {scopeStale && (
-              <span
-                data-testid="market-sheet-stale"
-                className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}
-              >
-                {MARKET_STALE_BADGE}
-              </span>
-            )}
+            <p className="text-[11px] text-muted-foreground">Nächster Schritt: {ui.nextStep}</p>
           </div>
-          {staleExplanation && (
-            <p className="-mt-2 text-[11px] text-muted-foreground">{staleExplanation}</p>
-          )}
 
           {comparison?.comparison_basis && <MarketComparisonBasis basis={comparison.comparison_basis} />}
 
@@ -144,7 +129,7 @@ export function MarketComparisonSheet({
           <section data-testid="market-result" className="flex flex-col gap-2">
             <h2 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Ergebnis</h2>
             {judgment ? (
-              <JudgmentCard judgment={judgment} onInsert={insert} />
+              <JudgmentCard judgment={judgment} canInsert={ui.canInsert} onInsert={insert} />
             ) : (
               items.length === 0 && (
                 <p className="text-sm text-muted-foreground">
@@ -179,7 +164,12 @@ export function MarketComparisonSheet({
                       </p>
                       <ul className="flex flex-col gap-2">
                         {group.map((candidate) => (
-                          <CandidateCard key={candidate.item_id} candidate={candidate} onInsert={insert} />
+                          <CandidateCard
+                            key={candidate.item_id}
+                            candidate={candidate}
+                            canInsert={ui.canInsert}
+                            onInsert={insert}
+                          />
                         ))}
                       </ul>
                     </div>
@@ -187,7 +177,7 @@ export function MarketComparisonSheet({
                 })}
               </div>
             ) : items.length > 0 ? (
-              <LegacyTable items={items} onInsert={insert} />
+              <LegacyTable items={items} canInsert={ui.canInsert} onInsert={insert} />
             ) : (
               hasMarketClaims && (
                 <p className="text-xs text-status-partial" role="status" data-testid="market-only-claims">
@@ -219,26 +209,18 @@ export function MarketComparisonSheet({
 
 function JudgmentCard({
   judgment,
+  canInsert,
   onInsert,
 }: {
   judgment: CompetitionJudgmentDto
+  /** Reicht die Vergleichsabdeckung für eine Antragsaussage? (marketUiState) */
+  canInsert: boolean
   onInsert: (text: string) => void
 }) {
   return (
     <section data-testid="market-judgment" className="flex flex-col gap-2 rounded-lg border border-border bg-card px-4 py-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h3 className="text-sm font-semibold text-foreground">Gesamturteil</h3>
-        <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", judgmentToneClass(judgment.status))}>
-          {JUDGMENT_STATUS_LABELS[judgment.status]}
-        </span>
-      </div>
       <p className="text-xs text-foreground">{judgment.rationale}</p>
       <p className="text-[11px] text-muted-foreground">{judgment.scope_summary}</p>
-      {judgment.status === "insufficient_evidence" && (
-        <p className="text-[11px] text-muted-foreground" data-testid="market-judgment-insufficient-hint">
-          {JUDGMENT_INSUFFICIENT_HINT}
-        </p>
-      )}
 
       {judgment.key_overlaps.length > 0 && (
         <div className="text-[11px]">
@@ -263,28 +245,28 @@ function JudgmentCard({
         </div>
       )}
 
-      {/* Antragsfähige (zulässige) Aussagen — nur wenn belegt & Suchraum aktuell. */}
-      {judgment.allowed_formulations.length > 0 && (
-        <div className="flex flex-col gap-1.5">
+      {/* Antragsfähige Aussagen erscheinen nur, wenn die Vergleichsabdeckung
+          sie trägt. Eine Aussage wie «es wurde nichts Gleichwertiges
+          identifiziert» ist bei schmaler Basis eine Überbehauptung — dann wird
+          gar nichts zur Übernahme angeboten (statt eines deaktivierten
+          Buttons, der zum Nachfassen einlädt). */}
+      {judgment.allowed_formulations.length > 0 && canInsert && (
+        <div className="flex flex-col gap-1.5" data-testid="market-allowed-formulations">
           <p className="text-[11px] font-medium text-foreground">Für den Antrag zulässige Aussagen</p>
           {judgment.allowed_formulations.map((text, i) => (
             <div key={i} className="flex items-start justify-between gap-2 rounded-md border border-border px-2.5 py-1.5">
               <span className="text-[11px] text-foreground">{text}</span>
-              <Button
-                size="xs"
-                variant="outline"
-                disabled={!judgment.can_insert_into_application}
-                title={judgment.can_insert_into_application ? undefined : INSERT_BLOCKED_HINT}
-                onClick={() => onInsert(text)}
-              >
+              <Button size="xs" variant="outline" onClick={() => onInsert(text)}>
                 Übernehmen
               </Button>
             </div>
           ))}
-          {!judgment.can_insert_into_application && (
-            <p className="text-[11px] text-muted-foreground">{INSERT_BLOCKED_HINT}</p>
-          )}
         </div>
+      )}
+      {!canInsert && (
+        <p className="text-[11px] text-muted-foreground" data-testid="market-insert-blocked">
+          {INSERT_BLOCKED_HINT}
+        </p>
       )}
 
       {/* Overclaim-Schutz: sichtbarer Sperr-Block. */}
@@ -307,12 +289,18 @@ function JudgmentCard({
 
 function CandidateCard({
   candidate,
+  canInsert,
   onInsert,
 }: {
   candidate: SolutionLandscapeCandidateDto
+  /** Trägt die Gesamtabdeckung eine Antragsaussage? (marketUiState) */
+  canInsert: boolean
   onInsert: (text: string) => void
 }) {
-  const insertable = candidate.allowed_formulations.length > 0 && candidate.source_scope_ok
+  // Die Gesamtabdeckung entscheidet mit: reicht sie nicht, darf auch kein
+  // Einzelargument in den Antrag (CLAUDEX §2 — HITL, keine Überbehauptung).
+  const insertable =
+    canInsert && candidate.allowed_formulations.length > 0 && candidate.source_scope_ok
   return (
     <li className="rounded-md border border-border px-3 py-2.5">
       <div className="flex items-start justify-between gap-2">
@@ -344,19 +332,18 @@ function CandidateCard({
           „{candidate.evidence_quotes[0].quote}“
         </blockquote>
       )}
-      {candidate.allowed_formulations.map((text, i) => (
-        <Button
-          key={i}
-          size="xs"
-          variant="outline"
-          className="mt-1.5"
-          disabled={!insertable}
-          title={insertable ? undefined : INSERT_BLOCKED_HINT}
-          onClick={() => onInsert(text)}
-        >
-          Als Argument übernehmen
-        </Button>
-      ))}
+      {insertable &&
+        candidate.allowed_formulations.map((text, i) => (
+          <Button
+            key={i}
+            size="xs"
+            variant="outline"
+            className="mt-1.5"
+            onClick={() => onInsert(text)}
+          >
+            Als Argument übernehmen
+          </Button>
+        ))}
     </li>
   )
 }
@@ -365,12 +352,16 @@ function CandidateCard({
 // solution_landscape on the response): the original per-item table.
 function LegacyTable({
   items,
+  canInsert,
   onInsert,
 }: {
   items: MarketComparisonItemDto[]
+  /** Trägt die Gesamtabdeckung eine Antragsaussage? (marketUiState) */
+  canInsert: boolean
   onInsert: (text: string) => void
 }) {
   const insertableOf = (item: MarketComparisonItemDto) =>
+    canInsert &&
     item.confidence_label === "source_backed" &&
     item.status !== "rejected" &&
     Boolean(item.differentiation_relevance?.trim())
@@ -414,15 +405,15 @@ function LegacyTable({
                   )}
                 </td>
                 <td className="py-2">
-                  <Button
-                    size="xs"
-                    variant="outline"
-                    disabled={!insertable}
-                    title={insertable ? undefined : INSERT_BLOCKED_HINT}
-                    onClick={() => onInsert(`Abgrenzung zu ${item.name}: ${item.differentiation_relevance?.trim() ?? ""}`)}
-                  >
-                    Als Argument übernehmen
-                  </Button>
+                  {insertable && (
+                    <Button
+                      size="xs"
+                      variant="outline"
+                      onClick={() => onInsert(`Abgrenzung zu ${item.name}: ${item.differentiation_relevance?.trim() ?? ""}`)}
+                    >
+                      Als Argument übernehmen
+                    </Button>
+                  )}
                 </td>
               </tr>
             )

@@ -177,11 +177,11 @@ describe("MarketComparisonSection", () => {
         readiness={{ hasEligible: false, eligibleCount: 0, totalImported: 0, nextCandidate: null }}
       />
     )
-    await screen.findByText(/Noch kein Vergleich/)
+    await screen.findByText(/Es liegt noch kein Markt- und Konkurrenzvergleich vor/)
     expect(screen.queryByTestId("market-comparison-readiness")).toBeNull()
-    expect(
-      screen.getByText(/Das liefert der Vergleich: eine belegte Tabelle/)
-    ).toBeInTheDocument()
+    expect(screen.getByTestId("market-section-next-step")).toHaveTextContent(
+      "Öffentliche Quellen recherchieren, übernehmen und inhaltlich prüfen"
+    )
   })
 
   it("renders the comparison table, quote, status label and research gaps", async () => {
@@ -304,9 +304,15 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
-    expect(
-      await screen.findByTestId("market-comparison-stale-reason")
-    ).toHaveTextContent("Suchraum")
+    // Veraltung ist ein Zustand, kein Zusatzhinweis: sie bestimmt Badge,
+    // Antwort und nächsten Schritt.
+    expect(await screen.findByTestId("market-comparison-status")).toHaveTextContent(
+      "Veraltet — neu erstellen"
+    )
+    expect(screen.getByTestId("market-section-judgment")).toHaveTextContent("Suchraum")
+    expect(screen.getByTestId("market-section-next-step")).toHaveTextContent(
+      "Vergleich neu erstellen"
+    )
   })
 
   it("shows «Inhaltlich geprüft» after human acceptance instead of the quote status", async () => {
@@ -334,12 +340,16 @@ describe("MarketComparisonSection", () => {
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
     await waitFor(() =>
-      expect(screen.getByText(/Noch kein Vergleich/)).toBeInTheDocument()
+      expect(
+        screen.getByText(/Es liegt noch kein Markt- und Konkurrenzvergleich vor/)
+      ).toBeInTheDocument()
     )
     expect(
       screen.getByRole("button", { name: "Vergleich erstellen" })
     ).toBeInTheDocument()
-    expect(screen.getByText(/live ab, importieren und prüfen/)).toBeInTheDocument()
+    expect(screen.getByTestId("market-section-next-step")).toHaveTextContent(
+      "danach den Vergleich erstellen"
+    )
   })
 
   it("shows the precise reviewed-live empty result", async () => {
@@ -355,9 +365,10 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
-    expect(await screen.findByText(
-      /Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv/
-    )).toBeInTheDocument()
+    // Ohne belegte Lösungskandidaten ist das Ergebnis kein leerer Erfolg.
+    expect(await screen.findByTestId("market-comparison-status")).toHaveTextContent(
+      "Weitere Recherche nötig"
+    )
     expect(screen.getByTestId("market-research-gaps")).toHaveTextContent(
       "Keine live abgerufenen und inhaltlich positiv geprüften öffentlichen Quellen"
     )
@@ -414,9 +425,9 @@ describe("MarketComparisonSection", () => {
     expect(within(table!).getByText("Schweizer KMU")).toBeInTheDocument()
     expect(within(table!).getByText("Schnellere Qualitätsprüfung")).toBeInTheDocument()
     expect(within(table!).getByText("Abo-Modell")).toBeInTheDocument()
-    // Ehrlicher Gesamtstatus im Sektionskopf (einheitliches Viewmodel).
+    // Ein Eintrag ohne Lösungslandschaft trägt noch keine Wettbewerbsaussage.
     expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
-      "Zur Prüfung bereit"
+      "Weitere Recherche nötig"
     )
     // Höchstens fünf Konsequenzen.
     const list = screen.getByTestId("market-consequences")
@@ -439,18 +450,15 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
-    expect(
-      await screen.findByText(/keine belastbaren Anbieter- oder/)
-    ).toBeInTheDocument()
-    // Kein Erfolgs-Empty-State, keine leere Tabelle.
-    expect(
-      screen.queryByText(/Keine Vergleichseinträge aus live abgerufenen/)
-    ).toBeNull()
+    // Kein Erfolgs-Empty-State: ein Status, der zur Recherche auffordert.
+    expect(await screen.findByTestId("market-comparison-status")).toHaveTextContent(
+      "Weitere Recherche nötig"
+    )
     expect(screen.queryByTestId("market-comparison-table")).toBeNull()
-    // Limitationshinweis + fehlende Evidenz konkret benannt.
-    expect(
-      screen.getByText(/Begrenzte externe Evidenz: Es liegen geprüfte Marktquellen vor/)
-    ).toBeInTheDocument()
+    // Der nächste Schritt benennt die fehlende Wettbewerbsabdeckung.
+    expect(screen.getByTestId("market-section-next-step")).toHaveTextContent(
+      "decken den Wettbewerb noch nicht ab"
+    )
     expect(screen.getByTestId("market-research-gaps")).toHaveTextContent(
       "Es fehlen geprüfte Quellen zu Anbietern im Zielmarkt."
     )
@@ -469,13 +477,11 @@ describe("MarketComparisonSection", () => {
       )
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
-    expect(
-      await screen.findByText(
-        /Für einen belastbaren Marktvergleich fehlen geeignete geprüfte/
-      )
-    ).toBeInTheDocument()
-    expect(screen.getByTestId("market-comparison-status")).toHaveTextContent(
-      "Zu wenige geprüfte Quellen"
+    expect(await screen.findByTestId("market-comparison-status")).toHaveTextContent(
+      "Weitere Recherche nötig"
+    )
+    expect(screen.getByTestId("market-section-next-step")).toHaveTextContent(
+      "zu wenige geeignete geprüfte öffentliche Quellen"
     )
   })
 
@@ -503,8 +509,101 @@ describe("MarketComparisonSection", () => {
     )
     render(<MarketComparisonSection projectId={PROJECT} />)
     const board = await screen.findByTestId("market-section-judgment")
-    expect(board).toHaveTextContent("Ähnliche Lösungen gefunden")
-    expect(board).toHaveTextContent("Im definierten Suchumfang")
+    // Die Begründung des Backends ist die Antwort — kein zusätzlicher Statuschip.
+    expect(board).toHaveTextContent("Im definierten Suchumfang existieren ähnliche Lösungen.")
+    expect(board).toHaveTextContent("2 geprüfte öffentliche Quellen")
+  })
+
+  // Reale Lage aus der Abnahme: mehrere Quellen geprüft und übernommen, aber
+  // alle nur mit Marktzahlen — 0 Lösungskandidaten. Der Grund darf dann nicht
+  // «noch nicht bestätigt» behaupten, sondern muss die fehlende Lösungsquelle
+  // benennen.
+  it("nennt bei geprüften Quellen ohne Lösungskandidaten den Marktinfo-Grund", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({
+            // Genug Quellen — was fehlt, sind Lösungskandidaten.
+            source_version_ids: ["v1", "v2", "v3"],
+            solution_landscape: { candidates: [], candidate_count_by_type: {} },
+            competition_judgment: {
+              status: "insufficient_evidence",
+              rationale: "Die geprüfte Quellenlage reicht für eine belastbare Wettbewerbsaussage noch nicht aus.",
+              scope_summary: "Im definierten Suchumfang: 3 geprüfte öffentliche Quellen, 0 untersuchte Lösungskandidaten.",
+              relevant_candidate_count: 0,
+              key_overlaps: [],
+              evidenced_differentiators: [],
+              plausible_unverified_differentiators: [],
+              open_evidence_gaps: [],
+              allowed_formulations: [],
+              disallowed_formulations: [],
+              can_insert_into_application: false,
+            },
+          })
+        )
+      )
+    )
+    render(<MarketComparisonSection projectId={PROJECT} />)
+    const nextStep = await screen.findByTestId("market-section-next-step")
+    expect(nextStep).toHaveTextContent("kein konkreter Anbieter und keine Alternativlösung")
+    expect(nextStep.textContent).not.toMatch(/inhaltlich bestätigt/)
+  })
+
+  // Widerspruch aus der Abnahme: oben «Quellenlage reicht nicht aus», darunter
+  // «der Vergleich kann erstellt werden». Die Fortschrittszeile gilt nur, so
+  // lange noch kein Vergleich existiert.
+  it("zeigt die Fortschrittszeile nicht mehr, sobald ein Vergleich vorliegt", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ source_version_ids: ["v1", "v2", "v3"] }))
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: true, eligibleCount: 11, totalImported: 11, nextCandidate: null }}
+      />
+    )
+    await screen.findByTestId("market-comparison-status")
+    expect(screen.queryByTestId("market-comparison-readiness")).toBeNull()
+    expect(screen.queryByText(/der Vergleich kann erstellt werden/)).toBeNull()
+  })
+
+  it("benennt stattdessen die noch nicht einbezogenen Quellen", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ source_version_ids: ["v1", "v2", "v3"] }))
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: true, eligibleCount: 11, totalImported: 11, nextCandidate: null }}
+      />
+    )
+    expect(await screen.findByTestId("market-comparison-status")).toHaveTextContent(
+      "Veraltet — neu erstellen"
+    )
+    expect(screen.getByTestId("market-section-judgment")).toHaveTextContent(
+      "8 geprüfte Quellen dazugekommen"
+    )
+  })
+
+  it("meldet keine neuen Quellen, wenn der Vergleich alle geprüften nutzt", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(comparison({ source_version_ids: ["v1", "v2"] }))
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: true, eligibleCount: 2, totalImported: 2, nextCandidate: null }}
+      />
+    )
+    expect(await screen.findByTestId("market-comparison-status")).not.toHaveTextContent(
+      "Veraltet"
+    )
   })
 
   it("generates a comparison and renders the result", async () => {

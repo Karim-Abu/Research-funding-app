@@ -69,6 +69,9 @@ function comparison(over: Partial<MarketComparisonDto> = {}): MarketComparisonDt
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
     items: [],
+    // Zwei geprüfte Quellen: erfüllt die Abdeckungsschwelle, ab der eine
+    // Aussage überhaupt übernehmbar sein darf (marketUiState).
+    source_version_ids: ["sv1", "sv2"],
     comparison_basis: {
       title: "Anomalieerkennung für KMU",
       idea: "Wir bauen eine automatisierte Qualitätsprüfung.",
@@ -111,8 +114,9 @@ describe("MarketComparisonSheet", () => {
 
   it("zeigt das Gesamturteil und trennt Marktbild von der Lösungslandschaft", () => {
     renderSheet(comparison())
-    expect(screen.getByTestId("market-judgment")).toBeInTheDocument()
-    expect(screen.getByText("Direkt vergleichbare Lösung gefunden")).toBeInTheDocument()
+    expect(screen.getByTestId("market-judgment")).toHaveTextContent(
+      "Im definierten Suchumfang wurde mit Rival AG eine funktional weitgehend vergleichbare Lösung identifiziert."
+    )
     const picture = screen.getByTestId("market-picture")
     const landscape = screen.getByTestId("market-solution-landscape")
     expect(picture).toBeInTheDocument()
@@ -133,11 +137,29 @@ describe("MarketComparisonSheet", () => {
     expect(inserted).toContain("gestützt auf")
   })
 
-  it("sperrt das Einfügen bei can_insert_into_application=false", () => {
+  // Bei ungenügender Abdeckung wird gar nichts zur Übernahme angeboten — ein
+  // deaktivierter Button lädt zum Nachfassen ein, ein fehlender nicht.
+  it("bietet bei can_insert_into_application=false keine Übernahme an", () => {
     renderSheet(comparison({ competition_judgment: judgment({ can_insert_into_application: false }) }))
-    for (const btn of screen.getAllByRole("button", { name: "Übernehmen" })) {
-      expect(btn).toBeDisabled()
-    }
+    expect(screen.queryByRole("button", { name: "Übernehmen" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Als Argument übernehmen" })).toBeNull()
+    expect(screen.getByTestId("market-insert-blocked")).toBeInTheDocument()
+  })
+
+  // Der kritische Fall: zu schmale Basis darf keine «es gibt nichts
+  // Gleichwertiges»-Aussage in den Antrag lassen.
+  it("sperrt die Übernahme unter zwei geprüften Quellen", () => {
+    renderSheet(comparison({ source_version_ids: ["sv1"] }))
+    expect(screen.getByTestId("market-sheet-status")).toHaveTextContent("Weitere Recherche nötig")
+    expect(screen.queryByRole("button", { name: "Übernehmen" })).toBeNull()
+    expect(screen.queryByTestId("market-allowed-formulations")).toBeNull()
+    expect(screen.getByTestId("market-insert-blocked")).toBeInTheDocument()
+  })
+
+  it("sperrt die Übernahme bei veraltetem Suchraum", () => {
+    renderSheet(comparison({ scope_stale: true }))
+    expect(screen.getByTestId("market-sheet-status")).toHaveTextContent("Veraltet — neu erstellen")
+    expect(screen.queryByRole("button", { name: "Übernehmen" })).toBeNull()
   })
 
   it("zeigt unzulässige Aussagen als Sperr-Block und rendert nie verbotene Phrasen als Antragstext", () => {
@@ -172,9 +194,44 @@ describe("MarketComparisonSheet", () => {
     expect(card).toHaveTextContent("Plausibel, aber noch ungeprüft")
   })
 
-  it("zeigt einen Stale-Hinweis getrennt vom Runtime-Status", () => {
+  // Ohne Lösungskandidaten ist der Grund «nur Marktinformationen» — nicht eine
+  // fehlende menschliche Bestätigung (die das Backend gar nicht verlangt).
+  it("nennt bei «Quellenlage noch nicht ausreichend» ohne Kandidaten den Marktinfo-Grund", () => {
+    renderSheet(
+      comparison({
+        solution_landscape: { candidates: [], candidate_count_by_type: {} },
+        competition_judgment: judgment({
+          status: "insufficient_evidence",
+          allowed_formulations: [],
+          can_insert_into_application: false,
+        }),
+      })
+    )
+    expect(screen.getByTestId("market-sheet-status")).toHaveTextContent("Weitere Recherche nötig")
+    expect(screen.getByTestId("market-insert-blocked")).toBeInTheDocument()
+  })
+
+  it("nennt bei unbelegten Kandidaten die fehlende Fundstelle als Grund", () => {
+    renderSheet(
+      comparison({
+        solution_landscape: {
+          candidates: [candidate({ confidence_label: "needs_review" })],
+          candidate_count_by_type: { direct_competitor: 1 },
+        },
+        competition_judgment: judgment({
+          status: "insufficient_evidence",
+          allowed_formulations: [],
+          can_insert_into_application: false,
+        }),
+      })
+    )
+    expect(screen.getByTestId("market-sheet-status")).toHaveTextContent("Weitere Recherche nötig")
+    expect(screen.queryByRole("button", { name: "Als Argument übernehmen" })).toBeNull()
+  })
+
+  it("macht Veraltung zum Status statt zu einem Zusatz-Badge", () => {
     renderSheet(comparison({ scope_stale: true }))
-    expect(screen.getByTestId("market-sheet-stale")).toHaveTextContent("Suchraum geändert")
+    expect(screen.getByTestId("market-sheet-status")).toHaveTextContent("Veraltet — neu erstellen")
   })
 
   it("zeigt die Projektidee als Vergleichsbasis mit Suchfokus und Bearbeiten-Link", () => {

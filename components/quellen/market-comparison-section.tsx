@@ -27,19 +27,15 @@ import {
   type MarketComparisonDto,
   type MarketComparisonItemDto,
 } from "@/lib/market-comparison"
-import { JUDGMENT_STATUS_LABELS } from "@/lib/market-comparison"
 import {
   CANDIDATE_TYPE_ORDER,
-  MARKET_STALE_BADGE,
   MARKET_TONE_STYLE,
   QUOTE_NOT_CONFIRMED_NOTE,
   candidateTypeOf,
-  judgmentToneClass,
   marketGaps,
   marketPictureFrom,
-  marketStaleExplanation,
   marketSummaryCounts,
-  marketWorkspaceStatus,
+  marketUiState,
   quoteNeedsConfirmation,
 } from "@/lib/market-view"
 import { MarketGapList, MarketPictureList } from "@/components/editor/market-blocks"
@@ -170,10 +166,18 @@ export function MarketComparisonSection({
   const picturePoints = comparison?.market_picture
     ? marketPictureFrom(comparison).points
     : []
-  const staleExplanation = marketStaleExplanation(comparison)
   const basis = comparison?.comparison_basis
-  const summary = marketSummaryCounts(comparison)
-  const knownPoints = marketPictureFrom(comparison).points
+  const counts = marketSummaryCounts(comparison)
+  // Der Vergleich bezieht sich auf die Quellen seines Erstellungszeitpunkts.
+  // Kommen danach geprüfte Quellen dazu, ist nicht «mehr Evidenz vorhanden»,
+  // sondern «der Vergleich kennt sie noch nicht» die ehrliche Aussage.
+  const usedSourceCount = comparison?.source_version_ids?.length ?? 0
+  const unusedSourceCount =
+    readiness && usedSourceCount > 0
+      ? Math.max(0, readiness.eligibleCount - usedSourceCount)
+      : 0
+  // Die EINE Statuswahrheit dieser Oberfläche.
+  const ui = marketUiState(comparison, { unusedSourceCount })
 
   return (
     <section
@@ -186,15 +190,14 @@ export function MarketComparisonSection({
           <h3 className="text-sm font-semibold text-foreground">
             Markt- und Konkurrenzvergleich
           </h3>
-          {/* RUN 4A: ehrlicher Gesamtstatus des Vergleichs im Sektionskopf.
-              2026-07-24: einheitliches Viewmodel (identisch zu Rail + Sheet). */}
+          {/* Die einzige Statusaussage der Oberfläche (identisch zu Rail + Sheet). */}
           {comparison && (
             <Badge
               variant="outline"
               data-testid="market-comparison-status"
-              className={cn("border-transparent", MARKET_TONE_STYLE[marketWorkspaceStatus(comparison).tone])}
+              className={cn("border-transparent", MARKET_TONE_STYLE[ui.tone])}
             >
-              {marketWorkspaceStatus(comparison).label}
+              {ui.label}
             </Badge>
           )}
         </div>
@@ -221,16 +224,6 @@ export function MarketComparisonSection({
         den Antrag.
       </p>
 
-      {/* Veraltung immer mit Grund — «Veraltet» allein sagt nicht, was zu tun ist. */}
-      {staleExplanation && (
-        <p
-          className="mb-3 text-xs text-status-partial"
-          data-testid="market-comparison-stale-reason"
-        >
-          {staleExplanation}
-        </p>
-      )}
-
       {/* Verglichen mit — eine Zeile statt der vollen Vergleichsbasis-Karte;
           die volle Karte steht unter «Details öffnen». */}
       {basis && (
@@ -240,47 +233,28 @@ export function MarketComparisonSection({
         </p>
       )}
 
-      {/* Gesamturteil (Backend) — die zentrale Entscheidungsaussage über dem Detail. */}
-      {comparison?.competition_judgment ? (
-        <div data-testid="market-section-judgment" className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5">
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-semibold text-foreground">Gesamturteil</span>
-            <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", judgmentToneClass(comparison.competition_judgment.status))}>
-              {JUDGMENT_STATUS_LABELS[comparison.competition_judgment.status]}
-            </span>
-            {comparison.scope_stale && (
-              <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-medium", MARKET_TONE_STYLE.attention)}>
-                {MARKET_STALE_BADGE}
-              </span>
-            )}
-          </div>
-          <p className="mt-1 text-xs text-foreground">{comparison.competition_judgment.rationale}</p>
-          <p className="text-[11px] text-muted-foreground">{comparison.competition_judgment.scope_summary}</p>
-          {comparison.competition_judgment.status === "insufficient_evidence" && (
-            <p className="mt-1 text-[11px] text-muted-foreground" data-testid="market-judgment-insufficient-hint">
-              {JUDGMENT_INSUFFICIENT_HINT}
-            </p>
-          )}
-        </div>
-      ) : (
-        comparison && (
-          <p className="mb-3 text-[11px] text-muted-foreground" data-testid="market-section-summary">
-            {`Im Suchumfang: ${summary.sourceCount} geprüfte Quellen, ${summary.solutionCount} untersuchte Lösungskandidaten.`}
+      {/* EINE Antwort: Ergebnis, Suchumfang, nächster Schritt. Ersetzt die
+          früher nebeneinanderstehenden Blöcke (Gesamturteil, Veraltung,
+          Limitationshinweise, Fortschrittszeile, Leerzustand). */}
+      <div
+        data-testid="market-section-judgment"
+        className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+      >
+        <p className="text-xs text-foreground">{ui.summary}</p>
+        {comparison?.competition_judgment && (
+          <p className="mt-0.5 text-[11px] text-muted-foreground">
+            {comparison.competition_judgment.scope_summary}
           </p>
-        )
-      )}
+        )}
+        <p className="mt-1 text-[11px] text-muted-foreground" data-testid="market-section-next-step">
+          Nächster Schritt: {ui.nextStep}
+        </p>
+      </div>
 
-      {/* Was bereits bekannt ist — Top-Marktbildpunkte, ohne die volle Karte. */}
-      {knownPoints.length > 0 && (
-        <div className="mb-3">
-          <p className="text-xs font-semibold text-foreground">Was bereits bekannt ist</p>
-          <MarketPictureList points={knownPoints} limit={2} testId="market-known-summary" />
-        </div>
-      )}
-
-      {/* 2026-07-24 — sichtbarer Fortschritt + konkrete nächste Aktion statt
-          nur eines booleschen Sperrgrunds. */}
-      {readiness && (readiness.totalImported > 0 || readiness.eligibleCount > 0) && (
+      {/* Vor dem ersten Vergleich zeigt die Fortschrittszeile, wie weit die
+          Quellenauswahl ist. Sobald ein Vergleich vorliegt, gilt allein der
+          Status oben — sonst stünde «kann erstellt werden» neben «reicht nicht». */}
+      {!comparison && readiness && (readiness.totalImported > 0 || readiness.eligibleCount > 0) && (
         <p
           className="mb-3 text-xs font-medium text-foreground"
           data-testid="market-comparison-readiness"
@@ -303,56 +277,6 @@ export function MarketComparisonSection({
         </p>
       )}
 
-      {state === "idle" && !comparison && (
-        <div className="flex flex-col gap-1.5 text-sm text-muted-foreground">
-          <p>
-            Noch kein Vergleich. Rufen Sie öffentliche Quellen live ab, importieren
-            und prüfen Sie deren Inhalt positiv und erstellen Sie danach den Vergleich.
-          </p>
-          {/* 2026-07-24 — was der fertige Vergleich liefert (Mehrwert). */}
-          <p className="text-xs">
-            Das liefert der Vergleich: eine belegte Tabelle der Anbieter und
-            Alternativen mit wörtlich verifizierten Zitaten · «Was das für den
-            Antrag bedeutet» (bis zu fünf Konsequenzen) · «Verwendete Quellen».
-          </p>
-        </div>
-      )}
-
-      {/* RUN 4A: Limitationshinweise VOR der Tabelle — eine schmale Datenlage
-          darf nie wie ein vollständiger Vergleich wirken. */}
-      {comparison?.status === "insufficient_external_evidence" && (
-        <p className="mb-3 text-sm text-status-partial" role="status">
-          Für einen belastbaren Marktvergleich fehlen geeignete geprüfte
-          Quellen.
-        </p>
-      )}
-
-      {comparison?.status === "limited" && (
-        <p className="mb-3 text-xs text-status-partial" role="status">
-          Begrenzte externe Evidenz: Es liegen geprüfte Marktquellen vor, aber
-          der Konkurrenzvergleich ist noch nicht vollständig.
-        </p>
-      )}
-
-      {comparison &&
-        comparison.items.length === 0 &&
-        state === "ready" &&
-        (comparison.status === "limited" ||
-        comparison.status === "insufficient_external_evidence" ? (
-          // RUN 4A: eine leere Tabelle ist kein Erfolg — konkret benennen,
-          // dass belastbare Vergleiche fehlen (Details in den Evidenzlücken).
-          <p className="text-sm text-status-partial" role="status">
-            Es liegen noch keine belastbaren Anbieter- oder
-            Alternativenvergleiche vor. Die offenen Evidenzlücken unten zeigen,
-            welche geprüften Quellen fehlen.
-          </p>
-        ) : (
-          <p className="text-sm text-muted-foreground">
-            Keine Vergleichseinträge aus live abgerufenen und inhaltlich positiv
-            geprüften öffentlichen Quellen.
-          </p>
-        ))}
-
       {/* Was noch fehlt — die eine Lückenliste, immer sichtbar. */}
       <MarketGapList
         gaps={marketGaps(comparison)}
@@ -360,19 +284,21 @@ export function MarketComparisonSection({
         testId="market-research-gaps"
       />
 
-      {/* Ergebnis zuerst, Details nur bei Bedarf: die volle Vergleichsbasis,
-          Lösungslandschaft-Tabelle, Marktaussagen-Prüfung, Konsequenzen und
-          Quellenliste stehen erst hinter «Details öffnen». */}
+      {/* Eine Hauptaktion je Zustand; Details nur bei Bedarf. Vergleichsbasis,
+          Lösungslandschaft, Marktaussagen, Konsequenzen und Quellenliste stehen
+          hinter «Details öffnen». */}
       <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-border pt-3">
-        <Button
-          type="button"
-          size="sm"
-          variant="outline"
-          render={<a href="#public-research-panel" />}
-          nativeButton={false}
-        >
-          Recherche ergänzen
-        </Button>
+        {(ui.status === "research_needed" || ui.status === "not_started") && (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            render={<a href="#public-research-panel" />}
+            nativeButton={false}
+          >
+            Recherche ergänzen
+          </Button>
+        )}
         {comparison && (
           <Button
             type="button"
