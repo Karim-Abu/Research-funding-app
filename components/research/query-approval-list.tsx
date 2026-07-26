@@ -242,7 +242,14 @@ export function QueryApprovalList({
                   </div>
                 )}
               </div>
-              <Badge variant="secondary" className={DECISION_STYLE[query.decision]}>
+              {/* Der Freigabestatus ist die eigentliche Statusquelle der Zeile.
+                  Eine stabile Test-Id verhindert, dass Prüfungen ersatzweise auf
+                  zufälligen Fliesstext ausweichen (2026-07-26). */}
+              <Badge
+                variant="secondary"
+                data-testid="query-decision-badge"
+                className={DECISION_STYLE[query.decision]}
+              >
                 {DECISION_LABELS[query.decision]}
               </Badge>
             </div>

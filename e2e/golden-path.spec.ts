@@ -216,9 +216,20 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     await expect(panelRows.first()).toBeVisible({ timeout: 20_000 })
     // Die im Lauf verbrauchte Query steht als «Ausgeführt» in der Historie —
     // freigegeben wird die neue, noch offene Query.
-    const openRow = panelRows.filter({ hasText: "Offen" }).first()
+    //
+    // 2026-07-26: Der Status wird über das Status-Badge geprüft, nicht über
+    // Fliesstext. Die frühere Fassung filterte die Zeile per hasText «Offen»
+    // und suchte danach getByText("Freigegeben") — case-insensitiv traf das in
+    // Wahrheit den Hinweis «Firewall: freigegeben», und der Zeilenfilter
+    // verlor die Zeile, sobald sich ihr Status änderte. Beides ist jetzt an
+    // stabile Test-Ids gebunden.
+    const openRow = panelRows
+      .filter({ has: page.getByTestId("query-decision-badge").getByText("Offen", { exact: true }) })
+      .first()
     await openRow.getByRole("button", { name: "Freigeben" }).click()
-    await expect(openRow.getByText("Freigegeben")).toBeVisible({ timeout: 20_000 })
+    await expect(
+      openRow.getByTestId("query-decision-badge")
+    ).toHaveText("Freigegeben", { timeout: 20_000 })
     await research
       .getByRole("button", { name: "Freigegebene Queries ausführen" })
       .click()
