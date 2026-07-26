@@ -1,0 +1,104 @@
+﻿
+Running 70 tests using 1 worker
+
+corepack : (node:16392) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+In Zeile:1 Zeichen:1
++ corepack pnpm exec playwright test --workers=1
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:16392) Wa... env being set.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok  1 [chromium] › e2e\a2-solution-innovation.spec.ts:45:5 › A2 solution-innovation: safe unavailable + field scope (API context) (2.1s)
+  ok  2 [chromium] › e2e\a2-solution-innovation.spec.ts:146:5 › M9E Value Creation: cloud A2 suggestion → accept → agent draft + recheck (API context) (2.3s)
+  ok  3 [chromium] › e2e\a2-solution-innovation.spec.ts:297:5 › Flow A: cloud confirmation enables A2 → accept → agent draft + recheck (API context) (2.8s)
+  ok  4 [chromium] › e2e\a3-evidence-consistency.spec.ts:94:5 › A3 runs on a cloud recheck and persists advisory findings (API context) (3.4s)
+  ok  5 [chromium] › e2e\a3-evidence-consistency.spec.ts:116:5 › deterministic recheck does not run A3 (API context) (2.3s)
+C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langg
+raph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will 
+change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to 
+suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+2026-07-26 20:01:08,403 level=INFO logger=app.seed correlation_id=- msg=seed complete workspace=ws-demo
+2026-07-26 20:01:08,943 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence 
+candidates=19 mapping=skipped/+0 run=bdb382d4-2ba7-5979-a66c-fddccba1cde6
+2026-07-26 20:01:09,011 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 
+6, 'unverified': 0, 'rejected': 13} run=bdb382d4-2ba7-5979-a66c-fddccba1cde6
+2026-07-26 20:01:09,227 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 
+run=bdb382d4-2ba7-5979-a66c-fddccba1cde6
+2026-07-26 20:01:09,641 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence 
+candidates=18 mapping=skipped/+0 run=1ea9e6cd-1c67-5b79-85c7-1ceb374a6395
+2026-07-26 20:01:09,691 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 
+5, 'unverified': 0, 'rejected': 13} run=1ea9e6cd-1c67-5b79-85c7-1ceb374a6395
+2026-07-26 20:01:09,773 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 
+run=1ea9e6cd-1c67-5b79-85c7-1ceb374a6395
+2026-07-26 20:01:09,916 level=INFO logger=app.demo.seed correlation_id=- msg=demo seed complete 
+version=demo-dataset-v1 projects=2 evaluation=False
+  ok  6 [chromium] › e2e\demo-dataset.spec.ts:29:5 › M6.1 seeded demo dashboard, draft continuation, and open requirements (2.5s)
+  ok  7 [chromium] › e2e\evidence.spec.ts:27:5 › M5 deterministic evidence end-to-end (2.4s)
+  ok  8 [chromium] › e2e\export.spec.ts:94:5 › M8 export: draft (ENTWURF) flow and approved flow (6.0s)
+  -   9 [chromium] › e2e\final-acceptance.spec.ts:101:7 › FINAL MVP ACCEPTANCE — Browser › B1: Erstimport setzt die Primärquelle (Gruppe «Primärer Innolink-Antrag»)
+  -  10 [chromium] › e2e\final-acceptance.spec.ts:135:7 › FINAL MVP ACCEPTANCE — Browser › B6: Rechercheziel mit Unicode überlebt Speichern + Reload
+  -  11 [chromium] › e2e\final-acceptance.spec.ts:172:7 › FINAL MVP ACCEPTANCE — Browser › B3/B4: 52 % + 5 % Erfüllt mit Regelquelle; Statuskatalog vollständig
+  -  12 [chromium] › e2e\final-acceptance.spec.ts:370:7 › FINAL MVP ACCEPTANCE — Browser › B2: Quellen in drei Zweck-Gruppen; Projektunterlagen nie als Antragsquelle
+  -  13 [chromium] › e2e\final-acceptance.spec.ts:402:7 › FINAL MVP ACCEPTANCE — Browser › B5: Belegstufen sichtbar (gefunden + stark gestützt) und erklärt
+  -  14 [chromium] › e2e\final-acceptance.spec.ts:426:7 › FINAL MVP ACCEPTANCE — Browser › B7: Marktvergleich ready aus dem Seed — belegte Zeile, keine Erfindungen
+  -  15 [chromium] › e2e\final-acceptance.spec.ts:456:7 › FINAL MVP ACCEPTANCE — Browser › B9: Qualitätsübersicht mit vier Kategorien; not_run nie als Zahl
+  -  16 [chromium] › e2e\final-acceptance.spec.ts:484:7 › FINAL MVP ACCEPTANCE — Browser › Phase C: Beleg-Details eines gespeicherten Vorschlags über den echten Read-Pfad
+  -  17 [chromium] › e2e\final-acceptance.spec.ts:520:7 › FINAL MVP ACCEPTANCE — Browser › Phase D: Export-Ansicht (visuelle Evidenz)
+  ok 18 [chromium] › e2e\golden-path.spec.ts:63:5 › Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zustand übersteht Reload (18.2s)
+  ok 19 [chromium] › e2e\import-flow.spec.ts:70:5 › Import-Flow: PDF-only-Start → Übernahme VOR dem Run → Baseline → Fix Queue (3.6s)
+  ok 20 [chromium] › e2e\import-flow.spec.ts:153:5 › Intake kombiniert Idee + PDF: description ist die getippte Idee (1.5s)
+  ok 21 [chromium] › e2e\import-flow.spec.ts:219:5 › Import-Upload zeigt nachvollziehbare Phasen bis zum Review (3.0s)
+  ok 22 [chromium] › e2e\import-flow.spec.ts:251:5 › Import-Upload-Fehler: Ursache, Erneut versuchen und Technische Details (1.6s)
+  ok 23 [chromium] › e2e\import-functional.spec.ts:39:5 › Funktionaler Import: Altstruktur-PDF wird korrekt ausgelesen, Partner und Budget ohne Neuanlage (4.0s)
+  ok 24 [chromium] › e2e\m10-2-ux.spec.ts:37:5 › M10.2: orientation, links and readiness across the core screens (3.5s)
+  ok 25 [chromium] › e2e\m10-acceptance.spec.ts:78:5 › M10 acceptance: run → reliability → review → exports → Innolink, no raw leaks (4.7s)
+  ok 26 [chromium] › e2e\market-comparison.spec.ts:58:5 › market comparison: fake mode completes honestly empty with gap note (902ms)
+  ok 27 [chromium] › e2e\market-comparison.spec.ts:117:5 › Szenario 4 — insufficient_evidence verhindert Übertreibung (622ms)
+  -  28 [chromium] › e2e\market-comparison.spec.ts:129:5 › Szenarien 1–3 — quellengestützte Urteile (nur mit Kandidaten; sonst übersprungen)
+  ok 29 [chromium] › e2e\market-comparison.spec.ts:150:5 › market comparison UI: Quellen section shows the honest empty state (1.0s)
+  ok 30 [chromium] › e2e\market-research-flow.spec.ts:139:5 › Query-Freigabe, Recherche im Lauf, Verwerfen/Übernahme, Zusammenfassung (5.4s)
+  ok 31 [chromium] › e2e\market-research-flow.spec.ts:293:5 › ohne Freigabe wird die Recherche-Phase ehrlich übersprungen (5.0s)
+  ok 32 [chromium] › e2e\partner-budget.spec.ts:25:5 › intake partners + budget feed the requirements precheck (3.6s)
+  ok 33 [chromium] › e2e\portal-transfer.spec.ts:94:5 › M8.1 Innolink transfer: field order, copy-only-content, warnings, coverage (2.9s)
+  ok 34 [chromium] › e2e\portal-transfer.spec.ts:189:5 › R6 Arbeitsplatz: Ziel-Tabs, Unterabschnitte und Statusleiter im Editor (1.9s)
+  ok 35 [chromium] › e2e\privacy-firewall.spec.ts:107:5 › Flow A: D0 public web research works as before (1.4s)
+  ok 36 [chromium] › e2e\privacy-firewall.spec.ts:120:5 › Flow B (API): D2 — Preview bereinigt ohne Roh-Leak; Tasks verlangen Brief-Provenienz (1.8s)
+  ok 37 [chromium] › e2e\privacy-firewall.spec.ts:173:5 › Flow C: D3 (NDA) and UNKNOWN web research are blocked (587ms)
+  ok 38 [chromium] › e2e\privacy-firewall.spec.ts:189:5 › Flow B (UI): vertrauliches Projekt — Queries entstehen nur aus dem Brief, ohne vertrauliche Bezeichner (1.2s)
+  ok 39 [chromium] › e2e\public-web-research.spec.ts:101:5 › public research: brief-gebundene Suche liefert Demo-Kandidaten, Import wird ehrlich verweigert (2.3s)
+  ok 40 [chromium] › e2e\public-web-research.spec.ts:146:5 › public research panel: Brief → Queries → Demo-Ergebnisse ohne Übernahme, kein Provider-Branding (1.8s)
+  ok 41 [chromium] › e2e\reliability-stale.spec.ts:80:5 › M10.1: stale reliability shows in the Review Center and blocks approval (4.1s)
+  ok 42 [chromium] › e2e\reliability.spec.ts:82:5 › reliability pass: summary, no draft mutation, export carries the summary (3.0s)
+  ok 43 [chromium] › e2e\reliability.spec.ts:123:5 › reliability UI: Quality Summary renders in the Review Center (3.2s)
+  ok 44 [chromium] › e2e\requirements-rules.spec.ts:22:5 › M4 requirements & rules precheck end-to-end (2.6s)
+  ok 45 [chromium] › e2e\review-recheck-approval.spec.ts:85:5 › M7 review: edit → recheck → field approval → stale; missing partner stays blocked (3.5s)
+  ok 46 [chromium] › e2e\review-truth.spec.ts:48:5 › Review-Truth: Prüfstatus und Evidenz-Leiter sind fachlich ehrlich (5.3s)
+  ok 47 [chromium] › e2e\run-agents.spec.ts:25:5 › Analyse starten erzeugt echte Feldvorschläge und Critic-Findings (9.4s)
+  ok 48 [chromium] › e2e\run-orchestration.spec.ts:21:5 › run orchestration technical smoke (API context) (1.5s)
+  -  49 [chromium] › e2e\run4a-review.spec.ts:55:7 › RUN 4A UI-Review › §2 Import: Upload, Übernahme, reversible Aktionen, keine Roh-IDs
+  -  50 [chromium] › e2e\run4a-review.spec.ts:131:7 › RUN 4A UI-Review › §4/§5 Anforderungen + Evidenz: Detail, Regelgrundlage, Belegstufen
+  -  51 [chromium] › e2e\run4a-review.spec.ts:160:7 › RUN 4A UI-Review › §8 Recherche: eine Modul-Darstellung, Unicode-Eingabe bleibt erhalten
+  -  52 [chromium] › e2e\run4a-review.spec.ts:197:7 › RUN 4A UI-Review › §9 A11y: Dialog-Fokus, Tab-Reihenfolge, Überschriften-Hierarchie, Fokus sichtbar
+  -  53 [chromium] › e2e\run4a-visual.spec.ts:54:5 › RUN 4A — Screenshots der zentralen Screens und Zustände
+  ok 54 [chromium] › e2e\run4b-editor.spec.ts:155:7 › RUN 4B — Schreibassistent › E2E-EDITOR-02: Generate → Accept → genau eine Version → Replay → Restore (5.8s)
+  ok 55 [chromium] › e2e\run4b-editor.spec.ts:247:7 › RUN 4B — Schreibassistent › E2E-EDITOR-03: stale Suggestion → Übernahme blockiert + nächste Aktion (5.6s)
+  ok 56 [chromium] › e2e\run4b-editor.spec.ts:349:7 › RUN 4B — Schreibassistent › E2E-EDITOR-01: Vorschlag mit Fehlenden Angaben und Belegen (Fixture) (5.0s)
+  ok 57 [chromium] › e2e\run4b-editor.spec.ts:449:7 › RUN 4B — Schreibassistent › E2E-EDITOR-04: Provider nicht verfügbar → ehrlicher Fehler, kein Demo-Fallback (4.7s)
+  ok 58 [chromium] › e2e\run4b-editor.spec.ts:489:7 › RUN 4B — Schreibassistent › E2E-MARKET-01: Editor liest zentrales Artefakt — limited ehrlich, max. 3 Findings (5.2s)
+  -  59 [chromium] › e2e\run4b-visual.spec.ts:118:5 › RUN 4B — Screenshots der Schreibassistent-Zustände
+  ok 60 [chromium] › e2e\source-ingestion.spec.ts:24:5 › source ingestion live smoke (2.1s)
+  ok 61 [chromium] › e2e\source-ingestion.spec.ts:93:5 › pdf file upload ingests to processed (4.3s)
+  ok 62 [chromium] › e2e\source-ingestion.spec.ts:134:5 › umlaut text source ingests and displays after refresh (1.9s)
+  ok 63 [chromium] › e2e\status-parity.spec.ts:95:5 › R1 Parität: X Blocker identisch auf Dashboard, Anforderungen, Prüfung, Export (5.0s)
+  ok 64 [chromium] › e2e\template-drafts.spec.ts:24:5 › M6 template drafts: edit, persist, link, stale, conflict (3.9s)
+  ok 65 [chromium] › e2e\ui-states.spec.ts:72:5 › Analyse-Dialog: Höhe im Viewport, sichtbarer Footer, Escape schliesst (2.3s)
+  ok 66 [chromium] › e2e\ui-states.spec.ts:120:5 › Langes 25'000-Zeichen-Feld: Limit-Warnung und deaktiviertes Speichern (2.0s)
+  ok 67 [chromium] › e2e\ux-refactor.spec.ts:99:9 › Analyse-Konfiguration @ 1366×768 › Sheet passt in den Viewport; Start bleibt ohne Seitenscroll erreichbar (1.9s)
+  ok 68 [chromium] › e2e\ux-refactor.spec.ts:99:9 › Analyse-Konfiguration @ 1920×1080 › Sheet passt in den Viewport; Start bleibt ohne Seitenscroll erreichbar (1.8s)
+  ok 69 [chromium] › e2e\ux-refactor.spec.ts:134:7 › Composite-Fokusansicht @ 1366×768 › 3.x separat lesen/bearbeiten; Wechsel verliert keine Eingabe (2.0s)
+  ok 70 [chromium] › e2e\ux-refactor.spec.ts:177:7 › Stepper folgt Artefakten @ 1366×768 › Entwurf zeigt Statustext aus Artefakten; kein Haken ohne Freigabe (606ms)
+
+  16 skipped
+  54 passed (3.1m)
