@@ -1,0 +1,62 @@
+..........................................s..........................s.. [  4%]
+........................................................................ [  9%]
+........................................................................ [ 14%]
+.................................................s...................... [ 19%]
+........................................................................ [ 23%]
+......................................F.........................F....... [ 28%]
+........................................................................ [ 33%]
+........................................................................ [ 38%]
+........................................................................ [ 42%]
+........................................................................ [ 47%]
+........................................................................ [ 52%]
+........................................................................ [ 57%]
+........................................................................ [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 71%]
+........................................................................ [ 76%]
+........................................................................ [ 80%]
+...............................................................s........ [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 95%]
+........................................................................ [ 99%]
+..                                                                       [100%]
+================================== FAILURES ===================================
+_____________________ test_missing_price_is_unknown_price _____________________
+
+    def test_missing_price_is_unknown_price():
+        res = resolve_cost(
+            provider="anthropic_direct", model_id="claude-haiku-4-5-20251001",
+            input_tokens=100, output_tokens=200,
+        )
+>       assert res.cost_status == COST_STATUS_UNKNOWN
+E       AssertionError: assert 'priced' == 'unknown_price'
+E         
+E         - unknown_price
+E         + priced
+
+tests\test_eval1_pricing.py:31: AssertionError
+______________ test_real_provider_without_price_is_unknown_price ______________
+
+db = <sqlalchemy.orm.session.Session object at 0x000001FCB90CB020>
+
+    def test_real_provider_without_price_is_unknown_price(db):
+        # Direkter record_usage-Aufruf ohne adapter_name (z. B. künftiger echter
+        # Call): kein Tabelleneintrag \u21d2 unknown_price, cost_chf bleibt 0.0 und
+        # darf nie als "0 CHF" gelesen werden.
+        run_id = make_run(db)
+        rec = cost_guard.record_usage(
+            db, run_id=run_id, workspace_id="ws-demo",
+            provider="anthropic_direct", model_id="claude-haiku-4-5-20251001",
+            usage=ProviderUsage(input_tokens=100, output_tokens=50),
+        )
+>       assert rec.cost_status == "unknown_price"
+E       AssertionError: assert 'priced' == 'unknown_price'
+E         
+E         - unknown_price
+E         + priced
+
+tests\test_eval1_usage_records.py:63: AssertionError
+- generated xml file: C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\docs\evaluation\finalization\runs\FIX-BACKEND-01\junit.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_eval1_pricing.py::test_missing_price_is_unknown_price - Ass...
+FAILED tests/test_eval1_usage_records.py::test_real_provider_without_price_is_unknown_price
