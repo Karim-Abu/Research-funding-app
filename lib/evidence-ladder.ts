@@ -72,9 +72,13 @@ export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
 }
 
 // Erläuterung unter Beleg-Listen: was die Stufe aussagt — und was nicht.
+// «abschliessende Bewertung» ist bewusst gewählt und darf nicht zu «fachliche
+// Bewertung» verkürzt werden: Die Aussage ist, dass das LETZTE Urteil beim
+// Menschen liegt (CLAUDEX §4, Human-in-the-loop). e2e/m10-2-ux.spec.ts prüft
+// genau diesen Wortlaut.
 export const SUPPORT_LADDER_HINT =
   "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar — " +
-  "die fachliche Bewertung bleibt bei Ihnen."
+  "die abschliessende Bewertung bleibt bei Ihnen."
 
 export function isSupportStatus(value: unknown): value is SupportStatus {
   return typeof value === "string" && value in SUPPORT_STATUS_LABELS

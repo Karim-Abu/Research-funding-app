@@ -223,9 +223,18 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     // Wahrheit den Hinweis «Firewall: freigegeben», und der Zeilenfilter
     // verlor die Zeile, sobald sich ihr Status änderte. Beides ist jetzt an
     // stabile Test-Ids gebunden.
-    const openRow = panelRows
-      .filter({ has: page.getByTestId("query-decision-badge").getByText("Offen", { exact: true }) })
-      .first()
+    // Die Zeile wird VOR dem Klick an einen festen Index gebunden. Ein
+    // gefilterter Locator («Zeile, deren Badge ‹Offen› zeigt») würde sich beim
+    // Statuswechsel selbst auflösen — genau daran scheiterte schon die
+    // ursprüngliche hasText-Fassung.
+    const rowCount = await panelRows.count()
+    let openIndex = -1
+    for (let i = 0; i < rowCount; i++) {
+      const badge = panelRows.nth(i).getByTestId("query-decision-badge")
+      if ((await badge.innerText()).trim() === "Offen") { openIndex = i; break }
+    }
+    expect(openIndex, "keine offene Suchanfrage gefunden").toBeGreaterThanOrEqual(0)
+    const openRow = panelRows.nth(openIndex)
     await openRow.getByRole("button", { name: "Freigeben" }).click()
     await expect(
       openRow.getByTestId("query-decision-badge")
