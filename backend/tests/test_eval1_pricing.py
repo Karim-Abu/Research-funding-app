@@ -24,8 +24,12 @@ from app.config.settings import get_settings
 
 
 def test_missing_price_is_unknown_price():
+    # Bewusst eine Id, die im USD-Katalog NICHT vorkommt und dort auch nie
+    # auftauchen soll. Vorher stand hier claude-haiku-4-5-20251001; seit die
+    # Id am 2026-07-26 katalogisiert wurde, pruefte der Test das Gegenteil
+    # seiner Absicht. Der Name macht die Rolle jetzt explizit.
     res = resolve_cost(
-        provider="anthropic_direct", model_id="claude-haiku-4-5-20251001",
+        provider="anthropic_direct", model_id="model-without-catalogue-entry",
         input_tokens=100, output_tokens=200,
     )
     assert res.cost_status == COST_STATUS_UNKNOWN

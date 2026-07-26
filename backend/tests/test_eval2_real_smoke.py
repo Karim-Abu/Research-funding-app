@@ -203,19 +203,35 @@ def test_run_llm_case_with_fake_adapter_meters_schema_failure(db, monkeypatch):
     # Output ⇒ dokumentiertes failed-Ergebnis MIT gemeterten Tokens.
     s = get_settings()
     monkeypatch.setattr(s, "ai_eval_mode", "real")
-    result = run_llm_case(db, "anthropic", adapter=FakeProvider(mode="malformed"))
+    # 2026-07-26: Seit 8416914 verbucht gateway den vom Provider BESTAETIGTEN
+    # Modellnamen (result.model) statt der angefragten Id — fachlich richtig,
+    # denn Kosten haengen am tatsaechlich bedienten Modell. Der nackte
+    # FakeProvider meldet sich bewusst als "fake" (providers/fake.py), was hier
+    # die eigentliche Pruefabsicht verdecken wuerde. Der Adapter echot deshalb
+    # die reale Anthropic-Id; die Zusicherung unten bleibt unveraendert.
+    class _MalformedEcho(FakeProvider):
+        def generate(self, request):
+            base = super().generate(request)
+            return type(base)(
+                raw_output=base.raw_output, usage=base.usage,
+                model="actual-anthropic-model",
+            )
+
+    result = run_llm_case(db, "anthropic", adapter=_MalformedEcho(mode="malformed"))
     r = result["report"]
     assert r["provider"] == "anthropic"
     assert r["status"] == "failed"
     # Modell des GEMETERTEN Calls (UsageRecord), nicht die zuletzt vom
     # Gateway versuchte Fallback-Route.
-    assert r["model"] == "claude-haiku-4-5-20251001"
+    assert r["model"] == "actual-anthropic-model"
     assert r["llm_calls"] == 1  # no_retry_registry: kein 2. Versuch
     assert r["usage_record_count"] == 1
     assert r["total_tokens"] == 30  # FakeProvider-Default 10/20
     # The injected network-free double is classified as the selected direct
     # evaluation route.  It therefore exercises real-call metering semantics;
-    # the test price table intentionally has no entry for this model.
+    # the test price table intentionally has no entry for this model
+    # (deshalb echot der Adapter oben bewusst eine NICHT katalogisierte Id —
+    # so bleibt die unknown_price-Abdeckung erhalten).
     assert r["cost_status_counts"] == {"unknown_price": 1}
     assert r["data_mode"] == "synthetic_eval"
     assert result["artifact"]["llm_output"] is None

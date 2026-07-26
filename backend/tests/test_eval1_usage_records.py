@@ -57,7 +57,8 @@ def test_real_provider_without_price_is_unknown_price(db):
     run_id = make_run(db)
     rec = cost_guard.record_usage(
         db, run_id=run_id, workspace_id="ws-demo",
-        provider="anthropic_direct", model_id="claude-haiku-4-5-20251001",
+        # Id bewusst ausserhalb des USD-Katalogs (siehe test_eval1_pricing).
+        provider="anthropic_direct", model_id="model-without-catalogue-entry",
         usage=ProviderUsage(input_tokens=100, output_tokens=50),
     )
     assert rec.cost_status == "unknown_price"
