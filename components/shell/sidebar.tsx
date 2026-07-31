@@ -37,7 +37,7 @@ import {
 interface NavLink {
   label: string
   href: string
-  icon: LucideIcon
+  icon?: LucideIcon
 }
 
 interface DisabledLink {
@@ -46,8 +46,9 @@ interface DisabledLink {
 }
 
 // "Aktueller Antrag" — abgeleitet aus dem EINEN Workflow-Katalog
-// (lib/workflow.ts), damit Sidebar und Stepper nie divergieren. Icons sind
-// reine Darstellung und bleiben lokal. "Übersicht" zeigt auf die
+// (lib/workflow.ts), damit Sidebar und Stepper nie divergieren. Die Sidebar
+// spiegelt die 6 nummerierten Schritte des Steppers; Icons sind reine
+// Darstellung und bleiben lokal. "Übersicht" zeigt auf die
 // Projektübersicht, bis eine eigene Antrags-Übersichtsroute existiert.
 const STEP_ICONS: Record<string, LucideIcon> = {
   "/intake": ClipboardList,
@@ -61,7 +62,8 @@ const STEP_ICONS: Record<string, LucideIcon> = {
 }
 
 // Schritt 1 («Projekt & Unterlagen») ist der einzige gruppierte Schritt:
-// seine Routen erscheinen mit ihrem eigenen (einzigen) Routennamen.
+// seine Routen erscheinen als eingerückte Unterpunkte mit ihrem eigenen
+// (einzigen) Routennamen unter einem nicht klickbaren Gruppenkopf.
 // Schritte 2–6 haben genau eine Route — Routenname = Schrittname.
 const STEP1_ROUTE_LABELS: Record<string, string> = {
   "/intake": "Projekt anlegen",
@@ -69,18 +71,29 @@ const STEP1_ROUTE_LABELS: Record<string, string> = {
   "/quellen": "Quellen",
 }
 
-const currentApplication: NavLink[] = [
-  { label: "Übersicht", href: "/", icon: LayoutDashboard },
-  ...WORKFLOW_STEPS.flatMap((s): NavLink[] =>
+interface WorkflowNavGroup {
+  step: number
+  label: string
+  href: string
+  routes: readonly string[]
+  /** Nur Schritt 1: eingerückte Unterpunkte (eine Route = ein Name). */
+  children?: NavLink[]
+}
+
+const workflowNav: WorkflowNavGroup[] = WORKFLOW_STEPS.map((s) => ({
+  step: s.step,
+  label: s.label,
+  href: s.href,
+  routes: s.routes,
+  children:
     s.step === 1
       ? s.routes.map((href) => ({
           label: STEP1_ROUTE_LABELS[href] ?? s.label,
           href,
           icon: STEP_ICONS[href] ?? ClipboardList,
         }))
-      : [{ label: s.label, href: s.href, icon: STEP_ICONS[s.href] ?? ClipboardList }]
-  ),
-]
+      : undefined,
+}))
 
 const moreItems: NavLink[] = [
   { label: "Kosten & Laufzeit", href: "/kosten", icon: Gauge },
@@ -91,7 +104,12 @@ const moreItems: NavLink[] = [
 // Icon rail shown when the sidebar is collapsed — only navigable workflow items.
 const collapsedItems: NavLink[] = [
   { label: "Projekte", href: "/", icon: FolderKanban },
-  ...currentApplication.filter((i) => i.label !== "Übersicht"),
+  ...workflowNav.flatMap(
+    (g): NavLink[] =>
+      g.children ?? [
+        { label: g.label, href: g.href, icon: STEP_ICONS[g.href] ?? ClipboardList },
+      ]
+  ),
   ...moreItems,
 ]
 
@@ -237,25 +255,57 @@ export function Sidebar({
                 </>
               )}
             </div>
-            {currentApplication.map((item) =>
-              hasProject || PROJECT_INDEPENDENT.has(item.label) ? (
+            <ExpandedLink
+              item={{ label: "Übersicht", href: "/", icon: LayoutDashboard }}
+              active={false}
+            />
+            {workflowNav.map((g) => {
+              const stepCurrent = g.routes.some((r) => pathActive(pathname, r))
+              if (g.children) {
+                return (
+                  <div key={g.step}>
+                    <div className="flex min-h-[32px] items-center gap-3 px-3 pt-1">
+                      <StepBadge step={g.step} current={stepCurrent} />
+                      <span className="truncate text-xs font-medium text-sidebar-foreground/70">
+                        {g.label}
+                      </span>
+                    </div>
+                    {g.children.map((item) =>
+                      hasProject || PROJECT_INDEPENDENT.has(item.label) ? (
+                        <ExpandedLink
+                          key={item.label}
+                          item={item}
+                          active={pathActive(pathname, item.href)}
+                          className="pl-11"
+                        />
+                      ) : (
+                        <DisabledRow
+                          key={item.label}
+                          item={{ label: item.label, icon: item.icon }}
+                          hint="Zuerst Antrag auswählen"
+                          className="pl-11"
+                        />
+                      )
+                    )}
+                  </div>
+                )
+              }
+              return hasProject ? (
                 <ExpandedLink
-                  key={item.label}
-                  item={item}
-                  active={
-                    item.href === "/"
-                      ? false
-                      : pathActive(pathname, item.href)
-                  }
+                  key={g.step}
+                  item={{ label: g.label, href: g.href }}
+                  active={pathActive(pathname, g.href)}
+                  stepNumber={g.step}
                 />
               ) : (
                 <DisabledRow
-                  key={item.label}
-                  item={{ label: item.label, icon: item.icon }}
+                  key={g.step}
+                  item={{ label: g.label }}
                   hint="Zuerst Antrag auswählen"
+                  stepNumber={g.step}
                 />
               )
-            )}
+            })}
 
             <SectionLabel>Weitere</SectionLabel>
             {moreItems.map((item) =>
@@ -321,27 +371,57 @@ function GroupLabel({ children }: Readonly<{ children: ReactNode }>) {
   )
 }
 
+// Runder Nummern-Badge wie im Stepper — rein visuell, die Schrittnummer
+// steht für Screenreader im aria-label der Zeile.
+function StepBadge({ step, current }: Readonly<{ step: number; current?: boolean }>) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn(
+        "flex size-5 shrink-0 items-center justify-center rounded-full text-[10px] font-semibold",
+        current
+          ? "bg-primary text-primary-foreground"
+          : "border border-sidebar-border bg-sidebar-accent/40 text-sidebar-foreground/70"
+      )}
+    >
+      {step}
+    </span>
+  )
+}
+
 function ExpandedLink({
   item,
   active,
   badge,
+  className,
+  stepNumber,
 }: Readonly<{
   item: NavLink
   active: boolean
   badge?: string
+  className?: string
+  stepNumber?: number
 }>) {
   return (
     <Link
       href={item.href}
       aria-current={active ? "page" : undefined}
+      aria-label={
+        stepNumber != null ? `Schritt ${stepNumber}: ${item.label}` : undefined
+      }
       className={cn(
         "flex min-h-[40px] items-center gap-3 rounded-md px-3 text-sm font-medium outline-none transition-colors focus-visible:ring-2 focus-visible:ring-sidebar-ring",
         active
           ? "bg-sidebar-accent text-sidebar-accent-foreground"
-          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
+          : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground",
+        className
       )}
     >
-      <item.icon className="size-5 shrink-0" />
+      {stepNumber != null ? (
+        <StepBadge step={stepNumber} current={active} />
+      ) : (
+        item.icon && <item.icon className="size-5 shrink-0" />
+      )}
       <span className="truncate">{item.label}</span>
       {badge && (
         <span className="ml-auto rounded-full bg-primary/10 px-2 py-0.5 text-[10px] font-semibold text-primary">
@@ -368,7 +448,7 @@ function CollapsedLink({ item, active }: Readonly<{ item: NavLink; active: boole
                 : "text-sidebar-foreground/70 hover:bg-sidebar-accent/60 hover:text-sidebar-foreground"
             )}
           >
-            <item.icon className="size-5 shrink-0" />
+            {item.icon && <item.icon className="size-5 shrink-0" />}
           </Link>
         }
       />
@@ -380,17 +460,31 @@ function CollapsedLink({ item, active }: Readonly<{ item: NavLink; active: boole
 function DisabledRow({
   item,
   hint = "Nicht verfügbar",
+  className,
+  stepNumber,
 }: Readonly<{
   item: DisabledLink
   hint?: string
+  className?: string
+  stepNumber?: number
 }>) {
   return (
     <div
       aria-disabled="true"
+      aria-label={
+        stepNumber != null ? `Schritt ${stepNumber}: ${item.label}` : undefined
+      }
       title={hint}
-      className="flex min-h-[40px] cursor-not-allowed items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/35"
+      className={cn(
+        "flex min-h-[40px] cursor-not-allowed items-center gap-3 rounded-md px-3 text-sm font-medium text-sidebar-foreground/35",
+        className
+      )}
     >
-      {item.icon && <item.icon className="size-5 shrink-0" />}
+      {stepNumber != null ? (
+        <StepBadge step={stepNumber} />
+      ) : (
+        item.icon && <item.icon className="size-5 shrink-0" />
+      )}
       <span className="truncate">{item.label}</span>
       <span className="ml-auto rounded-full border border-sidebar-border px-2 py-0.5 text-[10px] font-medium text-sidebar-foreground/45">
         {hint}
@@ -409,7 +503,7 @@ function CollapsedDisabled({ item }: Readonly<{ item: NavLink }>) {
             aria-label={`${item.label} — zuerst Antrag auswählen`}
             className="flex min-h-[44px] cursor-not-allowed items-center justify-center rounded-md text-sidebar-foreground/30"
           >
-            <item.icon className="size-5 shrink-0" />
+            {item.icon && <item.icon className="size-5 shrink-0" />}
           </div>
         }
       />

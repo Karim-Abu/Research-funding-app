@@ -194,9 +194,9 @@ function comparisonSourceCount(comparison: MarketComparisonDto): number {
 /**
  * Der eine Statuszustand einer Markt-Oberfläche.
  *
- * `unusedSourceCount` kennt nur die Quellen-Seite (sie sieht die geprüften
- * Projektquellen neben dem Vergleich). Editor-Rail und Sheet lassen den Wert
- * weg und stützen sich auf `scope_stale` aus dem Backend.
+ * Ob ein Vergleich veraltet ist, sagt allein das Backend (`scope_stale` aus dem
+ * Scope-Hash). `unusedSourceCount` — nur die Quellen-Seite kennt ihn —
+ * präzisiert dann die Formulierung, löst aber selbst keine Veraltung aus.
  */
 export function marketUiState(
   comparison: MarketComparisonDto | null,
@@ -240,8 +240,16 @@ export function marketUiState(
 
   // Veraltung schlägt jede Ergebnisaussage: ein Vergleich, der nicht alle
   // geprüften Quellen kennt, darf weder beruhigen noch übernommen werden.
+  //
+  // Die Veraltung entscheidet ausschliesslich das Backend (Scope-Hash über die
+  // einbezogenen Quell-Dokumente). Eine Client-Differenz aus Rechercheergebnissen
+  // minus verwendeter Quellversionen wäre KEIN Veraltungsbeweis: beide zählen
+  // Unterschiedliches (mehrere Ergebnisse können auf dieselbe Quelle zeigen,
+  // manche Ergebnisse erreichen den Suchraum nie). Eine solche Differenz bleibt
+  // dauerhaft bestehen — der Vergleich stünde auch direkt nach dem Neu-Erstellen
+  // wieder auf «Veraltet».
   const staleByScope = comparison.scope_stale === true || comparison.status === "stale"
-  if (staleByScope || unused > 0) {
+  if (staleByScope) {
     return {
       status: "stale",
       label: "Veraltet — neu erstellen",

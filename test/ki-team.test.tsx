@@ -254,12 +254,9 @@ describe("Responsibility-Cockpit", () => {
     ).toBeInTheDocument()
     expect(screen.getByText(kiTeamTexts.subtitle)).toBeInTheDocument()
     expect(screen.getByText("Forschungsprototyp")).toBeInTheDocument()
-    expect(screen.getByText(kiTeamTexts.intro)).toBeInTheDocument()
-    expect(screen.getByText("KI bereitet vor")).toBeInTheDocument()
-    expect(
-      screen.getByText("Regeln prüfen reproduzierbar")
-    ).toBeInTheDocument()
-    expect(screen.getByText("Sie geben frei")).toBeInTheDocument()
+    expect(screen.getByText("KI unterstützt")).toBeInTheDocument()
+    expect(screen.getByText("Regeln prüfen")).toBeInTheDocument()
+    expect(screen.getByText("Menschen entscheiden")).toBeInTheDocument()
   })
 
   it("zeigt drei Tabs und aktiviert Im Ablauf initial", () => {
@@ -353,19 +350,29 @@ describe("Responsibility-Cockpit", () => {
     fireEvent.click(card)
     const dialog = await screen.findByRole("dialog")
     for (const heading of [
-      "Wobei hilft diese Rolle?",
-      "Was macht sie?",
-      "Womit arbeitet sie?",
-      "Was erhalten Sie?",
-      "Was entscheiden Sie?",
-      "Das entscheidet die Rolle nicht",
+      "Aufgabe",
+      "Ergebnis",
+      "Ihre Entscheidung",
+      "Entscheidungsgrenze",
       "Aktiv in",
-      "Datenzugriff",
     ]) {
       expect(
         within(dialog).getByRole("heading", { name: heading })
       ).toBeInTheDocument()
     }
+    expect(dialog).toHaveClass("data-[side=right]:sm:w-[560px]")
+    const dataTrigger = within(dialog).getByRole("button", {
+      name: "Daten & Rahmen",
+    })
+    expect(dataTrigger).toHaveAttribute("aria-expanded", "false")
+    expect(within(dialog).queryByRole("heading", { name: "Datenzugriff" })).toBeNull()
+    fireEvent.click(dataTrigger)
+    expect(
+      await within(dialog).findByRole("heading", { name: "Arbeitsgrundlage" })
+    ).toBeVisible()
+    expect(
+      within(dialog).getByRole("heading", { name: "Datenzugriff" })
+    ).toBeVisible()
     expect(card).toHaveAttribute("aria-expanded", "true")
 
     fireEvent.click(within(dialog).getByRole("button", { name: "Close" }))

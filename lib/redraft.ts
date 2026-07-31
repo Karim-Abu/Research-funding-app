@@ -292,6 +292,11 @@ export const AI_REASON_INFO: Record<string, AiReasonInfo> = {
   field_not_supported: {
     text: "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
   },
+  // CostGuard: deterministisches Aufruf-Limit des Analyse-Laufs — Wiederholen
+  // im selben Lauf kann nie gelingen, die Aktion ist ein neuer Lauf.
+  ai_call_limit_reached: {
+    text: "Das Limit für KI-Aufrufe in diesem Analyse-Lauf ist erreicht. Starten Sie einen neuen Analyse-Lauf, um weitere Vorschläge zu erzeugen.",
+  },
 }
 
 /** Fail-closed-Anzeige, wenn ein 503 ohne bekannten Code eintrifft. */
@@ -329,6 +334,41 @@ export function staleReasonLabel(
 
 const MESSAGES: Record<string, string> = {
   stale_base_version: "Dieser Abschnitt wurde zwischenzeitlich geändert.",
+  // Qualitäts-Gates: die KI-Antwort wurde serverseitig verworfen — ehrlich
+  // benennen statt Generiktext; ein erneuter Versuch kann gelingen.
+  failed_grounding_validation:
+    "Der Vorschlag enthielt konkrete Aussagen ohne Grundlage in Ihren Angaben und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  unknown_evidence_anchor:
+    "Der Vorschlag verwies auf nicht freigegebene Belege und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  unknown_open_issue:
+    "Der Vorschlag verwies auf unbekannte offene Punkte und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  unknown_research_source:
+    "Der Vorschlag verwies auf nicht freigegebene Quellen und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  new_claim_without_source:
+    "Der Vorschlag enthielt neue Aussagen ohne Quelle und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  invented_patent_identifier:
+    "Der Vorschlag enthielt nicht belegte Schutzrechtsangaben und wurde verworfen.",
+  invented_numeric_token:
+    "Der Vorschlag enthielt nicht belegte Zahlenangaben und wurde verworfen.",
+  invented_partner_name:
+    "Der Vorschlag enthielt nicht belegte Organisationsnamen und wurde verworfen.",
+  character_limit_exceeded:
+    "Der Vorschlag überschritt das Zeichenlimit des Felds und wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  empty_suggested_text:
+    "Die KI lieferte keinen verwendbaren Text. Ein erneuter Versuch kann gelingen.",
+  initial_draft_too_thin:
+    "Die KI lieferte keinen substanziellen Erst-Entwurf und der Vorschlag wurde verworfen. Ein erneuter Versuch kann gelingen.",
+  // Beleg-Auswahl: deterministisch vom Nutzer behebbar (kein Retry sinnvoll).
+  selected_anchor_not_verified:
+    "Ein gewählter Beleg ist nicht bestätigt. Passen Sie die Beleg-Auswahl an oder bestätigen Sie den Beleg zuerst.",
+  selected_anchor_source_version_stale:
+    "Ein gewählter Beleg stammt aus einer veralteten Quellenversion. Passen Sie die Beleg-Auswahl an.",
+  selected_anchor_review_required:
+    "Die Quelle eines gewählten Belegs ist noch nicht inhaltlich geprüft. Passen Sie die Beleg-Auswahl an.",
+  selected_anchor_quarantined:
+    "Die Quelle eines gewählten Belegs ist nicht freigegeben. Passen Sie die Beleg-Auswahl an.",
+  unknown_selected_anchor:
+    "Ein gewählter Beleg existiert nicht mehr. Passen Sie die Beleg-Auswahl an.",
 }
 
 // 2026-07-24 — deterministische Abschnittsstruktur-Fehler (Katalog-Addendum,
@@ -356,10 +396,14 @@ export function redraftFailureLabel(code: string): string | null {
 }
 
 /** Deterministisch = vom Nutzer behebbar; ein erneuter Versuch ohne
- *  Textänderung kann nie gelingen — die UI bietet dann kein
+ *  Text-/Auswahländerung kann nie gelingen — die UI bietet dann kein
  *  «Erneut versuchen» an. */
 export function isDeterministicRedraftFailure(code: string): boolean {
-  return code.startsWith("section_")
+  return (
+    code.startsWith("section_") ||
+    code.startsWith("selected_anchor_") ||
+    code === "unknown_selected_anchor"
+  )
 }
 
 function reasonMessage(reasonCode: string | null): string | null {

@@ -170,6 +170,35 @@ describe("MarketComparisonSheet", () => {
     }
   })
 
+  // Die Sperrliste ist generisch und immer gleich — sie darf das Ergebnis nicht
+  // verdrängen, muss aber einen Klick entfernt vollständig lesbar bleiben.
+  it("hält die generische Sperrliste zugeklappt, ohne sie zu verstecken", () => {
+    renderSheet(comparison())
+    const block = screen.getByTestId("market-disallowed")
+    expect(block.tagName).toBe("DETAILS")
+    expect(block).not.toHaveAttribute("open")
+    expect(block).toHaveTextContent("Nicht zulässige Aussagen")
+    expect(block).toHaveTextContent(`(${FORBIDDEN.length})`)
+  })
+
+  // Derselbe Satz stand zuvor zweimal im Dialog: als Ergebnis und als
+  // «zulässige Aussage» (R2 — eine Information je Ansicht genau einmal).
+  it("wiederholt den Ergebnissatz nicht als zulässige Aussage", () => {
+    const sentence =
+      "Im definierten Suchumfang wurden keine öffentlich dokumentierten Lösungen identifiziert."
+    const onInsertText = renderSheet(
+      comparison({
+        competition_judgment: judgment({
+          rationale: sentence,
+          allowed_formulations: [sentence],
+        }),
+      })
+    )
+    expect(screen.getAllByText(sentence)).toHaveLength(1)
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
+    expect(onInsertText.mock.calls[0][0] as string).toContain(sentence)
+  })
+
   it("enthält keine Prozentwerte für Einzigartigkeit/Ähnlichkeit", () => {
     const { container } = render(
       <MarketComparisonSheet open onOpenChange={vi.fn()} comparison={comparison()} onInsertText={vi.fn()} />
@@ -237,6 +266,9 @@ describe("MarketComparisonSheet", () => {
   it("zeigt die Projektidee als Vergleichsbasis mit Suchfokus und Bearbeiten-Link", () => {
     renderSheet(comparison())
     const basis = screen.getByTestId("market-basis")
+    // Kontext, nicht Ergebnis: zugeklappt, Titelzeile nennt Projekt und Feld.
+    expect(basis.tagName).toBe("DETAILS")
+    expect(basis).not.toHaveAttribute("open")
     expect(basis).toHaveTextContent("Vergleichsbasis")
     expect(basis).toHaveTextContent("Anomalieerkennung für KMU")
     expect(basis).toHaveTextContent("Wir bauen eine automatisierte Qualitätsprüfung.")
@@ -253,10 +285,13 @@ describe("MarketComparisonSheet", () => {
 
   // UI-Bereinigung B1: `open_evidence_gaps` ist im Backend eine Obermenge von
   // `research_gaps` — beide zu rendern zeigte dieselbe Lücke zweimal im Dialog.
-  it("zeigt die offenen Evidenzlücken genau einmal", () => {
+  // Der Abschnittskopf «Was noch fehlt» benennt die Liste; ein zweiter Titel
+  // («Offene Evidenzlücken») direkt darunter entfällt.
+  it("zeigt die offenen Evidenzlücken genau einmal, unter einer Überschrift", () => {
     const shared = "Rival AG: Textstelle gefunden, inhaltlich noch nicht bestätigt."
     renderSheet(comparison({ research_gaps: [shared] }))
-    expect(screen.getAllByText("Offene Evidenzlücken")).toHaveLength(1)
+    expect(screen.getAllByText("Was noch fehlt")).toHaveLength(1)
+    expect(screen.queryByText("Offene Evidenzlücken")).toBeNull()
     expect(screen.getAllByText(shared)).toHaveLength(1)
   })
 

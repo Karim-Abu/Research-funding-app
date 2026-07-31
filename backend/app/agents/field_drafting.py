@@ -262,12 +262,64 @@ def _bind_missing_inputs(
     return normalized, ""
 
 
+# Verbesserungsziel → verbindlicher Anweisungssatz. Ohne diese Sätze war der
+# Modus nur ein Datenfeld im Untrusted-Kontext und blieb wirkungslos.
+_IMPROVEMENT_MODE_DIRECTIVES: dict[str, str] = {
+    "clearer": (
+        "Verbesserungsziel «Klarer formulieren»: Struktur und Verständlichkeit "
+        "verbessern, Kernaussagen schärfen — ohne Fakten zu verändern oder zu "
+        "erweitern."
+    ),
+    "complete_innolink_requirements": (
+        "Verbesserungsziel «Fehlende Innolink-Punkte ergänzen»: Gleiche den "
+        "Text gezielt mit den `requirement_definitions` ab und ergänze fehlende "
+        "Anforderungspunkte aus den sichtbaren Angaben; was nicht belegbar "
+        "ist, gehört als konkrete Frage in `missing_inputs`."
+    ),
+    "shorten": (
+        "Verbesserungsziel «Kürzen»: Verdichte den Text deutlich, erhalte alle "
+        "Fakten und die geforderte Struktur — die Richtwerte zur Budgetnutzung "
+        "gelten dann nicht."
+    ),
+}
+
+
+def _task_directives(ctx, config: A2FieldConfig) -> tuple[str, ...]:
+    """Deterministische, serverseitige Aufgaben-Direktiven für den
+    Instruction-Teil des Prompts (nie Nutzer-/Quelltext)."""
+    directives = [
+        (
+            f"Zeichenbudget: {config.char_limit} Zeichen. Ein vollständiger "
+            "Entwurf nutzt in der Regel 60–90 % des Budgets — überschreite es "
+            "nie und blähe dünne Faktenlagen nie künstlich auf."
+        ),
+        (
+            "Decke jeden unter `requirement_definitions` aufgeführten "
+            "Anforderungspunkt inhaltlich ab, soweit die sichtbaren Angaben "
+            "das ehrlich erlauben; fehlende konkrete Angaben gehören als "
+            "konkrete Fragen in `missing_inputs`, niemals erfunden in den Text."
+        ),
+    ]
+    if ctx.is_initial_draft:
+        directives.append(
+            "Erst-Entwurf: Es existiert noch kein Anwendertext. Erstelle einen "
+            "vollständigen, direkt verwendbaren Entwurf ausschliesslich aus den "
+            "sichtbaren Angaben. Keine Platzhalter-Syntax (`[[…]]`) im Text — "
+            "offene Punkte ausschliesslich als `missing_inputs`."
+        )
+    mode_directive = _IMPROVEMENT_MODE_DIRECTIVES.get(ctx.improvement_mode)
+    if mode_directive:
+        directives.append(mode_directive)
+    return tuple(directives)
+
+
 def _structured_suggestion_output(
     validated: _Validated,
     ctx,
     config: A2FieldConfig,
     *,
     generation_kind: str,
+    initial_draft: bool = False,
 ) -> tuple[dict | None, str, suggestion_grounding.GroundingResult]:
     candidate = validated.candidate
     missing, reason = _bind_missing_inputs(
@@ -277,13 +329,25 @@ def _structured_suggestion_output(
     empty_grounding = suggestion_grounding.GroundingResult()
     if missing is None:
         return None, reason, empty_grounding
+    if initial_draft:
+        # Substanzschwelle nur für Erst-Entwürfe: ein Nicht-Text wie «Keine
+        # zusätzlichen Erläuterungen.» ist kein Entwurf. Der Aufrufer hat
+        # dafür genau einen Repair-Retry; danach scheitert die Operation mit
+        # klarem Grund statt einen nutzlosen Vorschlag anzuzeigen.
+        substance_floor = min(200, int(config.char_limit * 0.4))
+        if char_count(candidate.suggested_text) < substance_floor:
+            return None, "initial_draft_too_thin", empty_grounding
     grounding = suggestion_grounding.validate_grounding(
         candidate.suggested_text,
         original_text=ctx.current_draft_text,
         structured_project_data=ctx.structured_project_data,
         anchors=ctx.verified_evidence,
     )
-    if grounding.unsupported_critical:
+    # Erst-Entwurf (leerer/Platzhalter-Basistext): der Abgleich-Korpus enthält
+    # keinen Anwendertext, ungegroundete Angaben laufen über den Warnkanal
+    # (unsupported_concrete_claim → Prüfung nötig) statt hart zu scheitern.
+    # Das allowed_facts-Halluzinationsgate bleibt davon unberührt hart.
+    if grounding.unsupported_critical and not initial_draft:
         return None, "failed_grounding_validation", grounding
     declared_claims = [
         {
@@ -421,14 +485,24 @@ def _validate_candidate(
             None,
         ):
             return None, "unknown_research_source"
-        if next((i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None):
-            return None, "unknown_open_issue"
+        # Unbekannte Open-Issue-Verweise sind Metadaten-Fehler des Modells,
+        # keine Inhaltserfindung: aussortieren + Warnung statt Totalabbruch
+        # (gleiche Philosophie wie der A3-Findings-Filter). Belege/Quellen
+        # bleiben dagegen hart — sie tragen Evidenz-Semantik.
+        known_issue_ids = [
+            i for i in cand.open_issue_ids if i in ctx.allowed_issue_ids
+        ]
+        unknown_issue_removed = len(known_issue_ids) != len(cand.open_issue_ids)
+        if unknown_issue_removed:
+            cand = cand.model_copy(update={"open_issue_ids": known_issue_ids})
         if cand.new_claims and not (
             cand.evidence_anchor_ids or cand.research_source_ids
         ):
             return None, "new_claim_without_source"
         placeholders = [p.model_dump() for p in cand.missing_inputs]
         warnings = list(bundle.warnings or [])
+        if unknown_issue_removed:
+            warnings.append("unknown_open_issue_removed")
         if placeholders:
             warnings.append("contains_placeholders")
         if ctx.meta.get("language_needs_review"):
@@ -468,12 +542,15 @@ def _validate_candidate(
     # R5.2: used_anchor_ids ⊆ allowed_anchor_ids (wiederverwendbarer Helper).
     if proposal_anchor_violations(cand.evidence_anchor_ids, ctx.allowed_anchor_ids):
         return None, "unknown_evidence_anchor"
-    bad_issue = next(
-        (i for i in cand.open_issue_ids if i not in ctx.allowed_issue_ids), None
-    )
-    if bad_issue is not None:
-        return None, "unknown_open_issue"
+    # Wie im Abschnittspfad: unbekannte Open-Issue-Verweise aussortieren +
+    # Warnung — nie den ganzen Vorschlag dafür verwerfen.
+    known_issue_ids = [i for i in cand.open_issue_ids if i in ctx.allowed_issue_ids]
+    unknown_issue_removed = len(known_issue_ids) != len(cand.open_issue_ids)
+    if unknown_issue_removed:
+        cand = cand.model_copy(update={"open_issue_ids": known_issue_ids})
     warnings = []
+    if unknown_issue_removed:
+        warnings.append("unknown_open_issue_removed")
     if bundle.placeholders:
         warnings.append("contains_placeholders")
     if ctx.advisory_facts:
@@ -511,6 +588,7 @@ def run_a2_field_drafting(
     selected_anchor_ids: list[str] | None = None,
     language: str | None = None,
     manifest_mode: bool = False,
+    replace_existing: bool = False,
 ) -> A2Outcome:
     """Generate + validate + persist an advisory A2 suggestion for an A2-enabled field.
     Never raises. The field→profile/limit/markers binding comes from the registry."""
@@ -528,6 +606,7 @@ def run_a2_field_drafting(
             selected_anchor_ids=selected_anchor_ids or [],
             language=language,
             manifest_mode=manifest_mode,
+            replace_existing=replace_existing,
         )
     except Exception:  # defensive: A2 must never break the request/run
         logger.exception("A2 field drafting crashed; run %s field %s", run.run_id, field_id)
@@ -557,7 +636,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
          guidance, target_section, resolver,
          model_preference: str = "primary", improvement_mode: str = "clearer",
          selected_anchor_ids: list[str] | None = None, language: str | None = None,
-         manifest_mode: bool = False) -> A2Outcome:
+         manifest_mode: bool = False, replace_existing: bool = False) -> A2Outcome:
     field_id = config.field_id
     is_composite = bool(config.mandatory_markers)
     if (
@@ -570,13 +649,18 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     skill_id = a2_fields.skill_id_for(field_id, target_section)
     if skill_id is None:
         return A2Outcome(status="failed", reason="skill_not_configured")
-    # Replay/idempotency: reuse an existing proposed suggestion for this base.
-    existing = suggestions_repo.get_proposed_for(
-        db, run.run_id, draft_id, base_version_id, target_section
-    )
-    if existing is not None:
-        return A2Outcome(status="reused", suggestion_id=existing.suggestion_id,
-                         view=_suggestion_view(db, run, existing))
+    # Replay/idempotency (Batch-/Run-Pfad): reuse an existing proposed
+    # suggestion for this base. Ein EXPLIZITER Editor-Redraft
+    # (replace_existing) erzeugt dagegen wirklich neu — sonst käme nach
+    # «Neuen Vorschlag erzeugen» immer wieder derselbe alte Vorschlag zurück;
+    # der alte wird nach Erfolg als «superseded» markiert (siehe unten).
+    if not replace_existing:
+        existing = suggestions_repo.get_proposed_for(
+            db, run.run_id, draft_id, base_version_id, target_section
+        )
+        if existing is not None:
+            return A2Outcome(status="reused", suggestion_id=existing.suggestion_id,
+                             view=_suggestion_view(db, run, existing))
 
     mode = run.processing_mode
     if mode == "deterministic_only":
@@ -650,6 +734,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
                 "open_issue_ids": sorted(ctx.allowed_issue_ids),
             },
         ),
+        task_directives=_task_directives(ctx, config),
     )
     result = gateway.invoke(db, request, provider_resolver=resolver)
 
@@ -697,6 +782,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
     if manifest_mode:
         structured_output, structured_reason, grounding = _structured_suggestion_output(
             validated, ctx, config, generation_kind=result.generation_kind,
+            initial_draft=ctx.is_initial_draft,
         )
         if structured_output is None:
             # One bounded repair attempt through the same gateway request and
@@ -719,6 +805,7 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
                         _structured_suggestion_output(
                             repaired_validated, ctx, config,
                             generation_kind=repaired.generation_kind,
+                            initial_draft=ctx.is_initial_draft,
                         )
                     )
                     if repaired_output is not None:
@@ -830,10 +917,19 @@ def _run(db, run, config: A2FieldConfig, *, draft_id, base_version_id, operation
         suggestion.open_issue_ids = missing_input_service.sync_issues(
             db, run, suggestion, suggestion.missing_inputs
         )
+    superseded_count = 0
+    if replace_existing:
+        # Erst nach erfolgreicher Neuerzeugung — schlägt die Generierung fehl,
+        # bleibt der bisherige Vorschlag unverändert bestehen.
+        superseded_count = suggestions_repo.supersede_proposed(
+            db, run.run_id, draft_id, base_version_id, target_section,
+            keep_suggestion_id=suggestion.suggestion_id,
+        )
     _audit(db, run, "agent.field_drafting.succeeded", field_id,
            {"suggestion_id": suggestion.suggestion_id,
             "character_count": suggestion.character_count,
             "derived_numeric_claim_count": len(validated.derived_numbers),
+            "superseded_suggestion_count": superseded_count,
             "routing_metadata_mismatch": validated.routing_mismatch})
     return A2Outcome(
         status="succeeded", suggestion_id=suggestion.suggestion_id,

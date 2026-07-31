@@ -1,13 +1,13 @@
 "use client"
 
 import * as React from "react"
-import { ChevronDown, CircleDollarSign, Clock3, Info, Layers3, WalletCards } from "lucide-react"
+import { ChevronDown, Clock3, Hash, Info, Layers3, WalletCards } from "lucide-react"
 import { RunStatusBadge } from "@/components/kosten/run-status-badge"
 import { Badge } from "@/components/ui/badge"
 import { useActiveRun } from "@/components/providers/workflow-run-provider"
 import { useSession } from "@/components/providers/app-providers"
 import { getProjectCosts, type LiveCostRun, type LiveUsageCost, type ProjectCostViewDto } from "@/lib/kosten-live"
-import { aggregateLiveCost, groupExecutionsByRole, liveRunStatusView, splitExecutions, summarizePricing, unpricedBadgeLabel } from "@/lib/kosten-live-view"
+import { aggregateLiveCost, aggregateLiveRunTotals, groupExecutionsByRole, liveRunStatusView, splitExecutions, summarizePricing, unpricedBadgeLabel } from "@/lib/kosten-live-view"
 import type { Role } from "@/lib/types"
 import { cn } from "@/lib/utils"
 
@@ -39,6 +39,31 @@ function duration(start: string, end?: string | null): string {
   const seconds = Math.round(ms / 1000)
   if (seconds < 60) return `${seconds} s`
   return `${Math.floor(seconds / 60)} min ${seconds % 60} s`
+}
+
+function totalDuration(durationMs: number): string {
+  const seconds = Math.round(durationMs / 1000)
+  if (seconds < 60) return `${seconds} s`
+  const minutes = Math.floor(seconds / 60)
+  const remainingSeconds = seconds % 60
+  if (minutes < 60) {
+    return remainingSeconds > 0
+      ? `${minutes} min ${remainingSeconds} s`
+      : `${minutes} min`
+  }
+  const hours = Math.floor(minutes / 60)
+  const remainingMinutes = minutes % 60
+  return remainingMinutes > 0
+    ? `${hours} h ${remainingMinutes} min`
+    : `${hours} h`
+}
+
+function runCountLabel(count: number): string {
+  return count === 1 ? "1 Durchlauf" : `${count} Durchläufe`
+}
+
+function runCountSource(count: number): string {
+  return count === 1 ? "1 Durchlauf" : `${count} Durchläufen`
 }
 
 function PricedAmount({ cost }: { cost: LiveUsageCost }) {
@@ -89,10 +114,19 @@ function CostTileValue({ total }: { total: LiveUsageCost }) {
   )
 }
 
-function costTileDetail(total: LiveUsageCost): string {
-  if (total.status === "priced") return "Alle externen KI-Aufrufe sind vollständig bepreist."
-  if (total.status === "not_applicable") return "Bisher sind keine externen KI-Kosten angefallen."
-  return "Nur nachweislich bepreiste Aufrufe fliessen in die Summe ein."
+function costTileDetail(total: LiveUsageCost, runCount: number): string {
+  const scope = `aus ${runCountSource(runCount)}`
+  if (total.status === "priced") return `Vollständig bepreiste Summe ${scope}.`
+  if (total.status === "not_applicable") return `Keine externen KI-Kosten ${scope}.`
+  return `Belegter Mindestwert ${scope}; unbepreiste Aufrufe sind nicht enthalten.`
+}
+
+function durationTileDetail(endedRunCount: number, runCount: number): string {
+  if (runCount === 0) return "Noch keine Durchläufe vorhanden."
+  if (endedRunCount === runCount) {
+    return `Summiert aus ${runCountSource(endedRunCount)} mit Endzeit.`
+  }
+  return `${endedRunCount} von ${runCount} Durchläufen mit Endzeit; laufende ohne Endzeit sind nicht enthalten.`
 }
 
 function MetricCard({ label, value, detail, icon: Icon }: { label: string; value: React.ReactNode; detail: string; icon: React.ElementType }) {
@@ -172,9 +206,7 @@ export function KostenScreen(_: KostenScreenProps) {
 
   const total = React.useMemo(() => aggregateLiveCost(data?.runs ?? []), [data])
   const summary = React.useMemo(() => summarizePricing(data?.runs ?? []), [data])
-  const totalTokens = data?.runs.reduce((sum, run) => sum + run.input_tokens + run.output_tokens, 0) ?? 0
-  const completedDurations = (data?.runs ?? []).map((run) => run.ended_at ? new Date(run.ended_at).getTime() - new Date(run.started_at).getTime() : null).filter((value): value is number => value != null && value >= 0)
-  const averageDuration = completedDurations.length ? Math.round(completedDurations.reduce((sum, value) => sum + value, 0) / completedDurations.length / 1000) : null
+  const totals = React.useMemo(() => aggregateLiveRunTotals(data?.runs ?? []), [data])
 
   return (
     <div className="mx-auto flex w-full max-w-[1180px] flex-col gap-8 px-4 py-7 pb-12 sm:px-6 lg:px-8" data-testid="kosten-screen">
@@ -192,10 +224,10 @@ export function KostenScreen(_: KostenScreenProps) {
         )}
 
         <section className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4" aria-label="Kostenübersicht">
-          <MetricCard label="Exakte KI-Kosten" value={<CostTileValue total={total} />} detail={costTileDetail(total)} icon={WalletCards} />
-          <MetricCard label="KI-Aufrufe" value={<span className="font-semibold tabular-nums">{summary.externalCallCount}</span>} detail={data.runs.length === 1 ? "Externe KI-Aufrufe aus 1 Durchlauf" : `Externe KI-Aufrufe aus ${data.runs.length} Durchläufen`} icon={Layers3} />
-          <MetricCard label="Tokens gesamt" value={<span className="font-semibold tabular-nums">{totalTokens.toLocaleString("de-CH")}</span>} detail="Ein- und Ausgabe-Tokens aus echten Providerantworten" icon={CircleDollarSign} />
-          <MetricCard label="Ø Laufzeit" value={<span className="font-semibold tabular-nums">{averageDuration == null ? "—" : averageDuration < 60 ? `${averageDuration} s` : `${Math.floor(averageDuration / 60)} min ${averageDuration % 60} s`}</span>} detail="Abgeschlossene Durchläufe" icon={Clock3} />
+          <MetricCard label="KI-Kosten gesamt" value={<CostTileValue total={total} />} detail={costTileDetail(total, totals.runCount)} icon={WalletCards} />
+          <MetricCard label="KI-Aufrufe gesamt" value={<span className="font-semibold tabular-nums">{totals.externalCallCount}</span>} detail={`Summiert aus ${runCountSource(totals.runCount)}.`} icon={Layers3} />
+          <MetricCard label="Tokens gesamt" value={<span className="font-semibold tabular-nums">{totals.totalTokens.toLocaleString("de-CH")}</span>} detail={`Ein- und Ausgabe-Tokens aus ${runCountSource(totals.runCount)}.`} icon={Hash} />
+          <MetricCard label="Laufzeit gesamt" value={<span className="font-semibold tabular-nums">{totals.endedRunCount === 0 ? "—" : totalDuration(totals.totalDurationMs)}</span>} detail={durationTileDetail(totals.endedRunCount, totals.runCount)} icon={Clock3} />
         </section>
 
         <div className="flex flex-col gap-2">
@@ -203,7 +235,7 @@ export function KostenScreen(_: KostenScreenProps) {
           {(data.web_research_calls ?? 0) > 0 && <p data-testid="firecrawl-note" className="rounded-lg border border-border bg-muted/25 px-4 py-3 text-xs leading-relaxed text-muted-foreground">Web-Recherche (Firecrawl): {data.web_research_calls} Aufruf{data.web_research_calls === 1 ? "" : "e"} — kreditbasiert, kein USD-Preis je Aufruf; nicht in den KI-Kosten enthalten.</p>}
         </div>
 
-        <section aria-labelledby="history-heading"><div><h2 id="history-heading" className="text-lg font-semibold text-foreground">Durchlauf-Historie</h2><p className="mt-1 text-sm text-muted-foreground">Öffnen Sie einen Durchlauf für Tokens, tatsächliches Modell und Kosten je Aufruf.</p></div>{data.runs.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center"><p className="font-medium text-foreground">Noch keine Durchläufe</p><p className="mt-1 text-sm text-muted-foreground">Nach dem ersten KI-Durchlauf erscheinen hier die gemessenen Werte.</p></div> : <ul className="mt-4 flex flex-col gap-3">{data.runs.map((run) => <RunCard key={run.id} run={run} />)}</ul>}</section>
+        <section aria-labelledby="history-heading"><div className="flex flex-wrap items-start justify-between gap-3"><div><h2 id="history-heading" className="text-lg font-semibold text-foreground">Durchlauf-Historie</h2><p className="mt-1 text-sm text-muted-foreground">Öffnen Sie einen Durchlauf für Tokens, tatsächliches Modell und Kosten je Aufruf.</p></div><span data-testid="run-count" className="rounded-full border border-border bg-card px-3 py-1 text-xs font-medium text-muted-foreground">{runCountLabel(totals.runCount)}</span></div>{data.runs.length === 0 ? <div className="mt-4 rounded-xl border border-dashed border-border bg-card px-6 py-10 text-center"><p className="font-medium text-foreground">Noch keine Durchläufe</p><p className="mt-1 text-sm text-muted-foreground">Nach dem ersten KI-Durchlauf erscheinen hier die gemessenen Werte.</p></div> : <ul className="mt-4 flex flex-col gap-3">{data.runs.map((run) => <RunCard key={run.id} run={run} />)}</ul>}</section>
       </>}
     </div>
   )

@@ -19,7 +19,7 @@ export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
   location_found: "Textstelle gefunden – fachliche Prüfung offen",
   supports_partially: "Teilweise gestützt",
   supports_strongly: "Stark gestützt",
-  conflict_or_uncertain: "Widersprüchlich/unklar",
+  conflict_or_uncertain: "Nicht als Beleg verwendbar",
   human_review_required: "Menschliche Prüfung erforderlich",
 }
 
@@ -30,7 +30,7 @@ export const SUPPORT_STATUS_SHORT_LABELS: Record<SupportStatus, string> = {
   location_found: "Textstelle gefunden",
   supports_partially: "Teilweise gestützt",
   supports_strongly: "Stark gestützt",
-  conflict_or_uncertain: "Widersprüchlich",
+  conflict_or_uncertain: "Nicht verwendbar",
   human_review_required: "Prüfung nötig",
 }
 
@@ -64,7 +64,7 @@ export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
   supports_partially: "Die Passage trägt nur einen Teil der Aussage.",
   supports_strongly: "Die Passage trägt die konkrete Aussage direkt.",
   conflict_or_uncertain:
-    "Die Quelle widerspricht der Aussage oder bleibt unklar.",
+    "Die Passage stützt die zugeordnete Anforderung nicht. Den konkreten Prüfgrund finden Sie bei der Fundstelle.",
   human_review_required:
     "Die Stützung braucht eine menschliche Entscheidung — sie wurde noch nicht abschliessend geprüft.",
   evidence_missing: "Für die Aussage ist noch keine Quelle verknüpft.",

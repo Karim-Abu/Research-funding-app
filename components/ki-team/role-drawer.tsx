@@ -20,14 +20,16 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion"
+import { Button } from "@/components/ui/button"
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetDescription,
+  SheetFooter,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Separator } from "@/components/ui/separator"
 import { WORKFLOW_STEPS } from "@/lib/workflow"
 import { cn } from "@/lib/utils"
 import {
@@ -142,18 +144,21 @@ export function RoleDrawer({
       <SheetContent
         side="right"
         finalFocus={finalFocusRef}
-        className="flex w-full flex-col gap-0 overflow-y-auto p-0 sm:max-w-[480px]"
+        className="flex gap-0 overflow-hidden p-0 data-[side=right]:w-full data-[side=right]:sm:w-[560px] data-[side=right]:sm:max-w-[calc(100vw-3rem)]"
       >
         {role && (
           <>
-            <SheetHeader className="border-b border-border pr-14">
+            <SheetHeader className="border-b border-border bg-muted/40 p-5 pr-14 sm:p-6 sm:pr-16">
               <div className="flex items-start gap-3">
                 <RoleIcon role={role} className="size-11" />
                 <div className="min-w-0 flex-1">
                   <SheetTitle className="text-lg leading-snug">
                     {role.name}
                   </SheetTitle>
-                  <div className="mt-2 flex flex-wrap gap-2">
+                  <p className="mt-1.5 max-w-[56ch] text-sm leading-relaxed text-muted-foreground">
+                    {role.specialization}
+                  </p>
+                  <div className="mt-3 flex flex-wrap gap-2">
                     <ModeBadge mode={role.mode} />
                     <AvailabilityBadge role={role} />
                   </div>
@@ -165,94 +170,111 @@ export function RoleDrawer({
               </SheetDescription>
             </SheetHeader>
 
-            <div className="flex flex-col gap-5 p-4 sm:p-5">
-              <Field label="Wobei hilft diese Rolle?" icon={Activity}>
-                {role.specialization}
-              </Field>
-
-              <Field label="Was macht sie?" icon={ListChecks}>
-                {role.task}
-              </Field>
-
-              <div className="grid gap-4 rounded-lg bg-muted/45 p-4 sm:grid-cols-2">
-                <Field label="Womit arbeitet sie?" icon={Database}>
-                  {role.worksWith}
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              <div className="flex flex-col gap-5 p-5 sm:p-6">
+                <Field label="Aufgabe" icon={ListChecks}>
+                  {role.task}
                 </Field>
-                <Field label="Was erhalten Sie?" icon={ArrowRight}>
-                  {role.outputSummary}
-                </Field>
-              </div>
 
-              <div className="rounded-lg border border-status-partial/30 bg-status-partial/5 p-4">
-                <Field
-                  label="Was entscheiden Sie?"
-                  icon={UserRoundCheck}
-                  iconClassName="text-status-partial"
-                >
-                  {role.humanReview}
-                </Field>
-              </div>
-
-              <div className="rounded-lg bg-muted/35 p-4">
-                <Field label="Das entscheidet die Rolle nicht" icon={ShieldAlert}>
-                  {role.decisionBoundary}
-                </Field>
-              </div>
-
-              <Field label="Aktiv in" icon={Activity}>
-                <ul className="flex flex-wrap gap-2">
-                  {activeStepLabels(role).map((label) => (
-                    <li
-                      key={label}
-                      className="rounded-full border border-border bg-card px-2.5 py-1 text-xs font-medium"
+                <div className="grid gap-3">
+                  <div className="rounded-lg border border-border bg-card p-4">
+                    <Field label="Ergebnis" icon={ArrowRight}>
+                      {role.outputSummary}
+                    </Field>
+                  </div>
+                  <div className="rounded-lg border border-status-partial/35 bg-status-partial/5 p-4">
+                    <Field
+                      label="Ihre Entscheidung"
+                      icon={UserRoundCheck}
+                      iconClassName="text-status-partial"
                     >
-                      {label}
-                    </li>
-                  ))}
-                </ul>
-              </Field>
+                      {role.humanReview}
+                    </Field>
+                  </div>
+                </div>
 
-              <Field label="Datenzugriff" icon={Eye}>
-                {role.dataAccess}
-              </Field>
+                <div className="rounded-lg border border-border bg-muted/35 p-4">
+                  <Field label="Entscheidungsgrenze" icon={ShieldAlert}>
+                    {role.decisionBoundary}
+                  </Field>
+                </div>
 
-              <Separator />
+                <div className="flex flex-wrap items-center gap-3 border-y border-border py-3">
+                  <h3 className="flex items-center gap-1.5 text-xs font-semibold tracking-wide text-muted-foreground uppercase">
+                    <Activity aria-hidden="true" className="size-3.5" />
+                    Aktiv in
+                  </h3>
+                  <ul className="flex flex-wrap gap-1.5">
+                    {activeStepLabels(role).map((label) => (
+                      <li
+                        key={label}
+                        className="rounded-full bg-muted px-2.5 py-1 text-xs font-medium text-foreground"
+                      >
+                        {label}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
 
-              <Accordion>
-                <AccordionItem value="technical-details">
-                  <AccordionTrigger>Technische Details</AccordionTrigger>
-                  <AccordionContent>
-                    <div className="flex flex-col gap-4 pt-1">
-                      <Field label="KI-Modell" icon={BrainCircuit}>
-                        <ModelRouteDetails role={role} />
-                      </Field>
-                      <Field label="Ausführungslogik" icon={Cpu}>
-                        {role.providerSummary}
-                      </Field>
-                      <Field label="Technische Komponenten" icon={Braces}>
-                        <ul className="flex flex-col gap-1.5">
-                          {role.technicalComponents.map((component) => (
-                            <li key={component}>
-                              <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
-                                {component}
-                              </code>
-                            </li>
-                          ))}
-                        </ul>
-                      </Field>
-                      <Field label="Interne Quelle">
-                        <code className="break-words rounded bg-muted px-1.5 py-0.5 text-xs">
-                          {role.technicalSource}
-                        </code>
-                      </Field>
-                      <Field label="Datenklassen-Regel">
-                        {role.dataClassRule}
-                      </Field>
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+                <Accordion className="overflow-hidden rounded-lg border border-border px-4">
+                  <AccordionItem value="data-framework">
+                    <AccordionTrigger className="py-4 hover:no-underline">
+                      Daten &amp; Rahmen
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4">
+                      <div className="grid gap-5 pt-1 sm:grid-cols-2">
+                        <Field label="Arbeitsgrundlage" icon={Database}>
+                          {role.worksWith}
+                        </Field>
+                        <Field label="Datenzugriff" icon={Eye}>
+                          {role.dataAccess}
+                        </Field>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                  <AccordionItem value="technical-details">
+                    <AccordionTrigger className="py-4 hover:no-underline">
+                      Technische Details
+                    </AccordionTrigger>
+                    <AccordionContent className="pb-4">
+                      <div className="flex flex-col gap-5 pt-1">
+                        <Field label="KI-Modell" icon={BrainCircuit}>
+                          <ModelRouteDetails role={role} />
+                        </Field>
+                        <Field label="Ausführungslogik" icon={Cpu}>
+                          {role.providerSummary}
+                        </Field>
+                        <Field label="Technische Komponenten" icon={Braces}>
+                          <ul className="flex flex-col gap-1.5">
+                            {role.technicalComponents.map((component) => (
+                              <li key={component}>
+                                <code className="rounded bg-muted px-1.5 py-0.5 text-xs">
+                                  {component}
+                                </code>
+                              </li>
+                            ))}
+                          </ul>
+                        </Field>
+                        <Field label="Interne Quelle">
+                          <code className="break-words rounded bg-muted px-1.5 py-0.5 text-xs">
+                            {role.technicalSource}
+                          </code>
+                        </Field>
+                        <Field label="Datenklassen-Regel">
+                          {role.dataClassRule}
+                        </Field>
+                      </div>
+                    </AccordionContent>
+                  </AccordionItem>
+                </Accordion>
+              </div>
             </div>
+
+            <SheetFooter className="flex-row justify-end border-t border-border bg-muted/30 px-5 py-3 sm:px-6">
+              <SheetClose render={<Button variant="outline" />}>
+                Schliessen
+              </SheetClose>
+            </SheetFooter>
           </>
         )}
       </SheetContent>

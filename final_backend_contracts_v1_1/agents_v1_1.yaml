@@ -622,9 +622,10 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    # 2 statt 1: das Profil deckt ZWEI Felder (ABSTRACT + EXECUTIVE_SUMMARY),
-    # die im normalen AnalysisRun beide einen Vorschlag erhalten (Owner-Entscheid).
-    max_per_run: 2
+    # 8 statt 2 (2026-07-29): das Profil deckt ZWEI Felder (ABSTRACT +
+    # EXECUTIVE_SUMMARY) und Editor-Redrafts sind iterativ; die harte
+    # Kostenkappe bleibt die Run-Policy (max_cost_chf/max_llm_calls).
+    max_per_run: 8
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1
@@ -720,7 +721,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 1
+    max_per_run: 4
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1
@@ -815,7 +816,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 3
+    max_per_run: 9
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1
@@ -915,7 +916,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 9
+    max_per_run: 18
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1
@@ -1025,7 +1026,7 @@ profiles:
     fallback: openai_gpt_54
     selection_status: provisional_until_role_benchmark
   invocation_limits:
-    max_per_run: 1
+    max_per_run: 4
     max_retries: 1
     timeout_seconds: 180
     max_redrafts_per_field: 1

@@ -135,6 +135,57 @@ def test_manifest_context_rejects_stale_quarantined_or_generated_anchor(
     assert exc.value.code == reason
 
 
+def test_unverified_application_anchor_is_skipped_not_fatal(db, monkeypatch):
+    """Regression (Run 85f40540, 2026-07-29): automatisch einbezogene
+    Application-Anker im Zustand «rejected» liessen JEDEN Redraft des Felds
+    mit selected_anchor_not_verified scheitern — ohne jede Nutzer-Auswahl.
+    Jetzt: auslassen; nur die EXPLIZITE Auswahl bleibt der behebbare Fehler."""
+    from types import SimpleNamespace
+
+    from app.agents import field_drafting_context as fdc
+
+    run, _draft, base = build_run_with_draft(
+        db, field_id=VC_FIELD_ID, draft_text=VC_GOOD_TEXT,
+        character_limit=15000, field_name="Value Creation",
+    )
+    source = db.scalar(select(SourceDocument).where(
+        SourceDocument.project_id == run.project_id
+    ))
+    version = db.scalar(select(SourceVersion).where(
+        SourceVersion.source_document_id == source.source_id
+    ))
+    anchor = EvidenceAnchor(
+        anchor_id="anchor-rejected-" + uuid.uuid4().hex[:6], run_id=run.run_id,
+        workspace_id=run.workspace_id, project_id=run.project_id,
+        source_version_id=version.source_version_id, source_id=source.source_id,
+        source_name=source.name, source_type="txt", fragment_id="frag",
+        quote="Nicht verifizierte Angabe.", quote_hash=_hash("x"),
+        match_type="exact_normalized", normalizer_version="normalizer-1",
+        verification_status="rejected", scope="application",
+    )
+    db.add(anchor)
+    db.flush()
+    requirement_id = next(iter(fdc._linked_requirement_ids(VC_FIELD_ID)))
+    monkeypatch.setattr(
+        fdc, "formal_application_scope",
+        lambda _db, _run: SimpleNamespace(
+            status="configured", source_id=source.source_id,
+            source_version_id=version.source_version_id,
+        ),
+    )
+    monkeypatch.setattr(
+        fdc, "_anchor_requirement_map",
+        lambda _db, _run: {anchor.anchor_id: requirement_id},
+    )
+    # Automatisch einbezogen (keine Auswahl): Kontext gelingt, Anker fehlt.
+    ctx = _context(db, run, base, [])
+    assert anchor.anchor_id not in ctx.allowed_anchor_ids
+    # Explizite Auswahl desselben Ankers bleibt der behebbare Fehler.
+    with pytest.raises(ContextSelectionError) as exc:
+        _context(db, run, base, [anchor.anchor_id])
+    assert exc.value.code == "selected_anchor_not_verified"
+
+
 def test_market_context_is_source_backed_and_limited_to_five(db):
     run, _draft, base = build_run_with_draft(
         db, field_id=VC_FIELD_ID, draft_text=VC_GOOD_TEXT,

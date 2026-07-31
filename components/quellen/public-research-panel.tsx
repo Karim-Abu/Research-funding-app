@@ -16,6 +16,7 @@ import {
   RESEARCH_MODULE_LABELS,
   approveResearchBrief,
   coverageStatusLabel,
+  getResearchTask,
   getResearchWorkspace,
   planResearchQueries,
   previewBriefQuery,
@@ -170,6 +171,11 @@ export function PublicResearchPanel({
       (r.support_status === "supports" ||
         r.support_status === "partially_supports")
     const eligible = live.filter(isEligible)
+    // Gezählt werden QUELLEN, nicht Trefferzeilen: zwei Suchtreffer können
+    // dieselbe Quelle gefunden haben — der Vergleich sieht sie einmal.
+    const eligibleSources = new Set(
+      eligible.map((r) => r.source_document_id ?? r.result_id)
+    )
     const imported = live.filter((r) => r.status === "imported")
     const reviewCandidate = imported.find((r) => !isEligible(r))
     const importCandidate = live.find((r) => r.status === "candidate")
@@ -179,8 +185,8 @@ export function PublicResearchPanel({
         ? { result_id: importCandidate.result_id, title: importCandidate.title, missingStep: "import" as const }
         : null
     return {
-      hasEligible: eligible.length > 0,
-      eligibleCount: eligible.length,
+      hasEligible: eligibleSources.size > 0,
+      eligibleCount: eligibleSources.size,
       totalImported: imported.length,
       nextCandidate: next,
     }
@@ -197,9 +203,42 @@ export function PublicResearchPanel({
       await refresh()
     } catch (err) {
       setError(err instanceof Error ? err.message : "Die Rechercheaktion ist fehlgeschlagen.")
+      // Auch im Fehlerfall neu laden: das Backend kann den Status bereits
+      // persistiert haben (z. B. «Verworfen» nach abgelehnter URL-Prüfung).
+      await refresh().catch(() => undefined)
     } finally {
       setBusy(false)
     }
+  }
+
+  // Ein Lauf, in dem jeder Task scheitert, liefert trotzdem HTTP 200 mit
+  // result_count 0. Ohne diese Auswertung blieb genau das stumm: Der Button
+  // wurde deaktiviert, Schritt 3 meldete «Noch keine Resultate», und die
+  // Freigaben waren durch consume_approved (Single-Use, R8) bereits verbraucht
+  // — der Lauf sah aus, als sei er hängengeblieben.
+  const runApprovedQueries = async (briefId: string, ids: string[]) => {
+    const response = await runResearchBrief(briefId, ids)
+    if (response.result_count > 0) return
+    const tasks = await Promise.all(
+      response.task_ids.map((taskId) =>
+        getResearchTask(taskId).catch(() => null)
+      )
+    )
+    const failed = tasks.filter((task) => task?.status === "failed")
+    if (failed.length === 0) {
+      throw new Error(
+        "Die Suche lieferte keine übernehmbaren Treffer. Die Freigaben sind verbraucht; für einen erneuten Versuch bitte neue Suchanfragen erzeugen und freigeben."
+      )
+    }
+    const reason = failed[0]?.error ?? "Grund nicht übermittelt."
+    const code = failed[0]?.error_code
+    const scope =
+      failed.length === tasks.length
+        ? "Die Ausführung ist fehlgeschlagen"
+        : `${failed.length} von ${tasks.length} Suchanfragen sind fehlgeschlagen`
+    throw new Error(
+      `${scope}: ${reason}${code ? ` (${code})` : ""} Die Freigaben sind damit verbraucht — bitte neue Suchanfragen erzeugen und freigeben.`
+    )
   }
 
   const approveBrief = () => {
@@ -231,19 +270,34 @@ export function PublicResearchPanel({
   const brief = workspace?.brief.latest ?? null
   const approved = workspace?.brief.active_approved ?? null
   const queryRows = workspace?.queries ?? []
-  const visibleQueryIndexes = queryRows
-    .map((row, index) => ({ row, index }))
-    .filter(({ row }) => (
-      row.module === activeModule
-      && row.research_brief_id === approved?.research_brief_id
-    ))
+  // Freigaben sind einmal verwendbar: nach einem Lauf oder einer Ablehnung legt
+  // die nächste Planung für denselben Brief wortgleiche Zeilen neu an. Der
+  // Workspace liefert alle Runden (Audit) — Schritt 2 zeigt je Suchanfrage aber
+  // genau EINE Zeile: die noch entscheidbare, sonst die zuletzt erzeugte.
+  // Ältere Runden bleiben unter «Frühere Query-Stände» nachvollziehbar.
+  const actionable = (status: ResearchQueryDto["status"]) =>
+    status === "pending" || status === "approved"
+  const currentRound = new Map<string, { row: ResearchQueryDto; index: number }>()
+  queryRows.forEach((row, index) => {
+    if (row.module !== activeModule) return
+    if (row.research_brief_id !== approved?.research_brief_id) return
+    const key = `${row.planner_purpose} ${row.query_text}`
+    const kept = currentRound.get(key)
+    // Backend sortiert nach Erstellzeit: die spätere Zeile gewinnt, solange die
+    // frühere nicht noch offen oder freigegeben ist.
+    if (!kept || actionable(row.status) || !actionable(kept.row.status)) {
+      currentRound.set(key, { row, index })
+    }
+  })
+  const visibleQueryIndexes = [...currentRound.values()]
+  const shownIndexes = new Set(visibleQueryIndexes.map(({ index }) => index))
   const visibleQueries = visibleQueryIndexes.map(({ index }) => queries[index]).filter(Boolean)
   const historicalQueries = queryRows
-    .map((row, index) => ({ row, query: queries[index] }))
-    .filter(({ row, query }) => (
+    .map((row, index) => ({ row, index, query: queries[index] }))
+    .filter(({ row, index, query }) => (
       Boolean(query)
       && row.module === activeModule
-      && row.research_brief_id !== approved?.research_brief_id
+      && !shownIndexes.has(index)
     ))
     .map(({ query }) => query)
   const visibleResults = (workspace?.results ?? []).filter((row) => row.module === activeModule)
@@ -376,7 +430,7 @@ export function PublicResearchPanel({
                 } as ApprovalQuery
               }}
             />
-            <Button className="mt-2" disabled={busy || approvedIds(visibleQueries).length === 0} onClick={() => void act(() => runResearchBrief(approved.research_brief_id, approvedIds(visibleQueries)))}>Freigegebene Queries ausführen</Button>
+            <Button className="mt-2" disabled={busy || approvedIds(visibleQueries).length === 0} onClick={() => void act(() => runApprovedQueries(approved.research_brief_id, approvedIds(visibleQueries)))}>{busy ? "Suche läuft …" : "Freigegebene Queries ausführen"}</Button>
           </div>}
 
           {historicalQueries.length > 0 && <details className="mt-3 rounded border p-2 text-xs">
@@ -427,12 +481,11 @@ export function PublicResearchPanel({
                   automatisch), nur der Quarantäne-Fall unten braucht noch eine Aktion. */}
               <div className="mt-3 flex flex-wrap items-center gap-2">
                 {result.status === "candidate" && result.execution_mode !== "fake_demo" && (
-                  <Button size="xs" onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>Übernehmen und prüfen</Button>
+                  <Button size="xs" disabled={busy} onClick={() => void act(async () => { await importResearchResult(result.result_id); onImported?.() })}>{busy && <Loader2 className="size-3 animate-spin" />}Übernehmen</Button>
                 )}
                 <Button size="xs" variant="outline" onClick={() => window.open(result.final_url ?? result.source_url, "_blank", "noopener,noreferrer")}><ExternalLink className="size-3" /> Öffnen</Button>
-                {result.status === "candidate" && <Button size="xs" variant="ghost" onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}
+                {result.status === "candidate" && <Button size="xs" variant="ghost" disabled={busy} onClick={() => void act(() => discardResearchResult(result.result_id))}>Verwerfen</Button>}
               </div>
-              <details className="mt-2 text-xs text-muted-foreground"><summary className="cursor-pointer">Technische Details</summary><p>Ausführungsmodus: {result.execution_mode ?? "unbekannt"} · Task-ID: {result.task_id}</p></details>
             </article>)}
           </div>
 

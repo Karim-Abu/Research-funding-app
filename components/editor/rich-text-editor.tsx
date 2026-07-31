@@ -42,6 +42,10 @@ import { EditorToolbar } from "@/components/editor/editor-toolbar"
 export interface RichTextEditorHandle {
   focus: () => void
   getPlainText: () => string
+  /** Editor UND Eltern-Puffer auf den gespeicherten Serverstand zurücksetzen —
+   *  Rettungsanker, wenn lokale Änderungen die Abschnittsstruktur zerlegt
+   *  haben (Degraded-Banner). */
+  resetToServerText: () => void
   insertTextAtCursor: (text: string) => void
   /** Select the Nth placeholder in the document (best effort; may no-op). */
   selectPlaceholder: (index: number) => void
@@ -249,9 +253,13 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
       prevFieldRef.current = fieldKey
 
       if (first || fieldChanged) {
-        if (fieldChanged) {
-          editor.commands.setContent(resolveContent(), { emitUpdate: false })
-        }
+        // Auch beim ERSTEN Lauf den Inhalt aus dem AKTUELLEN serverText/Cache
+        // setzen: der bei useEditor() erzeugte Inhalt stammt vom Erst-Render
+        // und kann veraltet sein (async-Init + zwischenzeitlicher Prop-Wechsel,
+        // z. B. Fokusansicht). Der alte Pfad drückte diesen veralteten Stand
+        // via onChange in den Eltern-Puffer — Symptom: localText = nur ein
+        // Abschnitts-Slice, Marker «verändert», KI-Aktionen blockiert.
+        editor.commands.setContent(resolveContent(), { emitUpdate: false })
         const restored = serializeTiptapToPortalPlainText(editor.getJSON())
         if (normalizePortalPlainText(restored) !== normalizePortalPlainText(serverText)) {
           onChangeRef.current(restored)
@@ -283,6 +291,15 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, RichTextEdi
         focus: () => editor?.chain().focus().run(),
         getPlainText: () =>
           editor ? serializeTiptapToPortalPlainText(editor.getJSON()) : serverText,
+        resetToServerText: () => {
+          if (!editor) return
+          editor.commands.setContent(
+            buildTiptapContentFromPlainText(serverText),
+            { emitUpdate: false }
+          )
+          onChangeRef.current(serializeTiptapToPortalPlainText(editor.getJSON()))
+          writeCache(editor)
+        },
         insertTextAtCursor: (text: string) => {
           if (!editor) return
           // Ensure separation from surrounding text, then insert at the cursor.

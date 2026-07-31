@@ -172,10 +172,16 @@ def test_invented_evidence_anchor_rejected(db):
     assert _suggestions(db, run) == []
 
 
-def test_unknown_open_issue_rejected(db):
+def test_unknown_open_issue_is_stripped_with_warning(db):
+    """Seit 30.7.2026: unbekannte Open-Issue-Verweise sind Metadaten-Fehler des
+    Modells — sie werden aussortiert und gewarnt, statt den ganzen Vorschlag
+    zu verwerfen (Belege/Quellen bleiben harte Gates)."""
     run, draft, base = build_run_with_draft(db)
     out = _run(db, run, draft, base, success_fake(bundle(open_issue_ids=["NO-SUCH-ISSUE"])))
-    assert out.status == "failed" and out.reason == "unknown_open_issue"
+    assert out.status == "succeeded"
+    assert "unknown_open_issue_removed" in out.view["warnings"]
+    suggestion = _suggestions(db, run)[0]
+    assert suggestion.open_issue_ids == []
 
 
 def test_empty_text_rejected(db):

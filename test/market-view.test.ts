@@ -151,11 +151,21 @@ describe("marketUiState", () => {
     expect(ui.canInsert).toBe(false)
   })
 
-  it("noch nicht einbezogene Quellen gelten als veraltet und sperren die Übernahme", () => {
-    const ui = marketUiState(covered(), { unusedSourceCount: 7 })
+  it("benennt bei veraltetem Suchraum die noch nicht einbezogenen Quellen", () => {
+    const ui = marketUiState(covered({ scope_stale: true }), { unusedSourceCount: 7 })
     expect(ui.status).toBe("stale")
     expect(ui.summary).toMatch(/7 geprüfte Quellen sind dazugekommen|7 geprüfte Quellen/)
     expect(ui.canInsert).toBe(false)
+  })
+
+  // Regression: die Client-Differenz (Rechercheergebnisse minus verwendete
+  // Quellversionen) zählt Unterschiedliches und blieb deshalb dauerhaft > 0 —
+  // der Vergleich stand auch direkt nach dem Neu-Erstellen auf «Veraltet».
+  it("eine Zählabweichung allein macht einen aktuellen Vergleich nicht veraltet", () => {
+    const ui = marketUiState(covered({ scope_stale: false }), { unusedSourceCount: 7 })
+    expect(ui.status).toBe("application_ready")
+    expect(ui.label).not.toBe("Veraltet — neu erstellen")
+    expect(ui.canInsert).toBe(true)
   })
 
   it("ohne zulässige Formulierung bleibt es bei «Zur Prüfung bereit»", () => {

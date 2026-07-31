@@ -569,10 +569,12 @@ describe("MarketComparisonSection", () => {
     expect(screen.queryByText(/der Vergleich kann erstellt werden/)).toBeNull()
   })
 
-  it("benennt stattdessen die noch nicht einbezogenen Quellen", async () => {
+  it("benennt bei veraltetem Suchraum die noch nicht einbezogenen Quellen", async () => {
     server.use(
       http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
-        HttpResponse.json(comparison({ source_version_ids: ["v1", "v2", "v3"] }))
+        HttpResponse.json(
+          comparison({ source_version_ids: ["v1", "v2", "v3"], scope_stale: true })
+        )
       )
     )
     render(
@@ -586,6 +588,31 @@ describe("MarketComparisonSection", () => {
     )
     expect(screen.getByTestId("market-section-judgment")).toHaveTextContent(
       "8 geprüfte Quellen dazugekommen"
+    )
+  })
+
+  // Regression: der frisch erstellte Vergleich stand dauerhaft auf «Veraltet»,
+  // weil die Oberfläche Trefferzeilen mit verwendeten Quellversionen verglich.
+  // Ohne Backend-Veraltung gilt der Vergleich als aktuell.
+  it("zeigt einen aktuellen Vergleich nicht als veraltet, nur weil die Zählung abweicht", async () => {
+    server.use(
+      http.get(`/api/projects/${PROJECT}/market-comparisons/latest`, () =>
+        HttpResponse.json(
+          comparison({ source_version_ids: ["v1", "v2", "v3"], scope_stale: false })
+        )
+      )
+    )
+    render(
+      <MarketComparisonSection
+        projectId={PROJECT}
+        readiness={{ hasEligible: true, eligibleCount: 11, totalImported: 11, nextCandidate: null }}
+      />
+    )
+    expect(await screen.findByTestId("market-comparison-status")).not.toHaveTextContent(
+      "Veraltet"
+    )
+    expect(screen.getByTestId("market-section-judgment")).not.toHaveTextContent(
+      "dazugekommen"
     )
   })
 

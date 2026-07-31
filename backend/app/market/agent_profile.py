@@ -42,7 +42,9 @@ _PROFILE = AgentProfileDef(
         "max_per_comparison": 1,
         "max_retries": 1,
         "timeout_seconds": 180,
-        "max_output_tokens": 4000,
+        # 4000 war zu knapp: ab ~7 Quellen wurde der Tool-Use-Output bei
+        # max_tokens abgeschnitten und scheiterte dann als «schema_invalid».
+        "max_output_tokens": 8000,
     },
     failure_policy={"schema_failure": "retry_once_then_skip",
                     "provider_failure": "fallback_then_skip"},

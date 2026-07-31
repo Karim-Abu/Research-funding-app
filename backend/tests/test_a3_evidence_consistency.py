@@ -127,6 +127,25 @@ def test_eligible_run_yields_findings(db):
     assert len(out.findings) == 1 and out.findings[0].field_id == SOL
 
 
+def test_finding_without_target_section_is_filtered_not_schema_fatal(db):
+    """Regression (Run b58c728e, 2026-07-29): EIN Finding ohne target_section
+    (z. B. feldweite Beobachtung bei langen Entwürfen) machte das ganze Bundle
+    schema-invalid und kippte den Prüf-Schritt. Jetzt: Bundle bleibt valide,
+    das betroffene Finding wird sichtbar gefiltert."""
+    run, _d, _b = _sol_run(db)
+    bundle = _a3_bundle()
+    bundle["findings"].append({
+        "origin_profile_id": A3_PROFILE_ID, "severity": "warning",
+        "status": "open", "field_id": SOL, "target_section": None,
+        "description": "Feldweite Beobachtung ohne Abschnittsbezug.",
+        "recommended_next_action": None,
+    })
+    out = _run_a3(db, run, bundle)
+    assert out.status == "succeeded"
+    assert len(out.findings) == 1  # nur das abschnittsgebundene Finding
+    assert out.filter_stats["rejected_reasons"]["invalid_target_section"] == 1
+
+
 @pytest.mark.parametrize(
     ("target_section", "draft_text", "description", "action"),
     [

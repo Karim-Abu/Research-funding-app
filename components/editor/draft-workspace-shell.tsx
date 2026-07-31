@@ -700,12 +700,28 @@ export function DraftWorkspaceShell(props: DraftWorkspaceShellProps) {
                     </nav>
                   )}
                   {degradedSubsections && (
-                    <p className="mt-1 rounded-md border border-status-partial/25 bg-status-partial/8 px-2.5 py-1.5 text-[11px] text-muted-foreground">
-                      Die Abschnittsmarker (z.&nbsp;B. 3.1) wurden verändert —
-                      abschnittsweises Bearbeiten ist deaktiviert. Stellen Sie
-                      die Markerzeilen wieder her; der gesamte Text bleibt
-                      editierbar.
-                    </p>
+                    <div className="mt-1 flex flex-wrap items-center gap-2 rounded-md border border-status-partial/25 bg-status-partial/8 px-2.5 py-1.5 text-[11px] text-muted-foreground">
+                      <span>
+                        Die Abschnittsmarker (z.&nbsp;B. 3.1) wurden verändert —
+                        abschnittsweises Bearbeiten ist deaktiviert. Stellen Sie
+                        die Markerzeilen wieder her; der gesamte Text bleibt
+                        editierbar.
+                      </span>
+                      {/* Rettungsanker: ungespeicherte lokale Änderungen
+                          verwerfen und den gespeicherten Stand laden — der
+                          einzige verlustfreie Ausweg, wenn die Struktur
+                          unbeabsichtigt zerlegt wurde. */}
+                      {serverText !== undefined && serverText !== text && (
+                        <Button
+                          type="button"
+                          size="xs"
+                          variant="outline"
+                          onClick={() => editorRef.current?.resetToServerText()}
+                        >
+                          Gespeicherten Stand wiederherstellen
+                        </Button>
+                      )}
+                    </div>
                   )}
                 </div>
 

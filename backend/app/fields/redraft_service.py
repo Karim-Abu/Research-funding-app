@@ -105,6 +105,7 @@ def execute_a2_operation(
     selected_anchor_ids: list[str] | None = None,
     language: str | None = None,
     manifest_mode: bool = False,
+    replace_existing: bool = False,
 ):
     """Gemeinsamer A2-Kern für Redraft-Executor UND Run-Graph: Operation
     running → A2 → succeeded/failed inkl. result/error-Bookkeeping. Jede
@@ -123,6 +124,7 @@ def execute_a2_operation(
         improvement_mode=improvement_mode,
         selected_anchor_ids=selected_anchor_ids or [], language=language,
         manifest_mode=manifest_mode,
+        replace_existing=replace_existing,
     )
 
     op = db.get(AsyncOperation, operation_id)
@@ -197,6 +199,10 @@ def redraft_executor(
             improvement_mode=improvement_mode,
             selected_anchor_ids=selected_anchor_ids or [], language=language,
             manifest_mode=manifest_mode,
+            # Expliziter Editor-Redraft: wirklich neu erzeugen statt einen
+            # bestehenden proposed-Vorschlag wiederzuverwenden (der Batch-/
+            # Run-Graph-Pfad behält den Reuse als Idempotenz-Schutz).
+            replace_existing=True,
         )
     except Exception:  # noqa: BLE001
         logger.exception("redraft execution failed")

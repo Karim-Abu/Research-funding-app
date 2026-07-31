@@ -415,13 +415,17 @@ class ReviewFindingRecord(BaseModel):
     description: str
     status: FindingStatus = "open"
     field_id: str | None = None
-    target_section: str
+    # Tolerant wie A3Finding/_filter_bundle: ein fehlender/nullwertiger
+    # Zielabschnitt macht EIN Finding filterbar (invalid_target_section),
+    # aber nie das ganze Bundle schema-invalid (Regression b58c728e: bei
+    # langen Entwürfen kippte sonst der komplette Prüf-Schritt).
+    target_section: str | None = None
     requirement_id: str | None = None
     evidence_anchor_id: str | None = None
     evidence_link_id: str | None = None
     evidence_status: str | None = None
     suggested_improvement: str | None = None
-    recommended_next_action: str
+    recommended_next_action: str | None = None
 
 
 class ProfileReviewSummaryRecord(BaseModel):

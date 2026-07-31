@@ -38,7 +38,11 @@ import {
   marketUiState,
   quoteNeedsConfirmation,
 } from "@/lib/market-view"
-import { MarketGapList, MarketPictureList } from "@/components/editor/market-blocks"
+import {
+  MarketDisclosure,
+  MarketGapList,
+  MarketPictureList,
+} from "@/components/editor/market-blocks"
 import { MarketComparisonBasis } from "@/components/editor/market-comparison-basis"
 import { cn } from "@/lib/utils"
 import type { MarketReadiness } from "@/components/quellen/public-research-panel"
@@ -116,6 +120,19 @@ export function MarketComparisonSection({
     return () => pollRef.current?.stop()
   }, [load])
 
+  // Ändert sich der geprüfte Quellenbestand (Quelle übernommen, freigegeben
+  // oder zurückgezogen), entscheidet das Backend neu über die Veraltung. Ohne
+  // dieses Nachladen bliebe der Status bis zum nächsten Seitenaufruf stehen.
+  const eligibleCount = readiness?.eligibleCount ?? null
+  const lastEligibleRef = React.useRef<number | null>(null)
+  React.useEffect(() => {
+    if (eligibleCount === null) return
+    const previous = lastEligibleRef.current
+    lastEligibleRef.current = eligibleCount
+    if (previous === null || previous === eligibleCount) return
+    void load()
+  }, [eligibleCount, load])
+
   const generate = React.useCallback(async () => {
     setState("generating")
     setError(null)
@@ -171,6 +188,10 @@ export function MarketComparisonSection({
   // Der Vergleich bezieht sich auf die Quellen seines Erstellungszeitpunkts.
   // Kommen danach geprüfte Quellen dazu, ist nicht «mehr Evidenz vorhanden»,
   // sondern «der Vergleich kennt sie noch nicht» die ehrliche Aussage.
+  //
+  // Die Zahl beschreibt die Veraltung nur NÄHER — ausgelöst wird sie allein vom
+  // Backend (marketUiState), weil beide Zählungen unterschiedliche Einheiten
+  // haben und ihre Differenz sonst dauerhaft «Veraltet» behaupten würde.
   const usedSourceCount = comparison?.source_version_ids?.length ?? 0
   const unusedSourceCount =
     readiness && usedSourceCount > 0
@@ -219,7 +240,7 @@ export function MarketComparisonSection({
           )}
         </Button>
       </div>
-      <p className="mb-3 text-xs text-muted-foreground">
+      <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
         Nur aus geprüften öffentlichen Quellen — kein automatischer Eintrag in
         den Antrag.
       </p>
@@ -235,18 +256,22 @@ export function MarketComparisonSection({
 
       {/* EINE Antwort: Ergebnis, Suchumfang, nächster Schritt. Ersetzt die
           früher nebeneinanderstehenden Blöcke (Gesamturteil, Veraltung,
-          Limitationshinweise, Fortschrittszeile, Leerzustand). */}
+          Limitationshinweise, Fortschrittszeile, Leerzustand). Der Ergebnissatz
+          trägt die Fläche — Suchumfang und nächster Schritt bleiben ruhig. */}
       <div
         data-testid="market-section-judgment"
-        className="mb-3 rounded-md border border-border bg-muted/20 px-3 py-2.5"
+        className="mb-3 flex flex-col gap-1.5 rounded-md border border-border bg-muted/20 px-4 py-3"
       >
-        <p className="text-xs text-foreground">{ui.summary}</p>
-        {comparison?.competition_judgment && (
-          <p className="mt-0.5 text-[11px] text-muted-foreground">
+        <p className="text-sm leading-relaxed text-foreground">{ui.summary}</p>
+        {/* Bei einem gescheiterten Lauf gab es nie ein Modellergebnis — die
+            Suchumfangs-Zahlen («… 0 untersuchte Lösungskandidaten») wären
+            irreführend. */}
+        {comparison?.competition_judgment && comparison.status !== "failed" && (
+          <p className="text-xs leading-relaxed text-muted-foreground">
             {comparison.competition_judgment.scope_summary}
           </p>
         )}
-        <p className="mt-1 text-[11px] text-muted-foreground" data-testid="market-section-next-step">
+        <p className="text-xs leading-relaxed text-muted-foreground" data-testid="market-section-next-step">
           Nächster Schritt: {ui.nextStep}
         </p>
       </div>
@@ -277,10 +302,12 @@ export function MarketComparisonSection({
         </p>
       )}
 
-      {/* Was noch fehlt — die eine Lückenliste, immer sichtbar. */}
+      {/* Was noch fehlt — die eine Lückenliste. Die Sätze aus dem Backend sind
+          lang; auf der Übersichtskarte genügt die Anzahl, den nächsten Schritt
+          nennt der Ergebnisblock oben. Vollständig einen Klick entfernt. */}
       <MarketGapList
         gaps={marketGaps(comparison)}
-        limit={3}
+        collapsed
         testId="market-research-gaps"
       />
 
@@ -325,19 +352,23 @@ export function MarketComparisonSection({
 
           {/* Sektion A — Marktbild (Marktinformationen, klar getrennt von den Lösungen unten). */}
           {(picturePoints.length > 0 || marketClaims.length > 0) && (
-            <div data-testid="market-section-picture" className="rounded-md border border-border bg-muted/20 px-3 py-2.5">
-              <p className="text-xs font-semibold text-foreground">Marktbild</p>
-              <p className="mb-1 text-[11px] text-muted-foreground">
-                Marktinformationen — keine Wettbewerber.
-              </p>
+            <div data-testid="market-section-picture" className="flex flex-col gap-2 rounded-md border border-border bg-muted/20 px-4 py-3">
+              <div>
+                <p className="text-sm font-medium text-foreground">Marktbild</p>
+                <p className="text-xs text-muted-foreground">
+                  Marktinformationen — keine Wettbewerber.
+                </p>
+              </div>
               <MarketPictureList points={picturePoints} />
               {/* Marktaussagen bleiben prüfbar — nur eben nicht als «Anbieter». */}
               {marketClaims.length > 0 && (
-                <details className="mt-2" data-testid="market-claims-review">
-                  <summary className="cursor-pointer text-xs font-medium text-foreground">
-                    Marktaussagen prüfen ({marketClaims.length})
-                  </summary>
-                  <ul className="mt-2 flex flex-col gap-2">
+                <MarketDisclosure
+                  testId="market-claims-review"
+                  className="bg-card"
+                  summary={<span>Marktaussagen prüfen</span>}
+                  count={marketClaims.length}
+                >
+                  <ul className="flex flex-col gap-2">
                     {marketClaims.map((item) => (
                       <MarketClaimRow
                         key={item.item_id}
@@ -346,7 +377,7 @@ export function MarketComparisonSection({
                       />
                     ))}
                   </ul>
-                </details>
+                </MarketDisclosure>
               )}
             </div>
           )}
@@ -355,23 +386,23 @@ export function MarketComparisonSection({
               gruppiert nach Lösungsart. Enthält nie Marktstatistiken. */}
           {comparison.items.length > 0 && (
             <div className="overflow-x-auto" data-testid="market-comparison-table">
-              <p className="mb-1 text-xs font-semibold text-foreground">Lösungslandschaft</p>
-              <p className="mb-2 text-[11px] text-muted-foreground">
+              <p className="text-sm font-medium text-foreground">Lösungslandschaft</p>
+              <p className="mb-3 text-xs leading-relaxed text-muted-foreground">
                 Gefundene Lösungen und Alternativen, gruppiert nach Art — verglichen mit
                 der Vergleichsbasis oben.
               </p>
               {solutions.length === 0 && (
-                <p className="text-xs text-status-partial" role="status">
+                <p className="text-xs leading-relaxed text-status-partial" role="status">
                   Im Suchumfang wurden bisher nur Marktaussagen gefunden, aber keine
-                  vergleichbaren Lösungen. Die offenen Evidenzlücken unten zeigen, was fehlt.
+                  vergleichbaren Lösungen. Die offenen Evidenzlücken oben zeigen, was fehlt.
                 </p>
               )}
               {CANDIDATE_TYPE_ORDER.map((type) => {
                 const items = solutions.filter((i) => candidateTypeOf(i) === type)
                 if (items.length === 0) return null
                 return (
-                  <div key={type} className="mb-4 last:mb-0">
-                    <p className="mb-1 text-xs font-medium text-foreground">
+                  <div key={type} className="mb-5 last:mb-0">
+                    <p className="mb-1.5 text-xs font-medium text-muted-foreground">
                       {CANDIDATE_TYPE_LABELS[type]} ({items.length})
                     </p>
                     <table className="w-full border-collapse text-left text-xs">
@@ -595,13 +626,13 @@ function MarketClaimRow({
   onSetStatus: (itemId: string, status: ItemStatus, supportStatus?: SupportStatus) => void
 }) {
   return (
-    <li className="rounded-md border border-border bg-card px-3 py-2">
-      <p className="text-xs font-medium text-foreground">{item.name}</p>
+    <li className="rounded-md border border-border bg-card px-3 py-2.5">
+      <p className="text-sm font-medium text-foreground">{item.name}</p>
       {item.description && (
-        <p className="text-[11px] text-muted-foreground">{item.description}</p>
+        <p className="text-xs leading-relaxed text-muted-foreground">{item.description}</p>
       )}
       {item.evidence_quotes.length > 0 && (
-        <blockquote className="mt-1 border-l-2 border-border pl-2 text-[11px] italic text-muted-foreground">
+        <blockquote className="mt-1.5 border-l-2 border-border pl-2.5 text-xs italic leading-relaxed text-muted-foreground">
           „{item.evidence_quotes[0].quote}“
         </blockquote>
       )}
@@ -610,12 +641,12 @@ function MarketClaimRow({
           href={item.evidence_quotes[0].source_url}
           target="_blank"
           rel="noreferrer"
-          className="mt-1 block break-all text-[11px] text-primary hover:underline"
+          className="mt-1 block break-all text-xs text-primary hover:underline"
         >
           Quelle öffnen
         </a>
       )}
-      <div className="mt-1">
+      <div className="mt-1.5">
         <EvidenceStatus item={item} />
         <ReviewActions item={item} onSetStatus={onSetStatus} />
       </div>

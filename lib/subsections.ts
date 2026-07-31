@@ -72,6 +72,32 @@ export function subsectionText(
   return text.slice(entry.index, next ? next.index : undefined).trimEnd()
 }
 
+/**
+ * Inhalt eines Unterabschnitts ohne Markerzeile/-token (Spiegel der
+ * Backend-Erkennung in field_drafting_context._section_is_initial_draft):
+ * die Registry-Frage als Überschrift zählt nicht als Inhalt
+ * (Vorlagenzustand), Anwendertext auf der Markerzeile schon. Null, wenn der
+ * Marker im Text fehlt.
+ */
+export function subsectionContent(
+  text: string,
+  subsections: SubsectionDef[],
+  marker: string
+): string | null {
+  const slice = subsectionText(text, subsections, marker)
+  if (slice === null) return null
+  const def = subsections.find((s) => s.marker === marker)
+  const lines = slice.split("\n")
+  if (def && lines[0]?.trim() === def.label.trim()) {
+    return lines.slice(1).join("\n")
+  }
+  lines[0] = (lines[0] ?? "").replace(
+    new RegExp(`^[ \\t]*(?:#{1,6}[ \\t]+)?${escape(marker)}[.:)\\s-]*`),
+    ""
+  )
+  return lines.join("\n")
+}
+
 export const SUBSECTION_STATE_LABELS: Record<SubsectionState, string> = {
   vorhanden: "Vorhanden",
   platzhalter: "Platzhalter offen",

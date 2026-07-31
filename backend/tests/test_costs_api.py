@@ -75,6 +75,39 @@ def test_cost_view_is_empty_when_project_has_no_runs(client):
     assert response.json()["runs"] == []
 
 
+def test_cost_view_returns_every_run_of_the_project_even_without_usage(client):
+    db = SessionLocal()
+    try:
+        first_run_id = make_run(db)
+        first_run = db.get(AnalysisRun, first_run_id)
+        assert first_run is not None
+        second_run_id = "agent-run-" + uuid.uuid4().hex[:8]
+        db.add(AnalysisRun(
+            run_id=second_run_id,
+            project_id=first_run.project_id,
+            workspace_id=first_run.workspace_id,
+            created_by=first_run.created_by,
+            status="failed",
+            current_stage="quality_review",
+            progress_percent=80,
+            processing_mode=first_run.processing_mode,
+            effective_data_classification=first_run.effective_data_classification,
+            snapshot_versions={},
+        ))
+        db.commit()
+        project_id = first_run.project_id
+    finally:
+        db.close()
+
+    login(client, TOBIAS_EMAIL, TOBIAS_PASSWORD)
+    response = client.get(f"/api/v1/projects/{project_id}/costs")
+    assert response.status_code == 200, response.text
+    runs = response.json()["runs"]
+    assert {run["id"] for run in runs} == {first_run_id, second_run_id}
+    assert all(run["executions"] == [] for run in runs)
+    assert all(run["cost"]["status"] == "not_applicable" for run in runs)
+
+
 def test_execution_exposes_the_human_system_role(client):
     db = SessionLocal()
     try:

@@ -57,6 +57,7 @@ from app.drafts.sections import (
     extract_section,
     target_section_spans,
 )
+from app.drafts.templates import is_placeholder_only
 
 # R5.7/R8: only these two "big" A2 fields consume advisory research context. R8
 # (Anforderung 10): NUR vom Menschen akzeptierte (importierte) D0/public-Quellen werden
@@ -113,6 +114,8 @@ class A2Context:
     market_findings: list[dict] = field(default_factory=list)
     improvement_mode: str = "clearer"
     manifest_context_hash: str = ""
+    # Erst-Entwurf: Zieltext ist leer oder besteht nur aus Vorlagen-Platzhaltern.
+    is_initial_draft: bool = False
 
 
 class ContextBudgetError(ValueError):
@@ -226,7 +229,13 @@ def _manifest_evidence(
         if not is_application and not explicitly_selected:
             continue
         if anchor.verification_status not in ("exact_verified", "human_verified"):
-            raise ContextSelectionError("selected_anchor_not_verified")
+            # Nur eine EXPLIZITE Nutzer-Auswahl ist ein behebbarer Fehler.
+            # Automatisch einbezogene Application-Anker in nicht-verifiziertem
+            # Zustand (z. B. rejected) sind schlicht kein Beleg — auslassen,
+            # nie den ganzen Redraft dafür scheitern lassen.
+            if explicitly_selected:
+                raise ContextSelectionError("selected_anchor_not_verified")
+            continue
         document = db.get(SourceDocument, anchor.source_id)
         version = db.get(SourceVersion, anchor.source_version_id)
         if (
@@ -340,6 +349,38 @@ def _field_profile_view(field_id: str) -> dict:
         "mandatory_questions": mandatory,
         "guidance": None,
     }
+
+
+def _target_question_label(field_id: str, target_section: str) -> str | None:
+    for question in get_registry().mandatory_questions(field_id):
+        marker = question.field_id.rsplit("MANDATORY_", 1)[-1].replace("_", ".")
+        if marker == target_section:
+            return question.label_or_question.strip()
+    return None
+
+
+def _section_is_initial_draft(
+    section_text: str, field_id: str, target_section: str
+) -> bool:
+    """Erst-Entwurf eines Zielabschnitts: ohne Markerzeile bzw. Marker-Token
+    bleibt nichts Substanzielles ausser Vorlagen-Platzhaltern. Die Registry-
+    Frage als Überschrift ist Vorlagenzustand — Anwendertext auf der
+    Markerzeile zählt dagegen als Inhalt."""
+    lines = section_text.splitlines()
+    if not lines:
+        return True
+    label = _target_question_label(field_id, target_section)
+    if label is not None and lines[0].strip() == label:
+        rest = lines[1:]
+    else:
+        rest = [
+            re.sub(
+                rf"^[ \t]*(?:#{{1,6}}[ \t]+)?{re.escape(target_section)}[.:)\s-]*",
+                "", lines[0],
+            ),
+            *lines[1:],
+        ]
+    return is_placeholder_only("\n".join(rest))
 
 
 def _current_draft_text(db: Session, run: AnalysisRun, field_id: str) -> str:
@@ -511,6 +552,21 @@ def _requirement_assessments(db: Session, run: AnalysisRun, requirement_ids: set
             )
         )
         if a.requirement_id in requirement_ids
+    ]
+
+
+def _requirement_definitions(requirement_ids: set[str]) -> list[dict]:
+    """Titel + Beschreibung der verlinkten Anforderungen aus der Registry
+    (statische D0-Contract-Daten, deterministische Reihenfolge)."""
+    registry = get_registry()
+    return [
+        {
+            "requirement_id": requirement_id,
+            "title": registry.requirements[requirement_id].title,
+            "description": registry.requirements[requirement_id].description,
+        }
+        for requirement_id in sorted(requirement_ids)
+        if requirement_id in registry.requirements
     ]
 
 
@@ -777,6 +833,9 @@ def assemble_a2_context(
         ctx.current_draft_text = extract_section(
             full_draft_text, section_markers, target_section
         )
+        ctx.is_initial_draft = _section_is_initial_draft(
+            ctx.current_draft_text, field_id, target_section
+        )
         for span in spans:
             if span.marker == target_section:
                 continue
@@ -790,6 +849,7 @@ def assemble_a2_context(
             })
     else:
         ctx.current_draft_text = full_draft_text
+        ctx.is_initial_draft = is_placeholder_only(full_draft_text)
     ctx.language = language or detect_application_language(ctx.current_draft_text)
     ctx.advisory_facts = [] if manifest_mode else retrieve_advisory_project_facts(db, run)
     if manifest_mode:
@@ -853,6 +913,9 @@ def assemble_a2_context(
         "field_profile": ctx.field_profile,
         "requirement_assessments": ctx.requirement_assessments,
         "requirement_ids": sorted(ctx.requirement_ids),
+        # Titel + Beschreibung aus der Registry (statische D0-Daten) — ohne sie
+        # sind die Anforderungs-IDs für das Modell inhaltsleer.
+        "requirement_definitions": _requirement_definitions(ctx.requirement_ids),
         "rule_ids": sorted(ctx.rule_ids),
         "improvement_mode": improvement_mode,
         "allowed_evidence_types": [
@@ -861,6 +924,10 @@ def assemble_a2_context(
             "drafting_context",
             "applicant_claim_with_provenance",
         ],
+        # Konditional, damit der Kontext für Bestandsentwürfe unverändert
+        # bleibt — Schlüssel nie unkonditional aufnehmen. Die zugehörige
+        # Anweisung steht als Aufgaben-Direktive im Instruction-Teil.
+        **({"draft_state": "initial"} if ctx.is_initial_draft else {}),
     })
     research_candidates = {
         "location_only_or_unconfirmed_anchors": ctx.research_candidates,
@@ -874,7 +941,10 @@ def assemble_a2_context(
              len(ctx.verified_evidence)),
             ("open_issue", _json(ctx.open_issues), 15, len(ctx.open_issues)),
             ("imported_applicant_text", _json(adjacent), 15, len(adjacent)),
-            ("portal_requirement", portal_requirement, 5,
+            # Gewicht 10 (vorher 5): schützt die Anforderungsdefinitionen vor
+            # Budget-Truncation in evidenzlastigen Runs; ohne Budget-Druck
+            # bleibt der Output byte-identisch.
+            ("portal_requirement", portal_requirement, 10,
              len(ctx.requirement_assessments)),
             ("market_finding", _json(ctx.market_findings), 5,
              len(ctx.market_findings)),

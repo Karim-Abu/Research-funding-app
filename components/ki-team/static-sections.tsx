@@ -1,6 +1,5 @@
 import {
   Ban,
-  Check,
   ShieldCheck,
   UserRoundCheck,
   XCircle,
@@ -75,20 +74,20 @@ export function HumanApprovalsView() {
           </ul>
         </section>
 
-        <section className="rounded-xl border border-status-fulfilled/25 bg-status-fulfilled/5 p-4 sm:p-6">
+        <section className="rounded-xl border border-border bg-card p-4 sm:p-6">
           <h2 className="flex items-center gap-2 font-heading text-base font-semibold text-foreground">
             <ShieldCheck
               aria-hidden="true"
-              className="size-5 text-status-fulfilled"
+              className="size-5 text-muted-foreground"
             />
             {kiTeamTexts.dataProtection.title}
           </h2>
           <ul className="mt-4 grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
             {kiTeamTexts.dataProtection.points.map((point) => (
               <li key={point} className="flex items-start gap-2 text-sm">
-                <Check
+                <span
                   aria-hidden="true"
-                  className="mt-0.5 size-4 shrink-0 text-status-fulfilled"
+                  className="mt-2 size-1.5 shrink-0 rounded-full bg-muted-foreground"
                 />
                 <span>{point}</span>
               </li>

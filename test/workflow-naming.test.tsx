@@ -54,11 +54,13 @@ describe("Workflow-Namensgebung (ein Katalog, ein Name pro Route)", () => {
     )
     for (const step of WORKFLOW_STEPS.filter((s) => s.step >= 2)) {
       expect(
-        screen.getByRole("link", { name: step.label }),
+        screen.getByRole("link", { name: `Schritt ${step.step}: ${step.label}` }),
         step.label
       ).toBeInTheDocument()
     }
-    // Schritt 1 erscheint mit seinen Routennamen (ein Name pro Route).
+    // Schritt 1 erscheint als Gruppenkopf mit seinen Routennamen als
+    // Unterpunkte (ein Name pro Route).
+    expect(screen.getByText("Projekt & Unterlagen")).toBeInTheDocument()
     expect(screen.getAllByRole("link", { name: "Projekt anlegen" }).length)
       .toBeGreaterThan(0)
     expect(screen.getByRole("link", { name: "Antrag importieren" })).toBeInTheDocument()

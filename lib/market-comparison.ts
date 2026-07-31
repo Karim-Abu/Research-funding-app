@@ -300,6 +300,8 @@ const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",
   422: "Markt- und Konkurrenzvergleich ist für diese Datenklasse nicht erlaubt.",
+  429: "Das Limit für den Markt- und Konkurrenzvergleich ist erreicht. Bitte versuchen Sie es später erneut.",
+  500: "Der Vergleich konnte nicht gestartet werden. Bitte versuchen Sie es erneut.",
   503: "Der Markt- und Konkurrenzvergleich ist derzeit nicht verfügbar.",
 }
 

@@ -39,6 +39,7 @@ import { supportStatusFromVerification } from "@/lib/evidence-ladder"
 import { SupportStatusBadge } from "@/components/status/support-status-badge"
 import { listPortalFields, type PortalFieldInfoDto } from "@/lib/portal-fields"
 import { placeholderMatches } from "@/lib/draft-view"
+import { isPlaceholderOnly } from "@/lib/placeholders"
 import {
   getReview,
   createHumanDecision,
@@ -106,7 +107,7 @@ import {
   generationLabel,
   type GenerationKind,
 } from "@/lib/generation-kind"
-import { buildOutline, subsectionText } from "@/lib/subsections"
+import { buildOutline, subsectionContent, subsectionText } from "@/lib/subsections"
 
 type SaveState = "saved" | "dirty" | "saving" | "error"
 
@@ -266,6 +267,8 @@ export function LiveEditor({
   const [a2ContextOptions, setA2ContextOptions] = React.useState<SuggestionContextOptions | null>(null)
   const [a2SelectedAnchors, setA2SelectedAnchors] = React.useState<ReadonlySet<string>>(new Set())
   const [a2ContextLoading, setA2ContextLoading] = React.useState(false)
+  // Die Belegauswahl ist optional und bleibt eingeklappt, bis sie gebraucht wird.
+  const [a2AnchorsOpen, setA2AnchorsOpen] = React.useState(false)
   const [selectedSubsection, setSelectedSubsection] = React.useState<string | null>(null)
   // RUN 4B §9 — Versionshistorie des aktiven Feldes; geladen, sobald der
   // Versionen-Tab offen ist (und neu nach jeder gespeicherten Änderung).
@@ -358,6 +361,7 @@ export function LiveEditor({
     setA2FromRun(false)
     setA2ContextOptions(null)
     setA2SelectedAnchors(new Set())
+    setA2AnchorsOpen(false)
   }
 
   // Im Analyse-Lauf erzeugte Vorschläge (proposed, zur aktuellen Basis)
@@ -492,6 +496,9 @@ export function LiveEditor({
           selectedAnchorIds: [...a2SelectedAnchors],
         }
       )
+      // Ein frisch erzeugter Live-Vorschlag stammt nie aus dem Analyse-Lauf —
+      // sonst bliebe das Herkunfts-Banner der Analyse fälschlich stehen.
+      setA2FromRun(false)
       setA2Suggestion(suggestion)
       setA2ReviewOpen(true)
     } catch (e) {
@@ -958,11 +965,27 @@ export function LiveEditor({
       : null
   const visibleGenerationKind =
     a2Suggestion?.generation_kind ?? configuredGenerationKind
-  const suggestionAction = generationActionLabel(configuredGenerationKind)
   const currentReviewText =
     selectedSubsection && subsectionDefs.length > 0
       ? (subsectionText(localText, subsectionDefs, selectedSubsection) ?? localText)
       : localText
+  // Erst-Entwurf: Zieltext ist leer oder nur Vorlagen-Platzhalter — Spiegel
+  // der Backend-Erkennung (assemble_a2_context / _section_is_initial_draft).
+  const selectedSubsectionContent =
+    selectedSubsection && subsectionDefs.length > 0
+      ? subsectionContent(localText, subsectionDefs, selectedSubsection)
+      : null
+  const isInitialDraft =
+    selectedSubsection && subsectionDefs.length > 0
+      ? selectedSubsectionContent !== null &&
+        isPlaceholderOnly(selectedSubsectionContent)
+      : isPlaceholderOnly(localText)
+  // Beim Erst-Entwurf beschreibt die Aktion das Ergebnis; das ehrliche
+  // Demo-Label («Demo-Vorschlag erstellen») bleibt unverändert.
+  const suggestionAction =
+    isInitialDraft && configuredGenerationKind === "model_generated"
+      ? "Erst-Entwurf erstellen"
+      : generationActionLabel(configuredGenerationKind)
 
   const hasBlocker = (review?.blocker_count ?? 0) > 0 || selectedFindings.some((f) => f.severity === "blocker")
   const hasBackedMarketData =
@@ -1587,127 +1610,148 @@ export function LiveEditor({
       kiContent={
         <div className="flex flex-col gap-2">
           {showA2Controls ? (
-            <div className="flex flex-col gap-1" data-testid="a2-suggestion-control">
-              {subsectionDefs.length > 0 && (
-                <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                  <span>Zielabschnitt</span>
-                  <select
-                    value={selectedSubsection ?? ""}
-                    onChange={(event) => focusSubsection(event.target.value)}
-                    className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
-                    aria-label="Zielabschnitt für Vorschlag"
-                  >
-                    {subsectionOutline.map((section) => (
-                      <option
-                        key={section.marker}
-                        value={section.marker}
-                        disabled={section.index < 0}
-                      >
-                        {section.index < 0
-                          ? `${section.marker} — fehlt im Text`
-                          : section.marker}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+            <div className="flex flex-col gap-2.5" data-testid="a2-suggestion-control">
+              {/* Kontextzeile: Zielabschnitt und optionale Belege bleiben
+                  bewusst sekundär — das Verbesserungsziel führt. */}
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
+                {subsectionDefs.length > 0 && (
+                  <label className="flex items-center gap-1.5">
+                    <span>Abschnitt</span>
+                    <select
+                      value={selectedSubsection ?? ""}
+                      onChange={(event) => focusSubsection(event.target.value)}
+                      className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
+                      aria-label="Zielabschnitt für Vorschlag"
+                    >
+                      {subsectionOutline.map((section) => (
+                        <option
+                          key={section.marker}
+                          value={section.marker}
+                          disabled={section.index < 0}
+                        >
+                          {section.index < 0
+                            ? `${section.marker} — fehlt im Text`
+                            : section.marker}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                )}
+                <Button
+                  type="button"
+                  size="xs"
+                  variant="ghost"
+                  className="ml-auto"
+                  aria-expanded={a2AnchorsOpen}
+                  disabled={a2ContextLoading}
+                  onClick={() => {
+                    if (!a2ContextOptions && !a2ContextLoading) {
+                      void loadSuggestionContextOptions()
+                    }
+                    setA2AnchorsOpen((open) => !open)
+                  }}
+                >
+                  {a2ContextLoading
+                    ? "Belege werden geladen …"
+                    : a2SelectedAnchors.size > 0
+                      ? `Belege (${a2SelectedAnchors.size})`
+                      : "Belege wählen"}
+                </Button>
+              </div>
+              {a2AnchorsOpen && a2ContextOptions && (
+                <div
+                  className="flex max-h-28 flex-col gap-1 overflow-y-auto rounded-md border border-border px-2 py-1.5"
+                  data-testid="suggestion-anchor-options"
+                >
+                  {a2ContextOptions.anchors.length === 0 ? (
+                    <span className="text-[11px] text-muted-foreground">Keine freigegebenen Belege verfügbar.</span>
+                  ) : a2ContextOptions.anchors.map((anchor) => (
+                    <label key={anchor.anchor_id} className="flex items-center gap-2 text-[11px] text-foreground">
+                      <input
+                        type="checkbox"
+                        checked={a2SelectedAnchors.has(anchor.anchor_id)}
+                        onChange={() => setA2SelectedAnchors((previous) => {
+                          const next = new Set(previous)
+                          if (next.has(anchor.anchor_id)) next.delete(anchor.anchor_id)
+                          else next.add(anchor.anchor_id)
+                          return next
+                        })}
+                      />
+                      <span className="truncate">
+                        {anchor.source_name}{anchor.section ? ` · ${anchor.section}` : ""}
+                      </span>
+                    </label>
+                  ))}
+                </div>
               )}
               {targetMarkerMissing && selectedSubsection && (
                 <p role="status" className="text-xs text-muted-foreground">
-                  «{selectedSubsection}» fehlt im Text — stellen Sie die
-                  Markerzeile wieder her, um diesen Abschnitt gezielt zu
-                  bearbeiten.
+                  «{selectedSubsection}» fehlt im Text — Markerzeile
+                  wiederherstellen.
                 </p>
               )}
-              {/* Was passiert bei der Aktion — in einem Satz, vor dem Klick. */}
-              <label className="flex items-center gap-2 text-xs text-muted-foreground">
-                <span>Verbesserungsziel</span>
-                <select
-                  value={a2ImprovementMode}
-                  onChange={(event) => setA2ImprovementMode(event.target.value as ImprovementMode)}
-                  className="rounded-md border border-border bg-background px-2 py-1 text-foreground"
-                  aria-label="Verbesserungsziel"
-                >
-                  <option value="clearer">Klarer formulieren</option>
-                  <option value="complete_innolink_requirements">Fehlende Innolink-Punkte ergänzen</option>
-                  <option value="shorten">Kürzen</option>
-                </select>
-              </label>
-              <div className="flex flex-col gap-1 rounded-md border border-border px-2 py-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs text-muted-foreground">Optionale, geprüfte Belege</span>
-                  <Button
-                    type="button"
-                    size="xs"
-                    variant="ghost"
-                    onClick={() => void loadSuggestionContextOptions()}
-                    disabled={a2ContextLoading}
+              {/* Das Verbesserungsziel bestimmt das Ergebnis: eigene Fläche,
+                  direkt über der Aktion, mit dem einen Erklärsatz davor. */}
+              <div className="flex flex-col gap-2 rounded-lg border border-border bg-muted/20 px-3 py-2.5">
+                <label className="flex flex-col gap-1">
+                  <span className="text-sm font-semibold text-foreground">
+                    Verbesserungsziel
+                  </span>
+                  <select
+                    value={a2ImprovementMode}
+                    onChange={(event) => setA2ImprovementMode(event.target.value as ImprovementMode)}
+                    className="h-9 w-full rounded-md border border-border bg-background px-2 text-sm font-medium text-foreground"
+                    aria-label="Verbesserungsziel"
                   >
-                    {a2ContextLoading ? "Wird geladen …" : "Belege auswählen"}
-                  </Button>
-                </div>
-                {a2ContextOptions && (
-                  <div className="flex max-h-28 flex-col gap-1 overflow-y-auto" data-testid="suggestion-anchor-options">
-                    {a2ContextOptions.anchors.length === 0 ? (
-                      <span className="text-[11px] text-muted-foreground">Keine freigegebenen Belege verfügbar.</span>
-                    ) : a2ContextOptions.anchors.map((anchor) => (
-                      <label key={anchor.anchor_id} className="flex items-center gap-2 text-[11px] text-foreground">
-                        <input
-                          type="checkbox"
-                          checked={a2SelectedAnchors.has(anchor.anchor_id)}
-                          onChange={() => setA2SelectedAnchors((previous) => {
-                            const next = new Set(previous)
-                            if (next.has(anchor.anchor_id)) next.delete(anchor.anchor_id)
-                            else next.add(anchor.anchor_id)
-                            return next
-                          })}
-                        />
-                        <span>{anchor.source_name}{anchor.section ? ` · ${anchor.section}` : ""}</span>
-                      </label>
-                    ))}
-                  </div>
-                )}
-              </div>
-              <p
-                className="text-xs text-muted-foreground"
-                data-testid="a2-action-explainer"
-              >
-                Der ausgewählte Abschnitt wird neu strukturiert — vorhandene
-                Fakten bleiben erhalten, nichts wird ohne Ihre Prüfung
-                übernommen.
-              </p>
-              <div className="flex flex-wrap items-center gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={() => generateSuggestion()}
-                  disabled={
-                    a2Loading || capsBlockedReason !== null || targetMarkerMissing
-                  }
+                    <option value="clearer">Klarer formulieren</option>
+                    <option value="complete_innolink_requirements">Fehlende Innolink-Punkte ergänzen</option>
+                    <option value="shorten">Kürzen</option>
+                  </select>
+                </label>
+                <p
+                  className="text-xs text-muted-foreground"
+                  data-testid="a2-action-explainer"
                 >
-                  <Sparkles data-icon="inline-start" />
-                  {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
-                </Button>
-                {/* §10 — Redraft mit positiv geprüften Live-Quellen. Erst
-                    verfügbar, wenn kein offener Vorschlag vorliegt (ein
-                    offener Vorschlag würde serverseitig wiederverwendet). */}
-                {reviewedSourcesReady &&
-                  !a2Suggestion &&
-                  (selected.field_id === VALUE_CREATION_FIELD_ID ||
-                    selected.field_id === SOLUTION_INNOVATION_FIELD_ID) && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => generateSuggestion()}
-                      disabled={
-                        a2Loading ||
-                        capsBlockedReason !== null ||
-                        targetMarkerMissing
-                      }
-                      data-testid="research-redraft-action"
-                    >
-                      Mit geprüften Quellen neu formulieren
-                    </Button>
-                  )}
+                  {isInitialDraft
+                    ? "Noch kein Text vorhanden — die KI erstellt einen Erst-Entwurf aus den sichtbaren Projektangaben und Innolink-Punkten. Nichts wird ohne Ihre Prüfung übernommen."
+                    : "Der ausgewählte Abschnitt wird neu strukturiert — Fakten bleiben erhalten, nichts wird ohne Ihre Prüfung übernommen."}
+                </p>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button
+                    size="sm"
+                    // Solange kein Vorschlag offen ist, ist das Erzeugen die
+                    // Primäraktion; danach führt «Vorschlag prüfen».
+                    variant={a2Suggestion ? "outline" : "default"}
+                    onClick={() => generateSuggestion()}
+                    disabled={
+                      a2Loading || capsBlockedReason !== null || targetMarkerMissing
+                    }
+                  >
+                    <Sparkles data-icon="inline-start" />
+                    {a2Loading ? "Vorschlag wird erstellt …" : suggestionAction}
+                  </Button>
+                  {/* §10 — Redraft mit positiv geprüften Live-Quellen. Erst
+                      verfügbar, wenn kein offener Vorschlag vorliegt (ein
+                      offener Vorschlag würde serverseitig wiederverwendet). */}
+                  {reviewedSourcesReady &&
+                    !a2Suggestion &&
+                    (selected.field_id === VALUE_CREATION_FIELD_ID ||
+                      selected.field_id === SOLUTION_INNOVATION_FIELD_ID) && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => generateSuggestion()}
+                        disabled={
+                          a2Loading ||
+                          capsBlockedReason !== null ||
+                          targetMarkerMissing
+                        }
+                        data-testid="research-redraft-action"
+                      >
+                        Mit geprüften Quellen neu formulieren
+                      </Button>
+                    )}
+                </div>
               </div>
               {/* RUN 4B §4/§10 — ehrlicher Pending-Zustand mit aria-live. */}
               {a2Loading && (
@@ -1717,7 +1761,7 @@ export function LiveEditor({
                   data-testid="a2-pending"
                   className="text-xs text-muted-foreground"
                 >
-                  Vorschlag wird erzeugt … Ihr Entwurf bleibt unverändert.
+                  Ihr Entwurf bleibt unverändert.
                 </p>
               )}
               {a2Suggestion && !a2ReviewOpen && (
@@ -1725,9 +1769,22 @@ export function LiveEditor({
                   className="flex flex-col gap-1"
                   data-testid="a2-suggestion-summary"
                 >
-                  <p className="text-xs font-medium text-foreground">
-                    Prüfung erforderlich
-                  </p>
+                  {/* Ein Prüfhinweis statt zweier: stammt der Vorschlag aus dem
+                      Analyse-Lauf, trägt diese Zeile die Herkunft mit. */}
+                  {a2FromRun ? (
+                    <p
+                      className="text-xs font-medium text-foreground"
+                      data-testid="run-suggestion-hint"
+                    >
+                      Vorschlag aus der Analyse — Prüfung nötig.
+                    </p>
+                  ) : (
+                    <p className="text-xs font-medium text-foreground">
+                      {isInitialDraft
+                        ? "Erst-Entwurf — Prüfung nötig"
+                        : "Prüfung erforderlich"}
+                    </p>
+                  )}
                   <p className="text-xs text-muted-foreground">
                     {a2Suggestion.character_count} /{" "}
                     {a2Suggestion.character_limit} Zeichen ·{" "}
@@ -1759,14 +1816,6 @@ export function LiveEditor({
               {/* Ohne Provider ist die Aktion deaktiviert — mit Grund + CTA. */}
               {capsBlockedReason && !a2UnavailableReason && (
                 <A2ReasonNotice reason={capsBlockedReason} />
-              )}
-              {a2Suggestion && a2FromRun && !a2ReviewOpen && (
-                <p
-                  className="text-xs text-muted-foreground"
-                  data-testid="run-suggestion-hint"
-                >
-                  Vorschlag aus der Analyse — Prüfung nötig.
-                </p>
               )}
               {configuredGenerationKind &&
                 !a2Suggestion &&
@@ -1825,9 +1874,6 @@ export function LiveEditor({
               </p>
             </div>
           )}
-          <p className="text-[11px] text-muted-foreground">
-            Vorschläge werden nie automatisch übernommen.
-          </p>
         </div>
       }
       assistant={

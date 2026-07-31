@@ -9,25 +9,21 @@ const items: Array<{
   title: string
   text: string
   icon: LucideIcon
-  iconClassName: string
 }> = [
   {
-    title: "KI bereitet vor",
-    text: "Analysiert Quellen, ordnet Evidenz und formuliert Vorschläge.",
+    title: "KI unterstützt",
+    text: "Analyse und Entwurf",
     icon: Sparkles,
-    iconClassName: "bg-primary/10 text-primary",
   },
   {
-    title: "Regeln prüfen reproduzierbar",
-    text: "Kontrollieren Pflichtfelder, Limits, Partner- und Budgetregeln.",
+    title: "Regeln prüfen",
+    text: "Pflichtfelder und Grenzen",
     icon: ListChecks,
-    iconClassName: "bg-muted text-foreground/70",
   },
   {
-    title: "Sie geben frei",
-    text: "Bestätigen Belege, Budgetfragen, Texte und die manuelle Übernahme.",
+    title: "Menschen entscheiden",
+    text: "Inhalte und Freigaben",
     icon: UserRoundCheck,
-    iconClassName: "bg-status-partial/10 text-status-partial",
   },
 ]
 
@@ -35,29 +31,22 @@ export function ResponsibilitySummary() {
   return (
     <section
       aria-label="Verantwortungsübersicht"
-      className="grid overflow-hidden rounded-xl border border-border bg-card sm:grid-cols-3 sm:divide-x sm:divide-border"
+      className="flex flex-col overflow-hidden rounded-lg border border-border bg-card sm:flex-row sm:divide-x sm:divide-border"
     >
-      {items.map((item, index) => {
+      {items.map((item) => {
         const Icon = item.icon
         return (
           <div
             key={item.title}
-            className={`flex items-start gap-3 p-4 sm:p-5 ${
-              index > 0 ? "border-t border-border sm:border-t-0" : ""
-            }`}
+            className="flex flex-1 items-start gap-2.5 border-t border-border px-4 py-3.5 first:border-t-0 sm:border-t-0"
           >
-            <span
-              className={`flex size-9 shrink-0 items-center justify-center rounded-lg ${item.iconClassName}`}
-            >
-              <Icon aria-hidden="true" className="size-4.5" />
-            </span>
-            <div>
-              <h2 className="text-sm font-semibold text-foreground">
-                {item.title}
-              </h2>
-              <p className="mt-1 text-sm leading-relaxed text-muted-foreground">
-                {item.text}
-              </p>
+            <Icon
+              aria-hidden="true"
+              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+            />
+            <div className="min-w-0">
+              <p className="text-sm font-medium text-foreground">{item.title}</p>
+              <p className="mt-0.5 text-sm text-muted-foreground">{item.text}</p>
             </div>
           </div>
         )

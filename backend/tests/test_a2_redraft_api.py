@@ -129,6 +129,67 @@ def test_redraft_tolerates_missing_non_target_marker(client, monkeypatch):
     assert op["result"]["target_section"] == TARGET_SECTION
 
 
+def test_explicit_second_redraft_replaces_proposed_suggestion(client, monkeypatch):
+    """Expliziter Editor-Redraft erzeugt wirklich neu: der bisherige
+    proposed-Vorschlag derselben Basis wird «superseded», nicht wiederverwendet
+    (sonst käme nach «Neuen Vorschlag erzeugen» immer derselbe Text zurück)."""
+    from app.db.models import DraftSuggestion as _DS
+
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    first = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert first.status_code == 202
+    op1 = client.get(f"/api/v1/operations/{first.json()['operation_id']}").json()
+    assert op1["status"] == "succeeded"
+    first_id = op1["result"]["suggestion_id"]
+
+    second = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert second.status_code == 202
+    op2 = client.get(f"/api/v1/operations/{second.json()['operation_id']}").json()
+    assert op2["status"] == "succeeded"
+    second_id = op2["result"]["suggestion_id"]
+    assert second_id != first_id
+
+    db = SessionLocal()
+    try:
+        assert db.get(_DS, first_id).status == "superseded"
+        assert db.get(_DS, second_id).status == "proposed"
+    finally:
+        db.close()
+    # Der Lese-Endpoint liefert den neuen Vorschlag.
+    read = client.get(
+        f"/api/v1/runs/{run_id}/fields/{FIELD_ID}/suggestion",
+        params={"target_section": TARGET_SECTION},
+    ).json()
+    assert read["suggestion"]["suggestion_id"] == second_id
+
+
+def test_cost_guard_block_reports_call_limit_reason(client, monkeypatch):
+    """CostGuard-Block (Profil-/Run-Limit) trägt den Katalog-Reason
+    ai_call_limit_reached mit deutschem Klartext statt des Generiktexts."""
+    from app.agents import cost_guard
+
+    run_id, _draft_id, base = _setup()
+    _arm_fake(monkeypatch)
+    monkeypatch.setattr(
+        cost_guard, "pre_check",
+        lambda *args, **kwargs: cost_guard.CostDecision(
+            False, "max_invocations_per_run(2)"
+        ),
+    )
+    csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
+    res = _create_redraft(client, csrf, run_id, FIELD_ID, base)
+    assert res.status_code == 202
+    op = client.get(f"/api/v1/operations/{res.json()['operation_id']}").json()
+    assert op["status"] == "failed"
+    assert op["error"]["code"] == "cost_guard_blocked"
+    assert op["error"]["status"] == 503
+    assert op["error"]["reason_code"] == "ai_call_limit_reached"
+    assert "Limit für KI-Aufrufe" in op["error"]["detail"]
+    assert not op["error"].get("retry_with_alternative_model")
+
+
 def test_redraft_result_exposes_concrete_change_metadata_for_review(
     client, monkeypatch
 ):

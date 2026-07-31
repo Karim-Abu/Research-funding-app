@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest"
-import { render, screen, fireEvent, waitFor } from "@testing-library/react"
+import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { PublicResearchPanel } from "@/components/quellen/public-research-panel"
@@ -220,7 +220,7 @@ describe("PublicResearchPanel", () => {
     expect(screen.getByText("Kandidat")).toBeInTheDocument()
     expect(screen.getByRole("button", { name: /Öffnen/ })).toBeInTheDocument()
     expect(screen.getByRole("button", { name: "Verwerfen" })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole("button", { name: "Übernehmen und prüfen" }))
+    fireEvent.click(screen.getByRole("button", { name: "Übernehmen" }))
     expect(await screen.findByText("Inhaltlich geprüft")).toBeInTheDocument()
     expect(screen.getByText("Fundstelle aus abgerufener Seite")).toBeInTheDocument()
     // Kein manueller Stützt/Teilweise/Stützt-nicht-Schritt mehr nach dem Import.
@@ -263,6 +263,46 @@ describe("PublicResearchPanel", () => {
     expect(await screen.findByRole("button", { name: "Queries erzeugen" })).toBeEnabled()
     expect(screen.getByText("Frühere Query-Stände")).toBeInTheDocument()
     expect(screen.getByText("Abgelaufen")).toBeInTheDocument()
+  })
+
+  it("zeigt je Suchanfrage nur die aktuelle Runde in Schritt 2", async () => {
+    // Verbrauchte und abgelehnte Planungsrunden desselben Briefs erzeugen
+    // wortgleiche Zeilen; Schritt 2 darf sie nicht dreifach anbieten.
+    const workspace = liveWorkspace()
+    const planned = workspace.queries[0]
+    workspace.queries = [
+      { ...planned, approval_id: "approval-1", status: "used" },
+      { ...planned, approval_id: "approval-2", status: "rejected", task_id: null, task_status: null },
+      { ...planned, approval_id: "approval-3", status: "pending", task_id: null, task_status: null },
+    ]
+    server.use(http.get(
+      `/api/projects/${PROJECT}/research-workspace`,
+      () => HttpResponse.json(workspace),
+    ))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    const step2 = within((await screen.findAllByTestId("query-approval-list"))[0])
+    // Genau eine Zeile — die noch entscheidbare.
+    expect(step2.getAllByTestId("query-approval-row")).toHaveLength(1)
+    expect(step2.getByTestId("query-decision-badge")).toHaveTextContent("Offen")
+    // Die früheren Stände bleiben nachvollziehbar, aber eingeklappt.
+    expect(screen.getByText("Frühere Query-Stände")).toBeInTheDocument()
+  })
+
+  it("behält nach dem Lauf die zuletzt erzeugte Runde sichtbar", async () => {
+    const workspace = liveWorkspace()
+    const planned = workspace.queries[0]
+    workspace.queries = [
+      { ...planned, approval_id: "approval-1", status: "rejected" },
+      { ...planned, approval_id: "approval-2", status: "used" },
+    ]
+    server.use(http.get(
+      `/api/projects/${PROJECT}/research-workspace`,
+      () => HttpResponse.json(workspace),
+    ))
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    const step2 = within((await screen.findAllByTestId("query-approval-list"))[0])
+    expect(step2.getAllByTestId("query-approval-row")).toHaveLength(1)
+    expect(step2.getByTestId("query-decision-badge")).toHaveTextContent("Ausgeführt")
   })
 
   it("opens an approved brief explicitly for a new version", async () => {
@@ -431,6 +471,40 @@ describe("PublicResearchPanel", () => {
         },
       })
     )
+  })
+
+  it("ein fehlgeschlagener Lauf bleibt nicht stumm", async () => {
+    // Regression: /run antwortet auch dann mit 200, wenn jeder Task scheitert.
+    // Ohne Auswertung der Task-Status sah das aus wie ein hängengebliebener
+    // Button — die Freigabe ist dabei aber bereits verbraucht (Single-Use).
+    const workspace = liveWorkspace()
+    workspace.results = []
+    server.use(
+      http.get(`/api/projects/${PROJECT}/research-workspace`, () =>
+        HttpResponse.json(workspace)
+      ),
+      http.post(`/api/research-briefs/${brief.research_brief_id}/run`, () =>
+        HttpResponse.json({ task_ids: ["task-9"], result_count: 0, execution_mode: "live" })
+      ),
+      http.get("/api/research-tasks/task-9", () =>
+        HttpResponse.json({
+          task_id: "task-9",
+          status: "failed",
+          result_count: 0,
+          error: "Der Provider-Aufruf hat das Zeitlimit überschritten.",
+          error_code: "provider_timeout",
+          retryable: true,
+        })
+      )
+    )
+    render(<PublicResearchPanel projectId={PROJECT} />)
+    fireEvent.click(
+      await screen.findByRole("button", { name: "Freigegebene Queries ausführen" })
+    )
+    const alert = await screen.findByRole("alert")
+    expect(alert).toHaveTextContent("Die Ausführung ist fehlgeschlagen")
+    expect(alert).toHaveTextContent("provider_timeout")
+    expect(alert).toHaveTextContent(/Freigaben sind damit verbraucht/)
   })
 
   it("manueller Import ist bei nicht erreichbarem Dienst automatisch geöffnet", async () => {
