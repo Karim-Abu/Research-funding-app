@@ -1425,7 +1425,7 @@ def prepare_web() -> int:  # pragma: no cover - opt-in live path
                         if (
                             passage["source_id"] != document_view["source_id"]
                             or passage["safety_status"] != "passed"
-                            or passage["content_review_status"] != "unreviewed"
+                            or passage["content_review_status"] not in ("unreviewed", "reviewed")
                             or _sha256(passage["excerpt"]) != passage["quote_hash"]
                         ):
                             raise HarnessFailure("review_source_state_invalid")
@@ -1579,7 +1579,7 @@ def bind_refined_anchors(
                 if (
                     passage["source_id"] != base["source_id"]
                     or passage["safety_status"] != "passed"
-                    or passage["content_review_status"] != "unreviewed"
+                    or passage["content_review_status"] not in ("unreviewed", "reviewed")
                     or _sha256(passage["excerpt"]) != passage["quote_hash"]
                 ):
                     raise HarnessFailure("refined_review_source_state_invalid")

@@ -3,6 +3,7 @@ import { RUN_STATUS_LABELS } from "@/lib/kosten"
 import type { LiveCostExecution, LiveCostRun, LiveUsageCost } from "@/lib/kosten-live"
 import {
   aggregateLiveCost,
+  aggregateLiveRunTotals,
   groupExecutionsByRole,
   liveRunStatusView,
   providerLabel,
@@ -187,6 +188,60 @@ describe("aggregateLiveCost", () => {
   it("liefert not_applicable ohne externe Nutzung", () => {
     expect(aggregateLiveCost([]).status).toBe("not_applicable")
     expect(aggregateLiveCost([run({ id: "run-1", cost: cost({ status: "not_applicable" }) })]).status).toBe("not_applicable")
+  })
+})
+
+describe("aggregateLiveRunTotals", () => {
+  it("summiert Aufrufe, Tokens und Laufzeit über alle beendeten Durchläufe", () => {
+    const totals = aggregateLiveRunTotals([
+      run({
+        id: "run-1",
+        started_at: "2026-07-24T10:00:00Z",
+        ended_at: "2026-07-24T10:01:30Z",
+        input_tokens: 1_000,
+        output_tokens: 200,
+        executions: [execution({ id: "u1" })],
+      }),
+      run({
+        id: "run-2",
+        started_at: "2026-07-24T11:00:00Z",
+        ended_at: "2026-07-24T11:02:00Z",
+        input_tokens: 2_000,
+        output_tokens: 300,
+        executions: [
+          execution({ id: "u2" }),
+          execution({ id: "u3" }),
+        ],
+      }),
+    ])
+
+    expect(totals).toEqual({
+      runCount: 2,
+      externalCallCount: 3,
+      inputTokens: 3_000,
+      outputTokens: 500,
+      totalTokens: 3_500,
+      totalDurationMs: 210_000,
+      endedRunCount: 2,
+    })
+  })
+
+  it("lässt laufende und zeitlich ungültige Durchläufe nur aus der Laufzeitsumme", () => {
+    const totals = aggregateLiveRunTotals([
+      run({ id: "running", status: "running", ended_at: null, executions: [execution({ id: "u1" })] }),
+      run({
+        id: "invalid",
+        started_at: "2026-07-24T11:02:00Z",
+        ended_at: "2026-07-24T11:00:00Z",
+        executions: [execution({ id: "u2" })],
+      }),
+    ])
+
+    expect(totals.runCount).toBe(2)
+    expect(totals.externalCallCount).toBe(2)
+    expect(totals.totalTokens).toBe(300)
+    expect(totals.totalDurationMs).toBe(0)
+    expect(totals.endedRunCount).toBe(0)
   })
 })
 

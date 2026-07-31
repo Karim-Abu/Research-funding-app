@@ -11,7 +11,7 @@ from dataclasses import dataclass
 from datetime import date, datetime, timezone
 
 
-PRICE_TABLE_VERSION = "2026-07-25.1"
+PRICE_TABLE_VERSION = "2026-07-26.1"
 COST_STATUS_PRICED = "priced"
 COST_STATUS_UNKNOWN = "unknown_price"
 COST_STATUS_NOT_APPLICABLE = "not_applicable"
@@ -77,6 +77,16 @@ USD_PRICE_TABLE: dict[str, tuple[UsdPriceEntry, ...]] = {
     ),
     "claude-sonnet-4-6": (
         UsdPriceEntry("claude-sonnet-4-6", 3.0, 0.3, 15.0, _PILOT_EFFECTIVE_FROM, ANTHROPIC_PRICE_SOURCE, _CHECKED_AT, "2026-07-24.sonnet46"),
+    ),
+    # 2026-07-26: Die A1-Route ist auf die datierte Id konfiguriert
+    # (AGENT_MODEL_CLAUDE_HAIKU_45_ID). Ohne Katalogeintrag meldet
+    # route_configuration_reason "live_price_metadata_missing" und die Route
+    # gilt als not_configured — die Live-Funktionen waren dadurch in der
+    # laufenden App nicht verfuegbar. Standardpreise laut Owner-Angabe:
+    # 1.00 USD/Mio Input, 5.00 USD/Mio Output. Der Cache-Read-Satz folgt dem
+    # in dieser Tabelle durchgehend verwendeten Anthropic-Verhaeltnis 0.1x.
+    "claude-haiku-4-5-20251001": (
+        UsdPriceEntry("claude-haiku-4-5-20251001", 1.0, 0.1, 5.0, _PILOT_EFFECTIVE_FROM, ANTHROPIC_PRICE_SOURCE, "2026-07-26", "2026-07-26.haiku45"),
     ),
     "gpt-5.6-luna": (
         UsdPriceEntry("gpt-5.6-luna", 1.0, 0.1, 6.0, _PILOT_EFFECTIVE_FROM, OPENAI_PRICE_SOURCE, _CHECKED_AT, "2026-07-24.gpt56-luna"),

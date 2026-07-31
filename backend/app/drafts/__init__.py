@@ -12,6 +12,7 @@ from app.drafts.templates import (
     build_template,
     has_placeholder,
     is_empty,
+    is_placeholder_only,
 )
 
 __all__ = [
@@ -22,4 +23,5 @@ __all__ = [
     "build_template",
     "has_placeholder",
     "is_empty",
+    "is_placeholder_only",
 ]

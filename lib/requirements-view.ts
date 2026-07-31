@@ -2,7 +2,7 @@
 // Pure functions over the existing shapes (live RequirementAssessmentDto and the
 // mock Requirement). No backend calls, no contract changes.
 
-import type { RequirementStatus } from "./requirements"
+import type { RequirementStatus, RuleEvidenceDto } from "./requirements"
 import type { MachineStatus } from "./types"
 
 // ---------------------------------------------------------------------------
@@ -206,6 +206,40 @@ export function categorize(requirementId: string): string {
   if (/\bPS\b|PROJECT|SETUP|PLAN|TIMELINE|MILESTONE/.test(id)) return "Project Setup"
   if (/SUMMARY|SUBMIT|ABSTRACT|INTRO/.test(id)) return "Summary & Submit"
   return REQ_FALLBACK.category
+}
+
+// ---------------------------------------------------------------------------
+// Regelgrundlage: dieselbe Regel wird oft aus mehreren Registry-Dokumenten
+// zitiert (z. B. Programm-Registry + Vollzugsbestimmungen). Wortgleiche Zitate
+// erscheinen daher nur einmal; bevorzugt wird der Eintrag mit offizieller URL,
+// damit «Offizielle Regel öffnen» erhalten bleibt. Die zusammengefassten
+// Quellen bleiben über `mergedSourceTitles` sichtbar — nichts geht verloren.
+// ---------------------------------------------------------------------------
+export interface DedupedRuleEvidence {
+  evidence: RuleEvidenceDto
+  mergedSourceTitles: string[]
+}
+
+export function dedupeRuleEvidence(
+  entries: RuleEvidenceDto[]
+): DedupedRuleEvidence[] {
+  const byQuote = new Map<string, DedupedRuleEvidence>()
+  for (const entry of entries) {
+    const key = entry.evidence_quote.trim()
+    const existing = byQuote.get(key)
+    if (!existing) {
+      byQuote.set(key, { evidence: entry, mergedSourceTitles: [entry.source_title] })
+      continue
+    }
+    if (!existing.mergedSourceTitles.includes(entry.source_title)) {
+      existing.mergedSourceTitles.push(entry.source_title)
+    }
+    // Ein Eintrag mit offizieller URL gewinnt die Anzeige.
+    if (!existing.evidence.source_url && entry.source_url) {
+      existing.evidence = entry
+    }
+  }
+  return [...byQuote.values()]
 }
 
 // ---------------------------------------------------------------------------

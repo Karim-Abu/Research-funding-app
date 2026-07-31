@@ -210,6 +210,66 @@ describe("LiveRequirements — Compliance ≠ Human Review (RUN 2A Slice 1)", ()
     expect(screen.queryByText("RULE.X")).toBeNull()
   })
 
+  it("UI-Bereinigung: wortgleiche Regelzitate erscheinen einmal, Begründung nicht doppelt", async () => {
+    const quote =
+      "Das Projekt benötigt mindestens einen beitragsberechtigten Schweizer Forschungspartner."
+    const reasoning =
+      "Beitragsberechtigung des Forschungspartners noch nicht bestätigt — Prüfung nicht abschliessend."
+    server.use(
+      http.get("/api/runs/r1/requirements", () =>
+        HttpResponse.json([
+          assessment({
+            assessment_id: "as-dup",
+            requirement_id: "REQ.INNO.PARTNER.RESEARCH",
+            title: "Mindestens ein beitragsberechtigter Schweizer Forschungspartner",
+            status: "needs_input",
+            reasoning,
+            rule_evidence: [
+              {
+                rule_id: "RULE.A",
+                registry_version: "1.1.0",
+                source_ref: "sec-1",
+                source_title: "Innosuisse — Innovationsprojekte",
+                source_url: null,
+                last_verified: "2026-06-20",
+                evidence_quote: quote,
+                evidence_label: "Kuratierter Registry-Auszug",
+              },
+              {
+                rule_id: "RULE.B",
+                registry_version: "1.1.0",
+                source_ref: "art-10",
+                source_title: "Vollzugsbestimmungen Innovationsprojekte, Art. 10",
+                source_url: "https://example.test/art-10",
+                last_verified: "2026-06-20",
+                evidence_quote: quote,
+                evidence_label: "Kuratierter Registry-Auszug",
+              },
+            ],
+          }),
+        ])
+      )
+    )
+    render(<LiveRequirements runId="r1" />)
+    const rowToggle = await screen.findByRole("button", {
+      name: /beitragsberechtigter Schweizer Forschungspartner/,
+    })
+    fireEvent.click(rowToggle)
+
+    // Das wortgleiche Zitat steht genau einmal; beide Quellen bleiben genannt.
+    expect(await screen.findByTestId("rule-evidence")).toBeInTheDocument()
+    expect(screen.getAllByText(quote)).toHaveLength(1)
+    expect(
+      screen.getByText(/Innosuisse — Innovationsprojekte · Vollzugsbestimmungen/)
+    ).toBeInTheDocument()
+    // Der Eintrag mit offizieller URL gewinnt die Anzeige.
+    expect(
+      screen.getAllByRole("link", { name: "Offizielle Regel öffnen" })
+    ).toHaveLength(1)
+    // Aufgeklappt erscheint die Begründung nur unter «Systembefund».
+    expect(screen.getAllByText(reasoning)).toHaveLength(1)
+  })
+
   it("RUN 4A Statussprache: open → «Prüfung nötig», blocked → «Nicht erfüllt», nie Roh-Enums", async () => {
     server.use(
       http.get("/api/runs/r1/requirements", () =>

@@ -45,14 +45,6 @@ export const MARKET_STATUS_STYLE: Record<MarketStatus, string> = {
   nicht_analysiert: "bg-muted text-muted-foreground",
 }
 
-export function marketStatusToLabel(status: MarketStatus): string {
-  return MARKET_STATUS_LABELS[status]
-}
-
-export function marketStatusToStyle(status: MarketStatus): string {
-  return MARKET_STATUS_STYLE[status]
-}
-
 // ---------------------------------------------------------------------------
 // Optional source reference (never raw ids in the standard view).
 // ---------------------------------------------------------------------------
@@ -124,43 +116,38 @@ export function summarizeMarketReadiness(data: MarketDataset): MarketReadiness {
   }
 }
 
-// ---------------------------------------------------------------------------
-// Live comparison → market status. Pure derivation for the Markt tab header.
-// ---------------------------------------------------------------------------
-export function comparisonToMarketStatus(
-  comparison: MarketComparisonDto | null
-): MarketStatus {
-  if (!comparison || comparison.status === "failed") return "nicht_analysiert"
-  if (comparison.status === "stale") return "veraltet"
-  if (comparison.items.length === 0) return "quelle_fehlt"
-  const backed = comparison.items.filter(
-    (i) => i.confidence_label === "source_backed"
-  ).length
-  if (backed === comparison.items.length) return "belegt"
-  return backed > 0 ? "teilweise_belegt" : "quelle_fehlt"
-}
-
-/**
- * German sentence for "Als Argument übernehmen" — inserted into the LOCAL
- * editor buffer only (never auto-saved; the user reviews and saves).
- */
-export function marketArgumentSentence(item: MarketComparisonItemDto): string {
-  const diff = (item.differentiation_relevance ?? "").trim().replace(/\.?$/, ".")
-  return `Abgrenzung zu ${item.name}: ${diff}`
-}
 
 // ---------------------------------------------------------------------------
-// EIN ehrliches Status-Viewmodel für alle drei Markt-Oberflächen (Quellen-Karte,
-// Editor-Rail, Sheet). Ersetzt die divergierenden Ableitungen, die „Fehlgeschlagen"
-// und „Nicht analysiert" gleichzeitig zeigen konnten. (2026-07-24)
+// EINE sichtbare Statuswahrheit für alle Markt-Oberflächen (Quellen-Karte,
+// Editor-Rail, Sheet): ein Zustand, eine Antwort, ein nächster Schritt und die
+// Entscheidung, ob überhaupt eine Marktaussage in den Antrag darf.
+//
+// Ersetzt die frühere Vermischung aus Laufzeitstatus, Gesamturteil, Veraltung
+// und Evidenzhinweisen, die nebeneinander (und teils widersprüchlich) angezeigt
+// wurden. Die Backend-Urteilslogik bleibt unangetastet — hier wird nur
+// zusammengeführt und übersetzt.
 // ---------------------------------------------------------------------------
 export type MarketTone = "neutral" | "positive" | "attention" | "error"
 
-export interface MarketWorkspaceStatus {
+export type MarketComparisonUiStatus =
+  | "not_started"
+  | "research_needed"
+  | "ready_for_review"
+  | "application_ready"
+  | "stale"
+  | "failed"
+
+export interface MarketUiState {
+  status: MarketComparisonUiStatus
+  /** Badge-Text — die einzige Statusaussage je Oberfläche. */
   label: string
   tone: MarketTone
-  /** Kurzer nächster Schritt / Grund — nur wenn hilfreich. */
-  hint?: string
+  /** Ein Satz: was das Ergebnis bedeutet. */
+  summary: string
+  /** Ein Satz: was als Nächstes zu tun ist. */
+  nextStep: string
+  /** Darf eine Marktaussage in den Antrag übernommen werden? */
+  canInsert: boolean
 }
 
 export const MARKET_TONE_STYLE: Record<MarketTone, string> = {
@@ -170,46 +157,176 @@ export const MARKET_TONE_STYLE: Record<MarketTone, string> = {
   error: "bg-destructive/12 text-destructive",
 }
 
-export function marketWorkspaceStatus(
-  comparison: MarketComparisonDto | null
-): MarketWorkspaceStatus {
-  if (!comparison) return { label: "Noch nicht erstellt", tone: "neutral" }
-  const hasItems = comparison.items.length > 0
-  switch (comparison.status) {
-    case "failed":
-      return {
-        label: "Letzter Versuch fehlgeschlagen",
-        tone: "error",
-        hint: "Bitte erneut erstellen.",
-      }
-    case "insufficient_external_evidence":
-      return {
-        label: "Zu wenige geprüfte Quellen",
-        tone: "attention",
-        hint: "Mindestens zwei geeignete öffentliche Quellen nötig.",
-      }
-    case "limited":
-      return {
-        label: "Begrenzte Evidenz",
-        tone: "attention",
-        hint: hasItems
-          ? undefined
-          : "Marktinformationen vorhanden, aber noch kein belastbarer Vergleich.",
-      }
-    case "stale":
-      return { label: "Veraltet — neu erstellen", tone: "attention" }
-    case "draft":
-      return { label: "Wird erstellt …", tone: "neutral" }
-    case "ready_for_review":
-      return hasItems
-        ? { label: "Zur Prüfung bereit", tone: "positive" }
-        : {
-            label: "Keine belegten Einträge",
-            tone: "attention",
-            hint: "Es wurden keine quellengestützten Vergleichseinträge gefunden.",
-          }
-    default:
-      return { label: "Noch nicht erstellt", tone: "neutral" }
+/**
+ * Eine Wettbewerbsaussage — besonders «es gibt nichts Gleichwertiges» — stützt
+ * sich sonst auf einen zu schmalen Suchraum. Unter zwei geprüften Quellen wird
+ * deshalb nie eine Übernahme angeboten.
+ */
+const MIN_SOURCES_FOR_APPLICATION = 2
+
+// Nächster Schritt je Ursache — nennt konkret, was fehlt, statt nur «reicht nicht».
+const NEXT_STEP_BY_RUNTIME: Partial<Record<MarketComparisonDto["status"], string>> = {
+  insufficient_external_evidence:
+    "Es liegen noch zu wenige geeignete geprüfte öffentliche Quellen vor. Weitere Quellen über die Recherche gewinnen, übernehmen und prüfen.",
+  limited:
+    "Die geprüften Quellen decken den Wettbewerb noch nicht ab. Gezielt nach Anbietern und Alternativlösungen recherchieren.",
+}
+
+const NEXT_STEP_TOO_FEW_SOURCES =
+  "Der Vergleich stützt sich auf weniger als zwei geprüfte öffentliche Quellen. Mindestens eine weitere geeignete Quelle ergänzen und den Vergleich neu erstellen."
+
+// Bewusst über das ERGEBNIS der Auswertung formuliert, nicht über den Inhalt der
+// Quellen: Quellen aus «Wettbewerb & Alternativen» oder «State of the Art»
+// können vorhanden sein, ohne dass daraus ein benennbarer Anbieter ableitbar war.
+const NEXT_STEP_NO_CANDIDATES =
+  "Aus den verwendeten Quellen liess sich kein konkreter Anbieter und keine Alternativlösung mit belegter Fundstelle ableiten. Quellen ergänzen, die Anbieter, Produkte oder Alternativlösungen namentlich nennen, und den Vergleich danach neu erstellen."
+
+const NEXT_STEP_UNVERIFIED_CANDIDATES =
+  "Zu den gefundenen Lösungskandidaten konnte noch keine wörtliche Textstelle in einer geprüften Quelle bestätigt werden. Belege unter «Details öffnen» prüfen oder eine Quelle mit belastbarer Fundstelle ergänzen."
+
+/** Anzahl Quellen, auf die sich der Vergleich stützt (Contract-Feld bevorzugt). */
+function comparisonSourceCount(comparison: MarketComparisonDto): number {
+  const declared = comparison.source_version_ids?.length
+  if (typeof declared === "number" && declared > 0) return declared
+  return marketSummaryCounts(comparison).sourceCount
+}
+
+/**
+ * Der eine Statuszustand einer Markt-Oberfläche.
+ *
+ * Ob ein Vergleich veraltet ist, sagt allein das Backend (`scope_stale` aus dem
+ * Scope-Hash). `unusedSourceCount` — nur die Quellen-Seite kennt ihn —
+ * präzisiert dann die Formulierung, löst aber selbst keine Veraltung aus.
+ */
+export function marketUiState(
+  comparison: MarketComparisonDto | null,
+  options: { unusedSourceCount?: number } = {}
+): MarketUiState {
+  const unused = Math.max(0, options.unusedSourceCount ?? 0)
+
+  if (!comparison) {
+    return {
+      status: "not_started",
+      label: "Noch nicht erstellt",
+      tone: "neutral",
+      summary: "Es liegt noch kein Markt- und Konkurrenzvergleich vor.",
+      nextStep:
+        "Öffentliche Quellen recherchieren, übernehmen und inhaltlich prüfen — danach den Vergleich erstellen.",
+      canInsert: false,
+    }
+  }
+
+  if (comparison.status === "failed") {
+    return {
+      status: "failed",
+      label: "Erstellung fehlgeschlagen",
+      tone: "error",
+      summary: "Der letzte Versuch, den Vergleich zu erstellen, ist fehlgeschlagen.",
+      nextStep: "Den Vergleich neu erstellen.",
+      canInsert: false,
+    }
+  }
+
+  if (comparison.status === "draft") {
+    return {
+      status: "not_started",
+      label: "Wird erstellt …",
+      tone: "neutral",
+      summary: "Der Vergleich wird gerade aus den geprüften Quellen erstellt.",
+      nextStep: "Das Ergebnis erscheint, sobald die Auswertung abgeschlossen ist.",
+      canInsert: false,
+    }
+  }
+
+  // Veraltung schlägt jede Ergebnisaussage: ein Vergleich, der nicht alle
+  // geprüften Quellen kennt, darf weder beruhigen noch übernommen werden.
+  //
+  // Die Veraltung entscheidet ausschliesslich das Backend (Scope-Hash über die
+  // einbezogenen Quell-Dokumente). Eine Client-Differenz aus Rechercheergebnissen
+  // minus verwendeter Quellversionen wäre KEIN Veraltungsbeweis: beide zählen
+  // Unterschiedliches (mehrere Ergebnisse können auf dieselbe Quelle zeigen,
+  // manche Ergebnisse erreichen den Suchraum nie). Eine solche Differenz bleibt
+  // dauerhaft bestehen — der Vergleich stünde auch direkt nach dem Neu-Erstellen
+  // wieder auf «Veraltet».
+  const staleByScope = comparison.scope_stale === true || comparison.status === "stale"
+  if (staleByScope) {
+    return {
+      status: "stale",
+      label: "Veraltet — neu erstellen",
+      tone: "attention",
+      summary:
+        unused > 0
+          ? unused === 1
+            ? "Seit der Erstellung ist eine geprüfte Quelle dazugekommen, die noch nicht im Vergleich steckt."
+            : `Seit der Erstellung sind ${unused} geprüfte Quellen dazugekommen, die noch nicht im Vergleich stecken.`
+          : marketStaleExplanation(comparison) ??
+            "Die Grundlage des Vergleichs hat sich seit der Erstellung geändert.",
+      nextStep: "Vergleich neu erstellen, damit alle geprüften Quellen einbezogen werden.",
+      canInsert: false,
+    }
+  }
+
+  const judgment = comparison.competition_judgment ?? null
+  const candidates = comparison.solution_landscape?.candidates ?? []
+  // Ältere Vergleiche ohne `solution_landscape` werden aus den Einträgen
+  // abgeleitet — gleiches Fallback-Muster wie `marketSummaryCounts`.
+  const hasBackedCandidate = comparison.solution_landscape
+    ? candidates.some((c) => c.confidence_label === "source_backed")
+    : comparison.items.some(
+        (i) => candidateTypeOf(i) !== null && i.confidence_label === "source_backed"
+      )
+  const sourceCount = comparisonSourceCount(comparison)
+  const runtimeThin =
+    comparison.status === "limited" || comparison.status === "insufficient_external_evidence"
+
+  if (
+    runtimeThin ||
+    judgment?.status === "insufficient_evidence" ||
+    !hasBackedCandidate ||
+    sourceCount < MIN_SOURCES_FOR_APPLICATION
+  ) {
+    return {
+      status: "research_needed",
+      label: "Weitere Recherche nötig",
+      tone: "attention",
+      summary:
+        judgment?.rationale ??
+        "Die geprüfte Quellenlage reicht für eine belastbare Wettbewerbsaussage noch nicht aus.",
+      nextStep:
+        NEXT_STEP_BY_RUNTIME[comparison.status] ??
+        (sourceCount < MIN_SOURCES_FOR_APPLICATION
+          ? NEXT_STEP_TOO_FEW_SOURCES
+          : candidates.length === 0
+            ? NEXT_STEP_NO_CANDIDATES
+            : NEXT_STEP_UNVERIFIED_CANDIDATES),
+      canInsert: false,
+    }
+  }
+
+  // Liegt ein Urteil vor, entscheidet zusätzlich das Backend. Ältere Vergleiche
+  // ohne Urteil stützen sich allein auf die Abdeckungsprüfung oben.
+  const judgmentAllows = judgment
+    ? judgment.can_insert_into_application === true && judgment.allowed_formulations.length > 0
+    : true
+  if (judgmentAllows) {
+    return {
+      status: "application_ready",
+      label: "Für den Antrag verwendbar",
+      tone: "positive",
+      summary: judgment?.rationale ?? "Belegte Vergleichseinträge liegen vor.",
+      nextStep:
+        "Aussage fachlich prüfen — sie kann anschliessend im Entwurf übernommen werden.",
+      canInsert: true,
+    }
+  }
+
+  return {
+    status: "ready_for_review",
+    label: "Zur Prüfung bereit",
+    tone: "neutral",
+    summary: judgment?.rationale ?? "Der Vergleich liegt vor und ist fachlich zu prüfen.",
+    nextStep: "Gefundene Lösungen unter «Details öffnen» prüfen und bestätigen.",
+    canInsert: false,
   }
 }
 
@@ -309,6 +426,74 @@ export function candidateTypeLabel(type: CandidateType): string {
   return CANDIDATE_TYPE_LABELS[type]
 }
 
+/** Stabile Anzeigereihenfolge der Lösungslandschaft-Gruppen (Sheet + Quellen). */
+export const CANDIDATE_TYPE_ORDER: CandidateType[] = [
+  "direct_competitor",
+  "adjacent_solution",
+  "substitute",
+  "open_source_solution",
+  "reference_infrastructure",
+  "manual_or_internal_alternative",
+]
+
+// Anzeige-Fallback für Antworten ohne `candidate_type` (ältere Vergleiche).
+// Spiegelt `app.market.judgment._CANDIDATE_TYPE_MAP`; Marktaussagen
+// (market_size_claim/customer_problem/unknown) sind bewusst KEIN Kandidat.
+const CATEGORY_TO_CANDIDATE_TYPE: Partial<Record<MarketComparisonItemDto["category"], CandidateType>> = {
+  competitor: "direct_competitor",
+  alternative_solution: "adjacent_solution",
+  reference_solution: "reference_infrastructure",
+  incumbent_process: "manual_or_internal_alternative",
+  substitute: "substitute",
+}
+
+/**
+ * Lösungsart eines Eintrags — `null` bedeutet «Marktaussage, kein Lösungskandidat».
+ * Bevorzugt das vom Backend abgeleitete Feld; die Kategorie-Abbildung dient nur
+ * der Anzeige älterer Vergleiche.
+ */
+export function candidateTypeOf(item: MarketComparisonItemDto): CandidateType | null {
+  return item.candidate_type ?? CATEGORY_TO_CANDIDATE_TYPE[item.category] ?? null
+}
+
+// ---------------------------------------------------------------------------
+// Veraltung erklären statt nur behaupten: der Nutzer muss erfahren, WARUM ein
+// Vergleich neu erstellt werden soll.
+// ---------------------------------------------------------------------------
+export const MARKET_STALE_REASON_LABELS: Record<string, string> = {
+  scope_changed:
+    "Seit der Erstellung wurden Quellen ergänzt, entfernt oder neu geprüft — der Vergleich bezieht sich auf einen anderen Suchraum.",
+}
+
+const MARKET_STALE_FALLBACK =
+  "Die Grundlage des Vergleichs hat sich seit der Erstellung geändert."
+
+/** Erklärung zum Veraltet-Hinweis; `null`, wenn der Vergleich aktuell ist. */
+export function marketStaleExplanation(
+  comparison: MarketComparisonDto | null
+): string | null {
+  if (!comparison) return null
+  const stale = comparison.scope_stale === true || comparison.status === "stale"
+  if (!stale) return null
+  const reason = comparison.stale_reason
+  if (reason) return MARKET_STALE_REASON_LABELS[reason] ?? MARKET_STALE_FALLBACK
+  return comparison.scope_stale ? MARKET_STALE_REASON_LABELS.scope_changed : MARKET_STALE_FALLBACK
+}
+
+/**
+ * Ehrlicher Zusatz zum Beleg-Badge: ein exaktes Zitat belegt eine Fundstelle,
+ * nicht die fachliche Richtigkeit der Aussage (CLAUDEX §6).
+ */
+export const QUOTE_NOT_CONFIRMED_NOTE =
+  "Zitat belegt — Inhalt noch nicht bestätigt"
+
+export function quoteNeedsConfirmation(item: {
+  confidence_label: string
+  support_status?: string | null
+}): boolean {
+  return item.confidence_label === "source_backed" && item.support_status !== "supports"
+}
+
 export function judgmentToneClass(status: CompetitionJudgmentStatus): string {
   return MARKET_TONE_STYLE[JUDGMENT_STATUS_TONE[status]]
 }
@@ -321,9 +506,20 @@ export function marketPictureFrom(comparison: MarketComparisonDto | null): Marke
   const backend = comparison?.market_picture
   if (!backend) return deriveMarketPicture(comparison)
   const points: MarketPicturePoint[] = []
+  // Dieselbe Fundstelle trägt oft mehrere Rubriken (z. B. Marktgrösse UND
+  // Nachfrage). Ohne zeilenübergreifende Dedupe entstehen wortgleiche Zeilen
+  // untereinander — der auffälligste Wiederholungseffekt im Marktbild.
+  const used = new Set<string>()
   const push = (label: string, values: { value: string }[]) => {
-    const value = joinDistinct(values.map((p) => p.value), 4)
-    if (value) points.push({ label, value })
+    const fresh = values
+      .map((p) => (p.value ?? "").trim())
+      .filter((value) => value && !used.has(value))
+    const value = joinDistinct(fresh, 4)
+    if (!value) return
+    // Nur die tatsächlich gerenderten Werte sperren — ein wegen `limit`
+    // abgeschnittener Wert darf später noch eine eigene Zeile tragen.
+    for (const shown of [...new Set(fresh)].slice(0, 4)) used.add(shown)
+    points.push({ label, value })
   }
   push("Marktgrösse & Wachstum", backend.size_and_growth)
   push("Segmente", backend.segments)
@@ -332,6 +528,43 @@ export function marketPictureFrom(comparison: MarketComparisonDto | null): Marke
   push("Schweiz-Relevanz", backend.swiss_relevance)
   const gaps = backend.gaps ?? []
   return { points, gaps, hasContent: points.length > 0 || gaps.length > 0 }
+}
+
+/**
+ * Die EINE Lückenliste je Oberfläche. `open_evidence_gaps` ist im Backend
+ * (market/judgment.py) eine Obermenge von `research_gaps` — beide zu rendern
+ * zeigt zwangsläufig Dubletten. Leere Urteilsliste fällt bewusst zurück,
+ * damit vorhandene `research_gaps` nie verschwinden.
+ */
+export function marketGaps(comparison: MarketComparisonDto | null): string[] {
+  const judged = comparison?.competition_judgment?.open_evidence_gaps ?? []
+  return judged.length > 0 ? judged : (comparison?.research_gaps ?? [])
+}
+
+/** Einheitlicher Veraltet-Hinweis für Karte, Rail und Sheet. */
+export const MARKET_STALE_BADGE = "Suchraum geändert — neu erstellen"
+
+// ---------------------------------------------------------------------------
+// Die drei Kennzahlen, die eine Ergebnis-zuerst-Ansicht braucht (Quellen-Karte,
+// Editor-Rail): Quellen, gefundene Lösungen, offene Lücken — an einer Stelle
+// abgeleitet, statt in jeder Oberfläche neu gezählt.
+// ---------------------------------------------------------------------------
+export interface MarketSummaryCounts {
+  sourceCount: number
+  solutionCount: number
+  gapCount: number
+}
+
+export function marketSummaryCounts(
+  comparison: MarketComparisonDto | null
+): MarketSummaryCounts {
+  const items = comparison?.items ?? []
+  const sourceCount = new Set(items.flatMap((item) => item.source_document_ids)).size
+  const byType = comparison?.solution_landscape?.candidate_count_by_type
+  const solutionCount = byType
+    ? Object.values(byType).reduce((sum: number, n) => sum + (n ?? 0), 0)
+    : items.filter((item) => candidateTypeOf(item) !== null).length
+  return { sourceCount, solutionCount, gapCount: marketGaps(comparison).length }
 }
 
 // ---------------------------------------------------------------------------

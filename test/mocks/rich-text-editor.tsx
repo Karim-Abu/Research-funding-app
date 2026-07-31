@@ -11,6 +11,7 @@ import { placeholderMatches } from "@/lib/draft-view"
 export interface RichTextEditorHandle {
   focus: () => void
   getPlainText: () => string
+  resetToServerText: () => void
   insertTextAtCursor: (text: string) => void
   selectPlaceholder: (index: number) => void
   selectMatch: (query: string) => void
@@ -61,6 +62,10 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, StubProps>(
       () => ({
         focus: () => taRef.current?.focus(),
         getPlainText: () => value,
+        resetToServerText: () => {
+          setValue(serverText)
+          onChange(serverText)
+        },
         insertTextAtCursor: (text: string) => {
           const node = taRef.current
           const pos = node ? node.selectionStart : value.length
@@ -102,7 +107,7 @@ export const RichTextEditor = React.forwardRef<RichTextEditorHandle, StubProps>(
         },
         clearFormatCache: () => {},
       }),
-      [value, onChange]
+      [value, onChange, serverText]
     )
 
     return (

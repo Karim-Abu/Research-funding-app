@@ -31,6 +31,11 @@ def is_empty(text: str) -> bool:
     return not text.strip()
 
 
+def is_placeholder_only(text: str) -> bool:
+    """True when nothing substantive remains after stripping template placeholders."""
+    return is_empty(PLACEHOLDER_RE.sub("", text or ""))
+
+
 def build_template(field: PortalFieldDef, registry: Registry) -> str:
     """Deterministic scaffolding for one supported field.
 

@@ -51,6 +51,28 @@ class FirecrawlProvider:
             headers={"Authorization": f"Bearer {self._api_key}"},
         )
 
+    def _transport_error(self, exc: Exception, operation: str) -> Exception:
+        """Map a transport failure to the narrowest honest error.
+
+        Every transport variant used to collapse into ``ProviderTimeout``, so a
+        refused connection was reported as «Zeitlimit überschritten» — a claim
+        the data contradicted (the failing calls returned after 0.4 s). Only a
+        real httpx timeout keeps that code; anything else is a transport error
+        and carries its exception class name. The class name is safe: it holds
+        no URL, no key and no page content.
+        """
+        try:
+            import httpx
+        except ImportError:  # pragma: no cover - httpx is a hard dependency
+            return ProviderError(f"firecrawl {operation} transport failure")
+        if isinstance(exc, httpx.TimeoutException):
+            return ProviderTimeout(
+                f"firecrawl {operation} timeout after {self._timeout}s"
+            )
+        return ProviderError(
+            f"firecrawl {operation} transport failure ({type(exc).__name__})"
+        )
+
     @staticmethod
     def _raise_for_status(resp, operation: str) -> None:
         if resp.status_code == 402:
@@ -90,7 +112,7 @@ class FirecrawlProvider:
         except (ProviderUnavailable, CreditExceeded, ProviderError):
             raise
         except Exception as exc:  # noqa: BLE001 - httpx transport variants
-            raise ProviderTimeout("firecrawl search failed") from exc
+            raise self._transport_error(exc, "search") from exc
         self._raise_for_status(resp, "search")
         payload = self._payload(resp, "search")
         data = payload.get("data") or {}
@@ -144,7 +166,7 @@ class FirecrawlProvider:
         except (ProviderUnavailable, CreditExceeded, ProviderError):
             raise
         except Exception as exc:  # noqa: BLE001 - httpx transport variants
-            raise ProviderTimeout("firecrawl scrape failed") from exc
+            raise self._transport_error(exc, "scrape") from exc
         self._raise_for_status(resp, "scrape")
         response_payload = self._payload(resp, "scrape")
         payload = response_payload.get("data") or {}

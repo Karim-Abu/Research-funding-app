@@ -65,6 +65,16 @@ export interface PricingSummary {
   fullyPriced: boolean
 }
 
+export interface LiveRunTotals {
+  runCount: number
+  externalCallCount: number
+  inputTokens: number
+  outputTokens: number
+  totalTokens: number
+  totalDurationMs: number
+  endedRunCount: number
+}
+
 export function summarizePricing(runs: readonly LiveCostRun[]): PricingSummary {
   const executions = runs.flatMap((run) => run.executions)
   const externalRaw = executions.filter((execution) => execution.cost.status !== "not_applicable").length
@@ -73,6 +83,35 @@ export function summarizePricing(runs: readonly LiveCostRun[]): PricingSummary {
   // The backend count and the execution list could drift; never show "n von m" with n > m.
   const externalCallCount = Math.max(externalRaw, unpricedCallCount)
   return { externalCallCount, unpricedCallCount, internalCallCount, fullyPriced: unpricedCallCount === 0 }
+}
+
+export function aggregateLiveRunTotals(runs: readonly LiveCostRun[]): LiveRunTotals {
+  const pricing = summarizePricing(runs)
+  let totalDurationMs = 0
+  let endedRunCount = 0
+
+  for (const run of runs) {
+    if (!run.ended_at) continue
+    const startedAt = Date.parse(run.started_at)
+    const endedAt = Date.parse(run.ended_at)
+    const durationMs = endedAt - startedAt
+    if (!Number.isFinite(durationMs) || durationMs < 0) continue
+    totalDurationMs += durationMs
+    endedRunCount += 1
+  }
+
+  const inputTokens = runs.reduce((sum, run) => sum + run.input_tokens, 0)
+  const outputTokens = runs.reduce((sum, run) => sum + run.output_tokens, 0)
+
+  return {
+    runCount: runs.length,
+    externalCallCount: pricing.externalCallCount,
+    inputTokens,
+    outputTokens,
+    totalTokens: inputTokens + outputTokens,
+    totalDurationMs,
+    endedRunCount,
+  }
 }
 
 export function aggregateLiveCost(runs: readonly LiveCostRun[]): LiveUsageCost {

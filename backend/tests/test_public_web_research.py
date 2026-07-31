@@ -388,9 +388,14 @@ def test_import_creates_source_with_fragments_and_no_anchor(
     assert rr.status == "imported" and rr.source_document_id == doc["source_id"]
 
 
-def test_human_support_review_is_separate_from_coverage_and_keeps_source_audit(
+def test_import_auto_supports_but_review_endpoint_can_still_reject(
     client, db, web_enabled, monkeypatch
 ):
+    """Since 2026-07-26 the manual "Stützt/Teilweise/Stützt nicht" step is gone:
+    import auto-marks an AI-found, non-quarantined result as supporting evidence.
+    Coverage stays a separate, independent state. The review endpoint remains
+    available (e.g. for a later correction) and can still flip an import to
+    rejected — it is simply no longer exposed as a normal-flow UI action."""
     csrf = login(client, ANNA_EMAIL, ANNA_PASSWORD)
     project_id = _create_research_project(client, csrf)
     _run_task(client, csrf, project_id)
@@ -405,7 +410,8 @@ def test_human_support_review_is_separate_from_coverage_and_keeps_source_audit(
     before = client.get(f"/api/v1/projects/{project_id}/research-workspace").json()
     row = next(item for item in before["results"] if item["result_id"] == result_id)
     assert row["coverage_status"] == "not_checked"
-    assert row["support_status"] == "not_checked"
+    assert row["support_status"] == "supports"
+    assert row["content_review_status"] == "reviewed"
 
     reviewed = client.post(
         f"/api/v1/research-results/{result_id}/review",

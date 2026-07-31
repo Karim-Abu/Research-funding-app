@@ -1,0 +1,1 @@
+DATABASE_URL=sqlite:///./var/eval_migrate_check.db APP_ENV=test python -m alembic -c alembic.ini upgrade head

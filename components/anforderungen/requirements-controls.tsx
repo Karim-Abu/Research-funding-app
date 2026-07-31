@@ -63,8 +63,9 @@ export function RequirementSummaryBar({ summary }: { summary: ReqSummary }) {
     { label: REQ_BUCKET_LABELS.partial, value: summary.partial, icon: AlertTriangle, help: REQ_TILE_HELP.partial, accent: REQ_BUCKET_STYLE.partial.text },
     { label: REQ_BUCKET_LABELS.open, value: summary.open, icon: Circle, help: REQ_TILE_HELP.open },
     { label: REQ_BUCKET_LABELS.blocked, value: summary.blocked, icon: XCircle, help: REQ_TILE_HELP.blocked, accent: summary.blocked > 0 ? REQ_BUCKET_STYLE.blocked.text : undefined },
-    { label: "Menschliche Prüfung offen", value: summary.humanNeeded, icon: UserCheck, help: REQ_TILE_HELP.humanNeeded, accent: summary.humanNeeded > 0 ? REQ_BUCKET_STYLE.partial.text : undefined },
-    { label: "Ohne Beleg", value: summary.noEvidence, icon: FileX2, help: REQ_TILE_HELP.noEvidence },
+    // R5: Kachel- und Filterbeschriftung teilen eine Quelle — sonst driften sie.
+    { label: REQ_FILTER_LABELS.human_needed, value: summary.humanNeeded, icon: UserCheck, help: REQ_TILE_HELP.humanNeeded, accent: summary.humanNeeded > 0 ? REQ_BUCKET_STYLE.partial.text : undefined },
+    { label: REQ_FILTER_LABELS.no_evidence, value: summary.noEvidence, icon: FileX2, help: REQ_TILE_HELP.noEvidence },
   ]
 
   return (

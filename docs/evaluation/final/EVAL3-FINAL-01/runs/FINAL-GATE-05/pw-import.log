@@ -1,0 +1,14 @@
+﻿
+Running 1 test using 1 worker
+
+corepack : (node:24888) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+In Zeile:1 Zeichen:1
++ corepack pnpm exec playwright test e2e/import-functional.spec.ts --wo ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ((node:24888) Wa... env being set.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+(Use `node --trace-warnings ...` to show where the warning was created)
+  ok 1 [chromium] › e2e\import-functional.spec.ts:39:5 › Funktionaler Import: Altstruktur-PDF wird korrekt ausgelesen, Partner und Budget ohne Neuanlage (4.3s)
+
+  1 passed (5.5s)

@@ -1,0 +1,2045 @@
+{
+  "summary": {
+    "generated_from": "scripts/evaluation/requirement_coverage.py",
+    "requirement_count": 76,
+    "severity_distribution": {
+      "blocker": 52,
+      "info": 6,
+      "warning": 18
+    },
+    "type_distribution": {
+      "hybrid": 14,
+      "semantic": 20,
+      "hard": 42
+    },
+    "status_field_distribution": {
+      "active": 76
+    },
+    "coverage_status_distribution": {
+      "implemented-and-tested": 8,
+      "implemented-not-tested": 4,
+      "contract-only": 64
+    },
+    "official_core_rules_evaluated": 12,
+    "portal_quality_gates_defined": 64,
+    "cross_field_rules_defined": 17,
+    "evaluable_requirements": 12,
+    "requirements_with_test_reference": 8
+  },
+  "requirements": [
+    {
+      "requirement_id": "REQ.INNO.PARTNER.IMPLEMENTATION.MIN1_CH",
+      "title": "Mindestens ein Umsetzungspartner mit Schweiz-Bezug",
+      "category": "partner_eligibility",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.PARTNER.IMPLEMENTATION.MIN1_CH"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "ORG.CP.IMPLEMENTATION_PARTNERS"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "exists"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [
+        "backend/app/evaluation/field_real_smoke.py",
+        "backend/app/rules/messages.py"
+      ],
+      "code_path_count": 2,
+      "test_paths": [
+        "backend/tests/a1_helpers.py",
+        "backend/tests/a1_mapping_helpers.py",
+        "backend/tests/a2_helpers.py",
+        "backend/tests/test_a1_mapping_verification.py",
+        "backend/tests/test_draft_flow.py",
+        "backend/tests/test_evidence_flow.py"
+      ],
+      "test_path_count": 13,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE",
+      "title": "Mindestens ein beitragsberechtigter Schweizer Forschungspartner",
+      "category": "partner_eligibility",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.PARTNER.RESEARCH.MIN1_CH_ELIGIBLE"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "ORG.CP.RESEARCH_PARTNERS"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "exists"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [
+        "backend/app/rules/messages.py"
+      ],
+      "code_path_count": 1,
+      "test_paths": [
+        "backend/tests/test_demo_seed.py",
+        "backend/tests/test_evidence_flow.py",
+        "backend/tests/test_registry_rules.py",
+        "backend/tests/test_requirements_flow.py",
+        "backend/tests/test_review_findings.py",
+        "backend/tests/test_rule_messages.py"
+      ],
+      "test_path_count": 9,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.PARTNER.INDEPENDENCE.PERSONNEL",
+      "title": "Personelle Unabhängigkeit der Projektpartner",
+      "category": "governance_independence",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.PARTNER.INDEPENDENCE.PERSONNEL"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.PERSONNEL.EMPLOYEE_OVERLAP",
+        "ORG.INDEPENDENCE.PERSONNEL.BOARD_ROLE",
+        "ORG.INDEPENDENCE.PERSONNEL.OTHER_ROLE"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "human_reviewed_questionnaire"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "implemented-not-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.PARTNER.INDEPENDENCE.FINANCIAL_20",
+      "title": "Finanzielle Unabhängigkeit und 20-Prozent-Schwelle",
+      "category": "governance_independence",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.PARTNER.INDEPENDENCE.FINANCIAL_20"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.FINANCIAL.EMPLOYEE_OWNERSHIP_CONFIRMATION",
+        "ORG.INDEPENDENCE.FINANCIAL.LEGAL_ENTITY_OWNERSHIP_CONFIRMATION",
+        "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "max_exclusive_percent"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [
+        "backend/app/exports/generators/common.py",
+        "backend/app/exports/snapshot.py",
+        "backend/app/rules/messages.py"
+      ],
+      "code_path_count": 3,
+      "test_paths": [
+        "backend/tests/test_export_generators.py",
+        "backend/tests/test_rule_messages.py"
+      ],
+      "test_path_count": 2,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.BUDGET.IMPLEMENTATION_SHARE_40_60",
+      "title": "Umsetzungspartnerbeitrag 40–60 Prozent",
+      "category": "budget",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.BUDGET.IMPLEMENTATION_SHARE_40_60"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.BUDGET_OVERVIEW.DISTRIBUTION",
+        "PS.BUDGET_OVERVIEW.CARDS"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "range_percent"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [
+        "backend/app/api/projects.py"
+      ],
+      "code_path_count": 1,
+      "test_paths": [
+        "backend/tests/test_discovery_red_compliance_status.py",
+        "backend/tests/test_project_budget.py",
+        "backend/tests/test_run2b_evidence_scope.py",
+        "backend/tests/test_z_compliance_review_separation.py",
+        "e2e/final-acceptance.spec.ts",
+        "e2e/partner-budget.spec.ts"
+      ],
+      "test_path_count": 8,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.BUDGET.CASH_MIN5",
+      "title": "Barbeitrag mindestens 5 Prozent",
+      "category": "budget",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.BUDGET.CASH_MIN5"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.BUDGET_OVERVIEW.DISTRIBUTION",
+        "PS.BUDGET_OVERVIEW.CARDS"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "min_percent"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [
+        "backend/app/api/projects.py"
+      ],
+      "code_path_count": 1,
+      "test_paths": [
+        "backend/tests/test_discovery_red_compliance_status.py",
+        "backend/tests/test_project_budget.py",
+        "backend/tests/test_registry_rules.py",
+        "backend/tests/test_requirements_flow.py",
+        "backend/tests/test_run2b_evidence_scope.py",
+        "backend/tests/test_z_compliance_review_separation.py"
+      ],
+      "test_path_count": 11,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.BUDGET.NO_FINANCIAL_CAP",
+      "title": "Keine formale finanzielle Obergrenze",
+      "category": "budget",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.BUDGET.NO_FINANCIAL_CAP"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.BUDGET_OVERVIEW.FINANCIAL_OVERVIEW"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "no_upper_threshold"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [
+        "backend/tests/test_z_compliance_review_separation.py",
+        "test/live-requirements.test.tsx"
+      ],
+      "test_path_count": 2,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.DURATION.NO_FORMAL_MAX_WITH_IMPLEMENTATION_PARTNER",
+      "title": "Keine formale Höchstdauer mit Umsetzungspartner",
+      "category": "duration",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.DURATION.NO_FORMAL_MAX_WITH_IMPLEMENTATION_PARTNER"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.PROJECT_DATES"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "no_upper_threshold"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "implemented-not-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.DURATION.TYPICAL_6_36",
+      "title": "Übliche Projektdauer 6–36 Monate",
+      "category": "duration",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.DURATION.TYPICAL_6_36"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.PROJECT_DATES"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "advisory_range"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [
+        "backend/tests/test_registry_rules.py",
+        "backend/tests/test_requirements_flow.py",
+        "backend/tests/test_run2b_evidence_scope.py",
+        "e2e/final-acceptance.spec.ts"
+      ],
+      "test_path_count": 4,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.DURATION.MAX18_WITHOUT_IMPLEMENTATION_PARTNER",
+      "title": "Höchstdauer 18 Monate ohne Umsetzungspartner",
+      "category": "duration",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.DURATION.MAX18_WITHOUT_IMPLEMENTATION_PARTNER"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.PROJECT_DATES"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "max_value"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [
+        "backend/tests/test_registry_rules.py",
+        "backend/tests/test_requirements_flow.py"
+      ],
+      "test_path_count": 2,
+      "coverage_status": "implemented-and-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.APPLICATION.COMPLETE_AND_TRACEABLE",
+      "title": "Gesuch vollständig und inhaltlich nachvollziehbar",
+      "category": "submission",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.APPLICATION.COMPLETE_AND_TRACEABLE"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "SUM.REVIEW_APPLICATION.MANDATORY_FIELDS_CHECK",
+        "SUM.SUBMIT.COMPLETE_CORRECT_CONFIRMATION"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "aggregate_submission_gate"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "implemented-not-tested"
+    },
+    {
+      "requirement_id": "REQ.INNO.SCIENTIFIC_INTEGRITY.REVIEW",
+      "title": "Scientific-Integrity-Angabe verlangt Human Review",
+      "category": "scientific_integrity",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [
+        "INNO.SCIENTIFIC_INTEGRITY.REVIEW"
+      ],
+      "linked_quality_gate_ids": [],
+      "affected_field_ids": [
+        "SUM.SCIENTIFIC_INTEGRITY.SANCTION_QUESTION"
+      ],
+      "rule_is_evaluated_by_loader": true,
+      "condition_types": [
+        "conditional_human_gate"
+      ],
+      "condition_handler_exists": true,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "implemented-not-tested"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.ARAMIS_PUBLICATION",
+      "title": "Aramis publication review",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.ARAMIS_PUBLICATION"
+      ],
+      "affected_field_ids": [
+        "INTRO.APP.NAME",
+        "INTRO.APP.NAME_EN",
+        "INTRO.APP.ABSTRACT"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.ABSTRACT.LIMIT",
+      "title": "Abstract character limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.ABSTRACT.LIMIT"
+      ],
+      "affected_field_ids": [
+        "INTRO.APP.ABSTRACT"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.EXEC_SUMMARY.LIMIT",
+      "title": "Executive summary character limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.EXEC_SUMMARY.LIMIT"
+      ],
+      "affected_field_ids": [
+        "INTRO.APP.EXECUTIVE_SUMMARY"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.CLUSTER_SINGLE_SELECT",
+      "title": "Cluster single select",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.CLUSTER_SINGLE_SELECT"
+      ],
+      "affected_field_ids": [
+        "INTRO.CONTEXT.INNOVATION_CLUSTER.PRIMARY"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.SPECIAL_FUNDING_SINGLE_OPTION",
+      "title": "Special funding measure single option",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": false,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.SPECIAL_FUNDING_SINGLE_OPTION"
+      ],
+      "affected_field_ids": [
+        "INTRO.CONTEXT.SPECIAL_FUNDING_MEASURE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.PREV.DOUBLEFUND",
+      "title": "Previous funding double-funding check",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.PREV.DOUBLEFUND"
+      ],
+      "affected_field_ids": [
+        "INTRO.PREVIOUS_FUNDING.TYPE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.IP.FTO",
+      "title": "IP/FTO review trigger",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.IP.FTO"
+      ],
+      "affected_field_ids": [
+        "INTRO.IP.PATENT_SEARCH",
+        "INTRO.IP.PATENT_LICENCES",
+        "INTRO.IP.PRIOR_WRITTEN_AGREEMENT"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.INTRO.IPR_UPLOAD",
+      "title": "IPR documents upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.INTRO.IPR_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "INTRO.IP.IPR_DOCUMENTS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.ONE_OFFICIAL_REPRESENTATIVE",
+      "title": "One representative per contract party",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.ONE_OFFICIAL_REPRESENTATIVE"
+      ],
+      "affected_field_ids": [
+        "ORG.CP.IMPLEMENTATION_PARTNER.REPRESENTATIVE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.RESEARCH.MIN1",
+      "title": "At least one research partner",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.RESEARCH.MIN1"
+      ],
+      "affected_field_ids": [
+        "ORG.CP.RESEARCH_PARTNERS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.PROJECT_MANAGER_PARTNER_REQUIRED",
+      "title": "Project Manager requires partner",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.PROJECT_MANAGER_PARTNER_REQUIRED"
+      ],
+      "affected_field_ids": [
+        "ORG.MAIN_CONTACTS.PROJECT_MANAGER",
+        "ORG.MAIN_CONTACTS.PREREQUISITE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.PROJECT_MANAGER_FIRST_CONTACT",
+      "title": "Project Manager first contact",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.PROJECT_MANAGER_FIRST_CONTACT"
+      ],
+      "affected_field_ids": [
+        "ORG.MAIN_CONTACTS.PROJECT_MANAGER"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.MAIN_RESEARCH_PARTNER_FUNDS",
+      "title": "Main Research Partner manages funds",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.MAIN_RESEARCH_PARTNER_FUNDS"
+      ],
+      "affected_field_ids": [
+        "ORG.MAIN_CONTACTS.MAIN_RESEARCH_PARTNER"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.ADMIN.MAX2",
+      "title": "Max 2 admin users",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.ADMIN.MAX2"
+      ],
+      "affected_field_ids": [
+        "ORG.AUTH_MANAGEMENT.ACCESS_RIGHTS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.OTHER_CONTACTS_AUTH_MANAGEMENT",
+      "title": "Other contacts via auth management",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": false,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.OTHER_CONTACTS_AUTH_MANAGEMENT"
+      ],
+      "affected_field_ids": [
+        "ORG.COLLABORATORS.AUTH_MANAGEMENT_INFO"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.SME_FTE_THRESHOLD",
+      "title": "SME threshold 250 FTE",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": false,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.SME_FTE_THRESHOLD"
+      ],
+      "affected_field_ids": [
+        "ORG.CP.IMPLEMENTATION_PARTNER.FTE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.INDEPENDENCE.EMPLOYEE_OVERLAP_YES",
+      "title": "Personnel independence — employee overlap follow-up",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.INDEPENDENCE.EMPLOYEE_OVERLAP_YES"
+      ],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.PERSONNEL.EMPLOYEE_OVERLAP"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.INDEPENDENCE.BOARD_ROLE_YES",
+      "title": "Personnel independence — board role follow-up",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.INDEPENDENCE.BOARD_ROLE_YES"
+      ],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.PERSONNEL.BOARD_ROLE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.INDEPENDENCE.OTHER_ROLE_YES",
+      "title": "Personnel independence — other role follow-up",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.INDEPENDENCE.OTHER_ROLE_YES"
+      ],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.PERSONNEL.OTHER_ROLE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.FINANCIAL_INDEPENDENCE_20",
+      "title": "20% financial independence",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.FINANCIAL_INDEPENDENCE_20"
+      ],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.FINANCIAL.EMPLOYEE_OWNERSHIP_CONFIRMATION",
+        "ORG.INDEPENDENCE.FINANCIAL.LEGAL_ENTITY_OWNERSHIP_CONFIRMATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.ORG.FINANCIAL_COMMENT_LIMIT",
+      "title": "Financial independence comment limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.ORG.FINANCIAL_COMMENT_LIMIT"
+      ],
+      "affected_field_ids": [
+        "ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.VC.BTM_CHARACTER_LIMIT",
+      "title": "Business Targets & Business Model character limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.VC.BTM_CHARACTER_LIMIT"
+      ],
+      "affected_field_ids": [
+        "VC.BUSINESS_TARGETS_MODEL.CHARACTER_LIMIT",
+        "VC.BUSINESS_TARGETS_MODEL.EDITOR"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.VC.ALL_QUESTIONS_ANSWERED",
+      "title": "All mandatory questions answered",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.VC.ALL_QUESTIONS_ANSWERED"
+      ],
+      "affected_field_ids": [
+        "VC.BUSINESS_TARGETS_MODEL.REVIEW_MANDATORY_CONTENT"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.VC.MAIN_QUESTIONS_NOT_DELETABLE",
+      "title": "Main questions not deletable",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.VC.MAIN_QUESTIONS_NOT_DELETABLE"
+      ],
+      "affected_field_ids": [
+        "VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_1",
+        "VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_2",
+        "VC.BUSINESS_TARGETS_MODEL.MANDATORY_3_3"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.VC.EVIDENCE.MARKET",
+      "title": "Market evidence anchors",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.VC.EVIDENCE.MARKET"
+      ],
+      "affected_field_ids": [
+        "VC.BUSINESS_TARGETS_MODEL.ECONOMIC_VALUE_CREATION",
+        "VC.CUSTOMERS_MARKET_ACCESS.ECONOMIC_VALUE_CREATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.VC.BUSINESS_PLAN_UPLOAD",
+      "title": "Business Plan upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.VC.BUSINESS_PLAN_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "VC.BUSINESS_PLAN.UPLOAD"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.CHARACTER_LIMIT",
+      "title": "Innovation Solution character limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.CHARACTER_LIMIT"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.CHARACTER_LIMIT",
+        "SOL.INNOVATION_SOLUTION.EDITOR"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.ALL_QUESTIONS_ANSWERED",
+      "title": "All mandatory questions answered",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.ALL_QUESTIONS_ANSWERED"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.REVIEW_MANDATORY_CONTENT"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.MAIN_QUESTIONS_NOT_DELETABLE",
+      "title": "Main questions not deletable",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.MAIN_QUESTIONS_NOT_DELETABLE"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_1",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_2",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_3",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_4",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_5_1",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_5_2",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_5_3",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_5_4",
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_6"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.SOTA.EVIDENCE",
+      "title": "SOTA evidence anchors",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.SOTA.EVIDENCE"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_1"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.INNOVATION.NOT_BEST_PRACTICE",
+      "title": "Innovation vs. best practice",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.INNOVATION.NOT_BEST_PRACTICE"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_2"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.QUANTIFIABLE_GOALS",
+      "title": "Quantifiable goals required",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.QUANTIFIABLE_GOALS"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_3"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.PARTNER_SUITABILITY",
+      "title": "Partner suitability required",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.PARTNER_SUITABILITY"
+      ],
+      "affected_field_ids": [
+        "SOL.INNOVATION_SOLUTION.MANDATORY_4_6"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SOL.PUBLICATIONS_UPLOAD",
+      "title": "Publications upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SOL.PUBLICATIONS_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "SOL.PUBLICATIONS_DOCUMENTS.UPLOAD"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.DATE.DURATION",
+      "title": "Project duration without IP partner",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.DATE.DURATION"
+      ],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.PROJECT_DATES"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.WP.MILESTONES",
+      "title": "Work packages & milestones structure",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.WP.MILESTONES"
+      ],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.WORK_PACKAGES_MILESTONES.IMPORTANT_NOTES"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MILESTONES_SPREAD",
+      "title": "Milestones reasonable spread",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MILESTONES_SPREAD"
+      ],
+      "affected_field_ids": [
+        "PS.PROJECT_PLAN.WORK_PACKAGES_MILESTONES.IMPORTANT_NOTES",
+        "PS.MILESTONE.IDENTIFICATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.WP_DESCRIPTION_LIMIT",
+      "title": "Work package description limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.WP_DESCRIPTION_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.WORK_PACKAGE.DESCRIPTION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.WP_ACTIVITIES_LIMIT",
+      "title": "Work package activities limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.WP_ACTIVITIES_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.WORK_PACKAGE.ACTIVITIES"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.WP_DELIVERABLES_LIMIT",
+      "title": "Work package deliverables limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.WP_DELIVERABLES_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.WORK_PACKAGE.DELIVERABLES"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MILESTONE_DESCRIPTION_LIMIT",
+      "title": "Milestone description limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MILESTONE_DESCRIPTION_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.MILESTONE.DESCRIPTION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MILESTONE_GOALS_MEASURABLE",
+      "title": "Milestone goals measurable",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MILESTONE_GOALS_MEASURABLE"
+      ],
+      "affected_field_ids": [
+        "PS.MILESTONE.GOALS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MANAGEMENT_EXPLANATION_LIMIT",
+      "title": "Management hours explanation limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MANAGEMENT_EXPLANATION_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.RISK.COVERAGE",
+      "title": "Risk categories coverage",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.RISK.COVERAGE"
+      ],
+      "affected_field_ids": [
+        "PS.RISK_MANAGEMENT.SECTION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.RISK_UPLOAD",
+      "title": "Risk management upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.RISK_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "PS.RISK_MANAGEMENT.SECTION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.SALARY_NO_CASH_DOUBLE_LISTING",
+      "title": "No double listing of cash-covered salaries",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.SALARY_NO_CASH_DOUBLE_LISTING"
+      ],
+      "affected_field_ids": [
+        "PS.SALARY_CONTRIBUTIONS.GENERAL"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.RESEARCH_SALARY_NOT_FINANCED",
+      "title": "Research salary not financed elsewhere",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.RESEARCH_SALARY_NOT_FINANCED"
+      ],
+      "affected_field_ids": [
+        "PS.SALARY_CONTRIBUTIONS.RESEARCH_PARTNERS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.SALARY_DELTA",
+      "title": "Salary plan vs. budget delta",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.SALARY_DELTA"
+      ],
+      "affected_field_ids": [
+        "PS.SALARY_CONTRIBUTIONS.RESEARCH_PARTNER_TABLE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MATERIAL_ELIGIBILITY",
+      "title": "Material costs eligibility",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MATERIAL_ELIGIBILITY"
+      ],
+      "affected_field_ids": [
+        "PS.MATERIAL_COSTS.GENERAL"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MATERIAL_POSITION_EXPLANATION_LIMIT",
+      "title": "Material position explanation limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MATERIAL_POSITION_EXPLANATION_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.MATERIAL_POSITION.RESEARCH_PARTNER.EXPLANATION",
+        "PS.MATERIAL_POSITION.IMPLEMENTATION_PARTNER.EXPLANATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.MATERIAL_EVIDENCE_UPLOAD",
+      "title": "Material evidence upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.MATERIAL_EVIDENCE_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "PS.MATERIAL_POSITION.RESEARCH_PARTNER.DOCUMENT_OF_EVIDENCE",
+        "PS.MATERIAL_POSITION.IMPLEMENTATION_PARTNER.DOCUMENT_OF_EVIDENCE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.CASH_WAIVER_EVIDENCE",
+      "title": "Cash waiver evidence required",
+      "category": "portal_quality_gate",
+      "type": "hybrid",
+      "assessment_basis": "hybrid",
+      "severity": "warning",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.CASH_WAIVER_EVIDENCE"
+      ],
+      "affected_field_ids": [
+        "PS.CASH_CONTRIBUTIONS.GENERAL"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.CASH_SALARY_TASKS_LIMIT",
+      "title": "Cash-to-salary tasks limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.CASH_SALARY_TASKS_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.CASH_CONTRIBUTION.SALARY.PROJECT_TASKS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.CASH_MATERIAL_EXPLANATION_LIMIT",
+      "title": "Cash-to-material explanation limit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.CASH_MATERIAL_EXPLANATION_LIMIT"
+      ],
+      "affected_field_ids": [
+        "PS.CASH_CONTRIBUTION.MATERIAL.EXPLANATION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.CASH_EVIDENCE_UPLOAD",
+      "title": "Cash evidence upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.CASH_EVIDENCE_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "PS.CASH_CONTRIBUTION.SALARY.DOCUMENT_OF_EVIDENCE",
+        "PS.CASH_CONTRIBUTION.MATERIAL.DOCUMENT_OF_EVIDENCE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.IMPL.40_60",
+      "title": "Implementation partner 40–60%",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.IMPL.40_60"
+      ],
+      "affected_field_ids": [
+        "PS.BUDGET_OVERVIEW.DISTRIBUTION",
+        "PS.BUDGET_OVERVIEW.CARDS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.PS.CASH.MIN5",
+      "title": "Cash contribution ≥ 5%",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.PS.CASH.MIN5"
+      ],
+      "affected_field_ids": [
+        "PS.BUDGET_OVERVIEW.DISTRIBUTION",
+        "PS.BUDGET_OVERVIEW.CARDS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.SUMMARY_OVERVIEW",
+      "title": "Summary overview shows open issues",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "info",
+      "status_field": "active",
+      "user_facing": false,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.SUMMARY_OVERVIEW"
+      ],
+      "affected_field_ids": [
+        "SUM.INFO.SECTION_PURPOSE"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.COVER_LETTER_UPLOAD",
+      "title": "Cover letter upload rule",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.COVER_LETTER_UPLOAD"
+      ],
+      "affected_field_ids": [
+        "SUM.COVER_LETTER.UPLOAD"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.MANDATORY.OPEN",
+      "title": "All mandatory fields complete",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.MANDATORY.OPEN"
+      ],
+      "affected_field_ids": [
+        "SUM.REVIEW_APPLICATION.MANDATORY_FIELDS_CHECK",
+        "SUM.SUBMIT.MANDATORY_FIELDS_COMPLETE_REQUIRED"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.ATTACHMENTS",
+      "title": "Attachment validation",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.ATTACHMENTS"
+      ],
+      "affected_field_ids": [
+        "SUM.REVIEW_ATTACHMENTS.OVERVIEW"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.SCIINT",
+      "title": "Scientific integrity HITL",
+      "category": "portal_quality_gate",
+      "type": "semantic",
+      "assessment_basis": "semantic_assessment",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.SCIINT"
+      ],
+      "affected_field_ids": [
+        "SUM.SCIENTIFIC_INTEGRITY.SANCTION_QUESTION"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.ADMIN_RIGHTS_REQUIRED",
+      "title": "Admin rights required to submit",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.ADMIN_RIGHTS_REQUIRED"
+      ],
+      "affected_field_ids": [
+        "SUM.SUBMIT.ADMIN_RIGHTS_REQUIRED",
+        "ORG.AUTH_MANAGEMENT.ACCESS_RIGHTS"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    },
+    {
+      "requirement_id": "REQ.PORTAL.SUM.ADMIN.CONFIRM",
+      "title": "Complete & correct confirmation",
+      "category": "portal_quality_gate",
+      "type": "hard",
+      "assessment_basis": "deterministic_rule",
+      "severity": "blocker",
+      "status_field": "active",
+      "user_facing": true,
+      "linked_rule_ids": [],
+      "linked_quality_gate_ids": [
+        "QG.SUM.ADMIN.CONFIRM"
+      ],
+      "affected_field_ids": [
+        "SUM.SUBMIT.COMPLETE_CORRECT_CONFIRMATION",
+        "SUM.SUBMIT.BUTTON"
+      ],
+      "rule_is_evaluated_by_loader": false,
+      "condition_types": [],
+      "condition_handler_exists": false,
+      "code_paths": [],
+      "code_path_count": 0,
+      "test_paths": [],
+      "test_path_count": 0,
+      "coverage_status": "contract-only"
+    }
+  ]
+}

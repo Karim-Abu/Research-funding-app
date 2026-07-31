@@ -1,0 +1,1 @@
+{"run_id":"GUARD-02","command":"backend/.venv/Scripts/python.exe scripts/check_legacy_status_paths.py --root .","started_at":"2026-07-25T21:00:33Z","finished_at":"2026-07-25T21:00:33Z","exit_code":0,"commit":"8416914"}

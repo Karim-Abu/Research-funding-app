@@ -617,20 +617,15 @@ export function getRoleCatalogGroups() {
 export const kiTeamTexts = {
   title: "Rollen & Verantwortung",
   subtitle:
-    "Welche Systemrolle welche Aufgabe übernimmt, welches Ergebnis sie liefert – und welche Entscheidungen bei Ihnen bleiben.",
+    "Wer Sie im Ablauf unterstützt und welche Entscheidungen ausdrücklich bei Ihnen bleiben.",
   prototypeBadge: "Forschungsprototyp",
-  intro:
-    "Das System verteilt Aufgaben auf KI-gestützte Rollen, feste Prüfdienste und menschliche Freigaben.",
   neverDecides: {
     title: "Das System entscheidet nie",
     points: [
-      "ob das Projekt tatsächlich gefördert wird;",
-      "ob ein Partner fachlich und strategisch geeignet ist;",
-      "ob Budgetangaben verbindlich freigegeben werden;",
-      "ob Belege fachlich korrekt interpretiert sind;",
-      "welcher finale Antragstext verwendet wird;",
-      "ob und wann der Antrag eingereicht wird;",
-      "eine Förderwahrscheinlichkeit.",
+      "über Förderung oder eine Förderwahrscheinlichkeit.",
+      "über die Eignung von Partnern oder verbindliche Budgetfreigaben.",
+      "über die fachliche Interpretation von Belegen oder den finalen Antragstext.",
+      "ob und wann ein Antrag eingereicht wird.",
     ],
   },
   dataProtection: {

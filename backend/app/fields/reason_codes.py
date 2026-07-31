@@ -60,6 +60,10 @@ REASON_TEXTS_DE: dict[str, str] = {
     "run_mode_mismatch": "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
     "missing_sources": "Für einen belastbaren Vorschlag fehlen passende Quellen.",
     "field_not_supported": "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
+    "ai_call_limit_reached": (
+        "Das Limit für KI-Aufrufe in diesem Analyse-Lauf ist erreicht. "
+        "Starten Sie einen neuen Analyse-Lauf, um weitere Vorschläge zu erzeugen."
+    ),
 }
 
 _FALLBACK_CODE = "provider_unavailable"
@@ -106,6 +110,10 @@ _INTERNAL_TO_CODE: dict[str, str] = {
     # Reserviert: aktuell blockiert kein Ist-Pfad wegen fehlender Quellen;
     # der Code ist Teil des freigegebenen Katalogs (Emission folgt mit R5).
     "missing_sources": "missing_sources",
+    # CostGuard: Profil-/Run-Limit für Modellaufrufe erreicht — deterministisch,
+    # Wiederholen im selben Lauf kann nie gelingen.
+    "cost_guard_blocked": "ai_call_limit_reached",
+    "cost_guard_output_blocked": "ai_call_limit_reached",
 }
 
 

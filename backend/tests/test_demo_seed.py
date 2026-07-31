@@ -5,7 +5,8 @@ import socket
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import create_engine, func, select
+from sqlalchemy.orm import Session
 
 import app.demo.seed as seed_mod
 from app.config.settings import get_settings
@@ -21,6 +22,7 @@ from app.db.models import (
     RuleResult,
     SourceDocument,
 )
+from app.db.base import Base
 from app.db.session import SessionLocal
 from app.demo.dataset import DEMO_CLASSIFICATION, DEMO_PROJECTS, PROJECT_A, PROJECT_B
 from app.demo.reset import reset_demo_data
@@ -197,8 +199,17 @@ def test_seeded_edits_satisfy_user_action_invariants(demo_seed_env):
         db.close()
 
 
-def test_isolated_test_db_requires_exactly_two_demo_projects(demo_seed_env):
-    db = SessionLocal()
+def test_isolated_test_db_requires_exactly_two_demo_projects(tmp_path):
+    # 2026-07-26: _verify_project_presence zaehlt unter APP_ENV=test ALLE
+    # Project-Zeilen. conftest bindet aber EINE sessionweite SQLite-DB, in der
+    # vorher laufende Tests eigene Projekte committen (z. B. test_costs_api).
+    # reset_demo_data raeumt nur manifest-eigene Zeilen ab, nie fremde — der
+    # Test bestand deshalb nur, wenn er frueh genug lief.
+    # Die Produktregel «genau zwei» bleibt unveraendert scharf; isoliert wird
+    # die Umgebung, so wie der Testname es ohnehin behauptet.
+    engine = create_engine(f"sqlite:///{tmp_path / 'isolated.db'}")
+    Base.metadata.create_all(engine)
+    db = Session(engine)
     try:
         for demo in DEMO_PROJECTS:
             db.add(
@@ -236,15 +247,8 @@ def test_isolated_test_db_requires_exactly_two_demo_projects(demo_seed_env):
             _verify_project_presence(db, SimpleNamespace(app_env="test"))
     finally:
         db.rollback()
-        for demo in (PROJECT_A, PROJECT_B):
-            project = db.get(Project, demo.project_id)
-            if project is not None:
-                db.delete(project)
-        extra = db.get(Project, "extra-project")
-        if extra is not None:
-            db.delete(extra)
-        db.commit()
         db.close()
+        engine.dispose()
 
 
 def test_seed_generates_real_artifacts_and_reset_preserves_dev_projects(

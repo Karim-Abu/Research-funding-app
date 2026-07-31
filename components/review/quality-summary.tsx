@@ -1,22 +1,32 @@
 "use client"
 
-// Read-only "Qualitätsübersicht" (MAS reliability, M9K) for the Review Center. Shows how
-// many claims are supported / need review / are unsupported and lists reliability findings.
-// Deterministic; no provider/model names, no confidence percentages.
+// Sichtbare Qualitätsprüfung der Belege (MAS reliability, M9K) im Review Center.
+// Standardansicht: ein Status, höchstens drei konkrete Prüfpunkte in Klartext,
+// genau eine Hauptaktion. Alle Kennzahlen und Fachbegriffe bleiben in den
+// technischen Prüfinformationen erhalten (verlagert, nicht gelöscht).
+// Deterministisch; keine Provider-/Modellnamen, keine Konfidenzprozente.
 
 import * as React from "react"
 import { ShieldCheck, AlertTriangle, Loader2, RefreshCw } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 import {
   getReliability,
   runReliabilityPass,
   ReliabilityError,
   type ReliabilityViewDto,
 } from "@/lib/reliability"
+import {
+  CHECKPOINT_SCOPE_NOTE,
+  checkpointGroups,
+  type CheckpointGroup,
+} from "@/lib/reliability-view"
 
-const FLAG_LABEL: Record<string, string> = { ok: "In Ordnung", risky: "Qualitätsrisiko" }
+/** Höchstens drei Prüfpunkte in der Standardansicht; der Rest steht
+ *  vollständig in den technischen Prüfinformationen. */
+const VISIBLE_CHECKPOINTS = 3
 
 // R2.5 — identische Meldungen werden gebündelt angezeigt («31 × …») statt als
 // lange Wiederholungsliste; die Reihenfolge des ersten Auftretens bleibt.
@@ -46,7 +56,14 @@ function groupByDescription(
 const METRICS_LEGEND =
   "Nicht jede Aussage ist evidenzpflichtig; die Kategorien bilden unterschiedliche Prüfzustände ab. Die Zahlen müssen sich deshalb nicht zur Gesamtzahl aufsummieren."
 
-export function QualitySummary({ runId }: { runId: string }) {
+export function QualitySummary({
+  runId,
+  onShowCheckpoints,
+}: {
+  runId: string
+  /** Führt zur Aufgabenliste mit den betroffenen Stellen (Hauptaktion). */
+  onShowCheckpoints: () => void
+}) {
   const [view, setView] = React.useState<ReliabilityViewDto | null>(null)
   const [busy, setBusy] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
@@ -79,45 +96,44 @@ export function QualitySummary({ runId }: { runId: string }) {
   }, [runId, load])
 
   const summary = view?.summary ?? null
-  const blockers = (view?.findings ?? []).filter((f) => f.severity === "blocker")
-  const warnings = (view?.findings ?? []).filter((f) => f.severity === "warning")
-  // 2026-07-23: nur die handlungsrelevantesten Hinweisgruppen im Standardfluss;
-  // der Rest bleibt vollständig in den Audit-Details (verlagert, nicht gelöscht).
-  const groupedWarnings = groupByDescription(warnings)
-  const topWarnings = groupedWarnings.slice(0, 3)
-  const overflowWarnings = groupedWarnings.slice(3)
+  const findings = view?.findings ?? []
+  const stale = Boolean(view?.reliability_stale)
+  const groups = checkpointGroups(findings)
+  const visible = groups.slice(0, VISIBLE_CHECKPOINTS)
+  const overflow = groups.slice(VISIBLE_CHECKPOINTS)
+  const hasCritical = groups.some((g) => g.critical)
 
   return (
     <section
       data-testid="quality-summary"
       className="rounded-lg border border-border bg-card p-5"
     >
-      <div className="mb-3 flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2">
-          <ShieldCheck className="size-4 text-muted-foreground" />
-          <h3 className="text-sm font-semibold text-foreground">Qualitätsübersicht</h3>
-          {summary && (
-            <Badge variant={summary.quality_flag === "risky" ? "destructive" : "secondary"}>
-              {FLAG_LABEL[summary.quality_flag] ?? summary.quality_flag}
-            </Badge>
-          )}
-          {view?.reliability_stale && (
-            <Badge variant="outline" data-testid="reliability-stale">
-              Veraltet – bitte erneut prüfen
-            </Badge>
-          )}
-        </div>
-        <Button type="button" size="sm" variant="outline" disabled={busy} onClick={runPass}>
-          {busy ? (
-            <>
-              <Loader2 className="size-3.5 animate-spin" /> Prüfung läuft …
-            </>
-          ) : (
-            <>
-              <RefreshCw className="size-3.5" /> Zuverlässigkeit prüfen
-            </>
-          )}
-        </Button>
+      <div className="mb-3 flex flex-wrap items-center gap-2">
+        <ShieldCheck className="size-4 text-muted-foreground" />
+        <h3 className="text-sm font-semibold text-foreground">
+          Qualitätsprüfung: Belege
+        </h3>
+        {summary && (
+          <Badge
+            variant="outline"
+            data-testid="quality-status"
+            className={cn(
+              "border-transparent",
+              groups.length === 0
+                ? "bg-status-fulfilled/12 text-status-fulfilled"
+                : hasCritical
+                  ? "bg-destructive/10 text-destructive"
+                  : "bg-status-partial/12 text-status-partial"
+            )}
+          >
+            {groups.length === 0 ? "Keine offenen Prüfpunkte" : "Prüfung erforderlich"}
+          </Badge>
+        )}
+        {stale && (
+          <Badge variant="outline" data-testid="reliability-stale">
+            Veraltet – bitte erneut prüfen
+          </Badge>
+        )}
       </div>
 
       {error && (
@@ -128,95 +144,158 @@ export function QualitySummary({ runId }: { runId: string }) {
 
       {!summary && !error && (
         <p className="text-sm text-muted-foreground">
-          Noch keine Zuverlässigkeitsprüfung ausgeführt.
+          Die Belege dieses Entwurfs wurden noch nicht geprüft.
         </p>
       )}
 
       {summary && (
         <>
-          {/* 2026-07-23: eine Verdikt-Zeile statt vier Zahlen-Kacheln — die
-              Kategorien-Zähler und die Legende liegen in den Audit-Details. */}
-          <p className="text-sm text-foreground" data-testid="quality-metrics">
-            {summary.claim_count} Aussagen geprüft — {summary.supported_claims}{" "}
-            gestützt, {summary.review_required_count} mit Prüfbedarf,{" "}
-            {summary.unsupported_claims} ohne verknüpften Beleg.
-          </p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            «Qualitätsrisiko» ist ein Risikosignal für die menschliche Prüfung —
-            kein Fehler der Anwendung und keine Aussage zur
-            Förderwahrscheinlichkeit.
-          </p>
-          {/* RUN 4A: Reliability-Fachbegriffe verlagert, nicht gelöscht —
-              nur noch in den aufklappbaren Audit-Details. */}
-          <details
-            className="mt-2 text-xs text-muted-foreground"
-            data-testid="quality-audit-details"
-          >
-            <summary className="cursor-pointer">Technische Details (Audit)</summary>
-            <p className="mt-1">{METRICS_LEGEND}</p>
-            <p className="mt-1">
-              Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis
-              der inhaltlichen Wahrheit. Konfliktende Belege:{" "}
-              {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
-              {summary.false_consensus_risk_count}. Semantische Drift:{" "}
-              {summary.semantic_drift_count}.
+          {stale ? (
+            <p className="text-sm text-foreground">
+              Der Entwurf wurde nach der letzten Prüfung geändert. Bitte prüfen
+              Sie ihn erneut, damit die Prüfpunkte wieder aktuell sind.
             </p>
-            <p className="mt-1">
-              Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie
-              Suffizienz (der Beleg scheint die Aussage zu stützen).
+          ) : groups.length === 0 ? (
+            <p className="text-sm text-foreground">
+              Alle geprüften Angaben haben einen ausreichenden Beleg. Prüfen Sie
+              den Entwurf final.
             </p>
-            {overflowWarnings.length > 0 && (
-              <div className="mt-2" data-testid="reliability-warnings-overflow">
-                <p className="font-medium">Weitere Hinweise (Prüfung nötig)</p>
-                <ul className="mt-1 flex flex-col gap-1">
-                  {overflowWarnings.map((g) => (
-                    <li key={g.key}>
-                      {g.count > 1 ? `${g.count} × ` : ""}
-                      {g.description}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </details>
-
-          {blockers.length > 0 && (
-            <div className="mt-3" data-testid="reliability-blockers">
-              <p className="mb-1 flex items-center gap-1 text-sm font-medium text-foreground">
-                <AlertTriangle className="size-4 text-destructive" /> Zuverlässigkeits-Blocker
+          ) : (
+            <>
+              <p className="text-sm text-foreground">
+                {hasCritical
+                  ? "Diese Punkte müssen vor dem Export geklärt werden:"
+                  : "Vor dem Export sind noch Punkte zu prüfen:"}
               </p>
-              <ul className="flex flex-col gap-1">
-                {groupByDescription(blockers).map((g) => (
-                  <li key={g.key} className="text-xs text-foreground">
-                    {g.count > 1 ? `${g.count} × ` : ""}
-                    {g.description}
-                  </li>
+              <ul
+                className="mt-2 flex flex-col gap-1.5"
+                data-testid="quality-checkpoints"
+              >
+                {visible.map((group) => (
+                  <CheckpointRow key={group.family} group={group} />
                 ))}
               </ul>
-            </div>
-          )}
-
-          {topWarnings.length > 0 && (
-            <div className="mt-3" data-testid="reliability-warnings">
-              <p className="mb-1 text-sm font-medium text-foreground">Hinweise (Prüfung nötig)</p>
-              <ul className="flex flex-col gap-1">
-                {topWarnings.map((g) => (
-                  <li key={g.key} className="text-xs text-muted-foreground">
-                    {g.count > 1 ? `${g.count} × ` : ""}
-                    {g.description}
-                  </li>
-                ))}
-              </ul>
-              {overflowWarnings.length > 0 && (
-                <p className="mt-1 text-xs text-muted-foreground">
-                  … und {overflowWarnings.length} weitere Hinweisgruppen in den
-                  Technischen Details (Audit).
+              {overflow.length > 0 && (
+                <p className="mt-2 text-xs text-muted-foreground">
+                  … und {overflow.length} weitere{" "}
+                  {overflow.length === 1 ? "Prüfpunkt" : "Prüfpunkte"} in den
+                  technischen Prüfinformationen.
                 </p>
               )}
-            </div>
+            </>
           )}
         </>
       )}
+
+      {/* Genau eine Hauptaktion: eine fehlende oder veraltete Prüfung wird
+          zuerst aktualisiert, sonst führt die Karte zu den betroffenen
+          Stellen. Ist alles belegt und aktuell, bleibt nichts zu tun. */}
+      {(!summary || stale) && (
+        <div className="mt-4">
+          <Button type="button" size="sm" disabled={busy} onClick={runPass}>
+            {busy ? (
+              <>
+                <Loader2 className="size-3.5 animate-spin" /> Prüfung läuft …
+              </>
+            ) : (
+              <>
+                <RefreshCw className="size-3.5" />
+                {summary ? "Erneut prüfen" : "Belege jetzt prüfen"}
+              </>
+            )}
+          </Button>
+        </div>
+      )}
+      {summary && !stale && groups.length > 0 && (
+        <div className="mt-4">
+          <Button type="button" size="sm" onClick={onShowCheckpoints}>
+            Prüfpunkte anzeigen
+          </Button>
+        </div>
+      )}
+
+      {summary && (
+        <p className="mt-3 text-xs text-muted-foreground">
+          {CHECKPOINT_SCOPE_NOTE}
+        </p>
+      )}
+
+      {summary && (
+        // Kennzahlen und Prüfbegriffe bleiben vollständig verfügbar (Audit,
+        // Tests, Bachelorarbeit) — nur nicht in der Standardansicht.
+        <details
+          className="mt-2 text-xs text-muted-foreground"
+          data-testid="quality-audit-details"
+        >
+          <summary className="cursor-pointer">Technische Prüfinformationen</summary>
+          <p className="mt-1" data-testid="quality-metrics">
+            {summary.claim_count} Aussagen geprüft — {summary.supported_claims}{" "}
+            gestützt, {summary.review_required_count} mit Prüfbedarf,{" "}
+            {summary.unsupported_claims} ohne verknüpften Beleg. Qualitätssignal:{" "}
+            {summary.quality_flag === "risky" ? "Qualitätsrisiko" : "In Ordnung"}.
+          </p>
+          <p className="mt-1">{METRICS_LEGEND}</p>
+          <p className="mt-1">
+            Beleg-Suffizienzprüfung nach definierten Kriterien – kein Nachweis
+            der inhaltlichen Wahrheit. Konfliktende Belege:{" "}
+            {summary.conflicting_claims}. Falsches Konsensrisiko:{" "}
+            {summary.false_consensus_risk_count}. Semantische Drift:{" "}
+            {summary.semantic_drift_count}.
+          </p>
+          <p className="mt-1">
+            Abdeckung (ein Beleg ist verknüpft) ist nicht dasselbe wie
+            Suffizienz (der Beleg scheint die Aussage zu stützen).
+          </p>
+          {overflow.length > 0 && (
+            <div className="mt-2" data-testid="quality-checkpoints-overflow">
+              <p className="font-medium">Weitere Prüfpunkte</p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {overflow.map((group) => (
+                  <li key={group.family}>{group.text}</li>
+                ))}
+              </ul>
+            </div>
+          )}
+          {findings.length > 0 && (
+            <div className="mt-2" data-testid="quality-findings-verbatim">
+              <p className="font-medium">Alle Meldungen im Wortlaut</p>
+              <ul className="mt-1 flex flex-col gap-1">
+                {groupByDescription(findings).map((g) => (
+                  <li key={g.key}>
+                    {g.count > 1 ? `${g.count} × ` : ""}
+                    {g.description}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </details>
+      )}
     </section>
+  )
+}
+
+/** Ein Prüfpunkt: Klartextsatz, «kritisch» nur bei echter Export-Blockade. */
+function CheckpointRow({ group }: { group: CheckpointGroup }) {
+  return (
+    <li className="flex items-start gap-2 text-sm text-foreground">
+      {group.critical ? (
+        <AlertTriangle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+      ) : (
+        <span
+          aria-hidden
+          className="mt-1.5 size-1.5 shrink-0 rounded-full bg-status-partial"
+        />
+      )}
+      <span className="min-w-0 flex-1">{group.text}</span>
+      {group.critical && (
+        <Badge
+          variant="outline"
+          className="border-transparent bg-destructive/10 text-destructive"
+        >
+          kritisch
+        </Badge>
+      )}
+    </li>
   )
 }

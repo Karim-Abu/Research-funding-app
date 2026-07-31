@@ -64,6 +64,9 @@ export interface MarketPictureDto {
   trends: MarketPicturePointDto[]
   demand_indicators: MarketPicturePointDto[]
   swiss_relevance: MarketPicturePointDto[]
+  // Contract-Feld; wird nicht gerendert: die Lücken erscheinen pro Oberfläche
+  // genau einmal aus `competition_judgment.open_evidence_gaps` bzw.
+  // `research_gaps` (siehe lib/market-view `evidenceGapsOf`).
   gaps: string[]
 }
 
@@ -207,17 +210,8 @@ export interface MarketComparisonDto {
 // User-facing labels (shared by the Quellen table, the editor's Markt tab and
 // the market-comparison sheet). Raw enum values never reach the UI.
 // ---------------------------------------------------------------------------
-// RUN 4A: Vergleichsstatus in Nutzersprache für den Sektionskopf. Der Contract
-// kennt kein wörtliches «complete» — der positive Zustand ist ready_for_review.
-export const COMPARISON_STATUS_LABELS: Record<ComparisonStatus, string> = {
-  draft: "Entwurf",
-  ready_for_review: "Zur menschlichen Prüfung bereit",
-  limited: "Begrenzte externe Evidenz",
-  insufficient_external_evidence: "Zu wenig geeignete geprüfte Quellen",
-  stale: "Veraltet — bitte neu erstellen",
-  failed: "Fehlgeschlagen",
-}
-
+// Der Vergleichsstatus im Sektionskopf kommt aus `marketWorkspaceStatus`
+// (lib/market-view) — ein Viewmodel für Karte, Editor-Rail und Sheet.
 export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
   competitor: "Konkurrent",
   alternative_solution: "Alternative Lösung",
@@ -229,24 +223,9 @@ export const ITEM_CATEGORY_LABELS: Record<ItemCategory, string> = {
   unknown: "Unklar",
 }
 
-// R8 (Anforderung 11): die fünf Abschnitte der strukturierten Zusammenfassung.
-// «Offene Evidenzlücken» und «Verwendete Quellen» kommen aus research_gaps bzw.
-// source_document_ids; die Item-Abschnitte gruppieren nach Kategorie.
-export const SUMMARY_SECTIONS: { title: string; categories: ItemCategory[] }[] = [
-  { title: "Marktgrössen-Kandidaten", categories: ["market_size_claim"] },
-  {
-    title: "Wettbewerber und Alternativen",
-    categories: [
-      "competitor",
-      "alternative_solution",
-      "substitute",
-      "incumbent_process",
-      "reference_solution",
-      "unknown",
-    ],
-  },
-  { title: "Kundenprobleme", categories: ["customer_problem"] },
-]
+// Die frühere Kategorien-Gruppierung (SUMMARY_SECTIONS) ist entfallen: sie
+// stellte Marktaussagen als Zeilen einer Anbieter-Tabelle dar. Die Gruppierung
+// erfolgt jetzt über die Lösungsart (CANDIDATE_TYPE_ORDER in lib/market-view).
 
 export const ITEM_RELATION_LABELS: Record<ItemRelation, string> = {
   similar: "ähnlich",
@@ -321,6 +300,8 @@ const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",
   422: "Markt- und Konkurrenzvergleich ist für diese Datenklasse nicht erlaubt.",
+  429: "Das Limit für den Markt- und Konkurrenzvergleich ist erreicht. Bitte versuchen Sie es später erneut.",
+  500: "Der Vergleich konnte nicht gestartet werden. Bitte versuchen Sie es erneut.",
   503: "Der Markt- und Konkurrenzvergleich ist derzeit nicht verfügbar.",
 }
 

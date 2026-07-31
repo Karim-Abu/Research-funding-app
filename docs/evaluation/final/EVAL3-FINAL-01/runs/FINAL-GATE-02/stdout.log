@@ -1,0 +1,98 @@
+﻿**********************
+nStart der Windows PowerShell-Aufzeichnung
+Startzeit: 20260726173846
+Benutzername: KARIM_ABOUTAYEB\karim
+RunAs-Benutzer: KARIM_ABOUTAYEB\karim
+Konfigurationsname: 
+Computer: KARIM_ABOUTAYEB (Microsoft Windows NT 10.0.26200.0)
+Hostanwendung: C:\windows\System32\WindowsPowerShell\v1.0\powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command try { $PSDefaultParameterValues['Out-File:Encoding'] = 'utf8' } catch {}; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { try { $OutputEncoding = [System.Text.UTF8Encoding]::new() } catch {}; if ($null -ne $PSStyle) { try { $PSStyle.OutputRendering = 'PlainText' } catch {} } }; Set-Location "c:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app"; $env:VERIFY_RUN_ID = "FINAL-GATE-02"; $env:VERIFY_READY_TIMEOUT_SEC = "420"; & .\scripts\verify_all.ps1; Write-Host "GATE EXIT=$LASTEXITCODE"
+; $_ec = if ($null -ne $LASTEXITCODE) { $LASTEXITCODE } elseif ($?) { 0 } else { 1 }
+; (Get-Location).Path | Out-File -FilePath 'C:\Users\karim\AppData\Local\Temp\claude\claude-pwd-ps-b575' -Encoding utf8 -NoNewline
+; if ($ExecutionContext.SessionState.LanguageMode -eq 'FullLanguage') { $host.SetShouldExit($_ec) } else { exit $_ec }
+Prozess-ID: 12484
+PSVersion: 5.1.26100.8875
+PSEdition: Desktop
+PSCompatibleVersions: 1.0, 2.0, 3.0, 4.0, 5.0, 5.1.26100.8875
+BuildVersion: 10.0.26100.8875
+CLRVersion: 4.0.30319.42000
+WSManStackVersion: 3.0
+PSRemotingProtocolVersion: 2.3
+SerializationVersion: 1.1.0.1
+**********************
+== Abschlussgate (deterministisch, Fake-Provider) ==  package manager: corepack pnpm
+   RUN_ID=FINAL-GATE-02  commit=7f09c1fc9ea6e994e6354c0fc83d6c04de28dfcd  branch=stabilize/eval3-final-01  dirty=True
+   Artefakte: C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\docs\evaluation\final\EVAL3-FINAL-01\runs\FINAL-GATE-02
+-- testdata marker check --
+testdata-marker-check: OK (0 Marker, 0 Allowlist-Eintraege, Verzeichnisse: spike/fixtures, backend/tests/reliability_fixtures, docs/evaluation/cases)
+-- legacy status guard --
+
+-- backend: fresh-DB migration check --
+
+-- backend: pytest (ohne DOCX-Render-Smoke — eigene Gate-Zeile) --
+
+-- export smoke (eigene Zeile) --
+
+-- no-raw-log (eigene Zeile) --
+
+-- DOCX render smoke (benötigt Microsoft Word) --
+
+-- frontend: vitest --
+corepack : $ vitest run
+In Zeile:1 Zeichen:1
++ corepack pnpm test
++ ~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ($ vitest run:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+>> TerminatingError(): "Die Pipeline wurde beendet."
+>> TerminatingError(): "Die Pipeline wurde beendet."
+>> TerminatingError(out-file): "Illegales Zeichen im Pfad."
+out-file : Illegales Zeichen im Pfad.
+In C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\scripts\verify_all.ps1:176 
+Zeichen:5
++     PmRun "test" *>&1 | Tee-Object -FilePath "$RunDiritest.log"
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OpenError: (:) [out-file], ArgumentException
+    + FullyQualifiedErrorId : FileOpenFailure,Microsoft.PowerShell.Commands.OutFileCommand
+out-file : Illegales Zeichen im Pfad.
+In C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\scripts\verify_all.ps1:176
+Zeichen:5
++     PmRun "test" *>&1 | Tee-Object -FilePath "$RunDiritest.log"
++     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OpenError: (:) [out-file], ArgumentException
+    + FullyQualifiedErrorId : FileOpenFailure,Microsoft.PowerShell.Commands.OutFileCommand
+
+
+=========== ABNAHME — SECHS GETRENNTE KATEGORIEN ===========
+1. Technical deterministic E2E : FAIL   (Fake-Provider; Suite + 2. Lauf)
+2. Structured import E2E       : FAIL   (e2e/import-functional.spec.ts)
+3. Live model evaluation       : durchgeführt — C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\var\evaluation\model_quality_summary.json
+4. Model selection (A1/A2/A3)  : durchgeführt — C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\var\evaluation\role_model_eval_pilot\pilot_summary.json
+5. Live Firecrawl evaluation   : durchgeführt — C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\var\evaluation\live_research_smoke.md
+6. Supervised live E2E         : not_run (manuell — docs/demo/demo-runbook.md)
+Provider-Preflight (Ebene E)   : Artefakt vorhanden — C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\var\evaluation\provider_preflight.md
+Private SEDATE-Acceptance      : manuell — scripts/run_private_innolink_acceptance.py
+
+=============== TECHNISCHE GATE-DETAILS ===================
+backend tests            : pass
+migration                : pass
+frontend tests (vitest)  : skip
+build/typecheck/lint     : skip
+Playwright (Suite)       : skip
+technischer E2E (2. Lauf): skip   (e2e/golden-path.spec.ts)
+funktionaler Import      : skip   (e2e/import-functional.spec.ts)
+review truth             : skip   (e2e/review-truth.spec.ts)
+docx render smoke        : pass   (tests/test_docx_render_smoke.py)
+API smoke                : skip
+export smoke             : pass   (test_m10_smoke.py::test_export_all_types)
+no-raw-log               : pass   (test_m10_smoke.py::test_no_raw_log)
+testdata markers         : not-applicable-no-markers   (scripts/check_testdata_markers.py)
+legacy status guard      : pass   (scripts/check_legacy_status_paths.py)
+evaluation summary       : -
+===========================================================
+
+Maschinenlesbares Ergebnis: C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\docs\evaluation\final\EVAL3-FINAL-01\runs\FINAL-GATE-02\EvaluationGateResult.json
+TECHNISCHES GATE (deterministisch, Fake-Provider): ROT — frontend, quality, playwright, golden2, functional, reviewtruth, apismoke
+**********************
+Ende der Windows PowerShell-Aufzeichnung
+Endzeit: 20260726175003
+**********************

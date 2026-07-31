@@ -40,6 +40,24 @@ interface JoinedAnchor extends EvidenceAnchorDto {
   requirementTitle: string | null
 }
 
+/**
+ * Der rote Status kann entweder aus einer technischen Verwerfung oder aus der
+ * fachlichen Zuordnung entstehen. Nur den Status zu zeigen wäre irreführend:
+ * Die vorhandene, konkrete Begründung wird deshalb direkt an der Fundstelle
+ * angezeigt. Für ältere Antworten ohne Begründung bleibt der Fallback ehrlich.
+ */
+function getEvidenceReviewReason(
+  anchor: EvidenceAnchorDto,
+  supportStatus: ReturnType<typeof supportStatusFromVerification>
+): string | null {
+  if (supportStatus !== "conflict_or_uncertain") return null
+  if (anchor.rejection_text_de) return anchor.rejection_text_de
+  if (anchor.verification_status === "rejected") {
+    return "Der Textabgleich konnte diese Passage nicht bestätigen. Sie wird deshalb nicht als Beleg verwendet."
+  }
+  return "Die Passage stützt die zugeordnete Anforderung nicht ausreichend. Bitte in der Qualitätsprüfung prüfen."
+}
+
 interface LiveEvidenceProps {
   runId: string
   /** Deep link (?anchor=…): expand + scroll to this anchor after load. */
@@ -183,6 +201,7 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
             const supportStatus =
               anchor.support_status ??
               supportStatusFromVerification(anchor.verification_status)
+            const reviewReason = getEvidenceReviewReason(anchor, supportStatus)
             const reviewer = formatReviewer(
               anchor.human_checked_by,
               anchor.human_checked_at
@@ -276,7 +295,11 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                     ) : (
                       <ChevronRight className="h-3.5 w-3.5" />
                     )}
-                    {isOpen ? "Details ausblenden" : "Details anzeigen"}
+                    {isOpen
+                      ? "Details ausblenden"
+                      : reviewReason
+                        ? "Prüfgrund anzeigen"
+                        : "Details anzeigen"}
                   </button>
                 </div>
 
@@ -291,6 +314,12 @@ export function LiveEvidence({ runId, focusAnchorId, onOpenSource }: LiveEvidenc
                           Beleg-Status (Coverage ≠ Correctness). */}
                       <dt>Textabgleich</dt>
                       <dd>{VERIFICATION_LABELS[anchor.verification_status]}</dd>
+                      {reviewReason && (
+                        <>
+                          <dt>Prüfgrund</dt>
+                          <dd>{reviewReason}</dd>
+                        </>
+                      )}
                     </dl>
                   </div>
                 )}

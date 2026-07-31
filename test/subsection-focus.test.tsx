@@ -217,5 +217,36 @@ describe("Fokusansicht je Unterabschnitt (B1–B4)", () => {
       screen.getByText(/Abschnittsmarker .* verändert/)
     ).toBeInTheDocument()
     expect(screen.queryByTestId("subsection-question")).toBeNull()
+    // Gespeicherter Stand == lokaler Stand → nichts wiederherzustellen.
+    expect(
+      screen.queryByRole("button", { name: "Gespeicherten Stand wiederherstellen" })
+    ).toBeNull()
+  })
+
+  it("bietet im Degraded-Banner die Wiederherstellung des gespeicherten Stands an", async () => {
+    // Lokale (ungespeicherte) Änderung zerlegt die Struktur (dupliziertes 3.2)
+    // → Banner + Rettungsanker; Klick stellt den gespeicherten Stand wieder
+    // her und die Fokusansicht kehrt zurück.
+    mockEditor()
+    render(<LiveEditor runId="r1" />)
+    const textarea = (await screen.findByLabelText(
+      "Entwurf Value Creation"
+    )) as HTMLTextAreaElement
+    fireEvent.change(textarea, {
+      target: { value: "Antwort zu eins.\n3.2 dupliziert" },
+    })
+    expect(
+      await screen.findByText(/Abschnittsmarker .* verändert/)
+    ).toBeInTheDocument()
+    fireEvent.click(
+      screen.getByRole("button", { name: "Gespeicherten Stand wiederherstellen" })
+    )
+    // Struktur intakt → Fokusansicht mit Portalfrage ist zurück.
+    expect(await screen.findByTestId("subsection-question")).toBeInTheDocument()
+    expect(screen.queryByText(/Abschnittsmarker .* verändert/)).toBeNull()
+    const restored = (await screen.findByLabelText(
+      "Entwurf Value Creation"
+    )) as HTMLTextAreaElement
+    expect(restored.value).toBe("Antwort zu eins.")
   })
 })

@@ -1,10 +1,42 @@
-import { describe, it, expect } from "vitest"
+import { describe, it, expect, vi } from "vitest"
 import { render, screen, fireEvent, waitFor, within } from "@testing-library/react"
 import { http, HttpResponse } from "msw"
 import { server } from "./server"
 import { QualitySummary } from "@/components/review/quality-summary"
 
 const RUN = "run-1"
+
+function finding(overrides: Record<string, unknown> = {}) {
+  return {
+    finding_id: "f1",
+    field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
+    severity: "warning",
+    description: "Nicht belegte Aussage: keine verknüpfte Quelle gefunden.",
+    status: "open",
+    finding_code: "reliability:unsupported:clm-1",
+    target_type: "draft_claim",
+    target_id: "clm-1",
+    ...overrides,
+  }
+}
+
+/** n Findings einer Familie (eigene ids, damit React-Keys stabil sind). */
+function family(
+  code: string,
+  count: number,
+  severity = "warning",
+  description = "Meldung",
+) {
+  return Array.from({ length: count }, (_, i) =>
+    finding({
+      finding_id: `${code}-${i}`,
+      severity,
+      description,
+      finding_code: `reliability:${code}:clm-${i}`,
+      target_id: `clm-${i}`,
+    })
+  )
+}
 
 function view(overrides: Record<string, unknown> = {}) {
   return {
@@ -38,99 +70,193 @@ function view(overrides: Record<string, unknown> = {}) {
       generated_at: new Date().toISOString(),
     },
     claims: [],
-    findings: [
-      {
-        finding_id: "f1",
-        field_id: "SOL.INNOVATION_SOLUTION.EDITOR",
-        severity: "blocker",
-        description: "Nicht belegte Aussage: keine verknüpfte Quelle gefunden.",
-        status: "open",
-        finding_code: "reliability:unsupported:clm-1",
-        target_type: "draft_claim",
-        target_id: "clm-1",
-      },
-    ],
+    findings: [finding()],
     ...overrides,
   }
 }
 
+function renderCard(onShowCheckpoints = vi.fn()) {
+  render(<QualitySummary runId={RUN} onShowCheckpoints={onShowCheckpoints} />)
+  return onShowCheckpoints
+}
+
 describe("QualitySummary", () => {
-  it("renders metrics, the risk flag and reliability blockers", async () => {
+  it("zeigt einen Status und konkrete Prüfpunkte in Klartext", async () => {
     server.use(
-      http.get(`/api/runs/${RUN}/reliability`, () => HttpResponse.json(view()))
+      http.get(`/api/runs/${RUN}/reliability`, () =>
+        HttpResponse.json(
+          view({
+            findings: [
+              ...family("market", 9),
+              ...family("proposed_fact", 4),
+              ...family("quantified", 10),
+            ],
+          })
+        )
+      )
     )
-    render(<QualitySummary runId={RUN} />)
+    renderCard()
     await waitFor(() =>
-      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
     )
-    expect(screen.getByText("Qualitätsrisiko")).toBeInTheDocument()
-    expect(screen.getByTestId("reliability-blockers")).toHaveTextContent(
-      /Nicht belegte Aussage/
+    expect(screen.getByTestId("quality-status")).toHaveTextContent(
+      "Prüfung erforderlich"
     )
-    // M10.2: coverage ≠ sufficiency + "risky is a signal, not an app failure".
-    expect(
-      screen.getByText(/Abdeckung .*nicht dasselbe wie Suffizienz/)
-    ).toBeInTheDocument()
-    expect(screen.getByText(/kein Fehler der Anwendung/)).toBeInTheDocument()
-    // No provider/model/confidence-percentage leakage.
+    const list = screen.getByTestId("quality-checkpoints")
+    expect(within(list).getAllByRole("listitem")).toHaveLength(3)
+    expect(list).toHaveTextContent(
+      "10 Zahlen stimmen noch nicht eindeutig mit den Quellen überein."
+    )
+    expect(list).toHaveTextContent(
+      "9 Markt- und Wettbewerbsangaben brauchen einen Beleg."
+    )
+    expect(list).toHaveTextContent("4 KI-Vorschläge wurden noch nicht bestätigt.")
+    // Ehrliche Einordnung bleibt in der Standardansicht sichtbar.
+    expect(screen.getByText(/kein Fehler der Anwendung/)).toBeVisible()
+    // Keine Provider-/Modell-/Konfidenz-Leaks.
     expect(
       screen.queryByText(/anthropic|haiku|firecrawl|confidence|Konfidenz|%/i)
     ).toBeNull()
   })
 
-  it("RUN 4A: Reliability-Jargon liegt nur in den aufklappbaren Audit-Details", async () => {
+  it("«kritisch» nur bei Punkten, die den Export blockieren", async () => {
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () =>
+        HttpResponse.json(
+          view({
+            findings: [
+              ...family("conflict", 1, "blocker"),
+              ...family("unsupported", 20),
+            ],
+          })
+        )
+      )
+    )
+    renderCard()
+    await waitFor(() =>
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
+    )
+    const items = within(screen.getByTestId("quality-checkpoints")).getAllByRole(
+      "listitem"
+    )
+    // Kritischer Punkt steht zuerst, obwohl die andere Gruppe grösser ist.
+    expect(items[0]).toHaveTextContent(
+      "1 Angabe widerspricht der verknüpften Quelle."
+    )
+    expect(items[0]).toHaveTextContent("kritisch")
+    expect(items[1]).toHaveTextContent("20 Stellen brauchen noch einen Beleg.")
+    expect(items[1]).not.toHaveTextContent("kritisch")
+    expect(screen.getAllByText("kritisch")).toHaveLength(1)
+  })
+
+  it("Fachbegriffe und Kennzahlen nur in den technischen Prüfinformationen", async () => {
     server.use(
       http.get(`/api/runs/${RUN}/reliability`, () => HttpResponse.json(view()))
     )
-    render(<QualitySummary runId={RUN} />)
+    renderCard()
     await waitFor(() =>
-      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
     )
     const details = screen.getByTestId("quality-audit-details")
     expect(details.tagName).toBe("DETAILS")
-    // Fachbegriffe sind im DOM (verlagert, nicht gelöscht), aber im
-    // zugeklappten <details> nicht sichtbar.
+    expect(
+      within(details).getByText("Technische Prüfinformationen")
+    ).toBeInTheDocument()
+    // Verlagert, nicht gelöscht: im DOM vorhanden, zugeklappt nicht sichtbar.
+    expect(screen.getByTestId("quality-metrics")).not.toBeVisible()
     expect(screen.getByText(/Falsches Konsensrisiko/)).not.toBeVisible()
     expect(screen.getByText(/Semantische Drift/)).not.toBeVisible()
     expect(screen.getByText(/Beleg-Suffizienzprüfung/)).not.toBeVisible()
-    // Der Klartextsatz bleibt im Standardfluss sichtbar.
+    // M10.2: Abdeckung ≠ Suffizienz bleibt dokumentiert.
     expect(
-      screen.getByText(/Risikosignal für die menschliche Prüfung/)
-    ).toBeVisible()
+      screen.getByText(/Abdeckung .*nicht dasselbe wie Suffizienz/)
+    ).not.toBeVisible()
+    // Der Wortlaut der Einzelmeldungen bleibt auditierbar.
+    expect(
+      within(screen.getByTestId("quality-findings-verbatim")).getByText(
+        /Nicht belegte Aussage/
+      )
+    ).toBeInTheDocument()
+    // «Qualitätsrisiko» erscheint nicht mehr in der Standardansicht.
+    expect(screen.getByTestId("quality-status")).not.toHaveTextContent(
+      "Qualitätsrisiko"
+    )
   })
 
-  it("2026-07-23: Verdikt-Zeile + Top-3-Hinweise, Überlauf in den Audit-Details", async () => {
-    const warningFindings = ["Hinweis A", "Hinweis B", "Hinweis C", "Hinweis D", "Hinweis E"].map(
-      (description, i) => ({
-        finding_id: `w${i}`,
-        field_id: null,
-        severity: "warning",
-        description,
-        status: "open",
-        finding_code: `reliability:warn:${i}`,
-        target_type: "draft_claim",
-        target_id: `clm-${i}`,
-      })
-    )
+  it("höchstens drei Prüfpunkte; der Rest steht in den technischen Details", async () => {
     server.use(
       http.get(`/api/runs/${RUN}/reliability`, () =>
-        HttpResponse.json(view({ findings: warningFindings }))
+        HttpResponse.json(
+          view({
+            findings: [
+              ...family("unsupported", 5),
+              ...family("market", 4),
+              ...family("quantified", 3),
+              ...family("weak", 2),
+              ...family("drift", 1),
+            ],
+          })
+        )
       )
     )
-    render(<QualitySummary runId={RUN} />)
+    renderCard()
     await waitFor(() =>
-      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
     )
-    // Eine Verdikt-Zeile statt vier Zahlen-Kacheln.
-    expect(screen.getByTestId("quality-metrics")).toHaveTextContent(
-      "3 Aussagen geprüft — 1 gestützt, 2 mit Prüfbedarf, 1 ohne verknüpften Beleg."
+    expect(
+      within(screen.getByTestId("quality-checkpoints")).getAllByRole("listitem")
+    ).toHaveLength(3)
+    expect(screen.getByText(/und 2 weitere Prüfpunkte/)).toBeVisible()
+    const overflow = screen.getByTestId("quality-checkpoints-overflow")
+    expect(overflow).toHaveTextContent("Bei 2 Stellen reicht der Beleg noch nicht aus.")
+    expect(overflow).toHaveTextContent("1 Formulierung sagt mehr aus als der Beleg.")
+    expect(overflow).not.toBeVisible()
+  })
+
+  it("Hauptaktion «Prüfpunkte anzeigen» führt zur Aufgabenliste", async () => {
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () => HttpResponse.json(view()))
     )
-    const visibleList = screen.getByTestId("reliability-warnings")
-    expect(within(visibleList).getAllByRole("listitem")).toHaveLength(3)
-    expect(screen.getByText(/und 2 weitere Hinweisgruppen/)).toBeInTheDocument()
-    // Überlauf vollständig in den Audit-Details — verlagert, nicht gelöscht.
-    expect(screen.getByText("Hinweis D")).not.toBeVisible()
-    expect(screen.getByText("Hinweis E")).not.toBeVisible()
+    const onShow = renderCard()
+    await waitFor(() =>
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
+    )
+    fireEvent.click(screen.getByRole("button", { name: "Prüfpunkte anzeigen" }))
+    expect(onShow).toHaveBeenCalledOnce()
+  })
+
+  it("ohne offene Prüfpunkte: grüner Status, keine Aufgabe", async () => {
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () =>
+        HttpResponse.json(view({ findings: [] }))
+      )
+    )
+    renderCard()
+    await waitFor(() =>
+      expect(screen.getByTestId("quality-status")).toHaveTextContent(
+        "Keine offenen Prüfpunkte"
+      )
+    )
+    expect(screen.queryByTestId("quality-checkpoints")).toBeNull()
+    expect(
+      screen.queryByRole("button", { name: "Prüfpunkte anzeigen" })
+    ).toBeNull()
+  })
+
+  it("veralteter Stand: erneut prüfen ist die Hauptaktion", async () => {
+    server.use(
+      http.get(`/api/runs/${RUN}/reliability`, () =>
+        HttpResponse.json(view({ reliability_stale: true }))
+      )
+    )
+    renderCard()
+    await waitFor(() =>
+      expect(screen.getByTestId("reliability-stale")).toBeInTheDocument()
+    )
+    expect(screen.getByRole("button", { name: /Erneut prüfen/ })).toBeVisible()
+    expect(
+      screen.queryByRole("button", { name: "Prüfpunkte anzeigen" })
+    ).toBeNull()
   })
 
   it("shows an empty state and runs a pass on demand", async () => {
@@ -160,13 +286,13 @@ describe("QualitySummary", () => {
         })
       })
     )
-    render(<QualitySummary runId={RUN} />)
+    renderCard()
     await waitFor(() =>
-      expect(screen.getByText(/Noch keine Zuverlässigkeitsprüfung/)).toBeInTheDocument()
+      expect(screen.getByText(/noch nicht geprüft/)).toBeInTheDocument()
     )
-    fireEvent.click(screen.getByRole("button", { name: /Zuverlässigkeit prüfen/ }))
+    fireEvent.click(screen.getByRole("button", { name: /Belege jetzt prüfen/ }))
     await waitFor(() =>
-      expect(screen.getByTestId("quality-metrics")).toBeInTheDocument()
+      expect(screen.getByTestId("quality-checkpoints")).toBeInTheDocument()
     )
   })
 })

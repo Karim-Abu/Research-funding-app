@@ -76,6 +76,50 @@ haben bereits spezifische, nicht-generische Texte in `handlers.py` — R2.6
 | `missing_sources` | «Für einen belastbaren Vorschlag fehlen passende Quellen.» | «Quelle hinzufügen» |
 | `field_not_supported` | «Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.» | — (kein CTA seit 2026-07-23; der frühere «Strukturvorlage nutzen»-Button fokussierte nur den Editor und suggerierte eine nicht existierende Aktion) |
 
+Nachtrag 2026-07-25 (Owner-Freigabe via genehmigten Plan «UI-Bereinigung —
+Dichte, Wiederholungen und lange Erklärtexte»). Fünf Leitregeln: R1 ein
+Erklärsatz je Abschnittskopf · R2 eine Information je Ansicht genau einmal ·
+R3 ein Aufklapper je Karte · R4 Backend-Listen max. 3 sichtbar · R5 Statuslabels
+nur aus zentralen Maps. Kein Text mit rechtlichem/epistemischem Gehalt wurde
+gestrichen — nur zusammengezogen, gekürzt oder an den Ort der Handlung verschoben.
+
+| Ort | Alt | Neu |
+|---|---|---|
+| Recherche-Kopf | 3 Absätze (Brief-Herkunft · Datenschutz · Freigabe-Vorbehalt) | 1 Absatz: «Queries entstehen nur aus dem geprüften öffentlichen Recherchebrief. Keine Rohprojektidee, Partnernamen, Budgets oder Kontaktangaben eintragen.» |
+| Recherche Freigabe-Vorbehalt | im Kopf | verschoben ans Brief-Formular über die Freigabe-Buttons (Wortlaut unverändert) |
+| Editor-Wrapper Recherche | «Marktquellen werden im gemeinsamen Recherchearbeitsbereich … Ein Snippet allein ist kein Beleg.» | entfällt (5. Disclaimer über derselben Fläche) |
+| Query-Zeile Firewall | «Firewall: freigegeben · Risiko niedrig» | «Risiko niedrig» (nur bei `allow`; `block`/`needs_human` unverändert) |
+| Ergebniskarte Metazeile | Quellenqualität · Fundstelle · Stützung | Quellenqualität · Fundstelle · (Stützung nur solange nicht übernommen) · «Passt zu: …» |
+| Ergebniskarte Aufklapper | «Weitere Angaben» + «Fundstelle aus abgerufener Seite» + «Technische Details» | «Fundstelle aus abgerufener Seite» + «Technische Details» («Weitere Angaben» in die Metazeile aufgelöst) |
+| Fundstellen-Aufklapper | Zusatzsatz «Fundstelle exakt abgerufen – fachliche Stützung nicht bestätigt.» | entfällt (Statuszeile sagt es bereits) |
+| Anforderungszeile | Begründung gekürzt in der Kopfzeile **und** voll unter «Systembefund» | gekürzte Vorschau nur im zugeklappten Zustand |
+| Anforderungsdetail Chips | immer 2 Chips (Beleg + Prüfung) | nur Chips, die die Kopfzeile nicht schon nennt |
+| Anforderungsdetail Fusszeile | «Befunde erscheinen automatisch in der Qualitätsprüfung. Bestätigung und Korrektur erfolgen dort.» je Zeile | entfällt je Zeile (steht einmal in der Fussleiste; CTA «In Qualitätsprüfung öffnen» bleibt) |
+| Regelgrundlage | wortgleiches Zitat je Registry-Dokument einmal | wortgleiche Zitate zusammengefasst, Quellen mit «·» genannt, Eintrag mit offizieller URL gewinnt |
+| Belege-Tab (Entwurf) | `LINK_EXPLANATION` 3 Sätze/280 Zeichen | 1 Satz «Eine Verknüpfung ordnet diesem Entwurf eine Fundstelle zu — sie bestätigt nicht den gesamten Text.» + Aufklapper «Wofür zählt eine Verknüpfung?» mit der Wirkungskette (Wortlaut aus Nachtrag 2026-07-23 erhalten) |
+| «Weitere Belege verknüpfen» | alle Anker als Karten | 5 sichtbar + «Alle N Belege anzeigen» |
+| A2-Pending | «… Ihr Entwurf bleibt unverändert, bis Sie den Vorschlag prüfen und übernehmen.» | «… Ihr Entwurf bleibt unverändert.» |
+| A2-Erklärer | «… Fakten bleiben erhalten, fehlende Angaben werden separat ausgewiesen, und nichts wird ohne Ihre Prüfung übernommen.» | «… vorhandene Fakten bleiben erhalten, nichts wird ohne Ihre Prüfung übernommen.» |
+| A2 HITL-Fusszeile | «Vorschläge werden nie automatisch übernommen — Sie prüfen, übernehmen oder verwerfen selbst.» | «Vorschläge werden nie automatisch übernommen.» |
+| A2 Feldliste | «Abschnittsvorschläge unterstützen aktuell …» | «Verfügbar für Abstract, Executive Summary, …» |
+| Abschnittsmarker-Hinweis | 3 Teilsätze | «Die Abschnittsmarker (z. B. 3.1) wurden verändert — abschnittsweises Bearbeiten ist deaktiviert. Stellen Sie die Markerzeilen wieder her; der gesamte Text bleibt editierbar.» |
+| Format-Cache-Hinweise | 2 lange Varianten | je ein Satz; «Innolink übernimmt reinen Text.» |
+| `SUPPORT_LADDER_HINT` | 3 Teilsätze | «‹Textstelle gefunden› heisst nur: Der Text ist in der Quelle auffindbar — die fachliche Bewertung bleibt bei Ihnen.» |
+| Evidenz-Erklärung | `VERIFIED_EXPLANATION` + `EVIDENCE_VERIFIED_HINT` (zwei Fassungen) | nur `EVIDENCE_VERIFIED_HINT` (die Langfassung wurde nie gerendert) |
+| Markt Evidenzlücken | `research_gaps` **und** `judgment.open_evidence_gaps` (im Sheet 2× im selben Dialog) | genau eine Liste je Fläche über `marketGaps()`; 3 sichtbar + «Weitere N Lücken anzeigen» |
+| Markt Veraltet | «Suchraum geändert — bitte neu erstellen.» / «… — neu erstellen» / «Suchraum geändert» | einheitlich `MARKET_STALE_BADGE` = «Suchraum geändert — neu erstellen» |
+| Markt Marktbild | wortgleiche Werte in zwei Rubriken (z. B. Marktgrösse **und** Nachfrage) | zeilenübergreifende Dedupe in `marketPictureFrom` |
+| Markt Sheet Marktbild | «Marktinformationen (Grösse, Segmente, Trends, Nachfrage) — keine Wettbewerber.» | «Marktinformationen — keine Wettbewerber.» |
+| Markt Sektion Untertitel | «Nur aus live abgerufenen, vollständig importierten und inhaltlich positiv geprüften öffentlichen Quellen — …» | «Nur aus geprüften öffentlichen Quellen — kein automatischer Eintrag in den Antrag.» |
+| Vergleichsbasis | «Vergleichsbasis» + «Dagegen wird verglichen.» + «Deine Projektidee» | «Vergleichsbasis» + «Deine Projektidee — dagegen wird verglichen.» |
+
+**Fachlicher Fix im selben Zug (P1, Ehrlichkeit):** Das Detail-Sheet stellte
+Marktaussagen (z. B. «Swiss biotech sector revenue 2023») über die
+Fallback-Tabelle unter der Spalte «Wettbewerber / Lösung» dar, sobald keine
+Lösungskandidaten vorlagen. Marktaussagen werden dort jetzt wie in der
+Quellen-Sektion herausgefiltert (`candidateTypeOf`); bleibt die Tabelle leer,
+erscheint der ehrliche Hinweis, dass nur Marktaussagen gefunden wurden.
+
 Nachtrag 2026-07-24c (Owner-Freigabe via genehmigten Plan «Markt- &
 Konkurrenzvergleich — Absturz + Arbeitsbereich»):
 - P0-Absturz behoben: `market/executor._persist` warf beim Anlegen externer

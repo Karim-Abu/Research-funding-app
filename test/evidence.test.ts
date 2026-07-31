@@ -4,7 +4,7 @@ import { server } from "./server"
 import {
   listEvidence,
   VERIFICATION_LABELS,
-  VERIFIED_EXPLANATION,
+  EVIDENCE_VERIFIED_HINT,
 } from "@/lib/evidence"
 import { MOCK_CAPABILITIES } from "@/lib/capabilities"
 
@@ -59,7 +59,7 @@ describe("evidence client", () => {
     expect(VERIFICATION_LABELS.exact_verified).toBe("Fundstelle bestätigt")
     expect(VERIFICATION_LABELS.unverified).toBe("Prüfen")
     expect(VERIFICATION_LABELS.rejected).toBe("Nicht bestätigt")
-    expect(VERIFIED_EXPLANATION).toContain("nicht")
+    expect(EVIDENCE_VERIFIED_HINT).toContain("keine inhaltliche Freigabe")
   })
 
   it("advertises the evidence capability while review/export stay off", () => {

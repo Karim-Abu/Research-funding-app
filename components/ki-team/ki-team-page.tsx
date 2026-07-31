@@ -42,49 +42,46 @@ export function KiTeamScreen() {
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-8 pb-12 sm:gap-8 sm:px-6 lg:px-8">
-      <header className="flex flex-col gap-4">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-7 pb-12 sm:px-6 lg:px-8">
+      <header>
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0">
             <h1 className="text-2xl leading-tight font-semibold text-foreground sm:text-[28px]">
               {kiTeamTexts.title}
             </h1>
-            <p className="mt-2 max-w-[70ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
+            <p className="mt-1.5 max-w-[68ch] text-sm leading-relaxed text-muted-foreground sm:text-base">
               {kiTeamTexts.subtitle}
             </p>
           </div>
           <Badge
             variant="outline"
-            className="min-h-7 w-fit shrink-0 gap-1.5 border-border bg-muted/55 px-3 text-muted-foreground"
+            className="min-h-6 w-fit shrink-0 gap-1.5 border-border/80 bg-transparent px-2.5 text-xs font-normal text-muted-foreground"
           >
-            <FlaskConical aria-hidden="true" />
+            <FlaskConical aria-hidden="true" className="size-3.5" />
             {kiTeamTexts.prototypeBadge}
           </Badge>
         </div>
-        <p className="max-w-3xl text-sm leading-relaxed text-foreground">
-          {kiTeamTexts.intro}
-        </p>
       </header>
 
       <ResponsibilitySummary />
 
       <Tabs defaultValue="workflow" className="gap-5">
-        <TabsList className="grid h-auto w-full grid-cols-3 p-1 sm:w-fit sm:min-w-[31rem]">
+        <TabsList className="grid h-auto w-full grid-cols-3 p-1 sm:w-fit sm:min-w-[29rem]">
           <TabsTrigger
             value="workflow"
-            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+            className="min-h-10 px-3 py-2 text-center leading-tight whitespace-normal"
           >
             Im Ablauf
           </TabsTrigger>
           <TabsTrigger
             value="specialists"
-            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+            className="min-h-10 px-3 py-2 text-center leading-tight whitespace-normal"
           >
             Spezialisten
           </TabsTrigger>
           <TabsTrigger
             value="approvals"
-            className="min-h-11 px-2 py-2 text-center leading-tight whitespace-normal"
+            className="min-h-10 px-3 py-2 text-center leading-tight whitespace-normal"
           >
             Ihre Freigaben
           </TabsTrigger>

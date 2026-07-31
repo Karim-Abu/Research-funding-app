@@ -1,0 +1,4 @@
+Validated 9 YAML/OpenAPI documents
+Profiles: 13 | Tools: 19 | Controls: 29 | Schemas: 58
+Requirements: 76 | Portal fields: 165 | API operations: 83
+PASS: no cross-registry errors detected

@@ -254,8 +254,7 @@ export function AnalyseEinstellungenDialog({
                   Projektunterlagen analysieren
                 </span>
                 <p className="text-xs text-muted-foreground">
-                  Ihre Unterlagen und Angaben werden geprüft; daraus entstehen
-                  formale Prüfergebnisse und Textvorschläge zur menschlichen
+                  Ergebnisse und Textvorschläge gehen anschliessend in Ihre
                   Prüfung.
                 </p>
               </div>
@@ -297,18 +296,15 @@ export function AnalyseEinstellungenDialog({
                       ? "Evaluationsfall – keine echten vertraulichen Daten"
                       : "Demo-Vorschlag (kein echtes KI-Modell)"}
                 </p>
-                <p className="text-muted-foreground">
-                  {intentLive && realEvaluation
-                    ? "Echte KI-Modelle dürfen nur für diesen ausdrücklich bestätigten öffentlichen oder verlässlich anonymisierten Fall aufgerufen werden."
-                    : realEvaluation
-                      ? "Ein reales Modell darf nur für diesen ausdrücklich bestätigten synthetischen oder anonymisierten Evaluationsfall aufgerufen werden."
-                      : "Der Demo-Generator erstellt klar gekennzeichnete Testausgaben und ruft keinen KI-Provider auf."}
-                </p>
+                {/* Die Nutzungseinschränkung stand hier dreifach (Titel,
+                    Fliesstext, Checkbox); verbindlich ist der Bestätigungstext
+                    an der Checkbox. Die Offenlegung der Übermittlung bleibt
+                    dagegen als eigene Aussage stehen — sie darf nicht implizit
+                    werden (Test: «does not imply data stays local»). */}
                 {realEvaluation && (
                   <p className="text-muted-foreground">
                     Ausgewählte Inhalte können an den konfigurierten KI-Dienst
-                    übermittelt werden. ProviderPolicy und Datenklassifikation werden
-                    zusätzlich im Backend geprüft.
+                    übermittelt werden.
                   </p>
                 )}
                 <label className="flex items-start gap-2">
@@ -426,8 +422,7 @@ export function AnalyseEinstellungenDialog({
                   />
                 </div>
                 <p className="text-xs text-muted-foreground">
-                  Beim Erreichen stoppt der Durchlauf automatisch. Dieser Schutz
-                  lässt sich nicht abschalten.
+                  Beim Erreichen stoppt der Durchlauf automatisch.
                 </p>
               </div>
               <div className="flex flex-col gap-1.5">
@@ -480,9 +475,8 @@ export function AnalyseEinstellungenDialog({
                       ))}
                     </ol>
                     <p className="text-xs text-muted-foreground">
-                      Die Dauer hängt vom Umfang der Unterlagen ab — der
-                      Fortschritt ist während der Analyse Schritt für Schritt
-                      sichtbar. Die Kosten sind durch das Limit oben begrenzt.
+                      Der Fortschritt ist während der Analyse Schritt für
+                      Schritt sichtbar.
                     </p>
                   </div>
                 </AccordionContent>
@@ -517,8 +511,7 @@ export function AnalyseEinstellungenDialog({
                           className="w-32"
                         />
                         <p className="text-xs text-muted-foreground">
-                          Begrenzt die Zahl der KI-Aufrufe; beim Erreichen werden
-                          weitere Vorschläge übersprungen.
+                          Weitere Vorschläge werden danach übersprungen.
                         </p>
                       </div>
                       <div className="flex flex-col gap-1.5">
@@ -536,11 +529,14 @@ export function AnalyseEinstellungenDialog({
                           disabled={!effectiveWeb}
                           className="w-32"
                         />
-                        <p className="text-xs text-muted-foreground">
-                          {effectiveWeb
-                            ? "Begrenzt die Zahl der öffentlichen Suchanfragen."
-                            : "Verfügbar, sobald die öffentliche Webrecherche aktiviert ist."}
-                        </p>
+                        {/* Im aktiven Fall wiederholte der Hinweis nur das
+                            Label; er bleibt nur dort, wo er etwas erklärt. */}
+                        {!effectiveWeb && (
+                          <p className="text-xs text-muted-foreground">
+                            Verfügbar, sobald die öffentliche Webrecherche
+                            aktiviert ist.
+                          </p>
+                        )}
                       </div>
                     </div>
                   </AccordionContent>

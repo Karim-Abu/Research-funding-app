@@ -1,0 +1,1 @@
+backend/.venv/Scripts/python.exe scripts/check_legacy_status_paths.py --root .

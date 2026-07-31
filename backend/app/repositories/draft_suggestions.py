@@ -136,7 +136,8 @@ def get_proposed_for(
     db: Session, run_id: str, draft_id: str, base_version_id: str,
     target_section: str | None = None,
 ) -> DraftSuggestion | None:
-    """For replay/idempotency: a still-proposed suggestion for this exact base."""
+    """For replay/idempotency: the newest still-proposed suggestion for this
+    exact base."""
     return db.scalar(
         select(DraftSuggestion).where(
             DraftSuggestion.run_id == run_id,
@@ -144,8 +145,32 @@ def get_proposed_for(
             DraftSuggestion.base_version_id == base_version_id,
             DraftSuggestion.target_section == target_section,
             DraftSuggestion.status == PROPOSED,
-        )
+        ).order_by(DraftSuggestion.created_at.desc())
     )
+
+
+def supersede_proposed(
+    db: Session, run_id: str, draft_id: str, base_version_id: str,
+    target_section: str | None, *, keep_suggestion_id: str,
+) -> int:
+    """Explizite Neuerzeugung: ältere proposed-Vorschläge derselben Basis
+    werden ehrlich als «superseded» markiert (nie gelöscht, nie «rejected» —
+    der Nutzer hat sie nicht abgelehnt). Gibt die Anzahl zurück."""
+    superseded = 0
+    for suggestion in db.scalars(
+        select(DraftSuggestion).where(
+            DraftSuggestion.run_id == run_id,
+            DraftSuggestion.draft_id == draft_id,
+            DraftSuggestion.base_version_id == base_version_id,
+            DraftSuggestion.target_section == target_section,
+            DraftSuggestion.status == PROPOSED,
+            DraftSuggestion.suggestion_id != keep_suggestion_id,
+        )
+    ):
+        suggestion.status = "superseded"
+        superseded += 1
+    db.flush()
+    return superseded
 
 
 def list_proposed_for(

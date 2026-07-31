@@ -222,10 +222,14 @@ export function QueryApprovalList({
                 )}
                 {query.firewall_decision && (
                   <div className="mt-1 text-[11px] text-muted-foreground">
-                    <span>Firewall: {query.firewall_decision === "allow" ? "freigegeben" : query.firewall_decision === "block" ? "blockiert" : "menschliche Freigabe nötig"}</span>
+                    {/* R2: «freigegeben» steht bereits im Badge rechts — der
+                        Firewall-Zusatz erscheint nur, wenn er etwas Neues sagt. */}
+                    {query.firewall_decision !== "allow" && (
+                      <span>Firewall: {query.firewall_decision === "block" ? "blockiert" : "menschliche Freigabe nötig"}{query.risk_label ? " · " : ""}</span>
+                    )}
                     {/* RUN 4A: nur die verständliche Risikostufe — der rohe
                         Score gehört nicht in den Standardfluss. */}
-                    {query.risk_label && <span> · Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}</span>}
+                    {query.risk_label && <span>Risiko {query.risk_label === "low" ? "niedrig" : query.risk_label === "medium" ? "mittel" : "hoch"}</span>}
                     {(query.redaction_summary?.length ?? 0) > 0 && (
                       <ul className="mt-1 flex flex-wrap gap-1" aria-label="Entfernte Kategorien">
                         {query.redaction_summary?.map((entry, redactionIndex) => (
@@ -238,7 +242,14 @@ export function QueryApprovalList({
                   </div>
                 )}
               </div>
-              <Badge variant="secondary" className={DECISION_STYLE[query.decision]}>
+              {/* Der Freigabestatus ist die eigentliche Statusquelle der Zeile.
+                  Eine stabile Test-Id verhindert, dass Prüfungen ersatzweise auf
+                  zufälligen Fliesstext ausweichen (2026-07-26). */}
+              <Badge
+                variant="secondary"
+                data-testid="query-decision-badge"
+                className={DECISION_STYLE[query.decision]}
+              >
                 {DECISION_LABELS[query.decision]}
               </Badge>
             </div>

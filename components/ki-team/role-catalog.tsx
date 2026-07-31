@@ -28,12 +28,11 @@ export function RoleCatalog({
           Funktionen im Überblick
         </h2>
         <p className="mt-1 max-w-3xl text-sm leading-relaxed text-muted-foreground">
-          Jede Funktion erscheint hier einmal. Die Modusangabe zeigt, ob KI,
-          feste Regeln oder beide zusammen eingesetzt werden.
+          Alle Funktionen einmalig nach Aufgabe gruppiert.
         </p>
       </div>
 
-      <div className="flex flex-col gap-8">
+      <div className="flex flex-col gap-7">
         {groups.map((group) => (
           <section key={group.category} aria-labelledby={`${group.category}-title`}>
             <div className="mb-3">
@@ -45,11 +44,11 @@ export function RoleCatalog({
               </h3>
               <p className="mt-1 text-sm text-muted-foreground">
                 {group.category === "specialist"
-                  ? "Unterstützen Analyse, Entwurf, Prüfung und Export."
-                  : "Sichern Ablauf, Datenzugriff und kontrollierte Recherche."}
+                  ? "Analyse, Entwurf, Prüfung und Export."
+                  : "Ablauf, Datenzugriff und kontrollierte Recherche."}
               </p>
             </div>
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-3 md:grid-cols-2">
               {group.roles.map((role) => {
                 const instanceId = `catalog-${role.id}`
                 return (

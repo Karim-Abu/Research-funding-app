@@ -216,9 +216,29 @@ test("Technischer E2E (Fake-Provider): Idee + PDF bis Innolink-Kopieransicht, Zu
     await expect(panelRows.first()).toBeVisible({ timeout: 20_000 })
     // Die im Lauf verbrauchte Query steht als «Ausgeführt» in der Historie —
     // freigegeben wird die neue, noch offene Query.
-    const openRow = panelRows.filter({ hasText: "Offen" }).first()
+    //
+    // 2026-07-26: Der Status wird über das Status-Badge geprüft, nicht über
+    // Fliesstext. Die frühere Fassung filterte die Zeile per hasText «Offen»
+    // und suchte danach getByText("Freigegeben") — case-insensitiv traf das in
+    // Wahrheit den Hinweis «Firewall: freigegeben», und der Zeilenfilter
+    // verlor die Zeile, sobald sich ihr Status änderte. Beides ist jetzt an
+    // stabile Test-Ids gebunden.
+    // Die Zeile wird VOR dem Klick an einen festen Index gebunden. Ein
+    // gefilterter Locator («Zeile, deren Badge ‹Offen› zeigt») würde sich beim
+    // Statuswechsel selbst auflösen — genau daran scheiterte schon die
+    // ursprüngliche hasText-Fassung.
+    const rowCount = await panelRows.count()
+    let openIndex = -1
+    for (let i = 0; i < rowCount; i++) {
+      const badge = panelRows.nth(i).getByTestId("query-decision-badge")
+      if ((await badge.innerText()).trim() === "Offen") { openIndex = i; break }
+    }
+    expect(openIndex, "keine offene Suchanfrage gefunden").toBeGreaterThanOrEqual(0)
+    const openRow = panelRows.nth(openIndex)
     await openRow.getByRole("button", { name: "Freigeben" }).click()
-    await expect(openRow.getByText("Freigegeben")).toBeVisible({ timeout: 20_000 })
+    await expect(
+      openRow.getByTestId("query-decision-badge")
+    ).toHaveText("Freigegeben", { timeout: 20_000 })
     await research
       .getByRole("button", { name: "Freigegebene Queries ausführen" })
       .click()

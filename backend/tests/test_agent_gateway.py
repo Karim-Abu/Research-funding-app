@@ -399,3 +399,53 @@ def test_persists_invocation_controls_usage_and_audit(db):
         select(AuditEvent).where(AuditEvent.target_id == inv.invocation_id)
     ).all()
     assert any(a.action == "agent.invocation_succeeded" for a in audit)
+
+
+# --- Aufgaben-Direktiven (Qualitäts-Slice) -----------------------------------
+
+
+def test_assemble_prompt_renders_task_directives_before_input():
+    from dataclasses import replace
+
+    from app.agents.registry import get_agent_registry
+
+    profile = get_agent_registry().profile(PROFILE)
+    request = base_request(context_text="Quelle sagt X.")
+    baseline = gateway._assemble_prompt(profile, request)
+    assert "AUFGABEN-DIREKTIVEN" not in baseline
+    with_directives = gateway._assemble_prompt(
+        profile, replace(request, task_directives=("Direktive eins.",))
+    )
+    block = "AUFGABEN-DIREKTIVEN (serverseitig, verbindlich):\n- Direktive eins."
+    assert block in with_directives
+    # Direktiven stehen im Anweisungsteil: vor INPUT und ausserhalb des
+    # Untrusted-Blocks.
+    assert with_directives.index(block) < with_directives.index("INPUT:")
+    assert with_directives.index(block) < with_directives.index(
+        "BEGIN UNTRUSTED SOURCE DATA"
+    )
+    # Ohne Direktiven bleibt der Prompt byte-identisch zum Bestand.
+    assert (
+        gateway._assemble_prompt(profile, replace(request, task_directives=()))
+        == baseline
+    )
+
+
+def test_composite_input_hash_unchanged_without_directives():
+    from dataclasses import replace
+
+    from app.agents.registry import get_agent_registry
+
+    profile = get_agent_registry().profile(PROFILE)
+    request = base_request()
+    default_hash = gateway._composite_input_hash(profile, request)
+    assert (
+        gateway._composite_input_hash(profile, replace(request, task_directives=()))
+        == default_hash
+    )
+    assert (
+        gateway._composite_input_hash(
+            profile, replace(request, task_directives=("Direktive",))
+        )
+        != default_hash
+    )

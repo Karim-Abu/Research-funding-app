@@ -4,6 +4,21 @@ Versionsprotokoll für die Prompt-Dateien in diesem Ordner (`*_vN.md`). Jede
 inhaltliche Änderung an einer aktiven Prompt-Datei muss hier sichtbar werden —
 `tests/test_prompt_snapshots.py` erzwingt das über einen Content-Hash pro Datei.
 
+## 2026-07-25 — Marktvergleich v3: Ausgabesprache und Funktionsextraktion
+
+- `market_comparison_v3` ersetzt `market_comparison_v2` (Datei entfernt).
+- Neue bindende Regel «Output language»: alle generierten Freitextfelder auf Deutsch,
+  unabhängig von der Quellensprache. Ausdrückliche Ausnahme: `quote` bleibt wörtlich und
+  unübersetzt — eine übersetzte Fundstelle scheitert an der Exakt-Zitat-Verifikation und
+  der Eintrag wird verworfen. Behebt die Vermischung deutscher UI mit englischen
+  Analyseergebnissen.
+- `relevant_functions` wird neu ausdrücklich verlangt (nur im Zitat genannte Funktionen,
+  sonst leere Liste). Ohne dieses Feld blieben Überschneidungen und damit das
+  Gesamturteil «direkt vergleichbare Lösung» dauerhaft leer.
+- `differentiation_relevance` nur bei im Zitat genannter Unterscheidung und ohne
+  wertende Sprache.
+- Wirkt ausschliesslich für neu erstellte Vergleiche; bestehende Datensätze bleiben.
+
 ## 2026-07-14 — Research-Provenienz in A2 v3
 
 - A2-Sektionsausgaben weisen verwendete öffentliche Research-Quellen separat über
@@ -44,7 +59,7 @@ stille Prompt-Änderungen.
 | A2.solution_innovation | a2_solution_innovation_v2 | A2 — Solution & Innovation Drafting (SOL.INNOVATION_SOLUTION.EDITOR) | 2026-07-09 | R5.7: advisory Research-Kontext (Partner-Kandidaten + D0/public-Quellen) als untrusted/kein-Beleg, PartnerCandidates sind Vorschläge (keine finalen Entscheidungen/Track-Records), SOTA/Baseline/Validierung/FTO/TRL nie als Fakt → Placeholder/missing_input; bindender Output-Format-Block. Ersetzt a2_solution_innovation_v1 |
 | A2.value_creation_market_logic | a2_value_creation_market_logic_v2 | A2 — Value Creation & Market Logic Drafting (VC.BUSINESS_TARGETS_MODEL.EDITOR) | 2026-07-09 | R5.7: advisory Research-Kontext (Markt-Kandidaten + D0/public-Quellen) als untrusted/kein-Beleg, Marktzahlen sind Kandidaten (nie Fakt) → Placeholder/missing_input; bindender Output-Format-Block. Ersetzt a2_value_creation_market_logic_v1 |
 | A3.evidence_consistency | a3_evidence_consistency_v1 | A3 — Evidence & Consistency Review (advisory ReviewFindings) | 2026-07-08 | Initiale Snapshot-Erfassung (R5.3) |
-| MC.market_comparison | market_comparison_v2 | Markt-/Wettbewerbsvergleich, nur aus importierten Quellen (beta-intern) | 2026-07-12 | R8: neue Item-Kategorien market_size_claim und customer_problem (Marktgrössen-Kandidaten/Kundenprobleme nur mit exaktem Zitat, nie als Fakt); Zitat-Verifikation unverändert. Ersetzt market_comparison_v1 (2026-07-08, initiale Snapshot-Erfassung R5.3) |
+| MC.market_comparison | market_comparison_v3 | Markt-/Wettbewerbsvergleich, nur aus importierten Quellen (beta-intern) | 2026-07-25 | Deutsche Ausgabesprache für generierte Felder (Zitate bleiben wörtlich); `relevant_functions` und belegabhängige `differentiation_relevance` ausdrücklich verlangt. Ersetzt market_comparison_v2 (2026-07-12, Kategorien market_size_claim/customer_problem) und v1 (2026-07-08, initiale Snapshot-Erfassung R5.3) |
 
 ## Bekannte Risiken
 

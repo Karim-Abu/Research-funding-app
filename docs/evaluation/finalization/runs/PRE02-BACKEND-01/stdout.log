@@ -1,0 +1,376 @@
+..........................................s..........................s.. [  4%]
+..............................F......................................... [  9%]
+................F....................................................... [ 14%]
+.................................................s...................... [ 19%]
+.....................................................................F.. [ 23%]
+........................................................................ [ 28%]
+...F.................................................................... [ 33%]
+........................................................................ [ 38%]
+........................................................................ [ 42%]
+....................F...........................F....................... [ 47%]
+........................................................................ [ 52%]
+........................................................................ [ 57%]
+........................................................................ [ 61%]
+........................................................................ [ 66%]
+........................................................................ [ 71%]
+........................................................................ [ 76%]
+........................................................................ [ 80%]
+...............................................................s........ [ 85%]
+........................................................................ [ 90%]
+........................................................................ [ 95%]
+........................................................................ [ 99%]
+..                                                                       [100%]
+================================== FAILURES ===================================
+______ test_preflighted_synthetic_live_a2_is_truthfully_model_generated _______
+
+db = <sqlalchemy.orm.session.Session object at 0x0000020F9AF3ED50>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000020F9B02DC80>
+
+    def test_preflighted_synthetic_live_a2_is_truthfully_model_generated(
+        db, monkeypatch
+    ):
+        run, draft, base = build_run_with_draft(db)
+        _arm_live_a2(db, run, monkeypatch)
+        available, reason = field_drafting.availability(
+            run, "SOL.INNOVATION_SOLUTION.EDITOR"
+        )
+>       assert (available, reason) == (True, "available")
+E       AssertionError: assert (False, 'live...data_missing') == (True, 'available')
+E         
+E         At index 0 diff: False != True
+E         Use -v to get more diff
+
+tests\test_a2_generation.py:477: AssertionError
+_ test_section_output_rejects_new_numbers_patents_and_partners[4.2 Die L\xf6sung erreicht neu 777 Einheiten.-invented_numeric_token] _
+
+db = <sqlalchemy.orm.session.Session object at 0x0000020F9AFD72F0>
+suggested_text = '4.2 Die Lösung erreicht neu 777 Einheiten.'
+reason = 'invented_numeric_token'
+
+    @pytest.mark.parametrize(
+        ("suggested_text", "reason"),
+        [
+            ("4.2 Die Lösung erreicht neu 777 Einheiten.", "invented_numeric_token"),
+            ("4.2 Ein neuer Treffer ist EP999999.", "invented_patent_identifier"),
+            ("4.2 Example Ventures AG übernimmt die Validierung.", "invented_partner_name"),
+        ],
+    )
+    def test_section_output_rejects_new_numbers_patents_and_partners(
+        db, suggested_text, reason
+    ):
+        run, draft, base = build_run_with_draft(db)
+        outcome = field_drafting.run_a2_field_drafting(
+            db, run, field_id=FIELD_ID, draft_id=draft.draft_id,
+            base_version_id=base, operation_id=f"op-{reason}", target_section="4.2",
+            provider_resolver=fake_resolver(
+                success_fake(section_bundle(suggested_text=suggested_text))
+            ),
+        )
+>       assert outcome.status == "failed"
+E       AssertionError: assert 'succeeded' == 'failed'
+E         
+E         - failed
+E         + succeeded
+
+tests\test_a2_sections.py:114: AssertionError
+__________ test_isolated_test_db_requires_exactly_two_demo_projects ___________
+
+demo_seed_env = None
+
+    def test_isolated_test_db_requires_exactly_two_demo_projects(demo_seed_env):
+        db = SessionLocal()
+        try:
+            for demo in DEMO_PROJECTS:
+                db.add(
+                    Project(
+                        project_id=demo.project_id,
+                        workspace_id="ws-demo",
+                        title=demo.title,
+                        description="Demo",
+                        funding_instrument_profile_id=(
+                            "innosuisse_innovation_project_with_implementation_partner"
+                        ),
+                        data_classification=DEMO_CLASSIFICATION.model_dump(),
+                        created_by="user-anna",
+                        status="draft",
+                    )
+                )
+            db.commit()
+>           _verify_project_presence(db, SimpleNamespace(app_env="test"))
+
+tests\test_demo_seed.py:219: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+db = <sqlalchemy.orm.session.Session object at 0x0000020F9B3B0320>
+settings = namespace(app_env='test')
+
+    def _verify_project_presence(db: Session, settings) -> None:
+        demo_project_ids = [demo.project_id for demo in DEMO_PROJECTS]
+        demo_count = db.scalar(
+            select(func.count(Project.project_id)).where(
+                Project.project_id.in_(demo_project_ids)
+            )
+        ) or 0
+        if demo_count != len(DEMO_PROJECTS):
+            raise RuntimeError("Demo seed incomplete: expected both demo projects.")
+        if settings.app_env == "test":
+            total_count = db.scalar(select(func.count(Project.project_id))) or 0
+            if total_count != len(DEMO_PROJECTS):
+>               raise RuntimeError(
+                    "Isolated test demo seed expected exactly two projects."
+                )
+E               RuntimeError: Isolated test demo seed expected exactly two projects.
+
+app\demo\seed.py:406: RuntimeError
+__________ test_run_llm_case_with_fake_adapter_meters_schema_failure __________
+
+db = <sqlalchemy.orm.session.Session object at 0x0000020F9BB97D40>
+monkeypatch = <_pytest.monkeypatch.MonkeyPatch object at 0x0000020F98860E50>
+
+    def test_run_llm_case_with_fake_adapter_meters_schema_failure(db, monkeypatch):
+        # Ganzer Runner-Fluss ohne Netz: Fake-Adapter liefert Schema-invaliden
+        # Output \u21d2 dokumentiertes failed-Ergebnis MIT gemeterten Tokens.
+        s = get_settings()
+        monkeypatch.setattr(s, "ai_eval_mode", "real")
+        result = run_llm_case(db, "anthropic", adapter=FakeProvider(mode="malformed"))
+        r = result["report"]
+        assert r["provider"] == "anthropic"
+        assert r["status"] == "failed"
+        # Modell des GEMETERTEN Calls (UsageRecord), nicht die zuletzt vom
+        # Gateway versuchte Fallback-Route.
+>       assert r["model"] == "claude-haiku-4-5-20251001"
+E       AssertionError: assert 'fake' == 'claude-haiku-4-5-20251001'
+E         
+E         - claude-haiku-4-5-20251001
+E         + fake
+
+tests\test_eval2_real_smoke.py:212: AssertionError
+___________ test_phase2_prepare_web_resume_llm_full_offline_dry_run ___________
+
+    def test_phase2_prepare_web_resume_llm_full_offline_dry_run():
+        configured_root = os.environ.get("PHASE2_DRY_RUN_WORK_ROOT")
+        work_root = (
+            Path(configured_root).resolve()
+            if configured_root
+            else Path(tempfile.mkdtemp(prefix="p2dry-")).resolve()
+        )
+        if work_root.exists():
+            shutil.rmtree(work_root)
+        trace_path = work_root / "safe-trace.jsonl"
+    
+        prepare_seconds = _run_worker("prepare_web", work_root, trace_path)
+        session_files = list((work_root / "sessions").glob("*/session.json"))
+        assert len(session_files) == 1
+        session_payload = json.loads(session_files[0].read_text(encoding="utf-8"))
+        session_id = session_payload["review_session_id"]
+        state_hash = session_payload["state_hash"]
+        quote_hashes = [item["quote_hash"] for item in session_payload["anchors"]]
+        source_versions = {item["source_version_id"] for item in session_payload["anchors"]}
+        assert len(quote_hashes) == 2 and len(source_versions) == 2
+        assert len({item["fragment_id"] for item in session_payload["anchors"]}) == 2
+        assert session_payload["human_wait_ended_at"] is None
+        assert session_payload["ledger"]["records"] == []
+        assert session_payload["preflight_fingerprints"] == {}
+        assert session_payload["research"]["firewall_decision"] == "allow"
+        assert session_payload["research"]["approval_id"]
+        prepare_trace = _read_trace(trace_path)
+        assert not [row for row in prepare_trace if row.get("kind") == "provider"]
+        assert [row["operation"] for row in prepare_trace if row.get("kind") == "web_provider"] == [
+            "search", "fetch", "fetch",
+        ]
+    
+        # The same contiguous rehearsal proves tamper rejection without mutating the
+        # actual session that resume must consume.
+        local_harness = _load_harness("run_live_llm_phase2_parent_dry_run")
+        local_harness.SESSION_ROOT = work_root / "sessions"
+        loaded = local_harness.load_session(session_id)
+        assert loaded.state_hash == state_hash
+        tampered = copy.deepcopy(loaded)
+        tampered.route_ids["a2"] = "tampered-route"
+        with pytest.raises(local_harness.HarnessFailure, match="live_session_integrity_invalid"):
+            tampered.verify_hash()
+        bad_hash = "f" * 64
+        with pytest.raises(local_harness.HarnessFailure, match="live_anchor_quote_hash_unknown"):
+            local_harness.validate_anchor_approval(
+                loaded,
+                f"{local_harness.APPROVAL_PREFIX} {session_id} {quote_hashes[0]},{bad_hash}",
+            )
+    
+        human_wait_started = time.monotonic()
+        time.sleep(0.2)
+        approval = f"{local_harness.APPROVAL_PREFIX} {session_id} {','.join(quote_hashes)}"
+>       resume_seconds = _run_worker("resume_llm", work_root, trace_path, approval)
+
+tests\test_live_llm_phase2_full_dry_run.py:569: 
+_ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
+
+mode = 'resume_llm'
+work_root = WindowsPath('C:/Users/karim/AppData/Local/Temp/p2dry-51av9vzi')
+trace_path = WindowsPath('C:/Users/karim/AppData/Local/Temp/p2dry-51av9vzi/safe-trace.jsonl')
+approval = 'APPROVE_LIVE_E2E_ANCHORS 09b53b24a59847f59da2f0e29201ff3a 3db01a110c2993de9812157bbcb8286d379737bd3ea5c0cdbdc5532835d67bfb,dc70bca6b20fd49439ad399a3419549b4fdabd15a64217e5cdcf7dfc4e039440'
+
+    def _run_worker(
+        mode: str,
+        work_root: Path,
+        trace_path: Path,
+        approval: str | None = None,
+        *,
+        expected_code: int = 0,
+    ):
+        context = multiprocessing.get_context("spawn")
+        queue = context.Queue()
+        process = context.Process(
+            target=_phase2_worker,
+            args=(mode, str(work_root), str(trace_path), approval, queue),
+        )
+        started = time.monotonic()
+        process.start()
+        process.join(timeout=180)
+        duration = time.monotonic() - started
+        if process.is_alive():
+            process.terminate()
+            process.join(timeout=10)
+            pytest.fail(f"{mode} worker timed out")
+        try:
+            result = queue.get(timeout=5)
+        except Empty:
+            pytest.fail(f"{mode} worker returned no result (exit={process.exitcode})")
+        assert process.exitcode == 0, result
+>       assert result == {"code": expected_code, "error": None}, result
+E       AssertionError: {'code': 1, 'error': None}
+E       assert {'code': 1, 'error': None} == {'code': 0, 'error': None}
+E         
+E         Omitting 1 identical items, use -vv to show
+E         Differing items:
+E         {'code': 1} != {'code': 0}
+E         Use -v to get more diff
+
+tests\test_live_llm_phase2_full_dry_run.py:432: AssertionError
+---------------------------- Captured stdout call -----------------------------
+{"content_review_status":"reviewed","end_offset":183,"excerpt":"Public Swiss market information describes recurring compliance work for small and medium-sized enterprises. The source documents demand for structured software support in Switzerland.","fragment_id":"33499efd26c74853ae40bc994f6739c8","page_title":"Public Swiss SME compliance information","public_domain":"www.kmu.admin.ch","quote_hash":"3db01a110c2993de9812157bbcb8286d379737bd3ea5c0cdbdc5532835d67bfb","review_session_id":"09b53b24a59847f59da2f0e29201ff3a","safety_status":"passed","source_version_id":"5eba2224-d4f2-4092-9a2c-46ca83bca6e0","start_offset":0}
+{"content_review_status":"reviewed","end_offset":193,"excerpt":"Public business statistics describe digital services used by Swiss small and medium-sized enterprises. The source identifies recurring regulatory work as relevant context for software services.","fragment_id":"f2f6b97b8f7444e68fd608103c412e2b","page_title":"Public Swiss business statistics context","public_domain":"www.bfs.admin.ch","quote_hash":"dc70bca6b20fd49439ad399a3419549b4fdabd15a64217e5cdcf7dfc4e039440","review_session_id":"09b53b24a59847f59da2f0e29201ff3a","safety_status":"passed","source_version_id":"5582195e-2ec6-4524-ae12-9bf6328df5d2","start_offset":0}
+APPROVE_LIVE_E2E_ANCHORS 09b53b24a59847f59da2f0e29201ff3a 3db01a110c2993de9812157bbcb8286d379737bd3ea5c0cdbdc5532835d67bfb,dc70bca6b20fd49439ad399a3419549b4fdabd15a64217e5cdcf7dfc4e039440
+LIVE_LLM_SMOKE_FAILED reason_code=unknown_price
+---------------------------- Captured stderr call -----------------------------
+C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+2026-07-26 14:11:14,232 level=INFO logger=app correlation_id=- msg=recovered_exports=0
+2026-07-26 14:11:14,233 level=INFO logger=app correlation_id=- msg=startup ok api_version=1.1.0 requirement_registry=1.0.0 rule_registry=1.1.0 recovered_sources=0 recovered_runs=0
+2026-07-26 14:11:14,383 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/session "HTTP/1.1 200 OK"
+2026-07-26 14:11:14,425 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects "HTTP/1.1 201 Created"
+2026-07-26 14:11:14,679 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81/sources/text "HTTP/1.1 201 Created"
+2026-07-26 14:11:14,733 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81/imports "HTTP/1.1 201 Created"
+2026-07-26 14:11:14,759 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/imports/1f74ab9d-37b7-4fb6-b903-1c08c4319b03/decision "HTTP/1.1 200 OK"
+2026-07-26 14:11:14,770 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81 "HTTP/1.1 200 OK"
+2026-07-26 14:11:14,794 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PUT http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81/primary-application "HTTP/1.1 200 OK"
+2026-07-26 14:11:14,819 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81/processing-confirmations "HTTP/1.1 201 Created"
+2026-07-26 14:11:15,083 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=failed/0 evidence candidates=3 mapping=failed/+0 run=7c478a7e-dcd7-4d85-8973-f4732dc61274
+2026-07-26 14:11:15,132 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 1, 'unverified': 0, 'rejected': 2} run=7c478a7e-dcd7-4d85-8973-f4732dc61274
+2026-07-26 14:11:15,282 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=7c478a7e-dcd7-4d85-8973-f4732dc61274
+2026-07-26 14:11:15,300 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=0 failed=0 skipped=6 run=7c478a7e-dcd7-4d85-8973-f4732dc61274
+2026-07-26 14:11:15,444 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/9ed6d7aa-087a-4acd-bd3a-507a976fce81/runs "HTTP/1.1 202 Accepted"
+2026-07-26 14:11:15,453 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/7c478a7e-dcd7-4d85-8973-f4732dc61274 "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,475 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/7c478a7e-dcd7-4d85-8973-f4732dc61274/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,511 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PATCH http://testserver/api/v1/runs/7c478a7e-dcd7-4d85-8973-f4732dc61274/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,543 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects "HTTP/1.1 201 Created"
+2026-07-26 14:11:15,607 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/sources/text "HTTP/1.1 201 Created"
+2026-07-26 14:11:15,638 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/imports "HTTP/1.1 201 Created"
+2026-07-26 14:11:15,662 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/imports/dc9f6214-1e8d-4abe-862c-13af2da30679/decision "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,671 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81 "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,693 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PUT http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/primary-application "HTTP/1.1 200 OK"
+2026-07-26 14:11:15,709 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/processing-confirmations "HTTP/1.1 201 Created"
+2026-07-26 14:11:15,847 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=failed/0 evidence candidates=2 mapping=failed/+0 run=e0792604-e831-44cb-a81d-2955dccb1f28
+2026-07-26 14:11:15,876 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 1, 'unverified': 0, 'rejected': 1} run=e0792604-e831-44cb-a81d-2955dccb1f28
+2026-07-26 14:11:15,995 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=e0792604-e831-44cb-a81d-2955dccb1f28
+2026-07-26 14:11:16,025 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=0 failed=0 skipped=6 run=e0792604-e831-44cb-a81d-2955dccb1f28
+2026-07-26 14:11:16,162 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/runs "HTTP/1.1 202 Accepted"
+2026-07-26 14:11:16,172 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/e0792604-e831-44cb-a81d-2955dccb1f28 "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,191 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/e0792604-e831-44cb-a81d-2955dccb1f28/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,229 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PATCH http://testserver/api/v1/runs/e0792604-e831-44cb-a81d-2955dccb1f28/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,264 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects "HTTP/1.1 201 Created"
+2026-07-26 14:11:16,333 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675/sources/text "HTTP/1.1 201 Created"
+2026-07-26 14:11:16,368 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675/imports "HTTP/1.1 201 Created"
+2026-07-26 14:11:16,394 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/imports/6c1aae7d-c765-47f0-b3b4-68f01280bc0c/decision "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,411 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675 "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,435 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PUT http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675/primary-application "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,461 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675/processing-confirmations "HTTP/1.1 201 Created"
+2026-07-26 14:11:16,605 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=failed/0 evidence candidates=6 mapping=failed/+0 run=406bad6d-7e21-447d-8119-0136d988be56
+2026-07-26 14:11:16,646 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 2, 'unverified': 0, 'rejected': 4} run=406bad6d-7e21-447d-8119-0136d988be56
+2026-07-26 14:11:16,753 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=406bad6d-7e21-447d-8119-0136d988be56
+2026-07-26 14:11:16,781 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=0 failed=0 skipped=6 run=406bad6d-7e21-447d-8119-0136d988be56
+2026-07-26 14:11:16,898 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/projects/f1f1ba27-e11f-4734-869a-838809aef675/runs "HTTP/1.1 202 Accepted"
+2026-07-26 14:11:16,905 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/406bad6d-7e21-447d-8119-0136d988be56 "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,924 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/runs/406bad6d-7e21-447d-8119-0136d988be56/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,963 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PATCH http://testserver/api/v1/runs/406bad6d-7e21-447d-8119-0136d988be56/fields/VC.BUSINESS_TARGETS_MODEL.EDITOR "HTTP/1.1 200 OK"
+2026-07-26 14:11:16,992 level=INFO logger=httpx correlation_id=- msg=HTTP Request: PUT http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/research-brief "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,024 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/research-briefs/f4596ab7-6f6e-476f-8f4a-af1a0cabf533/approve "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,055 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/research-briefs/f4596ab7-6f6e-476f-8f4a-af1a0cabf533/queries/plan "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,079 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/search-query-approvals/8b3fff79-d34d-4a31-9187-8cbc7acaad92/approve "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,172 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/research-briefs/f4596ab7-6f6e-476f-8f4a-af1a0cabf533/run "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,189 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/research-tasks/b489a3ca-c252-414a-bd2f-1634391fc8c7 "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,197 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/operations/812201ba-4ae9-4262-af92-697404d8593e "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,205 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/projects/801e3647-7e99-4194-9553-415e360a7f81/research-results "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,327 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/research-results/3fa669c8-0be4-4acc-9fb6-fa9a609cba3e/import "HTTP/1.1 201 Created"
+2026-07-26 14:11:17,413 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/research-results/9eb345e5-6ba7-4793-a98c-0299f60fc53b/import "HTTP/1.1 201 Created"
+2026-07-26 14:11:17,427 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/research-results/3fa669c8-0be4-4acc-9fb6-fa9a609cba3e/anchor-passages "HTTP/1.1 200 OK"
+2026-07-26 14:11:17,444 level=INFO logger=httpx correlation_id=- msg=HTTP Request: GET http://testserver/api/v1/research-results/9eb345e5-6ba7-4793-a98c-0299f60fc53b/anchor-passages "HTTP/1.1 200 OK"
+C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+2026-07-26 14:11:24,622 level=INFO logger=app correlation_id=- msg=recovered_exports=0
+2026-07-26 14:11:24,622 level=INFO logger=app correlation_id=- msg=startup ok api_version=1.1.0 requirement_registry=1.0.0 rule_registry=1.1.0 recovered_sources=0 recovered_runs=0
+2026-07-26 14:11:24,810 level=INFO logger=httpx correlation_id=- msg=HTTP Request: POST http://testserver/api/v1/session "HTTP/1.1 200 OK"
+________________ test_fresh_persisted_route_preflight_expires _________________
+
+db = <sqlalchemy.orm.session.Session object at 0x0000020F9B4007D0>
+
+    def test_fresh_persisted_route_preflight_expires(db):
+        class _Echo(FakeProvider):
+            name = "openai_direct"
+    
+            def generate(self, request):
+                return ProviderResult(
+                    raw_output='{"pong": true}', usage=ProviderUsage(1, 1),
+                    model="actual-hermetic-model",
+                )
+    
+        settings = Settings(
+            ai_eval_mode="real",
+            agent_fake_provider=False,
+            openai_api_key="sk-hermetic",
+            agent_model_gpt_56_luna_id="requested-hermetic-model",
+            agent_model_pricing_chf_per_million={
+                "requested-hermetic-model": {
+                    "input_chf_per_million": 1,
+                    "output_chf_per_million": 2,
+                    "price_version": "test-v1",
+                    "source_url": "https://prices.example.test",
+                    "checked_at": "2026-07-16",
+                }
+            },
+            provider_preflight_ttl_seconds=60,
+        )
+        result = preflight_route(
+            "openai_gpt_56_luna_candidate", settings=settings,
+            adapter=_Echo(), execute_live=True,
+        )
+        assert result.status == PASS
+        row = persist_route_preflight(db, result, settings=settings)
+        assert row.requested_model_id == "requested-hermetic-model"
+        assert row.actual_model_id == "actual-hermetic-model"
+        assert row.configuration_fingerprint
+        assert row.registry_version == settings.agent_registry_version
+>       assert row.pricing_version == "test-v1"
+E       AssertionError: assert '2026-07-25.1' == 'test-v1'
+E         
+E         - test-v1
+E         + 2026-07-25.1
+
+tests\test_live_readiness.py:281: AssertionError
+- generated xml file: C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\docs\evaluation\finalization\runs\PRE02-BACKEND-01\junit.xml -
+=========================== short test summary info ===========================
+FAILED tests/test_a2_generation.py::test_preflighted_synthetic_live_a2_is_truthfully_model_generated
+FAILED tests/test_a2_sections.py::test_section_output_rejects_new_numbers_patents_and_partners[4.2 Die L\xf6sung erreicht neu 777 Einheiten.-invented_numeric_token]
+FAILED tests/test_demo_seed.py::test_isolated_test_db_requires_exactly_two_demo_projects
+FAILED tests/test_eval2_real_smoke.py::test_run_llm_case_with_fake_adapter_meters_schema_failure
+FAILED tests/test_live_llm_phase2_full_dry_run.py::test_phase2_prepare_web_resume_llm_full_offline_dry_run
+FAILED tests/test_live_readiness.py::test_fresh_persisted_route_preflight_expires

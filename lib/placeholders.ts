@@ -11,3 +11,9 @@ export function hasPlaceholder(text: string): boolean {
 export function countPlaceholders(text: string): number {
   return [...text.matchAll(STRICT_PLACEHOLDER_RE_GLOBAL)].length
 }
+
+// Spiegel von backend/app/drafts/templates.py::is_placeholder_only — Erst-Entwurf,
+// wenn nach dem Entfernen der Vorlagen-Platzhalter nichts Substanzielles bleibt.
+export function isPlaceholderOnly(text: string): boolean {
+  return text.replace(STRICT_PLACEHOLDER_RE_GLOBAL, "").trim() === ""
+}

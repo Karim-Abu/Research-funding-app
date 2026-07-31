@@ -1,0 +1,148 @@
+C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+  from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+INFO:     Started server process [33784]
+INFO:     Waiting for application startup.
+2026-07-26 18:32:29,828 level=INFO logger=app correlation_id=- msg=recovered_exports=0
+2026-07-26 18:32:29,829 level=INFO logger=app correlation_id=- msg=startup ok api_version=1.1.0 requirement_registry=1.0.0 rule_registry=1.1.0 recovered_sources=0 recovered_runs=0
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+2026-07-26 18:32:38,117 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=96bf2a44-c56f-4282-8a51-9c3ce6f6bde5
+2026-07-26 18:32:38,133 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=96bf2a44-c56f-4282-8a51-9c3ce6f6bde5
+2026-07-26 18:32:38,232 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=96bf2a44-c56f-4282-8a51-9c3ce6f6bde5
+2026-07-26 18:32:39,651 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=7828867a-5b22-4594-b841-24834d0d28df
+2026-07-26 18:32:39,673 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=7828867a-5b22-4594-b841-24834d0d28df
+2026-07-26 18:32:39,818 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=7828867a-5b22-4594-b841-24834d0d28df
+2026-07-26 18:32:40,532 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=7828867a-5b22-4594-b841-24834d0d28df
+2026-07-26 18:32:42,848 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=bc58e13a-7423-47d8-abf3-d7d0a493c2f0
+2026-07-26 18:32:42,864 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=bc58e13a-7423-47d8-abf3-d7d0a493c2f0
+2026-07-26 18:32:42,945 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=bc58e13a-7423-47d8-abf3-d7d0a493c2f0
+2026-07-26 18:32:43,750 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=bc58e13a-7423-47d8-abf3-d7d0a493c2f0
+2026-07-26 18:32:45,443 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=5262221a-601b-4f0b-a3c4-a432909a6567
+2026-07-26 18:32:45,470 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=5262221a-601b-4f0b-a3c4-a432909a6567
+2026-07-26 18:32:45,555 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=5262221a-601b-4f0b-a3c4-a432909a6567
+2026-07-26 18:32:46,424 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=5262221a-601b-4f0b-a3c4-a432909a6567
+2026-07-26 18:32:48,645 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=c1f61e27-e757-4293-92af-93e41d2bfad9
+2026-07-26 18:32:48,670 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=c1f61e27-e757-4293-92af-93e41d2bfad9
+2026-07-26 18:32:48,749 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=c1f61e27-e757-4293-92af-93e41d2bfad9
+2026-07-26 18:32:57,252 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=10 mapping=skipped/+0 run=533b14ee-9ce6-4997-8692-92ff26e194de
+2026-07-26 18:32:57,302 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 5, 'unverified': 0, 'rejected': 5} run=533b14ee-9ce6-4997-8692-92ff26e194de
+2026-07-26 18:32:57,431 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=533b14ee-9ce6-4997-8692-92ff26e194de
+2026-07-26 18:32:59,823 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=f87d2fd7-8f01-4d28-a008-edce4f0122b9
+2026-07-26 18:32:59,873 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=f87d2fd7-8f01-4d28-a008-edce4f0122b9
+2026-07-26 18:33:00,049 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=f87d2fd7-8f01-4d28-a008-edce4f0122b9
+2026-07-26 18:33:01,613 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=87f8bc60-4e4c-4ad0-911a-7236db77d686
+2026-07-26 18:33:01,643 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=87f8bc60-4e4c-4ad0-911a-7236db77d686
+2026-07-26 18:33:01,726 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=87f8bc60-4e4c-4ad0-911a-7236db77d686
+2026-07-26 18:33:08,679 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=24 mapping=succeeded/+0 run=7256d59f-1870-4d58-ab50-fef5ab1b13e5
+2026-07-26 18:33:08,766 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 7, 'unverified': 0, 'rejected': 17} run=7256d59f-1870-4d58-ab50-fef5ab1b13e5
+2026-07-26 18:33:08,929 level=INFO logger=app.runs.graph correlation_id=- msg=web research queries=1 results=3 run=7256d59f-1870-4d58-ab50-fef5ab1b13e5
+2026-07-26 18:33:08,970 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=7256d59f-1870-4d58-ab50-fef5ab1b13e5
+2026-07-26 18:33:09,785 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=7256d59f-1870-4d58-ab50-fef5ab1b13e5
+2026-07-26 18:33:16,703 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=24 mapping=skipped/+0 run=3bb92540-2d70-4052-b6d5-30a0734e8ebe
+2026-07-26 18:33:16,781 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 7, 'unverified': 0, 'rejected': 17} run=3bb92540-2d70-4052-b6d5-30a0734e8ebe
+2026-07-26 18:33:16,872 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=3bb92540-2d70-4052-b6d5-30a0734e8ebe
+2026-07-26 18:33:29,291 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=9 mapping=skipped/+0 run=edb3e0e5-2cf0-42f5-b03a-6ecc892b852a
+2026-07-26 18:33:29,366 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 4, 'unverified': 0, 'rejected': 5} run=edb3e0e5-2cf0-42f5-b03a-6ecc892b852a
+2026-07-26 18:33:29,584 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=edb3e0e5-2cf0-42f5-b03a-6ecc892b852a
+2026-07-26 18:34:21,850 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=12836d05-06c1-41bb-a321-5a22b47de69b
+2026-07-26 18:34:25,840 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=12836d05-06c1-41bb-a321-5a22b47de69b
+2026-07-26 18:34:27,110 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=12836d05-06c1-41bb-a321-5a22b47de69b
+2026-07-26 18:34:40,492 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=f20f1450-1a4a-4a72-91c7-136345363a91
+2026-07-26 18:34:40,510 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=f20f1450-1a4a-4a72-91c7-136345363a91
+2026-07-26 18:34:40,653 level=INFO logger=app.runs.graph correlation_id=- msg=web research queries=2 results=6 run=f20f1450-1a4a-4a72-91c7-136345363a91
+2026-07-26 18:34:40,699 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=f20f1450-1a4a-4a72-91c7-136345363a91
+2026-07-26 18:34:41,535 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=f20f1450-1a4a-4a72-91c7-136345363a91
+2026-07-26 18:34:45,022 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=b3ab34a9-e642-4199-99c4-9129a905a0e4
+2026-07-26 18:34:45,061 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=b3ab34a9-e642-4199-99c4-9129a905a0e4
+2026-07-26 18:34:45,186 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=b3ab34a9-e642-4199-99c4-9129a905a0e4
+2026-07-26 18:34:46,077 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=b3ab34a9-e642-4199-99c4-9129a905a0e4
+2026-07-26 18:34:49,592 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=81af96e4-144e-461d-9a8b-378d8bfac206
+2026-07-26 18:34:49,613 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=81af96e4-144e-461d-9a8b-378d8bfac206
+2026-07-26 18:34:49,700 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=81af96e4-144e-461d-9a8b-378d8bfac206
+2026-07-26 18:34:51,136 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=6017eb77-1146-486b-b32c-f14c82159b3e
+2026-07-26 18:34:51,170 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=6017eb77-1146-486b-b32c-f14c82159b3e
+2026-07-26 18:34:51,346 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=6017eb77-1146-486b-b32c-f14c82159b3e
+2026-07-26 18:34:54,031 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=c9b3da30-c062-4a10-b569-45c6eb4ae464
+2026-07-26 18:34:54,076 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=c9b3da30-c062-4a10-b569-45c6eb4ae464
+2026-07-26 18:34:54,338 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=c9b3da30-c062-4a10-b569-45c6eb4ae464
+2026-07-26 18:35:01,734 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=8ae76ee0-0929-444c-8ad7-854a0dd435df
+2026-07-26 18:35:01,749 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=8ae76ee0-0929-444c-8ad7-854a0dd435df
+2026-07-26 18:35:01,838 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=8ae76ee0-0929-444c-8ad7-854a0dd435df
+2026-07-26 18:35:05,045 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=d35c30dd-4d0b-4490-a6b2-fcc6839ee996
+2026-07-26 18:35:05,068 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=d35c30dd-4d0b-4490-a6b2-fcc6839ee996
+2026-07-26 18:35:05,217 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=d35c30dd-4d0b-4490-a6b2-fcc6839ee996
+2026-07-26 18:35:09,251 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=183adf94-05c0-4fda-88ef-1c5935f6666c
+2026-07-26 18:35:09,282 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=183adf94-05c0-4fda-88ef-1c5935f6666c
+2026-07-26 18:35:09,437 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=183adf94-05c0-4fda-88ef-1c5935f6666c
+2026-07-26 18:35:12,367 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=c91d76ff-cc91-44b8-988f-5d852ae72f1c
+2026-07-26 18:35:12,393 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=c91d76ff-cc91-44b8-988f-5d852ae72f1c
+2026-07-26 18:35:12,587 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=c91d76ff-cc91-44b8-988f-5d852ae72f1c
+2026-07-26 18:35:16,363 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=1cb10759-c5a3-4052-8a4b-8e8c5ccc06e7
+2026-07-26 18:35:16,404 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=1cb10759-c5a3-4052-8a4b-8e8c5ccc06e7
+2026-07-26 18:35:16,993 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=1cb10759-c5a3-4052-8a4b-8e8c5ccc06e7
+2026-07-26 18:35:20,391 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=e569f39d-4f9d-4cb6-a9d4-3fe993a305b2
+2026-07-26 18:35:20,484 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=e569f39d-4f9d-4cb6-a9d4-3fe993a305b2
+2026-07-26 18:35:20,784 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=e569f39d-4f9d-4cb6-a9d4-3fe993a305b2
+2026-07-26 18:35:24,075 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=deff6dba-7564-4baf-97ff-3b94db099e89
+2026-07-26 18:35:24,159 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=deff6dba-7564-4baf-97ff-3b94db099e89
+2026-07-26 18:35:24,447 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=deff6dba-7564-4baf-97ff-3b94db099e89
+2026-07-26 18:35:29,324 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=24 mapping=succeeded/+0 run=aa7f19b7-c240-4dcc-b144-93ab708ec627
+2026-07-26 18:35:29,532 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 7, 'unverified': 0, 'rejected': 17} run=aa7f19b7-c240-4dcc-b144-93ab708ec627
+2026-07-26 18:35:29,970 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=aa7f19b7-c240-4dcc-b144-93ab708ec627
+2026-07-26 18:35:33,043 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=aa7f19b7-c240-4dcc-b144-93ab708ec627
+2026-07-26 18:35:37,974 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=6845c522-b6f0-44e4-9d60-b068a9473b2d
+2026-07-26 18:35:37,996 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=6845c522-b6f0-44e4-9d60-b068a9473b2d
+2026-07-26 18:35:38,190 level=INFO logger=app.runs.graph correlation_id=- msg=web research queries=2 results=6 run=6845c522-b6f0-44e4-9d60-b068a9473b2d
+2026-07-26 18:35:38,284 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=6845c522-b6f0-44e4-9d60-b068a9473b2d
+2026-07-26 18:35:39,577 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=6845c522-b6f0-44e4-9d60-b068a9473b2d
+2026-07-26 18:35:42,351 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=6673c723-c542-443e-85ba-ed4a2dd562f2
+2026-07-26 18:35:42,371 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=6673c723-c542-443e-85ba-ed4a2dd562f2
+2026-07-26 18:35:42,489 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=6673c723-c542-443e-85ba-ed4a2dd562f2
+2026-07-26 18:35:43,994 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=6673c723-c542-443e-85ba-ed4a2dd562f2
+2026-07-26 18:35:45,927 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=594fa3b5-66fa-4351-a751-b49382b4a80d
+2026-07-26 18:35:45,957 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=594fa3b5-66fa-4351-a751-b49382b4a80d
+2026-07-26 18:35:46,136 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=594fa3b5-66fa-4351-a751-b49382b4a80d
+2026-07-26 18:35:48,607 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=90cd5a7f-ac97-4c7a-906e-9f4e02bfa668
+2026-07-26 18:35:48,635 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=90cd5a7f-ac97-4c7a-906e-9f4e02bfa668
+2026-07-26 18:35:48,985 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=90cd5a7f-ac97-4c7a-906e-9f4e02bfa668
+2026-07-26 18:35:50,978 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=90cd5a7f-ac97-4c7a-906e-9f4e02bfa668
+2026-07-26 18:35:57,299 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=eb6d7843-e38b-4006-a1dc-002f8fee2d91
+2026-07-26 18:35:57,322 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=eb6d7843-e38b-4006-a1dc-002f8fee2d91
+2026-07-26 18:35:57,523 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=eb6d7843-e38b-4006-a1dc-002f8fee2d91
+2026-07-26 18:35:59,636 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=eb6d7843-e38b-4006-a1dc-002f8fee2d91
+2026-07-26 18:36:04,610 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=630c6bbf-2abc-4f11-81c0-ce9cd05f6a37
+2026-07-26 18:36:04,629 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=630c6bbf-2abc-4f11-81c0-ce9cd05f6a37
+2026-07-26 18:36:04,776 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=630c6bbf-2abc-4f11-81c0-ce9cd05f6a37
+2026-07-26 18:36:06,354 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=630c6bbf-2abc-4f11-81c0-ce9cd05f6a37
+2026-07-26 18:36:10,822 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=a5df1e59-9c69-41e9-b34e-c7adbba6162c
+2026-07-26 18:36:10,873 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=a5df1e59-9c69-41e9-b34e-c7adbba6162c
+2026-07-26 18:36:11,011 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=a5df1e59-9c69-41e9-b34e-c7adbba6162c
+2026-07-26 18:36:12,395 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=a5df1e59-9c69-41e9-b34e-c7adbba6162c
+2026-07-26 18:36:16,866 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=0 mapping=succeeded/+0 run=fdb343d6-6537-44a3-a004-cd3fd50e6817
+2026-07-26 18:36:16,892 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=fdb343d6-6537-44a3-a004-cd3fd50e6817
+2026-07-26 18:36:17,047 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=fdb343d6-6537-44a3-a004-cd3fd50e6817
+2026-07-26 18:36:18,689 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=fdb343d6-6537-44a3-a004-cd3fd50e6817
+2026-07-26 18:36:32,777 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=24c64b00-b8da-410d-a160-e183a204e45b
+2026-07-26 18:36:32,806 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=24c64b00-b8da-410d-a160-e183a204e45b
+2026-07-26 18:36:32,951 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=24c64b00-b8da-410d-a160-e183a204e45b
+2026-07-26 18:36:39,805 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=9 mapping=skipped/+0 run=7151b8d7-f1b8-409e-ba51-dee0604599d5
+2026-07-26 18:36:39,880 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 4, 'unverified': 0, 'rejected': 5} run=7151b8d7-f1b8-409e-ba51-dee0604599d5
+2026-07-26 18:36:40,012 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=7151b8d7-f1b8-409e-ba51-dee0604599d5
+2026-07-26 18:36:46,550 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=9726ecd0-9ebf-4f47-a351-273eb411edc2
+2026-07-26 18:36:46,583 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=9726ecd0-9ebf-4f47-a351-273eb411edc2
+2026-07-26 18:36:46,729 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=9726ecd0-9ebf-4f47-a351-273eb411edc2
+2026-07-26 18:36:54,347 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=60c50315-59a9-42f0-bbc0-37d016dcab1c
+2026-07-26 18:36:54,377 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=60c50315-59a9-42f0-bbc0-37d016dcab1c
+2026-07-26 18:36:54,591 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=60c50315-59a9-42f0-bbc0-37d016dcab1c
+2026-07-26 18:37:07,372 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=24 mapping=succeeded/+0 run=d02e0cf1-9ec3-4cbd-9ea8-a85d01c4228a
+2026-07-26 18:37:07,497 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 7, 'unverified': 0, 'rejected': 17} run=d02e0cf1-9ec3-4cbd-9ea8-a85d01c4228a
+2026-07-26 18:37:07,602 level=INFO logger=app.runs.graph correlation_id=- msg=web research queries=1 results=3 run=d02e0cf1-9ec3-4cbd-9ea8-a85d01c4228a
+2026-07-26 18:37:07,664 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=d02e0cf1-9ec3-4cbd-9ea8-a85d01c4228a
+2026-07-26 18:37:08,767 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=d02e0cf1-9ec3-4cbd-9ea8-a85d01c4228a
+2026-07-26 18:37:30,290 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=succeeded/0 evidence candidates=24 mapping=succeeded/+0 run=86bde539-008d-4d43-b7a1-426f0304a712
+2026-07-26 18:37:30,425 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 7, 'unverified': 0, 'rejected': 17} run=86bde539-008d-4d43-b7a1-426f0304a712
+2026-07-26 18:37:30,542 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=86bde539-008d-4d43-b7a1-426f0304a712
+2026-07-26 18:37:31,360 level=INFO logger=app.runs.graph correlation_id=- msg=A2 suggestions created=16 failed=0 skipped=0 run=86bde539-008d-4d43-b7a1-426f0304a712
+2026-07-26 18:37:37,060 level=INFO logger=app.runs.graph correlation_id=- msg=A1 facts=skipped/0 evidence candidates=0 mapping=skipped/+0 run=2aed59e3-bfcc-4a66-9f48-8f03440ba101
+2026-07-26 18:37:37,070 level=INFO logger=app.runs.graph correlation_id=- msg=evidence verification {'exact_verified': 0, 'unverified': 0, 'rejected': 0} run=2aed59e3-bfcc-4a66-9f48-8f03440ba101
+2026-07-26 18:37:37,126 level=INFO logger=app.runs.graph correlation_id=- msg=template drafts created=8 run=2aed59e3-bfcc-4a66-9f48-8f03440ba101

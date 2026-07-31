@@ -170,5 +170,6 @@ def test_harness_orchestrates_existing_services_with_offline_adapter(monkeypatch
     assert provider.search_calls == 2
     assert provider.fetch_calls == 1
     assert result.fake_fallback_observed is False
-    assert result.content_review_status == "unreviewed"
+    # Import auto-reviews a non-quarantined AI-found result (2026-07-26).
+    assert result.content_review_status == "reviewed"
     assert result.safety_status == "passed"

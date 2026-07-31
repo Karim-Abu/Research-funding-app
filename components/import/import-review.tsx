@@ -1271,19 +1271,6 @@ function StructuredCandidateRow({
           ausdrückliche Bestätigung.
         </p>
       )}
-      <details className="text-xs text-muted-foreground">
-        <summary className="cursor-pointer">Technische Details</summary>
-        <dl className="mt-2 grid grid-cols-[auto_1fr] gap-x-2 gap-y-1">
-          <dt>Zielschlüssel</dt>
-          <dd className="break-all">{candidate.target_key}</dd>
-          <dt>Mapping-Version</dt>
-          <dd>{candidate.mapping_version}</dd>
-          <dt>Kandidaten-ID</dt>
-          <dd className="break-all">{candidate.candidate_id}</dd>
-          {candidate.conflict_reason && <dt>Konfliktcode</dt>}
-          {candidate.conflict_reason && <dd>{candidate.conflict_reason}</dd>}
-        </dl>
-      </details>
     </Card>
   )
 }

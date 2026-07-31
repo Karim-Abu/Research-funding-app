@@ -1,0 +1,1 @@
+﻿pwsh scripts\verify_all.ps1 (stdout+stderr via Tee-Object)

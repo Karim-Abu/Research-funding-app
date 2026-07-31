@@ -6,8 +6,8 @@ roles:
     prompt_asset: role_prompts/a1_fact_evidence_analyst_v2.md
     execution_kind: model_gateway
   - role_id: A2_INNOSUISSE_PROPOSAL_WRITER
-    version: a2_innosuisse_proposal_writer_v2
-    prompt_asset: role_prompts/a2_innosuisse_proposal_writer_v2.md
+    version: a2_innosuisse_proposal_writer_v3
+    prompt_asset: role_prompts/a2_innosuisse_proposal_writer_v3.md
     execution_kind: model_gateway
   - role_id: A3_INNOSUISSE_CRITICAL_REVIEWER
     version: a3_innosuisse_critical_reviewer_v2
@@ -40,8 +40,8 @@ skills:
     prompt_asset: skill_prompts/a1_public_competence_research_skill_v2.md
   - skill_id: a2.executive_summary
     role_id: A2_INNOSUISSE_PROPOSAL_WRITER
-    version: a2_executive_summary_skill_v2
-    prompt_asset: skill_prompts/a2_executive_summary_skill_v2.md
+    version: a2_executive_summary_skill_v3
+    prompt_asset: skill_prompts/a2_executive_summary_skill_v3.md
     bindings:
       - field_id: INTRO.APP.ABSTRACT
       - field_id: INTRO.APP.EXECUTIVE_SUMMARY
@@ -106,13 +106,13 @@ skills:
       - {field_id: SOL.INNOVATION_SOLUTION.EDITOR}
   - skill_id: a2.organisations_governance
     role_id: A2_INNOSUISSE_PROPOSAL_WRITER
-    version: a2_organisations_governance_skill_v2
-    prompt_asset: skill_prompts/a2_organisations_governance_skill_v2.md
+    version: a2_organisations_governance_skill_v3
+    prompt_asset: skill_prompts/a2_organisations_governance_skill_v3.md
     bindings: [{field_id: ORG.INDEPENDENCE.FINANCIAL.EXPLANATIONS_COMMENTS}]
   - skill_id: a2.project_setup_workplan
     role_id: A2_INNOSUISSE_PROPOSAL_WRITER
-    version: a2_project_setup_workplan_skill_v2
-    prompt_asset: skill_prompts/a2_project_setup_workplan_skill_v2.md
+    version: a2_project_setup_workplan_skill_v3
+    prompt_asset: skill_prompts/a2_project_setup_workplan_skill_v3.md
     bindings: [{field_id: PS.PLANNED_HOURS.MANAGEMENT_EXPLANATION}]
   - skill_id: a3.critical_review
     role_id: A3_INNOSUISSE_CRITICAL_REVIEWER
@@ -128,8 +128,8 @@ skills:
     prompt_asset: skill_prompts/research_public_evidence_synthesis_skill_v2.md
   - skill_id: research.market_comparison
     role_id: RESEARCH_EVIDENCE_SYNTHESIZER
-    version: market_comparison_v2
-    prompt_asset: prompts/market_comparison_v2.md
+    version: market_comparison_v3
+    prompt_asset: prompts/market_comparison_v3.md
   - skill_id: evidence.claim_support_verification
     role_id: EVIDENCE_SUPPORT_VERIFIER
     version: evidence_claim_support_verification_skill_v2

@@ -252,20 +252,17 @@ def test_fresh_persisted_route_preflight_expires(db):
                 model="actual-hermetic-model",
             )
 
+    # 2026-07-26: agent_model_pricing_chf_per_million bepreist seit 8416914
+    # keinen Call mehr (pricing.resolve_cost ist USD-first und fail-closed).
+    # Ein Modell ausserhalb des USD-Katalogs liefert unknown_price, wodurch
+    # route_configuration_reason "live_price_metadata_missing" meldet und die
+    # Route als not_configured gilt. Der Test armiert deshalb eine echte
+    # Katalog-Id; die Zusicherungen unten bleiben unveraendert scharf.
     settings = Settings(
         ai_eval_mode="real",
         agent_fake_provider=False,
         openai_api_key="sk-hermetic",
-        agent_model_gpt_56_luna_id="requested-hermetic-model",
-        agent_model_pricing_chf_per_million={
-            "requested-hermetic-model": {
-                "input_chf_per_million": 1,
-                "output_chf_per_million": 2,
-                "price_version": "test-v1",
-                "source_url": "https://prices.example.test",
-                "checked_at": "2026-07-16",
-            }
-        },
+        agent_model_gpt_56_luna_id="gpt-5.6-luna",
         provider_preflight_ttl_seconds=60,
     )
     result = preflight_route(
@@ -274,11 +271,11 @@ def test_fresh_persisted_route_preflight_expires(db):
     )
     assert result.status == PASS
     row = persist_route_preflight(db, result, settings=settings)
-    assert row.requested_model_id == "requested-hermetic-model"
+    assert row.requested_model_id == "gpt-5.6-luna"
     assert row.actual_model_id == "actual-hermetic-model"
     assert row.configuration_fingerprint
     assert row.registry_version == settings.agent_registry_version
-    assert row.pricing_version == "test-v1"
+    assert row.pricing_version == "2026-07-24.gpt56-luna"
     assert row.retryable is False
     assert route_preflight_passed(db, result.route_key, settings=settings)
     assert route_readiness(db, result.route_key, settings=settings).status == "ready"

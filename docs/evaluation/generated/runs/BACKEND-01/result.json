@@ -1,0 +1,1 @@
+{"run_id":"BACKEND-01","command":"python -m pytest -q -p no:warnings --junitxml=<G>/junit.xml (AI_EVAL_MODE=off, ohne RUN_REAL_PROVIDER_SMOKE)","started_at":"2026-07-25T21:01:23Z","finished_at":"2026-07-25T21:10:41Z","exit_code":1,"commit":"8416914"}

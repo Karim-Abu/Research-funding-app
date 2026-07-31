@@ -268,6 +268,21 @@ export function reviewResearchResult(
   }).then((response) => checked(response))
 }
 
+export interface ResearchTaskStatusDto {
+  task_id: string
+  status: "queued" | "running" | "succeeded" | "failed"
+  result_count: number
+  error?: string | null
+  error_code?: string | null
+  retryable: boolean
+}
+
+export function getResearchTask(taskId: string): Promise<ResearchTaskStatusDto> {
+  return fetch(`/api/research-tasks/${encodeURIComponent(taskId)}`).then(
+    (response) => checked<ResearchTaskStatusDto>(response)
+  )
+}
+
 export function runResearchBrief(
   briefId: string, approvalIds: string[]
 ): Promise<{ task_ids: string[]; result_count: number; execution_mode: string }> {

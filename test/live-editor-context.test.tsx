@@ -286,7 +286,7 @@ describe("Markt tab + comparison sheet", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Markt & Wettbewerb" }))
 
     expect(await screen.findByText("Noch keine Marktanalyse vorhanden")).toBeInTheDocument()
-    expect(screen.queryByRole("button", { name: "Marktvergleich öffnen" })).toBeNull()
+    expect(screen.queryByRole("button", { name: "Details öffnen" })).toBeNull()
   })
 
   it("opens the wide sheet and inserts a source-backed argument into the draft", async () => {
@@ -311,6 +311,8 @@ describe("Markt tab + comparison sheet", () => {
           research_gaps: ["Marktgrösse Schweiz unbelegt"],
           warnings: [],
           item_count: 1,
+          // Zwei geprüfte Quellen — erst dann darf überhaupt übernommen werden.
+          source_version_ids: ["sv1", "sv2"],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
           items: [
@@ -348,7 +350,7 @@ describe("Markt tab + comparison sheet", () => {
     fireEvent.click(screen.getByRole("tab", { name: "Markt & Wettbewerb" }))
 
     const openButton = await screen.findByRole("button", {
-      name: "Marktvergleich öffnen",
+      name: "Details öffnen",
     })
     fireEvent.click(openButton)
 

@@ -19,7 +19,7 @@ export const SUPPORT_STATUS_LABELS: Record<SupportStatus, string> = {
   location_found: "Textstelle gefunden – fachliche Prüfung offen",
   supports_partially: "Teilweise gestützt",
   supports_strongly: "Stark gestützt",
-  conflict_or_uncertain: "Widersprüchlich/unklar",
+  conflict_or_uncertain: "Nicht als Beleg verwendbar",
   human_review_required: "Menschliche Prüfung erforderlich",
 }
 
@@ -30,7 +30,7 @@ export const SUPPORT_STATUS_SHORT_LABELS: Record<SupportStatus, string> = {
   location_found: "Textstelle gefunden",
   supports_partially: "Teilweise gestützt",
   supports_strongly: "Stark gestützt",
-  conflict_or_uncertain: "Widersprüchlich",
+  conflict_or_uncertain: "Nicht verwendbar",
   human_review_required: "Prüfung nötig",
 }
 
@@ -64,7 +64,7 @@ export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
   supports_partially: "Die Passage trägt nur einen Teil der Aussage.",
   supports_strongly: "Die Passage trägt die konkrete Aussage direkt.",
   conflict_or_uncertain:
-    "Die Quelle widerspricht der Aussage oder bleibt unklar.",
+    "Die Passage stützt die zugeordnete Anforderung nicht. Den konkreten Prüfgrund finden Sie bei der Fundstelle.",
   human_review_required:
     "Die Stützung braucht eine menschliche Entscheidung — sie wurde noch nicht abschliessend geprüft.",
   evidence_missing: "Für die Aussage ist noch keine Quelle verknüpft.",
@@ -72,10 +72,13 @@ export const SUPPORT_STATUS_DEFINITIONS: Record<SupportStatus, string> = {
 }
 
 // Erläuterung unter Beleg-Listen: was die Stufe aussagt — und was nicht.
+// «abschliessende Bewertung» ist bewusst gewählt und darf nicht zu «fachliche
+// Bewertung» verkürzt werden: Die Aussage ist, dass das LETZTE Urteil beim
+// Menschen liegt (CLAUDEX §4, Human-in-the-loop). e2e/m10-2-ux.spec.ts prüft
+// genau diesen Wortlaut.
 export const SUPPORT_LADDER_HINT =
-  "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar. " +
-  "Ob die Aussage fachlich gestützt ist, zeigen die Stufen «Teilweise/Stark " +
-  "gestützt» – die abschliessende Bewertung bleibt bei Ihnen."
+  "«Textstelle gefunden» heisst nur: Der Text ist in der Quelle auffindbar — " +
+  "die abschliessende Bewertung bleibt bei Ihnen."
 
 export function isSupportStatus(value: unknown): value is SupportStatus {
   return typeof value === "string" && value in SUPPORT_STATUS_LABELS

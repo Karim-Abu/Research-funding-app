@@ -194,7 +194,7 @@ describe("LiveEditor A2 suggestions", () => {
     expect(unavailable).toHaveTextContent(
       "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar."
     )
-    expect(unavailable).toHaveTextContent(/Abschnittsvorschläge unterstützen aktuell/)
+    expect(unavailable).toHaveTextContent(/Verfügbar für Abstract/)
     expect(within(unavailable).queryByRole("button")).not.toBeInTheDocument()
   })
 
@@ -225,6 +225,71 @@ describe("LiveEditor A2 suggestions", () => {
       screen.getByText("Live-KI-Vorschlag für diesen Abschnitt noch nicht erstellt.")
     ).toBeInTheDocument()
     expect(screen.queryByText(/Demo-Vorschlag/)).toBeNull()
+  })
+
+  // Erst-Entwurf — leeres/Platzhalter-Feld bekommt eine ehrliche Erst-Entwurf-
+  // Aktion statt «Text mit KI verbessern» (Backend erzeugt jetzt auch dann
+  // einen Vorschlag; siehe field_drafting_context._section_is_initial_draft).
+  it("Erst-Entwurf: Platzhalter-Feld zeigt «Erst-Entwurf erstellen» mit Erklärsatz", async () => {
+    setBackendMode("live")
+    const text = "[[Angabe ergänzen: Abstract (wird in Aramis publiziert)]]"
+    baseMock(
+      [{
+        ...abstractDraft(),
+        current_version: {
+          draft_version_id: "v1", text, character_count: text.length,
+          created_by: "template", created_at: new Date().toISOString(),
+          content_hash: "h",
+        },
+      }],
+      { generation_mode: "real_eval" }
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    const control = await screen.findByTestId("a2-suggestion-control")
+    expect(
+      await within(control).findByRole("button", { name: "Erst-Entwurf erstellen" })
+    ).toBeEnabled()
+    expect(within(control).getByTestId("a2-action-explainer")).toHaveTextContent(
+      "Noch kein Text vorhanden"
+    )
+  })
+
+  it("Erst-Entwurf: Platzhalter-Unterabschnitt zeigt die Erst-Entwurf-Aktion, echter Text nicht", async () => {
+    setBackendMode("live")
+    const text =
+      "4.1 Eigener Text\n4.2\n[[Angabe ergänzen: Antwort fachlich ergänzen]]\n" +
+      "4.3 Alt\n4.4 Alt\n4.5.1 Alt\n4.5.2 Alt\n4.5.3 Alt\n4.5.4 Alt\n4.6 Alt"
+    baseMock(
+      [
+        solDraft({
+          current_version: {
+            draft_version_id: "v1", text, character_count: text.length,
+            created_by: "template", created_at: new Date().toISOString(),
+            content_hash: "h",
+          },
+        }),
+      ],
+      { generation_mode: "real_eval" }
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    const control = await screen.findByTestId("a2-suggestion-control")
+    fireEvent.change(
+      within(control).getByLabelText("Zielabschnitt für Vorschlag"),
+      { target: { value: "4.2" } }
+    )
+    expect(
+      await within(control).findByRole("button", { name: "Erst-Entwurf erstellen" })
+    ).toBeEnabled()
+    // Abschnitt mit Anwendertext auf der Markerzeile bleibt beim Verbessern.
+    fireEvent.change(
+      within(control).getByLabelText("Zielabschnitt für Vorschlag"),
+      { target: { value: "4.1" } }
+    )
+    expect(
+      await within(control).findByRole("button", { name: "Text mit KI verbessern" })
+    ).toBeEnabled()
   })
 
   it("ohne Provider: Aktion deaktiviert mit konkretem Grund und CTA", async () => {
@@ -326,6 +391,35 @@ describe("LiveEditor A2 suggestions", () => {
     await screen.findByTestId("suggestion-review-sheet")
     expect(bodies[0].model_preference).toBeUndefined()
     expect(bodies[1].model_preference).toBe("alternative")
+  })
+
+  it("Aufruf-Limit erreicht: klare Meldung statt generischem Fehler", async () => {
+    setBackendMode("live")
+    baseMock([solDraft()], { generation_mode: "real_eval" })
+    server.use(
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "failed", created_at: new Date().toISOString(),
+          error: {
+            code: "cost_guard_blocked",
+            status: 503,
+            reason_code: "ai_call_limit_reached",
+            detail:
+              "Das Limit für KI-Aufrufe in diesem Analyse-Lauf ist erreicht.",
+          },
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await clickGenerate("4.2")
+    expect(
+      await screen.findByText(/Limit für KI-Aufrufe in diesem Analyse-Lauf/)
+    ).toBeInTheDocument()
+    expect(screen.queryByText("Der Vorschlag konnte nicht erstellt werden.")).toBeNull()
   })
 
   it("Fehler ohne Transient-Flag bietet keine Alternativroute an", async () => {
@@ -477,6 +571,39 @@ describe("LiveEditor A2 suggestions", () => {
     await openKiAssist()
     await screen.findByTestId("a2-suggestion-control")
     expect(screen.queryByTestId("research-redraft-action")).toBeNull()
+  })
+
+  it("frischer Live-Vorschlag entfernt das Analyse-Herkunfts-Banner", async () => {
+    // Regression: setA2FromRun(false) beim Erzeugen — ein neu erzeugter
+    // Vorschlag darf nicht als «Vorschlag aus der Analyse» erscheinen.
+    baseMock([solDraft()])
+    server.use(
+      http.get(`/api/runs/r1/fields/${SOL}/suggestion`, () =>
+        HttpResponse.json({ suggestion: suggestionResult() })
+      ),
+      http.post(`/api/runs/r1/fields/${SOL}/redrafts`, () =>
+        HttpResponse.json({ operation_id: "op1" }, { status: 202 })
+      ),
+      http.get("/api/operations/op1", () =>
+        HttpResponse.json({
+          operation_id: "op1", resource_type: "redraft", resource_id: "d-sol",
+          status: "succeeded", created_at: new Date().toISOString(),
+          result: suggestionResult(),
+        })
+      )
+    )
+    render(<LiveEditor runId="r1" />)
+    await openKiAssist()
+    expect(await screen.findByTestId("run-suggestion-hint")).toBeInTheDocument()
+    await clickGenerate("4.2")
+    await screen.findByTestId("suggestion-review-sheet")
+    fireEvent.keyDown(document, { key: "Escape" })
+    await waitFor(() =>
+      expect(screen.queryByTestId("suggestion-review-sheet")).toBeNull()
+    )
+    expect(screen.queryByTestId("run-suggestion-hint")).toBeNull()
+    // Der frische Vorschlag bleibt mit neutralem Prüfhinweis sichtbar.
+    expect(screen.getByText("Prüfung erforderlich")).toBeInTheDocument()
   })
 
   it("generates a suggestion, shows side-by-side and accepts it", async () => {

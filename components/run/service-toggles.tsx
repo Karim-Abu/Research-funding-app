@@ -97,7 +97,9 @@ export function WebSearchToggle(
     <ServiceToggle
       {...props}
       title="Öffentliche Webrecherche"
-      subtitle="Sucht öffentliche Informationen, z. B. zu Markt und Umfeld — nur bei öffentlicher Vertraulichkeitsstufe verfügbar. Jede Suchanfrage passiert die Query-Prüfung."
+      // Die Verfügbarkeitsbedingung steht bereits im unavailableReason, die
+      // Query-Freigabe in der Suchanfragen-Liste darunter. Hier nur der Zweck.
+      subtitle="Sucht öffentliche Informationen, z. B. zu Markt und Umfeld."
       availableLabel="Webrecherche verfügbar"
     />
   )

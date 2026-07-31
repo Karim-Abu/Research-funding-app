@@ -431,6 +431,8 @@ test.describe("FINAL MVP ACCEPTANCE — Browser", () => {
     const section = page.getByTestId("market-comparison-section")
     await section.scrollIntoViewIfNeeded()
     await expect(section).toBeVisible({ timeout: 20_000 })
+    // Ergebnis zuerst: die Lösungslandschaft-Tabelle liegt hinter «Details öffnen».
+    await section.getByRole("button", { name: "Details öffnen" }).click()
     await expect(page.getByTestId("market-comparison-table")).toBeVisible()
     await expect(
       page.getByText("Referenzlösung Alpha (Demo)").first()

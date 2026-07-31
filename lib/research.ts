@@ -79,10 +79,13 @@ export interface ResearchTaskInput {
 const STATUS_MESSAGES: Record<number, string> = {
   401: "Ihre Sitzung ist abgelaufen. Bitte melden Sie sich erneut an.",
   403: "Diese Aktion ist nicht erlaubt oder durch die Datenrichtlinie blockiert.",
+  413: "Die Quelle ist zu gross für die Übernahme.",
   422: "Öffentliche Recherche ist für diese Datenklasse nicht erlaubt.",
   429: "Das Limit für die Recherche ist erreicht. Bitte versuchen Sie es später erneut.",
+  500: "Die Aktion konnte nicht abgeschlossen werden. Bitte versuchen Sie es erneut.",
   502: "Die Quelle konnte nicht abgerufen werden. Bitte versuchen Sie eine andere Quelle.",
   503: "Die öffentliche Recherche ist derzeit nicht verfügbar.",
+  504: "Der Abruf der Quelle hat zu lange gedauert. Bitte versuchen Sie es erneut.",
 }
 
 export class ResearchError extends Error {

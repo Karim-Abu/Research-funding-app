@@ -73,6 +73,20 @@ def _public_source_classification(processing_mode: str) -> dict:
     }
 
 
+def _auto_review_if_safe(db: Session, *, result: ResearchResult, document: SourceDocument) -> None:
+    """Auto-accept an AI-found result as supporting evidence (no manual "Stützt"
+    review) unless its current version is quarantined and still awaits an explicit
+    human release of untrusted content — that safety gate is unrelated to support
+    judgement and stays intact."""
+    version = (
+        db.get(SourceVersion, document.current_source_version_id)
+        if document.current_source_version_id else None
+    )
+    if version is not None and version.content_safety_status in ("passed", "human_released"):
+        result.content_review_status = "reviewed"
+        result.support_status = "supports"
+
+
 def import_result(
     db: Session,
     *,
@@ -153,6 +167,7 @@ def import_result(
             result.canonical_url = canonical_candidate
             result.final_url = existing_url_result.final_url
             result.source_document_id = existing_doc.source_id
+            _auto_review_if_safe(db, result=result, document=existing_doc)
             recording.record_audit(
                 db, workspace_id=task.workspace_id, actor_user_id=actor_user_id,
                 action="research_result.import_replayed", research_task_id=task.research_task_id,
@@ -281,6 +296,7 @@ def import_result(
             result.fetched_content_type = fetched.content_type
             result.fetched_content_hash = fetched.content_hash
             result.source_document_id = existing_doc.source_id
+            _auto_review_if_safe(db, result=result, document=existing_doc)
             recording.record_audit(
                 db, workspace_id=task.workspace_id, actor_user_id=actor_user_id,
                 action="research_result.import_replayed", research_task_id=task.research_task_id,
@@ -369,6 +385,10 @@ def import_result(
     result.publisher = fetched.publisher or result.publisher
     result.published_at = _parse_provider_date(fetched.published_at) or result.published_at
     result.source_document_id = doc.source_id
+    if safety_status != "quarantined":
+        result.content_review_status = "reviewed"
+        result.support_status = "supports"
+        version.content_review_status = "reviewed"
     task.provider_usage = {
         **(task.provider_usage or {}),
         "last_fetch_credits_used": fetched.credits_used,

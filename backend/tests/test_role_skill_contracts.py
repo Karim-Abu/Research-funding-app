@@ -110,6 +110,16 @@ def test_role_and_skill_assets_are_independently_versioned():
             "a2.partner_suitability_4_6",
             ("spezifische Kompetenz", "konkrete Projektaufgabe"),
         ),
+        (
+            "A2.organisations_governance",
+            "a2.organisations_governance",
+            ("20-Prozent-Schwelle", "ohne Rechtsaussage"),
+        ),
+        (
+            "A2.project_setup_workplan",
+            "a2.project_setup_workplan",
+            ("Arbeitspakete", "Entscheidungswege"),
+        ),
     ],
 )
 def test_each_a2_skill_contains_field_specific_argumentation(

@@ -63,10 +63,11 @@ describe("KostenScreen", () => {
     render(<KostenScreen />)
 
     expect(screen.getByRole("heading", { level: 1, name: "Kosten & Laufzeit" })).toBeInTheDocument()
-    await waitFor(() => expect(screen.getByText("Exakte KI-Kosten")).toBeInTheDocument())
+    await waitFor(() => expect(screen.getByText("KI-Kosten gesamt")).toBeInTheDocument())
     expect(screen.getAllByText(/\$0\.0335/).length).toBeGreaterThan(0)
     expect(screen.getByText(/CHF-Orientierung: 1 USD = 0\.8065 CHF/)).toBeInTheDocument()
-    expect(screen.getByText("Externe KI-Aufrufe aus 1 Durchlauf")).toBeInTheDocument()
+    expect(screen.getByText("KI-Aufrufe gesamt")).toBeInTheDocument()
+    expect(screen.getByText("Summiert aus 1 Durchlauf.")).toBeInTheDocument()
     expect(screen.queryByText(/Beispieldaten|Projektlimit|Beispiel-Limit/)).toBeNull()
   })
 
@@ -139,7 +140,7 @@ describe("KostenScreen", () => {
     fireEvent.click(await screen.findByRole("button", { name: /Analyse-Durchlauf/ }))
     expect(screen.getByText("1 interner Aufruf ohne externe KI-Kosten.")).toBeInTheDocument()
     expect(screen.queryByText("Unbekannter Dienst")).toBeNull()
-    expect(screen.getByText("Externe KI-Aufrufe aus 1 Durchlauf")).toBeInTheDocument()
+    expect(screen.getByText("Summiert aus 1 Durchlauf.")).toBeInTheDocument()
   })
 
   it("zeigt je Rolle einen Preis oder einen Strich mit einer gemeinsamen Fussnote", async () => {
@@ -184,7 +185,7 @@ describe("KostenScreen", () => {
 
   it("zeigt keine Firecrawl-Zeile, wenn keine Web-Recherche stattfand", async () => {
     render(<KostenScreen />)
-    await screen.findByText("Exakte KI-Kosten")
+    await screen.findByText("KI-Kosten gesamt")
     expect(screen.queryByTestId("firecrawl-note")).toBeNull()
   })
 
@@ -193,5 +194,52 @@ describe("KostenScreen", () => {
     render(<KostenScreen />)
     expect(screen.getByText("Noch keine Live-Daten")).toBeInTheDocument()
     expect(mockedGetProjectCosts).not.toHaveBeenCalled()
+  })
+
+  it("summiert mehrere Durchläufe und führt sie vollständig in der Historie auf", async () => {
+    mockedGetProjectCosts.mockResolvedValue({
+      ...exact,
+      runs: [
+        exact.runs[0],
+        {
+          ...exact.runs[0],
+          id: "run-2",
+          started_at: "2026-07-24T11:00:00Z",
+          ended_at: "2026-07-24T11:02:00Z",
+          input_tokens: 5_000,
+          output_tokens: 1_000,
+          cost: {
+            status: "priced",
+            usd: 0.0165,
+            chf_reference: 0.01330725,
+            known_usd: 0.0165,
+            known_chf_reference: 0.01330725,
+            unpriced_call_count: 0,
+          },
+          executions: [{
+            ...exact.runs[0].executions[0],
+            id: "usage-2",
+            input_tokens: 5_000,
+            output_tokens: 1_000,
+            cost: {
+              status: "priced",
+              usd: 0.0165,
+              chf_reference: 0.01330725,
+              known_usd: 0.0165,
+              known_chf_reference: 0.01330725,
+              unpriced_call_count: 0,
+            },
+          }],
+        },
+      ],
+    })
+
+    render(<KostenScreen />)
+
+    expect(await screen.findByText("$0.0500")).toBeInTheDocument()
+    expect(screen.getByText("Tokens gesamt").closest("article")).toHaveTextContent(/29.000/)
+    expect(screen.getByText("3 min 30 s")).toBeInTheDocument()
+    expect(screen.getByTestId("run-count")).toHaveTextContent("2 Durchläufe")
+    expect(screen.getAllByRole("button", { name: /Analyse-Durchlauf/ })).toHaveLength(2)
   })
 })

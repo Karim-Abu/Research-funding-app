@@ -37,6 +37,9 @@ from app.fields.reason_codes import REASON_TEXTS_DE, maybe_reason, to_reason
         ("mode_local_only", "mode_deterministic_only"),
         # Katalog-Code, reserviert für R5
         ("missing_sources", "missing_sources"),
+        # CostGuard: Aufruf-Limit des Laufs erreicht (deterministisch)
+        ("cost_guard_blocked", "ai_call_limit_reached"),
+        ("cost_guard_output_blocked", "ai_call_limit_reached"),
     ],
 )
 def test_reason_matrix(internal: str, expected_code: str):
@@ -108,6 +111,10 @@ def test_catalog_texts_are_the_approved_microcopy():
         "run_mode_mismatch": "Der aktuelle Analysemodus passt nicht zum Feldvorschlag.",
         "missing_sources": "Für einen belastbaren Vorschlag fehlen passende Quellen.",
         "field_not_supported": "Für dieses Feld ist noch kein Abschnittsvorschlag verfügbar.",
+        "ai_call_limit_reached": (
+            "Das Limit für KI-Aufrufe in diesem Analyse-Lauf ist erreicht. "
+            "Starten Sie einen neuen Analyse-Lauf, um weitere Vorschläge zu erzeugen."
+        ),
     }
 
 

@@ -50,12 +50,12 @@ export function RoleIcon({
   return (
     <span
       className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-lg border",
+        "inline-flex size-9 shrink-0 items-center justify-center rounded-md border",
         iconTone(role),
         className
       )}
     >
-      <Icon aria-hidden="true" className="size-5" />
+      <Icon aria-hidden="true" className="size-4.5" />
     </span>
   )
 }
@@ -96,28 +96,23 @@ export function RoleCard({
         "group/role flex w-full cursor-pointer gap-3 text-left outline-none transition-[background-color,border-color,box-shadow] duration-200",
         "focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background",
         catalog
-          ? "min-h-44 items-start rounded-xl border border-border bg-card p-5 hover:border-primary/30 hover:bg-muted/25"
-          : "min-h-11 items-center rounded-lg px-3 py-3 hover:bg-background/80",
-        expanded && "bg-accent/55 ring-2 ring-primary/20"
+          ? "items-start rounded-lg border border-border bg-card p-4 hover:border-foreground/20 hover:bg-muted/20"
+          : "items-center rounded-lg border border-border bg-background px-3 py-2.5 hover:border-foreground/20 hover:bg-muted/30",
+        expanded && "border-foreground/25 bg-muted/50 ring-2 ring-ring/20"
       )}
     >
       <RoleIcon role={role} />
       <span className="min-w-0 flex-1">
-        <span className="flex flex-wrap items-center gap-2">
-          <span className="text-sm font-semibold text-foreground">
-            {role.name}
-          </span>
+        <span className="block text-sm font-semibold text-foreground">
+          {role.name}
+        </span>
+        <span className="mt-1.5 flex flex-wrap items-center gap-1.5">
           <ModeBadge mode={role.mode} />
           <AvailabilityBadge role={role} />
         </span>
-        <span className="mt-1.5 block text-sm leading-relaxed text-muted-foreground">
-          <span className="font-medium text-foreground">Wobei hilft sie?</span>{" "}
-          {role.specialization}
-        </span>
         {catalog && (
-          <span className="mt-3 block border-t border-border/70 pt-3 text-sm text-foreground">
-            <span className="font-medium">Was erhalten Sie?</span>{" "}
-            {role.outputSummary}
+          <span className="mt-2.5 block text-sm leading-relaxed text-muted-foreground">
+            {role.specialization}
           </span>
         )}
       </span>
@@ -125,7 +120,7 @@ export function RoleCard({
         aria-hidden="true"
         className={cn(
           "size-4 shrink-0 text-muted-foreground/70 transition-transform duration-200 group-hover/role:translate-x-0.5",
-          catalog ? "mt-3" : ""
+          catalog ? "mt-2" : ""
         )}
       />
     </button>

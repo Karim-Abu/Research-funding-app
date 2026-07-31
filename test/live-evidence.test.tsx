@@ -77,7 +77,9 @@ describe("LiveEvidence", () => {
       screen.getByText("Die Passage trägt die konkrete Aussage direkt.")
     ).toBeInTheDocument()
     expect(
-      screen.getByText("Die Quelle widerspricht der Aussage oder bleibt unklar.")
+      screen.getByText(
+        "Die Passage stützt die zugeordnete Anforderung nicht. Den konkreten Prüfgrund finden Sie bei der Fundstelle."
+      )
     ).toBeInTheDocument()
   })
 
@@ -178,9 +180,30 @@ describe("LiveEvidence", () => {
     render(<LiveEvidence runId="r1" />)
     await waitFor(() => expect(screen.getByText("Offen.")).toBeInTheDocument())
     expect(screen.getByText("Menschliche Prüfung erforderlich")).toBeInTheDocument()
-    expect(screen.getByText("Widersprüchlich/unklar")).toBeInTheDocument()
+    expect(screen.getByText("Nicht als Beleg verwendbar")).toBeInTheDocument()
     // Coverage-Zähler zählt weiterhin nur exact_verified (hier: 0).
     expect(screen.getByText(/0 gefundene Textstelle/)).toBeInTheDocument()
+  })
+
+  it("zeigt bei nicht verwendbaren Belegen den konkreten Prüfgrund", async () => {
+    mock(
+      [
+        anchor({
+          verification_status: "rejected",
+          rejection_text_de: "Zum Zahlenwert fehlt die erforderliche Einheit.",
+        }),
+      ],
+      [assessment([link()])]
+    )
+    render(<LiveEvidence runId="r1" />)
+
+    const button = await screen.findByRole("button", { name: "Prüfgrund anzeigen" })
+    fireEvent.click(button)
+
+    expect(screen.getByText("Prüfgrund")).toBeInTheDocument()
+    expect(
+      screen.getByText("Zum Zahlenwert fehlt die erforderliche Einheit.")
+    ).toBeInTheDocument()
   })
 
   it("shows a calm empty state when there is no evidence", async () => {

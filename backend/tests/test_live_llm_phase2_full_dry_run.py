@@ -319,24 +319,12 @@ def _prepare_child_environment(work_root: Path) -> None:
         "OPENAI_API_KEY": "offline-transport-test-only",
         "ANTHROPIC_API_KEY": "offline-transport-test-only",
         "FIRECRAWL_API_KEY": "offline-transport-test-only",
-        "AGENT_MODEL_GPT_56_TERRA_ID": "offline-terra-model",
-        "AGENT_MODEL_CLAUDE_SONNET_5_ID": "offline-sonnet-model",
-        "AGENT_MODEL_PRICING_CHF_PER_MILLION": json.dumps({
-            "offline-terra-model": {
-                "input_chf_per_million": 0.01,
-                "output_chf_per_million": 0.02,
-                "price_version": "offline-dry-run-v1",
-                "source_url": "https://pricing.invalid/offline",
-                "checked_at": "2026-07-22",
-            },
-            "offline-sonnet-model": {
-                "input_chf_per_million": 0.01,
-                "output_chf_per_million": 0.02,
-                "price_version": "offline-dry-run-v1",
-                "source_url": "https://pricing.invalid/offline",
-                "checked_at": "2026-07-22",
-            },
-        }),
+        # 2026-07-26: AGENT_MODEL_PRICING_CHF_PER_MILLION bepreist seit 8416914
+        # keinen Call mehr (pricing.resolve_cost ist USD-first, fail-closed).
+        # Der Harness prueft vor jedem Call den Preis und bricht sonst mit
+        # "unknown_price" ab — der Dry Run braucht deshalb echte Katalog-Ids.
+        "AGENT_MODEL_GPT_56_TERRA_ID": "gpt-5.6-terra",
+        "AGENT_MODEL_CLAUDE_SONNET_5_ID": "claude-sonnet-5",
     })
     work_root.mkdir(parents=True, exist_ok=True)
     tempfile.tempdir = str(work_root / "temporary")
@@ -656,8 +644,8 @@ def test_phase2_prepare_web_resume_llm_full_offline_dry_run():
     # The full reservation blocks an unplanned repair from displacing a
     # mandatory case; an unknown price also fails closed.
     all_calls, _, _ = local_harness._planned_calls(type("S", (), {
-        "agent_model_gpt_56_terra_id": "offline-terra-model",
-        "agent_model_claude_sonnet_5_id": "offline-sonnet-model",
+        "agent_model_gpt_56_terra_id": "gpt-5.6-terra",
+        "agent_model_claude_sonnet_5_id": "claude-sonnet-5",
         "a1_context_char_budget": 24000,
     })())
     assert [item.label for item in all_calls] == [
@@ -671,23 +659,8 @@ def test_phase2_prepare_web_resume_llm_full_offline_dry_run():
     ):
         local_harness._assert_budget_before_call(
             full_ledger, label="repair", provider="openai_direct",
-            model_id="offline-terra-model", prompt="repair", max_output_tokens=4096,
-            settings=type("Prices", (), {"agent_model_pricing_chf_per_million": {
-                "offline-terra-model": {
-                    "input_chf_per_million": 0.01,
-                    "output_chf_per_million": 0.02,
-                    "price_version": "offline-dry-run-v1",
-                    "source_url": "https://pricing.invalid/offline",
-                    "checked_at": "2026-07-22",
-                },
-                "offline-sonnet-model": {
-                    "input_chf_per_million": 0.01,
-                    "output_chf_per_million": 0.02,
-                    "price_version": "offline-dry-run-v1",
-                    "source_url": "https://pricing.invalid/offline",
-                    "checked_at": "2026-07-22",
-                },
-            }})(),
+            model_id="gpt-5.6-terra", prompt="repair", max_output_tokens=4096,
+            settings=type("Prices", (), {"agent_model_pricing_chf_per_million": {}})(),
         )
     with pytest.raises(local_harness.HarnessFailure, match="unknown_price"):
         local_harness._assert_budget_before_call(

@@ -96,7 +96,7 @@ class _PreflightEcho(FakeProvider):
         return ProviderResult(
             raw_output='{"pong": true}',
             usage=ProviderUsage(1, 1),
-            model="actual-hermetic-terra",
+            model="gpt-5.6-sol",
         )
 
 
@@ -108,26 +108,24 @@ class _LiveA2(FakeProvider):
         return ProviderResult(
             raw_output=json.dumps(bundle()),
             usage=ProviderUsage(40, 120),
-            model="actual-hermetic-terra",
+            model="gpt-5.6-sol",
         )
 
 
 def _arm_live_a2(db, run, monkeypatch) -> None:
     settings = get_settings()
-    model_id = "requested-hermetic-terra"
+    # 2026-07-26: Die Route muss ueber den versionierten USD-Katalog bepreisbar
+    # sein. Seit 8416914 ist agent_model_pricing_chf_per_million wirkungslos
+    # (pricing.resolve_cost loest ausschliesslich USD-first auf), und
+    # route_configuration_reason meldet fuer ein unbepreistes Modell
+    # "live_price_metadata_missing". Deshalb echte Katalog-Ids statt
+    # Fantasienamen. Requested != actual bleibt erhalten, damit der Test
+    # weiterhin belegt, dass das TATSAECHLICH bestaetigte Modell verbucht wird.
+    model_id = "gpt-5.6-terra"
     monkeypatch.setattr(settings, "ai_eval_mode", "real")
     monkeypatch.setattr(settings, "agent_fake_provider", False)
     monkeypatch.setattr(settings, "openai_api_key", "openai-hermetic")
     monkeypatch.setattr(settings, "agent_model_gpt_56_terra_id", model_id)
-    monkeypatch.setattr(settings, "agent_model_pricing_chf_per_million", {
-        model_id: {
-            "input_chf_per_million": 1,
-            "output_chf_per_million": 2,
-            "price_version": "test-v1",
-            "source_url": "https://prices.example.test",
-            "checked_at": "2026-07-16",
-        }
-    })
     _attach_real_confirmation(db, run)
     result = preflight_route(
         "openai_gpt_56_terra_candidate",
@@ -174,10 +172,16 @@ def test_invented_evidence_anchor_rejected(db):
     assert _suggestions(db, run) == []
 
 
-def test_unknown_open_issue_rejected(db):
+def test_unknown_open_issue_is_stripped_with_warning(db):
+    """Seit 30.7.2026: unbekannte Open-Issue-Verweise sind Metadaten-Fehler des
+    Modells — sie werden aussortiert und gewarnt, statt den ganzen Vorschlag
+    zu verwerfen (Belege/Quellen bleiben harte Gates)."""
     run, draft, base = build_run_with_draft(db)
     out = _run(db, run, draft, base, success_fake(bundle(open_issue_ids=["NO-SUCH-ISSUE"])))
-    assert out.status == "failed" and out.reason == "unknown_open_issue"
+    assert out.status == "succeeded"
+    assert "unknown_open_issue_removed" in out.view["warnings"]
+    suggestion = _suggestions(db, run)[0]
+    assert suggestion.open_issue_ids == []
 
 
 def test_empty_text_rejected(db):

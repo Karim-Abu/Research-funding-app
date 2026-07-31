@@ -123,11 +123,14 @@ def test_vc_invented_evidence_anchor_rejected(db):
     assert out.status == "failed" and out.reason == "unknown_evidence_anchor"
 
 
-def test_vc_unknown_open_issue_rejected(db):
+def test_vc_unknown_open_issue_is_stripped_with_warning(db):
+    """Seit 30.7.2026: unbekannte Open-Issue-Verweise werden aussortiert und
+    gewarnt statt den ganzen Vorschlag zu verwerfen."""
     run, draft, base = _vc_draft(db)
     out = _run_vc(db, run, draft, base,
                   success_fake(_vc_bundle(open_issue_ids=["issue-nope"])))
-    assert out.status == "failed" and out.reason == "unknown_open_issue"
+    assert out.status == "succeeded"
+    assert "unknown_open_issue_removed" in out.view["warnings"]
 
 
 def test_vc_blocked_policy_makes_no_provider_call(db):

@@ -1,6 +1,7 @@
-// RUN 4B §8 — kompakte Markt-Ansicht im Editor: Status + Anzahl geprüfter
-// Quellen, höchstens drei Findings, ehrliche limited-ohne-Items-Copy,
-// keine zweite Analyse (nur Link/Öffnen).
+// RUN 4B §8 — kompakte Markt-Ansicht im Editor: Status + drei Kennzahlen
+// (Quellen/Lösungen/Lücken), ehrliche limited-ohne-Items-Copy, keine zweite
+// Analyse (nur Link/Öffnen). Marktbild und Gesamturteil-Begründung liegen in
+// der Detailansicht (market-comparison-sheet.test.tsx).
 import { describe, it, expect, vi } from "vitest"
 import { render, screen } from "@testing-library/react"
 
@@ -52,7 +53,7 @@ function comparison(
 }
 
 describe("LiveMarketComparison (RUN 4B §8)", () => {
-  it("zeigt Status, Anzahl geprüfter Quellen und höchstens drei Findings", () => {
+  it("zeigt Status und die drei Kennzahlen (Quellen, Lösungen, Lücken)", () => {
     render(
       <LiveMarketComparison
         comparison={comparison()}
@@ -60,15 +61,14 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
         onOpenComparison={vi.fn()}
       />
     )
-    // Dedupliziert: 4 Einträge über 2 Quellen.
+    // Dedupliziert: 4 Einträge über 2 Quellen, alle 4 sind Lösungskandidaten.
     expect(screen.getByText("2 geprüfte Quellen")).toBeInTheDocument()
-    // Höchstens drei Findings, der vierte Eintrag erscheint nicht.
-    expect(screen.getByText("Anbieter i1")).toBeInTheDocument()
-    expect(screen.getByText("Anbieter i3")).toBeInTheDocument()
-    expect(screen.queryByText("Anbieter i4")).toBeNull()
+    expect(screen.getByText("4 Lösungen gefunden")).toBeInTheDocument()
+    // Keine offenen Lücken → keine dritte Zeile.
+    expect(screen.queryByText(/zentrale Lücke/)).toBeNull()
     // Arbeitsfläche nur über den Link — kein Generate-Button im Editor.
     expect(
-      screen.getByRole("button", { name: "Marktvergleich öffnen" })
+      screen.getByRole("button", { name: "Details öffnen" })
     ).toBeInTheDocument()
     expect(screen.queryByText(/Vergleich erstellen/)).toBeNull()
   })
@@ -86,8 +86,29 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
     )
     // Ohne Einträge bleibt die Tabelle zu; der Öffnen-Button erklärt warum.
     expect(
-      screen.getByRole("button", { name: "Marktvergleich öffnen" })
+      screen.getByRole("button", { name: "Details öffnen" })
     ).toBeDisabled()
+  })
+
+  // Marktstatistiken sind keine Wettbewerber — auch nicht in der kompakten Rail.
+  it("führt Marktaussagen nicht als Wettbewerbs-Findings", () => {
+    const claim = {
+      ...item("m1", "s1"),
+      name: "Marktwachstum 2032",
+      category: "market_size_claim" as const,
+    }
+    render(
+      <LiveMarketComparison
+        comparison={comparison({ items: [claim], item_count: 1 })}
+        loaded
+        onOpenComparison={vi.fn()}
+      />
+    )
+    // Erzeugt keine Kennzahlen-/Findings-Anzeige, sondern eine ehrliche Leerzeile.
+    expect(screen.getByTestId("market-editor-empty")).toHaveTextContent(
+      "Bisher nur Marktinformationen gefunden, noch keine vergleichbaren Lösungen."
+    )
+    expect(screen.queryByTestId("market-editor-summary")).toBeNull()
   })
 
   it("ohne Vergleich: neutraler Leerzustand mit Quellen-Link", () => {
@@ -108,48 +129,25 @@ describe("LiveMarketComparison (RUN 4B §8)", () => {
       />
     )
     expect(screen.getByTestId("market-editor-status")).toHaveTextContent(
-      "Letzter Versuch fehlgeschlagen"
+      "Erstellung fehlgeschlagen"
     )
     expect(screen.queryByText("Nicht analysiert")).toBeNull()
     expect(
-      screen.getByRole("button", { name: "Marktvergleich öffnen" })
+      screen.getByRole("button", { name: "Details öffnen" })
     ).toBeDisabled()
     expect(
       screen.getByTestId("market-editor-open-disabled-reason")
     ).toHaveTextContent("Letzter Versuch fehlgeschlagen — unter Quellen erneut erstellen.")
   })
 
-  it("zeigt ein kompaktes Marktbild aus belegten Einträgen", () => {
-    render(
-      <LiveMarketComparison comparison={comparison()} loaded onOpenComparison={vi.fn()} />
-    )
-    expect(screen.getByTestId("market-editor-picture")).toHaveTextContent("Lösungsarten")
-  })
-
-  it("zeigt das Gesamturteil als kompaktes Entscheidungsboard, wenn vorhanden", () => {
+  it("zeigt eine Lücken-Kennzahl, wenn offene Evidenzlücken bestehen", () => {
     render(
       <LiveMarketComparison
-        comparison={comparison({
-          competition_judgment: {
-            status: "no_direct_equivalent_in_scope",
-            rationale: "…",
-            scope_summary: "Im definierten Suchumfang: 2 geprüfte öffentliche Quellen, 2 untersuchte Lösungskandidaten.",
-            relevant_candidate_count: 2,
-            key_overlaps: [],
-            evidenced_differentiators: [],
-            plausible_unverified_differentiators: [],
-            open_evidence_gaps: [],
-            allowed_formulations: [],
-            disallowed_formulations: [],
-            can_insert_into_application: false,
-          },
-        })}
+        comparison={comparison({ research_gaps: ["Eine offene Lücke."] })}
         loaded
         onOpenComparison={vi.fn()}
       />
     )
-    const board = screen.getByTestId("market-editor-judgment")
-    expect(board).toHaveTextContent("Keine direkt gleichwertige Lösung im Suchraum")
-    expect(board).toHaveTextContent("Im definierten Suchumfang")
+    expect(screen.getByText("1 zentrale Lücke")).toBeInTheDocument()
   })
 })
