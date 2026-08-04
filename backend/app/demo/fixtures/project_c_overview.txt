@@ -1,0 +1,7 @@
+Demo-Beispieldaten, synthetisch.
+
+Das Projekt Adaptive Wärmepumpen-Regelung für Quartiere entwickelt eine prädiktive Steuerung, die Wärmepumpen auf Quartiersebene koordiniert und Lastspitzen reduziert. Der Schweizer Umsetzungspartner ThermoGrid Systems AG stellt den Anlagenzugang, Betriebsdaten und ein Pilotquartier bereit und ist in der Schweiz wertschöpfend tätig.
+
+Ein beitragsberechtigter Schweizer Forschungspartner ist eingebunden. Das Schweizer Institut für Energiesysteme entwickelt die Regelungsmodelle und validiert sie mit Messkampagnen im Pilotbetrieb.
+
+Ziel des Vorhabens ist eine nachweisbare Senkung des Spitzenlastbezugs im Quartier bei gleichbleibendem Wärmekomfort. Die Ergebnisse werden über Betriebsdaten der Pilotanlagen dokumentiert.

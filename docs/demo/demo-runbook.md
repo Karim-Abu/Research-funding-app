@@ -47,6 +47,12 @@ eine `NEXT_PUBLIC_*`-Variable.
 
 ## 3. Startbefehle (frische Demo-DB)
 
+**Abkürzung (PoC):** `scripts\start_poc_demo.ps1` erledigt Seed und
+Backend-Start in einem Terminal — frische `var/demo.db`, vier Demo-Projekte,
+Session-Env ohne Änderungen an `backend/.env` oder `backend/app.db`
+(Standard ohne `--evaluation`; `-Evaluation` für den angereicherten Datensatz).
+Frontend danach wie unten in Schritt 3 starten (für den PoC genügt `npm run dev`).
+
 ### PowerShell (Windows)
 
 ```powershell
@@ -89,7 +95,10 @@ APP_BACKEND_MODE=live FASTAPI_BRIDGE_URL=http://127.0.0.1:8000/api/v1 \
   corepack pnpm build && node node_modules/next/dist/bin/next start --port 3000
 ```
 
-**Backend und Frontend müssen dieselbe `DATABASE_URL` verwenden.**
+**Das Backend, mit dem das Frontend spricht, muss auf der Demo-DB laufen** —
+dieselbe `DATABASE_URL` im Seed- und im Server-Terminal setzen. (Das Frontend
+selbst öffnet keine Datenbank; es spricht nur über `FASTAPI_BRIDGE_URL` mit dem
+Backend.)
 
 Anmeldung (Seed-Nutzer): `anna.keller@example.test` / `changeme-dev-lead`
 (Lead/Admin) oder `tobias.frei@example.test` / `changeme-dev-member`.
@@ -284,8 +293,9 @@ und Pass/Fail — keine Antragstexte, keine PII.
 
 ## 7. Vorbereiteter synthetischer Backup-Run
 
-Der Seed `python -m app.demo.seed --reset --evaluation` legt zwei vollständige,
-synthetische Demo-Projekte mit abgeschlossenem deterministischem Lauf an
+Der Seed `python -m app.demo.seed --reset --evaluation` legt vier synthetische
+Demo-Projekte an — zwei mit abgeschlossenem deterministischem Lauf (A, B) und
+zwei in früher Phase ohne Lauf (C, D)
 (siehe [`Demo_Walkthrough.md`](Demo_Walkthrough.md) und
 [`Demo_Data_Dictionary.md`](Demo_Data_Dictionary.md)). Falls die Live-Vorführung
 klemmt, kann direkt eines dieser Projekte gezeigt werden (Dashboard → Projekt →

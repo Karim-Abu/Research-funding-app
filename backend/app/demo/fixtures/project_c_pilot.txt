@@ -1,0 +1,5 @@
+Demo-Beispieldaten, synthetisch.
+
+Das Pilotquartier umfasst zwölf Mehrfamiliengebäude mit bestehenden Wärmepumpen unterschiedlicher Hersteller. ThermoGrid Systems AG rüstet die Anlagen mit einer einheitlichen Mess- und Steuerschnittstelle aus und betreibt die Datenerfassung über eine volle Heizperiode.
+
+Das Schweizer Institut für Energiesysteme nutzt die erfassten Betriebsdaten, um die prädiktiven Regelungsmodelle zu kalibrieren und die Einsparwirkung gegenüber der bisherigen Einzelregelung zu quantifizieren. Die Validierung erfolgt anhand definierter Messgrössen wie Spitzenlast, Verschiebepotenzial und Raumtemperaturstabilität.

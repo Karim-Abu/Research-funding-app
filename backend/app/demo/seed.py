@@ -399,12 +399,12 @@ def _verify_project_presence(db: Session, settings) -> None:
         )
     ) or 0
     if demo_count != len(DEMO_PROJECTS):
-        raise RuntimeError("Demo seed incomplete: expected both demo projects.")
+        raise RuntimeError("Demo seed incomplete: expected all demo projects.")
     if settings.app_env == "test":
         total_count = db.scalar(select(func.count(Project.project_id))) or 0
         if total_count != len(DEMO_PROJECTS):
             raise RuntimeError(
-                "Isolated test demo seed expected exactly two projects."
+                f"Isolated test demo seed expected exactly {len(DEMO_PROJECTS)} projects."
             )
 
 
@@ -431,8 +431,8 @@ def seed_demo_data(*, reset: bool = False, evaluation: bool = False) -> None:
             if project.primary_application_source_id is None and demo.sources:
                 project.primary_application_source_id = demo.sources[0].source_id
                 db.commit()
-            run = _ensure_run(db, project, demo, settings)
-            if demo.draft_edits:
+            run = _ensure_run(db, project, demo, settings) if demo.execute_run else None
+            if run is not None and demo.draft_edits:
                 _apply_draft_edits(db, run, demo)
                 db.expire_all()
                 run = db.get(AnalysisRun, demo.run_id)

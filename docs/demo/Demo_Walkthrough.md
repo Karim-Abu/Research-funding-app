@@ -1,6 +1,7 @@
 # Demo Walkthrough
 
-Milestone 6.1 liefert zwei synthetische Demo-Projekte fuer eine Live-Vorfuehrung.
+Der Demo-Seed liefert vier synthetische Demo-Projekte fuer eine Live-Vorfuehrung
+(Milestone 6.1: Projekt A und B; PoC-Ausbau: Projekt C und D in frueher Phase).
 Die Daten werden nicht beim Start der Anwendung erzeugt. Sie werden explizit
 ueber den Demo-Seed erstellt:
 
@@ -26,14 +27,18 @@ Frontend im Live-Modus starten und mit Anna anmelden:
 
 ## Dashboard
 
-Nach dem Seed zeigt das Dashboard zwei Demo-Projekte:
+Nach dem Seed zeigt das Dashboard vier Demo-Projekte:
 
 - `KI-gestuetzte Entwicklung kreislauffaehiger Verbundwerkstoffe (Demo)`
 - `Zustandsueberwachung fuer Produktionsanlagen (Demo)`
+- `Adaptive Waermepumpen-Regelung fuer Quartiere (Demo)`
+- `Rezyklierbare Verpackungsfolien aus Agrarreststoffen (Demo)`
 
-Beide Karten tragen ein Demo-Badge. Project A zeigt den naechsten Schritt
+Alle Karten tragen ein Demo-Badge. Project A zeigt den naechsten Schritt
 `Entwurf weiterbearbeiten`. Project B zeigt Anforderungen/Analyse pruefen,
-weil der Forschungspartner absichtlich fehlt.
+weil der Forschungspartner absichtlich fehlt. Project C (Quellen erfasst,
+Analyse noch nicht gestartet) zeigt `Analyse starten`; Project D (noch keine
+Unterlagen) zeigt `Quellen hochladen`.
 
 ## Project A
 
@@ -67,6 +72,22 @@ Forschungspartner erzeugt eine blockierende Review-Finding, sodass keine Freigab
 moeglich ist. Project B impliziert keine Approval-, Export- oder
 Submission-Bereitschaft.
 
+## Project C
+
+Project C ist im Zustand `Analyse noch nicht gestartet`: zwei verarbeitete
+Quellen, ein Umsetzungspartner und ein beitragsberechtigter Forschungspartner
+sind erfasst, ein Analyse-Lauf existiert bewusst nicht. Die Karte zeigt
+`Analyse starten`. In einer Vorfuehrung laesst sich hier die deterministische
+Analyse live starten; sie laeuft ohne Blocker durch, weil der
+Forschungspartner beitragsberechtigt ist.
+
+## Project D
+
+Project D ist im Zustand `Startphase`: nur das Projekt und ein
+Umsetzungspartner sind angelegt, es gibt keine Quellen und keinen Lauf. Die
+Karte zeigt `Quellen hochladen`. Das Projekt zeigt den ehrlichen Leerzustand
+des Einstiegs.
+
 ## Reset
 
 Der Reset loescht nur manifest-eigene Demo-Objekte und manifest-eigene
@@ -77,5 +98,5 @@ python -m app.demo.seed --reset
 ```
 
 In einer bestehenden Entwicklungsdatenbank bleiben nicht-demo Projekte erhalten.
-In einer isolierten Testdatenbank muessen nach dem Seed genau zwei Projekte
-existieren.
+In einer isolierten Testdatenbank muessen nach dem Seed genau die geseedeten
+Demo-Projekte existieren (aktuell vier).

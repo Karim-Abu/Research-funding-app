@@ -76,6 +76,49 @@ Important retained limitation:
 Project B is intentionally blocked at the requirements stage and does not imply
 draft, review, approval, export, or submission readiness.
 
+## Project C
+
+Title:
+`Adaptive Waermepumpen-Regelung fuer Quartiere (Demo)`
+
+Truthful state:
+`Analyse noch nicht gestartet`
+
+Seeded structured data:
+
+- One Swiss implementation partner:
+  `ThermoGrid Systems AG (Demo)`
+- One eligible Swiss research partner:
+  `Schweizer Institut fuer Energiesysteme (Demo)`
+- Two synthetic processed text sources:
+  `Demo C - Projektueberblick.txt`,
+  `Demo C - Pilotquartier.txt`
+- No analysis run by design (`execute_run=False`) — the dashboard shows the
+  honest pre-analysis state `Analyse starten`
+
+Important retained limitation:
+Project C has no run artifacts (no rule results, assessments, drafts, or
+findings) until an analysis is started manually.
+
+## Project D
+
+Title:
+`Rezyklierbare Verpackungsfolien aus Agrarreststoffen (Demo)`
+
+Truthful state:
+`Startphase, keine Unterlagen`
+
+Seeded structured data:
+
+- One Swiss implementation partner:
+  `AlpFilm Packaging AG (Demo)`
+- No sources and no analysis run by design (`execute_run=False`) — the
+  dashboard shows the honest empty state `Quellen hochladen`
+
+Important retained limitation:
+Project D contains only the project and one partner; every later workflow
+stage is intentionally untouched.
+
 ## Derived Artifacts
 
 The seed uses normal application services and workflow calls for:
