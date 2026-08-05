@@ -1,0 +1,17 @@
+﻿.........................                                                [100%]
+============================== warnings summary ===============================
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+.venv\Lib\site-packages\pydantic\v1\typing.py:68
+  C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\pydantic\v1\typing.py:68: DeprecationWarning: Failing to pass a value to the 'type_params' parameter of 'typing.ForwardRef._evaluate' is deprecated, as it leads to incorrect behaviour when calling typing.ForwardRef._evaluate on a stringified annotation that references a PEP 695 type parameter. It will be disallowed in Python 3.15.
+    return cast(Any, type_)._evaluate(globalns, localns, recursive_guard=set())
+
+.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18
+  C:\Users\karim\OneDrive - FHNW\Documents\Bachelorthesis\App\Reasearch-funding-app\backend\.venv\Lib\site-packages\langgraph\checkpoint\base\__init__.py:18: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html

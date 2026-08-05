@@ -1,0 +1,77 @@
+﻿.\.venv\Scripts\python.exe : INFO  [alembic.runtime.migration] Context impl SQLiteImpl.
+In Zeile:15 Zeichen:1
++ .\.venv\Scripts\python.exe -m alembic -c alembic.ini upgrade head *>  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (INFO  [alembic....mpl SQLiteImpl.:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+INFO  [alembic.runtime.migration] Will assume non-transactional DDL.
+INFO  [alembic.runtime.migration] Running upgrade  -> 08e269f5b452, initial schema
+INFO  [alembic.runtime.migration] Running upgrade 08e269f5b452 -> 4fb52517c454, source ingestion
+INFO  [alembic.runtime.migration] Running upgrade 4fb52517c454 -> c0774f9f2c38, run orchestration
+INFO  [alembic.runtime.migration] Running upgrade c0774f9f2c38 -> d3a1b6e4f2c7, Milestone 4 — partners, project 
+snapshot, rule results, assessments, issues.
+INFO  [alembic.runtime.migration] Running upgrade d3a1b6e4f2c7 -> e7c2a9d4b8f1, Milestone 5 — deterministic evidence: 
+candidates, anchors, links.
+INFO  [alembic.runtime.migration] Running upgrade e7c2a9d4b8f1 -> f4b8c1d6e9a2, Milestone 6 — deterministic template 
+drafts: portal field drafts + versions.
+INFO  [alembic.runtime.migration] Running upgrade f4b8c1d6e9a2 -> a6d1c7e9f024, Milestone 6.1 - deterministic demo 
+seed manifest.
+INFO  [alembic.runtime.migration] Running upgrade a6d1c7e9f024 -> b7e3f5a91c42, Milestone 7 — review layer: findings, 
+human decisions, approvals, packages.
+INFO  [alembic.runtime.migration] Running upgrade b7e3f5a91c42 -> c8f1a2d3e4b5, Milestone 8 — deterministic exports: 
+export_artifacts + tool_invocations.
+INFO  [alembic.runtime.migration] Running upgrade c8f1a2d3e4b5 -> d9a4b2c6e8f3, Milestone 9A — agent infrastructure: 
+agent_invocations + control link.
+INFO  [alembic.runtime.migration] Running upgrade d9a4b2c6e8f3 -> e1b7f3a9c2d4, Milestone 9B — A1 fact extraction: 
+extracted_facts + invocation context_meta.
+INFO  [alembic.runtime.migration] Running upgrade e1b7f3a9c2d4 -> f3c5d7e9a1b2, Milestone 9C — A1 evidence mapping: 
+candidate origin + agent proposal trail.
+INFO  [alembic.runtime.migration] Running upgrade f3c5d7e9a1b2 -> a7d2e4c8b1f6, Milestone 9D — A2 solution & 
+innovation draft suggestions.
+INFO  [alembic.runtime.migration] Running upgrade a7d2e4c8b1f6 -> b4e8f1a3c6d2, Milestone 9D.2 — cloud-processing 
+confirmations + policy-snapshot provenance.
+INFO  [alembic.runtime.migration] Running upgrade b4e8f1a3c6d2 -> c5f9a2d7b3e1, Milestone 9I-A — public web research: 
+research_tasks + research_results,
+and research-task scoping for tool_invocations / control_results / usage_records.
+INFO  [alembic.runtime.migration] Running upgrade c5f9a2d7b3e1 -> d7a3f1c9e524, Milestone 9I-B — market & competitor 
+comparison (beta-internal tables).
+INFO  [alembic.runtime.migration] Running upgrade d7a3f1c9e524 -> e2b6c4f8a1d3, Milestone 9J — search query firewall 
+approvals (beta-internal privacy control).
+INFO  [alembic.runtime.migration] Running upgrade e2b6c4f8a1d3 -> f3d7a9c2e5b1, Milestone 9K — MAS reliability tables 
+(beta-internal, run-scoped).
+INFO  [alembic.runtime.migration] Running upgrade f3d7a9c2e5b1 -> e9124fbf91d8, project budget fields
+INFO  [alembic.runtime.migration] Running upgrade e9124fbf91d8 -> 262f51ba5176, copy events
+INFO  [alembic.runtime.migration] Running upgrade 262f51ba5176 -> 7b091c3d3e24, finding v2 fields
+INFO  [alembic.runtime.migration] Running upgrade 7b091c3d3e24 -> a3f8c2d91e47, import candidates
+INFO  [alembic.runtime.migration] Running upgrade a3f8c2d91e47 -> b2c4e6a8d0f1, usage cost status
+INFO  [alembic.runtime.migration] Running upgrade b2c4e6a8d0f1 -> c7d9e2f4a6b8, import candidate edited text
+INFO  [alembic.runtime.migration] Running upgrade c7d9e2f4a6b8 -> d8f2a4c6e0b3, partner review comment
+INFO  [alembic.runtime.migration] Running upgrade d8f2a4c6e0b3 -> e6b3d5f7a9c1, run phases
+INFO  [alembic.runtime.migration] Running upgrade e6b3d5f7a9c1 -> 1d4f8a2c6b90, Import-Mapping-Version und 
+Abschnittsmetadaten.
+INFO  [alembic.runtime.migration] Running upgrade 1d4f8a2c6b90 -> 7a9c2e4f6b81, Strukturierte Importkandidaten und 
+additive Zielmodell-Felder.
+INFO  [alembic.runtime.migration] Running upgrade 7a9c2e4f6b81 -> 8c1e3f5a7b92, Honest generation semantics and 
+subsection A2 suggestions.
+INFO  [alembic.runtime.migration] Running upgrade 8c1e3f5a7b92 -> 9d2f4a6b8c13, Public-safe research briefs and honest 
+research provenance.
+INFO  [alembic.runtime.migration] Running upgrade 9d2f4a6b8c13 -> f9c2a7d4e1b6, Generic metadata-only structured 
+transfer copy events.
+INFO  [alembic.runtime.migration] Running upgrade f9c2a7d4e1b6 -> a7e3c9f1b5d2, agent invocation actual model
+INFO  [alembic.runtime.migration] Running upgrade a7e3c9f1b5d2 -> b8f4d6a2c9e1, add versioned role and skill metadata 
+to agent invocations
+INFO  [alembic.runtime.migration] Running upgrade b8f4d6a2c9e1 -> c9e5a7b1d3f4, Add truthful live-model routing 
+metadata.
+INFO  [alembic.runtime.migration] Running upgrade c9e5a7b1d3f4 -> e4a7c2f9b6d1, Add truthful live-research metadata 
+and review states.
+INFO  [alembic.runtime.migration] Running upgrade e4a7c2f9b6d1 -> f7b9d2c4a681, RUN 2B import revisions, primary 
+application and evidence scope.
+INFO  [alembic.runtime.migration] Running upgrade f7b9d2c4a681 -> a1c3e5f7b902, RUN 3A readiness metadata and 
+simplified research brief.
+INFO  [alembic.runtime.migration] Running upgrade a1c3e5f7b902 -> b2d4f6a8c013, RUN 3B source provenance, external 
+anchors and market traceability.
+INFO  [alembic.runtime.migration] Running upgrade b2d4f6a8c013 -> c3e5a7b9d024, RUN 3C versioned suggestion context 
+and missing-input lifecycle.
+INFO  [alembic.runtime.migration] Running upgrade c3e5a7b9d024 -> c4d7e1f9a2b3, Persist exact provider usage 
+categories and USD cost snapshots.

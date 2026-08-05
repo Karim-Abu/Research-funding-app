@@ -1,0 +1,2 @@
+﻿?? docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md
+?? docs/evaluation/doku-verifikation-2026-08-05/
