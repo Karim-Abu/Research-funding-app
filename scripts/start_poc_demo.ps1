@@ -6,7 +6,7 @@
 # unveraendert (OS-Env hat Pydantic-Vorrang vor .env). Ctrl+C beendet das
 # Backend; die Overrides sterben mit diesem Prozess.
 #
-# Frontend separat starten (zweites Terminal, Repo-Wurzel): npm run dev
+# Frontend separat starten (zweites Terminal, Repo-Wurzel): corepack pnpm dev
 #
 # -Evaluation: zusaetzlich die M10-Evaluationsanreicherung seeden (veraendert
 # Projekt A und damit die Dashboard-Zahlen; Standard ist der reine Demo-Seed).
@@ -56,7 +56,7 @@ try {
 
     Write-Host ""
     Write-Host "Demo-DB bereit: backend\var\demo.db (4 Demo-Projekte)."
-    Write-Host "Frontend im zweiten Terminal starten (Repo-Wurzel): npm run dev"
+    Write-Host "Frontend im zweiten Terminal starten (Repo-Wurzel): corepack pnpm dev"
     Write-Host "Login: anna.keller@example.test / changeme-dev-lead"
     Write-Host "Beenden: Ctrl+C — backend\.env und backend\app.db wurden nicht veraendert."
     Write-Host ""

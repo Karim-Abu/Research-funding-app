@@ -1,4 +1,4 @@
-# Demo-Runbook — Innolink-Check Golden Path
+# Demo-Runbook — «Innosuisse-Antrag» Golden Path
 
 Reproduzierbare, demonstrierbare End-to-End-Demo des Golden Path auf einer
 frischen Demo-Datenbank, vollständig deterministisch (Fake-LLM + Fake-Web) und

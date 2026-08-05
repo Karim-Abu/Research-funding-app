@@ -1,4 +1,4 @@
-# Innolink-Check — Research-Funding-App
+# Innosuisse-Antrag — Research-Funding-App
 
 Feldbasierter Antragsassistent für Innosuisse-Innovationsprojekte. Ein
 nichttechnischer Nutzer gelangt von der Projektidee oder einem vorhandenen
@@ -10,6 +10,13 @@ Förderfähigkeit noch reicht es automatisch ein.
 - Frontend: Next.js / TypeScript (Repo-Wurzel).
 - Backend: FastAPI / SQLAlchemy (`backend/`), SQLite als Standard-DB.
 - Verbindliche Projektregeln: [`.claude/CLAUDEX.md`](.claude/CLAUDEX.md).
+
+> **Sie wollen die App nur installieren und bedienen?** Die
+> [Kurzanleitung `docs/SCHNELLSTART.md`](docs/SCHNELLSTART.md) führt ohne
+> Vorkenntnisse durch Installation, Start und einen ersten Rundgang. Die
+> vollständige Referenz ist die
+> [Bedienungsanleitung](docs/BEDIENUNGSANLEITUNG.md). Der folgende Abschnitt
+> ist die technische Kurzfassung.
 
 ## Schnellstart auf einem frischen Rechner
 
@@ -35,20 +42,30 @@ backend/.venv/bin/pip install -r backend/requirements.txt
 ### 3. Konfiguration (ohne Secrets)
 
 ```bash
-cp backend/.env.example backend/.env      # Fake-Provider ist Default; Keys optional/leer
-cp .env.example .env.local                # dann APP_BACKEND_MODE + FASTAPI_BRIDGE_URL setzen
+cp backend/.env.demo.example backend/.env   # fertige Demo-Werte, Keys leer
+cp .env.example .env.local                  # enthält APP_BACKEND_MODE + FASTAPI_BRIDGE_URL
 ```
 
-`.env.local` (Repo-Wurzel):
+Beide Vorlagen sind vollständig; für den Demo-Betrieb ist nichts zu editieren.
+`.env.local` (Repo-Wurzel) enthält:
 
 ```env
 APP_BACKEND_MODE=live
 FASTAPI_BRIDGE_URL=http://127.0.0.1:8000/api/v1
 ```
 
+Ohne `APP_BACKEND_MODE=live` läuft das Frontend **ohne Fehlermeldung** im
+Mock-Modus (Badge «Demo-Daten · keine echten Antragsdaten» in der Topbar).
+
+`backend/.env.demo.example` setzt `AGENT_FAKE_PROVIDER=true`,
+`WEB_RESEARCH_FAKE_PROVIDER=true`, `DEMO_DATA_ENABLED=true`, `AI_EVAL_MODE=off`
+und `DATABASE_URL=sqlite:///./var/demo.db`. Die allgemeine Vorlage
+`backend/.env.example` ist bewusst fail-closed (alle diese Schalter `false`) und
+damit **kein** Demo-Setup — sie ist die Basis für eine bewusste Live-Einrichtung.
+
 Provider-Keys gehören **ausschliesslich** in `backend/.env` (Server), nie in eine
 `NEXT_PUBLIC_*`-Variable. Ohne Keys sind reale Provider-Routen schlicht nicht
-verfügbar (kein Crash); der deterministische Fake-Provider ist der Default.
+verfügbar (kein Crash, kein stiller Fallback auf den Demo-Generator).
 
 ### 4. Datenbank: Migration + Seed
 
@@ -90,6 +107,10 @@ App: <http://localhost:3000> · Backend-Health: <http://127.0.0.1:8000/api/v1/he
 schnelle Entwicklung genügt `corepack pnpm dev` statt build/start.
 
 ## Demo
+
+[Kurzanleitung für Aussenstehende](docs/SCHNELLSTART.md) ·
+[Bedienungsanleitung](docs/BEDIENUNGSANLEITUNG.md) ·
+[Verifikationsbericht](docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md)
 
 Die reproduzierbare End-to-End-Demo (Golden Path) ist in
 [`docs/demo/demo-runbook.md`](docs/demo/demo-runbook.md) beschrieben; die
@@ -137,9 +158,9 @@ backend\.venv\Scripts\python.exe scripts\run_provider_availability_smoke.py
 - **OneDrive-Sync** kann ein stale `.next`-Verzeichnis sperren (`EPERM` beim
   Build — kein Hänger). Abhilfe: `.next` vor dem Build löschen (in den
   `verify_all`-Skripten automatisiert) oder Sync kurz pausieren.
-- **PDF-Import:** Der Innolink-Export führt den Haupttitel ohne Label → das Feld
-  bleibt manuell; auf dem echten Export sind 5/8 Felder automatisch nutzbar
-  ([`docs/evaluation/pdf-import-gate-report.md`](docs/evaluation/pdf-import-gate-report.md)).
+- **PDF-Import:** layoutabhängig und unvollständig; der Innolink-Export führt den
+  Haupttitel ohne Label → das Feld bleibt manuell. Gemessene Erkennungsquoten:
+  [`docs/evaluation/pdf-import-gate-report.md`](docs/evaluation/pdf-import-gate-report.md).
 - **Kein Portal-Writeback:** Feldtexte werden nur zum manuellen Kopieren
   vorbereitet; keine automatische Innolink-Übermittlung.
 
