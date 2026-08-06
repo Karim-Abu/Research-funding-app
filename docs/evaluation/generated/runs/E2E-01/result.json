@@ -1,1 +1,0 @@
-{"run_id":"E2E-01","command":"playwright test e2e/golden-path.spec.ts e2e/privacy-firewall.spec.ts e2e/evidence.spec.ts e2e/export.spec.ts e2e/review-truth.spec.ts e2e/ui-states.spec.ts --workers=1 --reporter=list,junit","started_at":"2026-07-25T21:35:45Z","finished_at":"2026-07-25T21:36:37Z","exit_code":1,"commit":"8416914"}

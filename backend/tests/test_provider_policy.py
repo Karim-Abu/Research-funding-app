@@ -155,7 +155,11 @@ def test_no_next_public_provider_secret():
     pattern = re.compile(r"NEXT_PUBLIC_\w*(KEY|SECRET|TOKEN|PROVIDER|ANTHROPIC|OPENAI)",
                          re.IGNORECASE)
     offenders: list[str] = []
-    candidates = [REPO_ROOT / ".env.example", REPO_ROOT / "backend" / ".env.example"]
+    candidates = [
+        REPO_ROOT / ".env.example",
+        REPO_ROOT / "backend" / ".env.example",
+        REPO_ROOT / "backend" / ".env.demo.example",
+    ]
     for scan_dir in (REPO_ROOT / "lib", REPO_ROOT / "app", REPO_ROOT / "components"):
         if scan_dir.exists():
             candidates.extend(scan_dir.rglob("*.ts"))

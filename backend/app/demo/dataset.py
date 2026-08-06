@@ -74,6 +74,9 @@ class DemoProject:
     sources: tuple[DemoSource, ...]
     draft_edits: dict[str, str]
     link_fields: tuple[str, ...]
+    # Early-stage demo projects skip the deterministic analysis run so the
+    # dashboard shows honest pre-analysis states (Quellen hochladen / Analyse starten).
+    execute_run: bool = True
 
     @property
     def project_id(self) -> str:
@@ -203,4 +206,91 @@ PROJECT_B = DemoProject(
     link_fields=(),
 )
 
-DEMO_PROJECTS = (PROJECT_A, PROJECT_B)
+PROJECT_C = DemoProject(
+    key="district-heat-control",
+    title="Adaptive Wärmepumpen-Regelung für Quartiere (Demo)",
+    description=(
+        "Synthetisches Demo-Projekt für prädiktive Wärmepumpen-Regelung auf "
+        "Quartiersebene; Quellen erfasst, Analyse noch nicht gestartet."
+    ),
+    innovation_field="Energiesysteme und Gebäudetechnik",
+    budget_framework_chf=480000.0,
+    partners=(
+        DemoPartner(
+            key="thermo-grid",
+            payload=PartnerCreate(
+                name="ThermoGrid Systems AG (Demo)",
+                partner_type="implementation_partner",
+                project_role="Pilotquartier und Systemintegration",
+                country="CH",
+                location="Luzern",
+                contribution="Anlagenzugang, Betriebsdaten, Pilotbetrieb",
+                uid="CHE-000.000.303",
+                industry="Energy Technology",
+                fte=35.0,
+                startup_status=False,
+                swiss_value_creation=True,
+                personnel_independence_status="confirmed",
+                financial_independence_status="confirmed",
+            ),
+        ),
+        DemoPartner(
+            key="energy-institute",
+            payload=PartnerCreate(
+                name="Schweizer Institut für Energiesysteme (Demo)",
+                partner_type="research_partner",
+                project_role="Regelungsmodelle und Validierung",
+                country="CH",
+                location="Horw",
+                contribution="Simulationsmodelle und Messkampagnen",
+                research_partner_eligibility_status="eligible",
+                personnel_independence_status="confirmed",
+                financial_independence_status="confirmed",
+            ),
+        ),
+    ),
+    sources=(
+        DemoSource("c-overview", "Demo C - Projektüberblick.txt", "project_c_overview.txt"),
+        DemoSource("c-pilot", "Demo C - Pilotquartier.txt", "project_c_pilot.txt"),
+    ),
+    draft_edits={},
+    link_fields=(),
+    execute_run=False,
+)
+
+PROJECT_D = DemoProject(
+    key="agri-packaging-films",
+    title="Rezyklierbare Verpackungsfolien aus Agrarreststoffen (Demo)",
+    description=(
+        "Synthetisches Demo-Projekt in der Startphase: Projekt angelegt, "
+        "noch keine Unterlagen hochgeladen."
+    ),
+    innovation_field="Biobasierte Materialien und Verpackung",
+    budget_framework_chf=350000.0,
+    partners=(
+        DemoPartner(
+            key="alpfilm-packaging",
+            payload=PartnerCreate(
+                name="AlpFilm Packaging AG (Demo)",
+                partner_type="implementation_partner",
+                project_role="Folienproduktion und Verwertung",
+                country="CH",
+                location="Frauenfeld",
+                contribution="Produktionslinie und Marktzugang",
+                uid="CHE-000.000.404",
+                industry="Packaging",
+                fte=22.0,
+                startup_status=False,
+                swiss_value_creation=True,
+                personnel_independence_status="confirmed",
+                financial_independence_status="confirmed",
+            ),
+        ),
+    ),
+    sources=(),
+    draft_edits={},
+    link_fields=(),
+    execute_run=False,
+)
+
+DEMO_PROJECTS = (PROJECT_A, PROJECT_B, PROJECT_C, PROJECT_D)

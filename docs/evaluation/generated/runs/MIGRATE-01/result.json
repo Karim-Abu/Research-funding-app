@@ -1,1 +1,0 @@
-{"run_id":"MIGRATE-01","command":"DATABASE_URL=sqlite:///./var/eval_migrate_check.db APP_ENV=test python -m alembic -c alembic.ini upgrade head","started_at":"2026-07-25T21:01:00Z","finished_at":"2026-07-25T21:01:10Z","exit_code":0,"commit":"8416914"}

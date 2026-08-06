@@ -24,7 +24,14 @@ from app.db.models import (
 )
 from app.db.base import Base
 from app.db.session import SessionLocal
-from app.demo.dataset import DEMO_CLASSIFICATION, DEMO_PROJECTS, PROJECT_A, PROJECT_B
+from app.demo.dataset import (
+    DEMO_CLASSIFICATION,
+    DEMO_PROJECTS,
+    PROJECT_A,
+    PROJECT_B,
+    PROJECT_C,
+    PROJECT_D,
+)
 from app.demo.reset import reset_demo_data
 from app.demo.seed import _verify_project_presence, seed_demo_data
 from app.registry import get_registry
@@ -117,7 +124,10 @@ def test_no_network_during_seed(demo_seed_env, monkeypatch):
     try:
         for demo in DEMO_PROJECTS:
             run = db.get(AnalysisRun, demo.run_id)
-            assert run is not None and run.status == "completed"
+            if demo.execute_run:
+                assert run is not None and run.status == "completed"
+            else:
+                assert run is None
     finally:
         db.close()
 
@@ -199,14 +209,14 @@ def test_seeded_edits_satisfy_user_action_invariants(demo_seed_env):
         db.close()
 
 
-def test_isolated_test_db_requires_exactly_two_demo_projects(tmp_path):
+def test_isolated_test_db_requires_exactly_the_demo_projects(tmp_path):
     # 2026-07-26: _verify_project_presence zaehlt unter APP_ENV=test ALLE
     # Project-Zeilen. conftest bindet aber EINE sessionweite SQLite-DB, in der
     # vorher laufende Tests eigene Projekte committen (z. B. test_costs_api).
     # reset_demo_data raeumt nur manifest-eigene Zeilen ab, nie fremde — der
     # Test bestand deshalb nur, wenn er frueh genug lief.
-    # Die Produktregel «genau zwei» bleibt unveraendert scharf; isoliert wird
-    # die Umgebung, so wie der Testname es ohnehin behauptet.
+    # Die Produktregel «genau die Demo-Projekte» bleibt unveraendert scharf;
+    # isoliert wird die Umgebung, so wie der Testname es ohnehin behauptet.
     engine = create_engine(f"sqlite:///{tmp_path / 'isolated.db'}")
     Base.metadata.create_all(engine)
     db = Session(engine)
@@ -243,7 +253,9 @@ def test_isolated_test_db_requires_exactly_two_demo_projects(tmp_path):
             )
         )
         db.commit()
-        with pytest.raises(RuntimeError, match="exactly two projects"):
+        with pytest.raises(
+            RuntimeError, match=f"exactly {len(DEMO_PROJECTS)} projects"
+        ):
             _verify_project_presence(db, SimpleNamespace(app_env="test"))
     finally:
         db.rollback()
@@ -270,15 +282,17 @@ def test_seed_generates_real_artifacts_and_reset_preserves_dev_projects(
     db = SessionLocal()
     try:
         projects = _seeded_projects(db)
-        assert set(projects) == {PROJECT_A.project_id, PROJECT_B.project_id}
+        assert set(projects) == {demo.project_id for demo in DEMO_PROJECTS}
         assert db.get(Project, non_demo_id) is not None
 
         manifest_count = db.scalar(select(func.count(DemoSeedManifest.manifest_id)))
         assert manifest_count and manifest_count > 0
         assert manifest_count == first_manifest_count
 
+        demo_by_project_id = {demo.project_id: demo for demo in DEMO_PROJECTS}
         for project in projects.values():
             assert project.data_classification == DEMO_CLASSIFICATION.model_dump()
+            demo = demo_by_project_id[project.project_id]
             sources = list(
                 db.scalars(
                     select(SourceDocument).where(
@@ -286,11 +300,16 @@ def test_seed_generates_real_artifacts_and_reset_preserves_dev_projects(
                     )
                 )
             )
-            assert sources
-            assert {source.status for source in sources} == {"processed"}
+            assert len(sources) == len(demo.sources)
+            if demo.sources:
+                assert {source.status for source in sources} == {"processed"}
 
         for demo in DEMO_PROJECTS:
             run = db.get(AnalysisRun, demo.run_id)
+            if not demo.execute_run:
+                # Early-stage demo projects stay honestly pre-analysis.
+                assert run is None
+                continue
             assert run is not None
             assert run.status == "completed"
             assert db.scalar(
@@ -350,14 +369,20 @@ def test_seed_generates_real_artifacts_and_reset_preserves_dev_projects(
     assert items[PROJECT_A.project_id]["workflow_summary"]["current_step"] == 5
     assert items[PROJECT_B.project_id]["workflow_summary"]["next_action"] == "review_analysis"
     assert items[PROJECT_B.project_id]["workflow_summary"]["current_step"] == 3
+    assert items[PROJECT_C.project_id]["workflow_summary"]["next_action"] == "start_analysis"
+    assert items[PROJECT_C.project_id]["workflow_summary"]["current_step"] == 2
+    assert items[PROJECT_C.project_id]["workflow_summary"]["bearbeitungsstand_percent"] == 25
+    assert items[PROJECT_D.project_id]["workflow_summary"]["next_action"] == "upload_sources"
+    assert items[PROJECT_D.project_id]["workflow_summary"]["current_step"] == 2
+    assert items[PROJECT_D.project_id]["workflow_summary"]["bearbeitungsstand_percent"] == 12
     assert WORKFLOW_SUMMARY_VERSION == "workflow-summary-v1"
 
     db = SessionLocal()
     try:
         reset_demo_data(db)
         db.commit()
-        assert db.get(Project, PROJECT_A.project_id) is None
-        assert db.get(Project, PROJECT_B.project_id) is None
+        for demo in DEMO_PROJECTS:
+            assert db.get(Project, demo.project_id) is None
         assert db.get(Project, non_demo_id) is not None
     finally:
         db.close()

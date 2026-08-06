@@ -39,13 +39,15 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     timeout: 20_000,
   })
   await expect(page.getByText(/Produktionsanlagen \(Demo\)/)).toBeVisible()
+  await expect(page.getByText(/Wärmepumpen-Regelung für Quartiere \(Demo\)/)).toBeVisible()
+  await expect(page.getByText(/Verpackungsfolien aus Agrarreststoffen \(Demo\)/)).toBeVisible()
   // Each project card carries a single primary-action button ("Weiterarbeiten");
   // the per-project next_action (continue_draft vs review_analysis) is asserted via
-  // the API below. Both demo projects expose the action.
+  // the API below. All demo projects expose the action.
   await expect(page.getByRole("button", { name: "Weiterarbeiten" }).first()).toBeVisible()
   expect(
     await page.getByRole("button", { name: "Weiterarbeiten" }).count()
-  ).toBeGreaterThanOrEqual(2)
+  ).toBeGreaterThanOrEqual(4)
   await expect(page.getByRole("button", { name: "Prüfung abschliessen" })).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Export erstellen" })).toHaveCount(0)
 
@@ -56,6 +58,8 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
   }>
   const projectA = projects.find((project) => project.title.includes("Verbundwerkstoffe"))
   const projectB = projects.find((project) => project.title.includes("Produktionsanlagen"))
+  const projectC = projects.find((project) => project.title.includes("Wärmepumpen-Regelung"))
+  const projectD = projects.find((project) => project.title.includes("Verpackungsfolien"))
   expect(projectA?.workflow_summary).toMatchObject({
     next_action: "continue_draft",
     current_step: 5,
@@ -64,8 +68,19 @@ test("M6.1 seeded demo dashboard, draft continuation, and open requirements", as
     next_action: "review_analysis",
     current_step: 3,
   })
+  // Early-stage demo projects: sources without run vs. no sources yet.
+  expect(projectC?.workflow_summary).toMatchObject({
+    next_action: "start_analysis",
+    current_step: 2,
+  })
+  expect(projectD?.workflow_summary).toMatchObject({
+    next_action: "upload_sources",
+    current_step: 2,
+  })
   expect(projectA).toBeTruthy()
   expect(projectB).toBeTruthy()
+  expect(projectC).toBeTruthy()
+  expect(projectD).toBeTruthy()
 
   const runsA = (await (
     await page.request.get(`/api/projects/${projectA!.project_id}/runs`)

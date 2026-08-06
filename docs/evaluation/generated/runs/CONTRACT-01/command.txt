@@ -1,1 +1,0 @@
-backend/.venv/Scripts/python.exe final_backend_contracts_v1_1/validate_contracts.py

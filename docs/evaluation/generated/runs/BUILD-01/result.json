@@ -1,1 +1,0 @@
-{"run_id":"BUILD-01","command":"rm -rf .next && corepack pnpm build","started_at":"2026-07-25T21:14:46Z","finished_at":"2026-07-25T21:15:18Z","exit_code":0,"commit":"8416914"}

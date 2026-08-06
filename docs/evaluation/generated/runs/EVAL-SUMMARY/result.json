@@ -1,1 +1,0 @@
-{"run_id":"EVAL-SUMMARY","command":"DATABASE_URL=sqlite:///./var/eval_e2e.db python -m app.evaluation","started_at":"2026-07-25T21:40:49Z","finished_at":"2026-07-25T21:40:51Z","exit_code":0,"commit":"8416914"}
