@@ -1,7 +1,0 @@
-﻿corepack : $ eslint .
-In Zeile:1 Zeichen:1
-+ corepack pnpm lint
-+ ~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: ($ eslint .:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 

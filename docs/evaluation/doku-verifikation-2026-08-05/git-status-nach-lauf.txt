@@ -1,9 +1,0 @@
-﻿git : warning: could not open directory '.pytest_cache/': Permission denied
-In Zeile:4 Zeichen:1
-+ git status --short *> "$ev\git-status-nach-lauf.txt"
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (warning: could ...rmission denied:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
-?? docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md
-?? docs/evaluation/doku-verifikation-2026-08-05/

@@ -1,1 +1,0 @@
-playwright test e2e/golden-path.spec.ts e2e/privacy-firewall.spec.ts e2e/evidence.spec.ts e2e/export.spec.ts e2e/review-truth.spec.ts e2e/ui-states.spec.ts --workers=1 --reporter=list,junit

@@ -1,1 +1,0 @@
-{"run_id":"VITEST-01","command":"corepack pnpm exec vitest run --reporter=default --reporter=junit --outputFile.junit=docs/evaluation/generated/runs/VITEST-01/junit.xml","started_at":"2026-07-25T21:13:31Z","finished_at":"2026-07-25T21:14:10Z","exit_code":0,"commit":"8416914"}

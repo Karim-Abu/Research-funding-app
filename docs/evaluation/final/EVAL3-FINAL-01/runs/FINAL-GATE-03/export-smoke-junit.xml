@@ -1,1 +1,0 @@
-<?xml version="1.0" encoding="utf-8"?><testsuites><testsuite name="pytest" errors="0" failures="0" skipped="0" tests="1" time="4.999" timestamp="2026-07-26T18:01:05.867335+02:00" hostname="Karim_Aboutayeb"><testcase classname="tests.test_m10_smoke" name="test_export_all_types" time="4.926" /></testsuite></testsuites>

@@ -1,8 +1,0 @@
-﻿.\.venv\Scripts\python.exe : 2026-08-05 16:26:24,708 level=INFO logger=app.seed correlation_id=- msg=seed complete 
-workspace=ws-demo
-In Zeile:7 Zeichen:1
-+ .\.venv\Scripts\python.exe -m app.seed *> "$ev\db-seed.log"
-+ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (2026-08-05 16:2...rkspace=ws-demo:String) [], RemoteException
-    + FullyQualifiedErrorId : NativeCommandError
- 
