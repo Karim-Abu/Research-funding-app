@@ -110,7 +110,8 @@ schnelle Entwicklung genügt `corepack pnpm dev` statt build/start.
 
 [Kurzanleitung für Aussenstehende](docs/SCHNELLSTART.md) ·
 [Bedienungsanleitung](docs/BEDIENUNGSANLEITUNG.md) ·
-[Verifikationsbericht](docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md)
+[Verifikationsbericht](docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md) ·
+[GitHub-Profilvorlage (DE)](docs/GITHUB_PROFIL_VORLAGE.md)
 
 Die reproduzierbare End-to-End-Demo (Golden Path) ist in
 [`docs/demo/demo-runbook.md`](docs/demo/demo-runbook.md) beschrieben; die
