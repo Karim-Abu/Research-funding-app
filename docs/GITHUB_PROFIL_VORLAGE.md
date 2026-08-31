@@ -3,49 +3,49 @@
 > Diese Datei ist als Vorlage für dein persönliches GitHub-Profil gedacht.
 > Nutze sie im Repository **`Karim-Abu/Karim-Abu`** als `README.md`.
 
-## 👋 Hi, ich bin Karim
+## Kurzprofil
 
-Ich entwickle digitale Lösungen mit Fokus auf **saubere Architektur**, **klare Nutzerführung** und **zuverlässige Umsetzung**.
+Hi, ich bin Karim. Ich entwickle digitale Lösungen mit Fokus auf saubere Architektur, klare Nutzerführung und verlässliche Umsetzung.
 
-- 🎯 Fokus: Full-Stack Webentwicklung, KI-gestützte Workflows, Produktqualität
-- 🧠 Aktuell: Ausbau von praxisnahen Projekten mit messbarem Nutzen
-- 🤝 Offen für: Werkstudentenstellen, Junior-Positionen, Projektzusammenarbeit
+- Fokus: Full-Stack Webentwicklung, KI-gestützte Workflows, Produktqualität
+- Aktuell: Ausbau praxisnaher Projekte mit messbarem Nutzen
+- Offen für: Werkstudentenstellen, Junior-Positionen und Projektzusammenarbeit
 
 ---
 
-## 🚀 Ausgewählte Projekte
+## Ausgewählte Projekte
 
 ### 1) Research-Funding-App
-Feldbasierter Assistent für Förderanträge (Next.js + FastAPI).
+Feldbasierter Assistent für Förderanträge auf Basis von Next.js und FastAPI.
 
 - Strukturierte Datenerfassung
 - KI-gestützte Textvorschläge mit menschlicher Prüfung
 - Fokus auf Nachvollziehbarkeit und reproduzierbare Demo-Flows
 
-🔗 Repo: `https://github.com/Karim-Abu/Reasearch-funding-app`
+Repository: `https://github.com/Karim-Abu/Reasearch-funding-app`
 
 ### 2) [Projektname]
 1–2 Sätze mit Problem, Lösung und Ergebnis.
 
-🔗 Repo: `[Link einfügen]`
+Repository: `[Link einfügen]`
 
 ### 3) [Projektname]
 1–2 Sätze mit Problem, Lösung und Ergebnis.
 
-🔗 Repo: `[Link einfügen]`
+Repository: `[Link einfügen]`
 
 ---
 
-## 🛠️ Tech Stack
+## Technologiestack
 
 **Frontend:** Next.js, React, TypeScript  
 **Backend:** FastAPI, Python, SQLAlchemy  
-**Testing/QA:** Vitest, Playwright, Pytest  
+**Qualitätssicherung:** Vitest, Playwright, Pytest  
 **Tools:** Git, GitHub Actions, pnpm
 
 ---
 
-## 📌 Arbeitsweise
+## Arbeitsweise
 
 - Sauberer, wartbarer Code statt kurzfristiger Workarounds
 - Klare Dokumentation und nachvollziehbare Entscheidungen
@@ -53,7 +53,7 @@ Feldbasierter Assistent für Förderanträge (Next.js + FastAPI).
 
 ---
 
-## 📫 Kontakt
+## Kontakt
 
 - LinkedIn: `[Link einfügen]`
 - E-Mail: `[E-Mail einfügen]`
@@ -61,7 +61,17 @@ Feldbasierter Assistent für Förderanträge (Next.js + FastAPI).
 
 ---
 
-## ✅ Profil-Checkliste
+## Profil aufbauen: sinnvolle Reihenfolge
+
+1. Kurzprofil in 2–3 klaren Sätzen formulieren
+2. Drei bis fünf relevante Projekte mit Ergebnisbezug darstellen
+3. Technologiestack auf tatsächlich eingesetzte Tools begrenzen
+4. Gepinnte Repositories passend zur Zielrolle auswählen
+5. Kontaktmöglichkeiten und Verfügbarkeit sichtbar platzieren
+
+---
+
+## Profil-Checkliste
 
 - [ ] Professionelles Profilbild und klarer Header
 - [ ] 3–5 starke Projekte mit kurzem Nutzen-Statement
