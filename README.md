@@ -7,9 +7,25 @@ feldbezogenen, editierbaren und kopierbaren Innolink-Textvorschlägen. Das Syste
 **unterstützt die menschliche Prüfung** — es entscheidet weder über
 Förderfähigkeit noch reicht es automatisch ein.
 
+## Für Aussenstehende in 60 Sekunden
+
+Dieses Repository zeigt eine vollständige, praxisnahe Produktumsetzung:
+
+- Endnutzer-orientiertes Frontend mit klaren Formular- und Review-Flows
+- API-zentriertes Backend mit reproduzierbarem Demo-Setup
+- Nachvollziehbares Qualitätsgate aus Tests, Build und End-to-End-Demo
+
+Wenn Sie das Projekt schnell beurteilen möchten:
+
+1. Produktüberblick in `docs/SCHNELLSTART.md`
+2. Bedienlogik und Nutzerfluss in `docs/BEDIENUNGSANLEITUNG.md`
+3. Reproduzierbare Demo in `docs/demo/demo-runbook.md`
+
 - Frontend: Next.js / TypeScript (Repo-Wurzel).
 - Backend: FastAPI / SQLAlchemy (`backend/`), SQLite als Standard-DB.
 - Verbindliche Projektregeln: [`.claude/CLAUDEX.md`](.claude/CLAUDEX.md).
+- Zusammenarbeit: [`CONTRIBUTING.md`](CONTRIBUTING.md).
+- Security-Meldungen: [`SECURITY.md`](SECURITY.md).
 
 > **Sie wollen die App nur installieren und bedienen?** Die
 > [Kurzanleitung `docs/SCHNELLSTART.md`](docs/SCHNELLSTART.md) führt ohne
