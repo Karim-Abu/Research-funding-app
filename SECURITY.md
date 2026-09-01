@@ -1,30 +1,29 @@
 # Security Policy
 
-## Sicherheitsprobleme melden
+## Reporting a Vulnerability
 
-Bitte melden Sie vermutete Sicherheitslücken **nicht öffentlich** über Issues oder Pull Requests.
+Please do **not** report security issues publicly via Issues or Pull Requests.
 
-Stattdessen:
+Instead, contact the repository owner using the email address listed on the GitHub profile and use:
 
-- Kontakt: über die im GitHub-Profil des Repository-Inhabers hinterlegte E-Mail
-- Betreff: `Security Report: Research-Funding-App`
-- Inhalt: betroffene Komponente, reproduzierbare Schritte, erwartetes Risiko
+- Subject: `Security Report: Research-Funding-App`
+- Include: affected component, reproduction steps, impact, and suggested mitigation
 
-Falls Sie keinen direkten Kontakt haben, öffnen Sie ein minimales privates Ticket über die verfügbaren Organisationskanäle.
+## Scope
 
-## Umfang
+Security-relevant areas include:
 
-Relevante Bereiche:
+- authentication and session handling
+- API input validation and authorization boundaries
+- secret handling and environment configuration
+- file import/export processing
+- external provider and web-research integrations
 
-- Authentifizierung und Sitzungsverwaltung
-- API-Validierung und Rechteprüfung
-- Secret-Handling in Konfiguration und Deployment
-- Datei-Import/-Export und externe Integrationen
+## Security-Related Project Practices
 
-## Grundprinzipien im Projekt
+- Fail-closed configuration defaults
+- No provider secrets exposed to frontend variables
+- Deterministic validation gate for core technical checks
+- Data-class-aware controls for provider-backed features
 
-- Fail-closed Standardkonfigurationen
-- Keine Provider-Secrets im Frontend
-- Reproduzierbare Validierung mit Tests und Qualitätsgate
-
-Vielen Dank für verantwortungsvolle Offenlegung.
+Thank you for responsible disclosure.

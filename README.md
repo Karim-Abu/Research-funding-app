@@ -1,190 +1,209 @@
-# Innosuisse-Antrag — Research-Funding-App
+# Research-Funding-App
 
-Feldbasierter Antragsassistent für Innosuisse-Innovationsprojekte. Ein
-nichttechnischer Nutzer gelangt von der Projektidee oder einem vorhandenen
-Innolink-PDF über Partner, Budget, freigegebene Recherche und KI-Analyse zu
-feldbezogenen, editierbaren und kopierbaren Innolink-Textvorschlägen. Das System
-**unterstützt die menschliche Prüfung** — es entscheidet weder über
-Förderfähigkeit noch reicht es automatisch ein.
+A full-stack assistant that helps teams prepare structured Innosuisse innovation project applications with human-reviewed AI support.
 
-## Für Aussenstehende in 60 Sekunden
+This project addresses a practical problem: application content is spread across source files, partner inputs, and domain requirements, which makes consistent drafting and review difficult. The system combines a Next.js frontend, a FastAPI backend, deterministic processing steps, and optional provider-backed AI suggestions. The technically interesting part is the explicit fail-closed policy design: deterministic baselines stay available, while AI and live web research are gated by data-class and approval controls.
 
-Dieses Repository zeigt eine vollständige, praxisnahe Produktumsetzung:
+## Overview
 
-- Endnutzer-orientiertes Frontend mit klaren Formular- und Review-Flows
-- API-zentriertes Backend mit reproduzierbarem Demo-Setup
-- Nachvollziehbares Qualitätsgate aus Tests, Build und End-to-End-Demo
+The application guides users from project intake and source import to evidence mapping, requirement checks, field-level draft suggestions, quality review, and export. It is designed as a reproducible engineering project with local demo data, versioned backend contracts, and extensive automated test coverage.
 
-Wenn Sie das Projekt schnell beurteilen möchten:
+Detailed product and operator documentation is currently available in German:
 
-1. Produktüberblick in `docs/SCHNELLSTART.md`
-2. Bedienlogik und Nutzerfluss in `docs/BEDIENUNGSANLEITUNG.md`
-3. Reproduzierbare Demo in `docs/demo/demo-runbook.md`
+- `docs/SCHNELLSTART.md`
+- `docs/BEDIENUNGSANLEITUNG.md`
 
-- Frontend: Next.js / TypeScript (Repo-Wurzel).
-- Backend: FastAPI / SQLAlchemy (`backend/`), SQLite als Standard-DB.
-- Verbindliche Projektregeln: [`.claude/CLAUDEX.md`](.claude/CLAUDEX.md).
-- Zusammenarbeit: [`CONTRIBUTING.md`](CONTRIBUTING.md).
-- Security-Meldungen: [`SECURITY.md`](SECURITY.md).
+## Key Features
 
-> **Sie wollen die App nur installieren und bedienen?** Die
-> [Kurzanleitung `docs/SCHNELLSTART.md`](docs/SCHNELLSTART.md) führt ohne
-> Vorkenntnisse durch Installation, Start und einen ersten Rundgang. Die
-> vollständige Referenz ist die
-> [Bedienungsanleitung](docs/BEDIENUNGSANLEITUNG.md). Der folgende Abschnitt
-> ist die technische Kurzfassung.
+- Structured project intake and source import (`pdf`, `docx`, `txt`) with parsing status control
+- Deterministic evidence discovery and requirement/rule assessment pipeline
+- LangGraph-based run orchestration with explicit stage transitions and recovery of interrupted runs
+- Field-level draft workflow with template drafts and advisory AI redraft suggestions
+- Review package generation with open issues, findings, and human approval step
+- Data-class-aware web research with query firewall and approval-gated execution
+- Deterministic export workflow with background execution and orphan cleanup
+- Role-based capability exposure for fake/live provider modes
 
-## Schnellstart auf einem frischen Rechner
+## Architecture
 
-### 1. Voraussetzungen
+```mermaid
+flowchart TD
+    UI[Next.js Frontend\napp/, components/, lib/] --> API[FastAPI API\nbackend/app/api]
+    API --> RUNS[Run Orchestration\nLangGraph + executors]
+    API --> INGEST[Ingestion Pipeline\nparse normalize fragment]
+    API --> REVIEW[Review & Draft Services]
+    API --> RESEARCH[Research Services\nquery firewall + approvals]
+    RUNS --> DB[(SQLite via SQLAlchemy)]
+    INGEST --> DB
+    REVIEW --> DB
+    RESEARCH --> DB
+    RUNS --> PROVIDERS[Optional Providers\nOpenAI / Anthropic / Firecrawl]
+    RESEARCH --> PROVIDERS
+```
 
-- **Node** ≥ 20 mit corepack (`corepack enable`) → `pnpm`.
-- **Python** ≥ 3.12.
+More detail: `docs/architecture.md`.
 
-### 2. Abhängigkeiten installieren
+Additional technical docs:
+- `docs/demo.md`
+- `docs/evaluation.md`
+
+## Tech Stack
+
+**Languages**
+- TypeScript
+- Python
+
+**Frontend**
+- Next.js
+- React
+
+**Backend**
+- FastAPI
+- SQLAlchemy
+- Alembic
+- LangGraph
+
+**Testing**
+- Vitest
+- pytest
+- Playwright
+
+## Engineering Highlights
+
+- Fail-closed startup checks for database connectivity and contract/registry loading
+- Explicit provider policy separation between deterministic, fake-provider, and live-provider modes
+- Query firewall and approval flow for privacy-aware web research tasks
+- Separation of deterministic pipeline outputs and advisory AI outputs
+- Bounded background execution with reconciliation and interrupted-run recovery
+- Versioned backend contract artifacts under `final_backend_contracts_v1_1/`
+
+## My Contribution
+
+> Add a short, precise description of your personal contribution here (scope, core modules, and technical ownership).
+
+## Results
+
+### Technical Validation
+- Frontend unit/integration tests (`test/**/*.test.{ts,tsx}`)
+- Backend tests (`backend/tests`)
+- End-to-end suites (`e2e/*.spec.ts`)
+- One-command verification scripts (`scripts/verify_all.sh`, `scripts/verify_all.ps1`)
+
+### Functional Validation
+- End-to-end user flows for intake, import, review, orchestration, reliability, and export are covered in Playwright specs.
+
+### Business Impact
+- Not claimed in this repository.
+
+## Demo / Screenshots
+
+Current UI screenshots:
+
+- Project overview: `docs/assets/bedienungsanleitung/01-projektuebersicht.png`
+- Source import flow: `docs/assets/bedienungsanleitung/02-antrag-importieren.png`
+- Draft editor: `docs/assets/bedienungsanleitung/06-entwurfseditor.png`
+- Quality review: `docs/assets/bedienungsanleitung/08-qualitaetspruefung.png`
+
+Recommended additional portfolio visuals: see `docs/demo.md`.
+
+## Quick Start
+
+### 1) Clone and install
 
 ```bash
-# Frontend (Repo-Wurzel)
+git clone https://github.com/Karim-Abu/Reasearch-funding-app.git
+cd Reasearch-funding-app
 corepack pnpm install
-
-# Backend-venv + Abhängigkeiten
 python -m venv backend/.venv
-# Windows:
-backend/.venv/Scripts/pip install -r backend/requirements.txt
-# POSIX:
+# POSIX
 backend/.venv/bin/pip install -r backend/requirements.txt
+# Windows
+backend/.venv/Scripts/pip install -r backend/requirements.txt
 ```
 
-### 3. Konfiguration (ohne Secrets)
+### 2) Configure demo mode
 
 ```bash
-cp backend/.env.demo.example backend/.env   # fertige Demo-Werte, Keys leer
-cp .env.example .env.local                  # enthält APP_BACKEND_MODE + FASTAPI_BRIDGE_URL
+cp .env.example .env.local
+cp backend/.env.demo.example backend/.env
 ```
 
-Beide Vorlagen sind vollständig; für den Demo-Betrieb ist nichts zu editieren.
-`.env.local` (Repo-Wurzel) enthält:
-
-```env
-APP_BACKEND_MODE=live
-FASTAPI_BRIDGE_URL=http://127.0.0.1:8000/api/v1
-```
-
-Ohne `APP_BACKEND_MODE=live` läuft das Frontend **ohne Fehlermeldung** im
-Mock-Modus (Badge «Demo-Daten · keine echten Antragsdaten» in der Topbar).
-
-`backend/.env.demo.example` setzt `AGENT_FAKE_PROVIDER=true`,
-`WEB_RESEARCH_FAKE_PROVIDER=true`, `DEMO_DATA_ENABLED=true`, `AI_EVAL_MODE=off`
-und `DATABASE_URL=sqlite:///./var/demo.db`. Die allgemeine Vorlage
-`backend/.env.example` ist bewusst fail-closed (alle diese Schalter `false`) und
-damit **kein** Demo-Setup — sie ist die Basis für eine bewusste Live-Einrichtung.
-
-Provider-Keys gehören **ausschliesslich** in `backend/.env` (Server), nie in eine
-`NEXT_PUBLIC_*`-Variable. Ohne Keys sind reale Provider-Routen schlicht nicht
-verfügbar (kein Crash, kein stiller Fallback auf den Demo-Generator).
-
-### 4. Datenbank: Migration + Seed
+### 3) Prepare database and demo data
 
 ```bash
 cd backend
-# Windows PowerShell:
-$env:APP_ENV="development"; $env:DEMO_DATA_ENABLED="true"; $env:DATABASE_URL="sqlite:///./var/demo.db"
-# POSIX:  export APP_ENV=development DEMO_DATA_ENABLED=true DATABASE_URL="sqlite:///./var/demo.db"
-
-python -m alembic -c alembic.ini upgrade head     # Schema (kein create_all zur Laufzeit)
-python -m app.seed                                # Workspace + Förderprofil + 2 Nutzer
-python -m app.demo.seed --reset --evaluation      # deterministischer Demo-Datensatz
+# POSIX
+export APP_ENV=development DEMO_DATA_ENABLED=true DATABASE_URL="sqlite:///./var/demo.db"
+python -m alembic -c alembic.ini upgrade head
+python -m app.seed
+python -m app.demo.seed --reset --evaluation
 ```
 
-Seed-Nutzer (Dev-Defaults, in jeder echten Umgebung überschreiben):
-
-| Rolle | E-Mail | Passwort |
-|-------|--------|----------|
-| Lead/Admin | `anna.keller@example.test` | `changeme-dev-lead` |
-| Member | `tobias.frei@example.test` | `changeme-dev-member` |
-
-### 5. Live-Modus starten (zwei Terminals)
-
-```powershell
-# Terminal 1 — Backend (aus backend/), SAME DATABASE_URL, Fake-Provider
-$env:DATABASE_URL="sqlite:///./var/demo.db"; $env:APP_ENV="development"
-$env:AGENT_FAKE_PROVIDER="true"; $env:WEB_RESEARCH_ENABLED="true"
-$env:WEB_RESEARCH_FAKE_PROVIDER="true"; $env:DEMO_DATA_ENABLED="true"
-python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
-
-# Terminal 2 — Frontend (aus Repo-Wurzel), Live-Modus
-$env:APP_BACKEND_MODE="live"; $env:FASTAPI_BRIDGE_URL="http://127.0.0.1:8000/api/v1"
-Remove-Item .next -Recurse -Force -ErrorAction SilentlyContinue   # OneDrive-Lock vermeiden
-corepack pnpm build; node node_modules/next/dist/bin/next start --port 3000
-```
-
-App: <http://localhost:3000> · Backend-Health: <http://127.0.0.1:8000/api/v1/health>.
-**Backend und Frontend müssen dieselbe `DATABASE_URL` nutzen.** Für die
-schnelle Entwicklung genügt `corepack pnpm dev` statt build/start.
-
-## Demo
-
-[Kurzanleitung für Aussenstehende](docs/SCHNELLSTART.md) ·
-[Bedienungsanleitung](docs/BEDIENUNGSANLEITUNG.md) ·
-[Verifikationsbericht](docs/VERIFIKATIONSBERICHT_BEDIENUNGSANLEITUNG.md) ·
-[GitHub-Profilvorlage (DE)](docs/GITHUB_PROFIL_VORLAGE.md)
-
-Die reproduzierbare End-to-End-Demo (Golden Path) ist in
-[`docs/demo/demo-runbook.md`](docs/demo/demo-runbook.md) beschrieben; die
-ausführbare Fassung ist [`e2e/golden-path.spec.ts`](e2e/golden-path.spec.ts).
-Abnahmestatus: [`docs/demo/demo-acceptance-report.md`](docs/demo/demo-acceptance-report.md).
-
-## Tests & Abschlussgate
+### 4) Run backend and frontend
 
 ```bash
-# Backend
-cd backend && .venv/Scripts/python.exe -m pytest -q      # POSIX: .venv/bin/python
+# Terminal 1 (backend/)
+python -m uvicorn app.main:app --host 127.0.0.1 --port 8000
 
+# Terminal 2 (repo root)
+APP_BACKEND_MODE=live FASTAPI_BRIDGE_URL=http://127.0.0.1:8000/api/v1 corepack pnpm dev
+```
+
+Open:
+- Frontend: `http://localhost:3000`
+- Backend health: `http://127.0.0.1:8000/api/v1/health`
+
+## Testing
+
+```bash
 # Frontend
-corepack pnpm test          # vitest
+corepack pnpm test
 corepack pnpm lint
 corepack pnpm exec tsc --noEmit
 corepack pnpm build
 
-# End-to-End (Server müssen laufen, s. oben)
+# Backend
+cd backend && .venv/bin/python -m pytest -q
+
+# End-to-end (servers running)
 corepack pnpm exec playwright test --workers=1
+
+# Full deterministic verification gate
+scripts/verify_all.sh
+# Windows: .\scripts\verify_all.ps1
 ```
 
-Ein-Kommando-Gate (frische DB, startet Server, Playwright inkl. Golden-Path-
-Doppellauf, API-Smoke, Evaluation, Teardown):
+## Repository Structure
 
-```powershell
-.\scripts\verify_all.ps1     # Windows
-```
-```bash
-scripts/verify_all.sh        # POSIX
-```
+- `app/`, `components/`, `lib/`: Next.js frontend
+- `backend/app/`: FastAPI backend services and orchestration
+- `backend/tests/`: backend test suite
+- `test/`: frontend unit/integration tests
+- `e2e/`: Playwright end-to-end tests
+- `final_backend_contracts_v1_1/`: versioned API/rule/tool contract artifacts
+- `scripts/`: verification, smoke, and evaluation utilities
+- `docs/`: user guidance, architecture, demo, and evaluation notes
 
-Das Gate endet mit `ALL GREEN`, wenn alle Prüfungen bestehen.
+## Limitations
 
-Reale Provider-Erreichbarkeit (OpenAI/Anthropic/Firecrawl) ist **opt-in** und
-nicht Teil des Gates (ein Ausfall macht nichts rot):
+- The project is a local/single-instance beta architecture, not a production deployment setup.
+- Live provider functionality depends on explicit key/configuration availability and policy gates.
+- Public web research is data-class and approval constrained by design.
+- No automatic submission/write-back into external funding portals.
+- Source import quality depends on document format; encrypted/no-text PDFs require manual fallback.
 
-```powershell
-$env:RUN_REAL_PROVIDER_SMOKE="true"; $env:AI_EVAL_MODE="real"
-backend\.venv\Scripts\python.exe scripts\run_provider_availability_smoke.py
-```
+## Further Development
 
-## Bekannte Limitationen
+- Add concise English operator docs parallel to existing German manuals.
+- Add a small deterministic demo video/GIF for the end-to-end flow.
+- Introduce CI status badges once workflow baselines are stable.
+- Add explicit contribution ownership notes for portfolio transparency.
 
-- **OneDrive-Sync** kann ein stale `.next`-Verzeichnis sperren (`EPERM` beim
-  Build — kein Hänger). Abhilfe: `.next` vor dem Build löschen (in den
-  `verify_all`-Skripten automatisiert) oder Sync kurz pausieren.
-- **PDF-Import:** layoutabhängig und unvollständig; der Innolink-Export führt den
-  Haupttitel ohne Label → das Feld bleibt manuell. Gemessene Erkennungsquoten:
-  [`docs/evaluation/pdf-import-gate-report.md`](docs/evaluation/pdf-import-gate-report.md).
-- **Kein Portal-Writeback:** Feldtexte werden nur zum manuellen Kopieren
-  vorbereitet; keine automatische Innolink-Übermittlung.
+## Project Context
 
-## Verzeichnisstruktur (Auszug)
+This repository is presented as an engineering portfolio project focused on reproducible AI-assisted application workflows and software quality controls.
 
-- `app/`, `components/`, `lib/` — Next.js-Frontend.
-- `e2e/` — Playwright-Specs (Golden Path, UI-Zustände, Milestones).
-- `backend/app/` — FastAPI-Backend (Import, Agents, Review, Research, Exports).
-- `scripts/` — `verify_all.*`, Smokes, Guards.
-- `docs/` — Repair-Roadmap, Evaluation, Demo.
+## Collaboration and Security
+
+- Contribution guidelines: `CONTRIBUTING.md`
+- Security reporting: `SECURITY.md`

@@ -1,24 +1,24 @@
-# Beitrag leisten
+# Contributing
 
-Vielen Dank für Ihr Interesse an diesem Repository. Beiträge sind willkommen, wenn sie nachvollziehbar, getestet und klar dokumentiert sind.
+Thank you for your interest in improving this repository.
 
-## Grundsätze
+## Principles
 
-- Änderungen klein und fokussiert halten
-- Bestehende Architektur und Benennungen respektieren
-- Keine Secrets, Zugangsdaten oder personenbezogenen Daten committen
-- Nutzerführung und fachliche Nachvollziehbarkeit nicht verschlechtern
+- Keep changes small, focused, and reviewable.
+- Preserve existing architecture boundaries and naming conventions.
+- Do not commit secrets, credentials, or sensitive project data.
+- Do not degrade reproducibility, traceability, or reviewability.
 
-## Entwicklungsablauf
+## Development Workflow
 
-1. Problem und Ziel der Änderung kurz beschreiben
-2. Relevante Stellen gezielt anpassen
-3. Vorhandene Qualitätsprüfungen ausführen
-4. Ergebnisse und offene Punkte sauber dokumentieren
+1. Describe the problem and intended outcome.
+2. Implement minimal, targeted changes.
+3. Run relevant checks before review.
+4. Document key decisions and known limitations.
 
-## Validierung vor Review
+## Validation Before Review
 
-Frontend (Repo-Wurzel):
+Frontend (repository root):
 
 ```bash
 corepack pnpm test
@@ -33,17 +33,21 @@ Backend (`backend/`):
 .venv/bin/python -m pytest -q
 ```
 
-Windows entsprechend mit `.venv\\Scripts\\python.exe`.
+Windows equivalent:
 
-## Pull-Request-Qualität
+```powershell
+.venv\Scripts\python.exe -m pytest -q
+```
 
-Ein guter Pull Request enthält:
+## Pull Request Quality
 
-- klare Problemstellung
-- kurze Begründung der Lösung
-- sichtbare Test-/Validierungsergebnisse
-- ggf. Hinweise auf bekannte Restpunkte
+A good pull request should include:
 
-## Kommunikation
+- clear problem statement
+- concise explanation of the approach
+- validation evidence (commands and outcomes)
+- explicit note on remaining risks or follow-up work
 
-Bitte sachlich, konkret und respektvoll kommunizieren. Ziel ist eine professionelle, transparente Zusammenarbeit.
+## Communication
+
+Please keep communication clear, specific, and respectful.
