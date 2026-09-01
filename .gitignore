@@ -53,3 +53,11 @@ frontend.evaluation.stderr.log
 
 # Python-Bytecode der CI-Check-Skripte (scripts/check_*.py)
 scripts/__pycache__/
+
+# editor/workspace
+.vscode/
+.idea/
+
+# backend runtime artifacts
+backend/var/
+backend/.venv/
