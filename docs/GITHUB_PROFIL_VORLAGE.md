@@ -22,7 +22,7 @@ Feldbasierter Assistent für Förderanträge auf Basis von Next.js und FastAPI.
 - KI-gestützte Textvorschläge mit menschlicher Prüfung
 - Fokus auf Nachvollziehbarkeit und reproduzierbare Demo-Flows
 
-Repository: `https://github.com/Karim-Abu/Reasearch-funding-app`
+Repository: `https://github.com/Karim-Abu/Research-funding-app`
 
 ### 2) [Projektname]
 1–2 Sätze mit Problem, Lösung und Ergebnis.

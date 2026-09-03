@@ -2,7 +2,7 @@
 
 Diese Anleitung beschreibt den lokal ausführbaren Stand der Anwendung «Innosuisse-Antrag». Sie richtet sich in erster Linie an Personen, die ein Innosuisse-Gesuch für ein Innovationsprojekt vorbereiten und dafür keine vertieften Informatikkenntnisse mitbringen. Teil A erklärt Installation und Start, Teil B die fachliche Bedienung, Teil C den sicheren Umgang und die Fehlerbehebung. Teil D enthält erweiterte Prüf- und Reset-Informationen für Entwicklerinnen und Entwickler.
 
-«Innosuisse-Antrag» ist die Bezeichnung in der Seitenleiste der Anwendung. Anmeldeseite und Browser-Tab tragen die Bezeichnung «Evidenzbasierte Proposal-Unterstützung»; gemeint ist dieselbe Anwendung. `Reasearch-funding-app` ist ausschliesslich der technische Name des Repositorys.
+«Innosuisse-Antrag» ist die Bezeichnung in der Seitenleiste der Anwendung. Anmeldeseite und Browser-Tab tragen die Bezeichnung «Evidenzbasierte Proposal-Unterstützung»; gemeint ist dieselbe Anwendung. `Research-funding-app` ist ausschliesslich der technische Name des Repositorys.
 
 Die Anleitung beruht auf dem tatsächlich vorhandenen Repository und wurde mit dem deterministischen Testprovider geprüft. «Deterministisch» bedeutet hier: Bei gleichen Testdaten entsteht reproduzierbares Demo-Verhalten, ohne dass Inhalte an einen externen KI- oder Rechercheanbieter gesendet werden. Die Anwendung ist ein lokaler Beta-/PoC-Arbeitsbereich. Sie ersetzt weder die fachliche Beurteilung durch das Gesuchsteam noch die Prüfung und Einreichung im Innolink-Portal.
 
@@ -157,8 +157,8 @@ Der Speicherbedarf ist nicht verbindlich festgelegt; planen Sie Platz für Paket
 *Klonen* bedeutet, mit Git eine lokale Arbeitskopie des Repositorys anzulegen. Wechseln Sie zuerst in den Ordner, in dem das Projekt liegen soll, und führen Sie dann aus:
 
 ```powershell
-git clone https://github.com/Karim-Abu/Reasearch-funding-app.git
-Set-Location Reasearch-funding-app
+git clone https://github.com/Karim-Abu/Research-funding-app.git
+Set-Location Research-funding-app
 ```
 
 Legen Sie den Projektordner nicht in ein synchronisiertes Cloud-Verzeichnis. OneDrive und vergleichbare Dienste sperren einzelne Dateien während der Synchronisation, was beim Frontend-Build zu `EPERM`-Fehlern führt.
@@ -927,7 +927,7 @@ Für beliebige andere lokale Datenbanken ist kein pauschaler Löschbefehl dokume
 
 ## 22 Technische Kontakt- und Nachweisinformationen
 
-Der Projektname im Repository lautet `Reasearch-funding-app`; die Schreibweise des Ordnernamens ist für Pfade beizubehalten. Die Repository-Adresse ist `https://github.com/Karim-Abu/Reasearch-funding-app.git`.
+Der Projektname im Repository lautet `Research-funding-app`; die Schreibweise des Ordnernamens ist für Pfade beizubehalten. Die Repository-Adresse ist `https://github.com/Karim-Abu/Research-funding-app.git`.
 
 Für Installation und Betrieb sind vor allem diese Dateien relevant:
 

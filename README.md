@@ -111,8 +111,8 @@ Recommended additional portfolio visuals: see `docs/demo.md`.
 ### 1) Clone and install
 
 ```bash
-git clone https://github.com/Karim-Abu/Reasearch-funding-app.git
-cd Reasearch-funding-app
+git clone https://github.com/Karim-Abu/Research-funding-app.git
+cd Research-funding-app
 corepack pnpm install
 python -m venv backend/.venv
 # POSIX

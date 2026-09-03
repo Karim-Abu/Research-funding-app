@@ -7,7 +7,7 @@ werden keine Inhalte an einen externen KI- oder Recherchedienst gesendet.
 
 > **Wie die Anwendung heisst.** In der Seitenleiste steht «Innosuisse-Antrag».
 > Anmeldeseite und Browser-Tab tragen die Bezeichnung «Evidenzbasierte
-> Proposal-Unterstützung» — gemeint ist dieselbe Anwendung. `Reasearch-funding-app`
+> Proposal-Unterstützung» — gemeint ist dieselbe Anwendung. `Research-funding-app`
 > ist nur der Name des Projektordners.
 
 > **Geprüft auf Windows mit PowerShell.** macOS und Linux sind nicht geprüft und
@@ -109,8 +109,8 @@ Set-Location $HOME\Documents
 > sperren Dateien während der Synchronisation; das führt später zu Fehlern.
 
 ```powershell
-git clone https://github.com/Karim-Abu/Reasearch-funding-app.git
-Set-Location Reasearch-funding-app
+git clone https://github.com/Karim-Abu/Research-funding-app.git
+Set-Location Research-funding-app
 ```
 
 Kontrollieren Sie, dass der Download vollständig ist:
